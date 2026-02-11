@@ -24,11 +24,13 @@ python -m pip install --user --break-system-packages PySide6
 tabula bootstrap --project-dir .
 tabula mcp-server --project-dir . --headless --no-canvas --fresh-canvas
 tabula run --project-dir . "your prompt"
+tabula run --assistant claude --project-dir . "your prompt"
 tabula canvas
 tabula schema
 ```
 
-`tabula run` launches interactive `codex` with inline Tabula MCP configuration and defaults to `--yolo --search`.
+`tabula run` launches an interactive assistant with inline Tabula MCP configuration.
+Default assistant is `codex` (with `--yolo --search`); use `--assistant claude` for Claude Code.
 It also requests a fresh canvas process (`--fresh-canvas`) per launch.
 If no `DISPLAY`/`WAYLAND_DISPLAY` is available, it warns and runs headless.
 When available, it forwards display-related env vars (`DISPLAY`, `WAYLAND_DISPLAY`, `XAUTHORITY`, etc.) into MCP startup.

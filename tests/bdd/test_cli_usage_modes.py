@@ -369,6 +369,117 @@ def test_given_run_mode_when_codex_missing_then_nonzero_and_hint(monkeypatch, tm
     assert "codex CLI not found on PATH" in err
 
 
+def test_given_run_mode_with_claude_assistant_when_invoked_then_claude_launches_with_inline_mcp(
+    monkeypatch, tmp_path: Path
+) -> None:
+    @dataclass(frozen=True)
+    class _Paths:
+        project_dir: Path
+        agents_path: Path
+        mcp_config_path: Path
+
+    @dataclass(frozen=True)
+    class _Result:
+        paths: _Paths
+        git_initialized: bool
+        agents_preserved: bool
+
+    seen: dict[str, object] = {}
+
+    def fake_bootstrap(project_dir: Path):
+        resolved = project_dir.resolve()
+        return _Result(
+            paths=_Paths(
+                project_dir=resolved,
+                agents_path=resolved / "AGENTS.md",
+                mcp_config_path=resolved / ".tabula" / "codex-mcp.toml",
+            ),
+            git_initialized=False,
+            agents_preserved=False,
+        )
+
+    class _RunResult:
+        returncode = 23
+
+    def fake_run(cmd, cwd=None):
+        seen["cmd"] = cmd
+        seen["cwd"] = cwd
+        return _RunResult()
+
+    monkeypatch.setattr("tabula.cli.bootstrap_project", fake_bootstrap)
+    monkeypatch.setattr("tabula.cli.subprocess.run", fake_run)
+
+    rc = main(
+        [
+            "run",
+            "--assistant",
+            "claude",
+            "--project-dir",
+            str(tmp_path),
+            "--headless",
+            "--no-canvas",
+            "--poll-ms",
+            "888",
+            "hello from claude tabula run",
+        ]
+    )
+
+    assert rc == 23
+    cmd = seen["cmd"]
+    assert isinstance(cmd, list)
+    assert cmd[0] == "claude"
+    assert "--mcp-config" in cmd
+    assert "hello from claude tabula run" in cmd
+    cfg = json.loads(cmd[cmd.index("--mcp-config") + 1])
+    server = cfg["mcpServers"]["tabula-canvas"]
+    assert server["command"] == "bash"
+    assert server["args"][0] == "-lc"
+    assert "--headless" in server["args"][1]
+    assert "--no-canvas" in server["args"][1]
+    assert "--fresh-canvas" in server["args"][1]
+    assert "888" in server["args"][1]
+    assert seen["cwd"] == tmp_path.resolve()
+
+
+def test_given_run_mode_with_claude_assistant_when_claude_missing_then_nonzero_and_hint(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    @dataclass(frozen=True)
+    class _Paths:
+        project_dir: Path
+        agents_path: Path
+        mcp_config_path: Path
+
+    @dataclass(frozen=True)
+    class _Result:
+        paths: _Paths
+        git_initialized: bool
+        agents_preserved: bool
+
+    def fake_bootstrap(project_dir: Path):
+        resolved = project_dir.resolve()
+        return _Result(
+            paths=_Paths(
+                project_dir=resolved,
+                agents_path=resolved / "AGENTS.md",
+                mcp_config_path=resolved / ".tabula" / "codex-mcp.toml",
+            ),
+            git_initialized=False,
+            agents_preserved=False,
+        )
+
+    def fake_run(_cmd, cwd=None):
+        raise FileNotFoundError("claude")
+
+    monkeypatch.setattr("tabula.cli.bootstrap_project", fake_bootstrap)
+    monkeypatch.setattr("tabula.cli.subprocess.run", fake_run)
+
+    rc = main(["run", "--assistant", "claude", "--project-dir", str(tmp_path)])
+    err = capsys.readouterr().err
+    assert rc == 1
+    assert "claude CLI not found on PATH" in err
+
+
 def test_given_run_mode_without_display_when_canvas_expected_then_headless_warning(monkeypatch, tmp_path: Path, capsys) -> None:
     @dataclass(frozen=True)
     class _Paths:
