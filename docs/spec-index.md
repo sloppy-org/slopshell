@@ -30,7 +30,7 @@ Canonical behavior is defined by code + tests.
 - `tests/bdd/test_protocol_bootstrap.py`
 
 6. CLI command surface:
-- `canvas`, `check-events`, `schema`, `bootstrap`, `mcp-server`
+- `canvas`, `schema`, `bootstrap`, `mcp-server`
 - `src/tabula/cli.py`
 - `tests/bdd/test_cli_usage_modes.py`
 

@@ -6,7 +6,6 @@ Tabula is no longer a workflow orchestrator. Codex is the master process.
 Tabula provides:
 
 - an MCP server (`tabula-canvas`) for canvas tools
-- strict event schema/validation utilities
 - optional local canvas window runtime
 - project bootstrap (`AGENTS.md` + MCP snippet + artifact folders)
 
@@ -22,8 +21,7 @@ python -m pip install -e .[gui]   # optional for local canvas window
 ```bash
 tabula bootstrap --project-dir .
 tabula mcp-server --project-dir . --headless --no-canvas
-tabula canvas --events .tabula/canvas-events.jsonl
-tabula check-events --events .tabula/canvas-events.jsonl
+tabula canvas
 tabula schema
 ```
 
@@ -47,8 +45,9 @@ Merge that snippet into `~/.codex/config.toml`.
 - `canvas_render_pdf`
 - `canvas_clear`
 - `canvas_status`
+- `canvas_history`
 
-All render tools emit strict JSONL events into `.tabula/canvas-events.jsonl`.
+Canvas state is MCP-first and in-memory; no filesystem event log is required.
 
 ## Tests
 

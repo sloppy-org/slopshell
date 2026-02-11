@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import queue
+import sys
+import threading
 from pathlib import Path
 
-from .events import CanvasEvent
+from .events import CanvasEvent, EventValidationError, parse_event_line
 from .state import CanvasState, reduce_state
-from .watcher import JsonlEventWatcher
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QPixmap
@@ -30,13 +32,14 @@ except Exception:  # pragma: no cover
 
 
 class CanvasWindow(QMainWindow):
-    def __init__(self, events_path: Path, *, poll_interval_ms: int = 250) -> None:
+    def __init__(self, *, poll_interval_ms: int = 250) -> None:
         super().__init__()
         self.setWindowTitle("Tabula Canvas")
         self.resize(1000, 700)
 
         self._state = CanvasState()
-        self._watcher = JsonlEventWatcher(events_path)
+        self._incoming: queue.SimpleQueue[CanvasEvent] = queue.SimpleQueue()
+        self._errors: queue.SimpleQueue[str] = queue.SimpleQueue()
 
         root = QWidget(self)
         layout = QVBoxLayout(root)
@@ -45,7 +48,7 @@ class CanvasWindow(QMainWindow):
         self.mode_label.setObjectName("modeLabel")
         layout.addWidget(self.mode_label)
 
-        self.status_label = QLabel("status: waiting for events")
+        self.status_label = QLabel("status: waiting for MCP events")
         self.status_label.setObjectName("statusLabel")
         layout.addWidget(self.status_label)
 
@@ -78,9 +81,29 @@ class CanvasWindow(QMainWindow):
 
         self.setCentralWidget(root)
 
+        self._reader = threading.Thread(target=self._read_stdin_loop, daemon=True)
+        self._reader.start()
+
         self._timer = QTimer(self)
         self._timer.timeout.connect(self.poll_once)
         self._timer.start(poll_interval_ms)
+
+    def _read_stdin_loop(self) -> None:
+        base_dir = Path.cwd()
+        try:
+            for raw in sys.stdin:
+                line = raw.strip()
+                if not line:
+                    continue
+                try:
+                    event = parse_event_line(line, base_dir=base_dir)
+                except EventValidationError as exc:
+                    self._errors.put(str(exc))
+                    continue
+                self._incoming.put(event)
+        except OSError:
+            # Test harnesses may block stdin reads while output capture is active.
+            return
 
     def apply_event(self, event: CanvasEvent) -> None:
         self._state = reduce_state(self._state, event)
@@ -111,8 +134,6 @@ class CanvasWindow(QMainWindow):
             if HAS_QTPDF and self.pdf_document is not None:
                 self.pdf_document.load(event.path)
                 if self.pdf_document.status() == QPdfDocument.Status.Ready:
-                    if hasattr(self.pdf_view, "setPageMode"):
-                        pass
                     self.stack.setCurrentWidget(self.pdf_view)
                     self.status_label.setText(f"status: pdf artifact '{event.title}'")
                 else:
@@ -122,15 +143,25 @@ class CanvasWindow(QMainWindow):
                 self.status_label.setText("status: QtPdf unavailable")
 
     def poll_once(self) -> None:
-        result = self._watcher.poll()
-        for event in result.events:
+        while True:
+            try:
+                event = self._incoming.get_nowait()
+            except queue.Empty:
+                break
             self.apply_event(event)
-        if result.errors:
-            self.status_label.setText("status: " + result.errors[-1])
+
+        last_error: str | None = None
+        while True:
+            try:
+                last_error = self._errors.get_nowait()
+            except queue.Empty:
+                break
+        if last_error is not None:
+            self.status_label.setText("status: " + last_error)
 
 
-def run_canvas(events_path: Path, *, poll_interval_ms: int = 250) -> int:
+def run_canvas(*, poll_interval_ms: int = 250) -> int:
     app = QApplication.instance() or QApplication([])
-    window = CanvasWindow(events_path, poll_interval_ms=poll_interval_ms)
+    window = CanvasWindow(poll_interval_ms=poll_interval_ms)
     window.show()
     return app.exec()

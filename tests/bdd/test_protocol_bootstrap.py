@@ -13,7 +13,6 @@ def test_given_new_project_when_bootstrapped_then_git_agents_mcp_and_binary_igno
     assert (tmp_path / ".gitignore").exists()
     assert (tmp_path / ".tabula" / "artifacts").exists()
     assert (tmp_path / ".tabula" / "prompt-injection.txt").exists()
-    assert (tmp_path / ".tabula" / "canvas-events.jsonl").exists()
     assert (tmp_path / ".tabula" / "codex-mcp.toml").exists()
     assert (tmp_path / "AGENTS.md").exists()
 
@@ -21,7 +20,7 @@ def test_given_new_project_when_bootstrapped_then_git_agents_mcp_and_binary_igno
     assert AGENTS_PROTOCOL_BEGIN in agents
     assert AGENTS_PROTOCOL_END in agents
     assert ".tabula/artifacts" in agents
-    assert ".tabula/canvas-events.jsonl" in agents
+    assert "do not rely on filesystem event logs" in agents
     assert "canvas_activate" in agents
     assert "tabula-canvas" in agents
 

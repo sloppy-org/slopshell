@@ -32,7 +32,7 @@ def _read_message(stream) -> dict[str, object]:
     return json.loads(body.decode("utf-8"))
 
 
-def test_mcp_server_stdio_roundtrip_writes_event(tmp_path: Path) -> None:
+def test_mcp_server_stdio_roundtrip_updates_canvas_state(tmp_path: Path) -> None:
     project = tmp_path / "proj"
     project.mkdir()
     env = os.environ.copy()
@@ -82,11 +82,34 @@ def test_mcp_server_stdio_roundtrip_writes_event(tmp_path: Path) -> None:
         assert call_response["result"]["isError"] is False
         assert call_response["result"]["structuredContent"]["kind"] == "text_artifact"
 
-        events = project / ".tabula" / "canvas-events.jsonl"
-        assert events.exists()
-        rows = [json.loads(line) for line in events.read_text(encoding="utf-8").splitlines() if line.strip()]
-        assert len(rows) == 1
-        assert rows[0]["kind"] == "text_artifact"
+        _write_message(
+            proc.stdin,
+            {
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "tools/call",
+                "params": {
+                    "name": "canvas_status",
+                    "arguments": {"session_id": "s1"},
+                },
+            },
+        )
+        status_response = _read_message(proc.stdout)
+        assert status_response["result"]["isError"] is False
+        assert status_response["result"]["structuredContent"]["mode"] == "discussion"
+
+        _write_message(
+            proc.stdin,
+            {
+                "jsonrpc": "2.0",
+                "id": 4,
+                "method": "resources/read",
+                "params": {"uri": "tabula://session/s1/history"},
+            },
+        )
+        history_response = _read_message(proc.stdout)
+        text = history_response["result"]["contents"][0]["text"]
+        assert "text_artifact" in text
     finally:
         proc.terminate()
         proc.wait(timeout=5)

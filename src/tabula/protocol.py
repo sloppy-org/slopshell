@@ -6,7 +6,6 @@ from pathlib import Path
 
 TABULA_DIR = Path(".tabula")
 ARTIFACT_DIR = TABULA_DIR / "artifacts"
-EVENTS_PATH = TABULA_DIR / "canvas-events.jsonl"
 INJECTION_PATH = TABULA_DIR / "prompt-injection.txt"
 MCP_CONFIG_PATH = TABULA_DIR / "codex-mcp.toml"
 
@@ -26,7 +25,6 @@ GITIGNORE_BINARY_PATTERNS = [
 class ProjectPaths:
     project_dir: Path
     artifacts_dir: Path
-    events_path: Path
     injection_path: Path
     mcp_config_path: Path
     agents_path: Path
@@ -38,7 +36,7 @@ class BootstrapResult:
     git_initialized: bool
 
 
-def _protocol_block(artifacts_rel: Path, events_rel: Path, injection_rel: Path) -> str:
+def _protocol_block(artifacts_rel: Path, injection_rel: Path) -> str:
     lines = [
         AGENTS_PROTOCOL_BEGIN,
         "## Tabula Codex Protocol",
@@ -47,11 +45,10 @@ def _protocol_block(artifacts_rel: Path, events_rel: Path, injection_rel: Path) 
         "",
         f"1. Read extra instructions from `{injection_rel.as_posix()}` and apply them.",
         f"2. Keep generated artifacts under `{artifacts_rel.as_posix()}` unless user explicitly overrides.",
-        f"3. Emit canvas artifact events as strict JSONL lines in `{events_rel.as_posix()}`.",
-        "4. Prefer MCP tool calls from server `tabula-canvas` for canvas operations.",
-        "5. MCP tools: `canvas_activate`, `canvas_render_text`, `canvas_render_image`, `canvas_render_pdf`, `canvas_clear`, `canvas_status`.",
-        "6. Keep interaction terminal-first; do not replace the terminal with a custom REPL.",
-        "7. Do not commit binary artifacts from `.tabula/artifacts/*` unless explicitly requested.",
+        "3. Use MCP server `tabula-canvas` for all canvas operations; do not rely on filesystem event logs.",
+        "4. MCP tools: `canvas_activate`, `canvas_render_text`, `canvas_render_image`, `canvas_render_pdf`, `canvas_clear`, `canvas_status`.",
+        "5. Keep interaction terminal-first; do not replace the terminal with a custom REPL.",
+        "6. Do not commit binary artifacts from `.tabula/artifacts/*` unless explicitly requested.",
         "",
         AGENTS_PROTOCOL_END,
         "",
@@ -103,7 +100,6 @@ def bootstrap_project(
     project_dir: Path,
     *,
     artifacts_rel: Path = ARTIFACT_DIR,
-    events_rel: Path = EVENTS_PATH,
     injection_rel: Path = INJECTION_PATH,
     mcp_config_rel: Path = MCP_CONFIG_PATH,
 ) -> BootstrapResult:
@@ -111,18 +107,14 @@ def bootstrap_project(
     project_dir.mkdir(parents=True, exist_ok=True)
 
     artifacts_dir = (project_dir / artifacts_rel).resolve()
-    events_path = (project_dir / events_rel).resolve()
     injection_path = (project_dir / injection_rel).resolve()
     mcp_config_path = (project_dir / mcp_config_rel).resolve()
     agents_path = (project_dir / "AGENTS.md").resolve()
 
     artifacts_dir.mkdir(parents=True, exist_ok=True)
-    events_path.parent.mkdir(parents=True, exist_ok=True)
     injection_path.parent.mkdir(parents=True, exist_ok=True)
     mcp_config_path.parent.mkdir(parents=True, exist_ok=True)
 
-    if not events_path.exists():
-        events_path.touch()
     if not injection_path.exists():
         injection_path.write_text(
             "Apply these extra instructions in all Tabula Codex prompts for this project.\n",
@@ -145,7 +137,7 @@ def bootstrap_project(
 
     _ensure_gitignore(project_dir)
 
-    block = _protocol_block(artifacts_rel, events_rel, injection_rel)
+    block = _protocol_block(artifacts_rel, injection_rel)
     if agents_path.exists():
         existing = agents_path.read_text(encoding="utf-8")
     else:
@@ -157,7 +149,6 @@ def bootstrap_project(
         paths=ProjectPaths(
             project_dir=project_dir,
             artifacts_dir=artifacts_dir,
-            events_path=events_path,
             injection_path=injection_path,
             mcp_config_path=mcp_config_path,
             agents_path=agents_path,

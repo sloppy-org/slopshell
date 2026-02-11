@@ -140,15 +140,7 @@ def _validate_local_existing_path(path_value: str, *, base_dir: Path, line_no: i
     return str(path)
 
 
-def parse_event_line(line: str, *, line_no: int | None = None, base_dir: Path | None = None) -> CanvasEvent:
-    if not line.strip():
-        raise EventValidationError("empty event line", line_no=line_no)
-
-    try:
-        payload = json.loads(line)
-    except json.JSONDecodeError as exc:
-        raise EventValidationError(f"invalid JSON: {exc.msg}", line_no=line_no) from exc
-
+def parse_event_payload(payload: dict[str, object], *, line_no: int | None = None, base_dir: Path | None = None) -> CanvasEvent:
     if not isinstance(payload, dict):
         raise EventValidationError("event payload must be a JSON object", line_no=line_no)
 
@@ -210,3 +202,37 @@ def parse_event_line(line: str, *, line_no: int | None = None, base_dir: Path | 
         return ClearCanvasEvent(event_id=event_id, ts=ts, kind="clear_canvas", reason=reason)
 
     raise EventValidationError(f"unsupported kind: {kind}", line_no=line_no)
+
+
+def parse_event_line(line: str, *, line_no: int | None = None, base_dir: Path | None = None) -> CanvasEvent:
+    if not line.strip():
+        raise EventValidationError("empty event line", line_no=line_no)
+
+    try:
+        payload = json.loads(line)
+    except json.JSONDecodeError as exc:
+        raise EventValidationError(f"invalid JSON: {exc.msg}", line_no=line_no) from exc
+    if not isinstance(payload, dict):
+        raise EventValidationError("event payload must be a JSON object", line_no=line_no)
+    return parse_event_payload(payload, line_no=line_no, base_dir=base_dir)
+
+
+def event_to_payload(event: CanvasEvent) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "event_id": event.event_id,
+        "ts": event.ts,
+        "kind": event.kind,
+    }
+    if event.kind == "text_artifact":
+        payload["title"] = event.title
+        payload["text"] = event.text
+    elif event.kind == "image_artifact":
+        payload["title"] = event.title
+        payload["path"] = event.path
+    elif event.kind == "pdf_artifact":
+        payload["title"] = event.title
+        payload["path"] = event.path
+        payload["page"] = event.page
+    elif event.kind == "clear_canvas" and event.reason is not None:
+        payload["reason"] = event.reason
+    return payload

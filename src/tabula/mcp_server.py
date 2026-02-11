@@ -5,6 +5,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, BinaryIO
+from urllib.parse import urlparse
 
 from .canvas_adapter import CanvasAdapter
 
@@ -165,6 +166,36 @@ def _tool_definitions() -> list[dict[str, Any]]:
                 "additionalProperties": False,
             },
         },
+        {
+            "name": "canvas_history",
+            "description": "Get recent in-memory event history for a canvas session.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "minLength": 1},
+                    "limit": {"type": "integer", "minimum": 1},
+                },
+                "required": ["session_id"],
+                "additionalProperties": False,
+            },
+        },
+    ]
+
+
+def _resource_templates() -> list[dict[str, Any]]:
+    return [
+        {
+            "uriTemplate": "tabula://session/{session_id}",
+            "name": "Canvas Session Status",
+            "mimeType": "application/json",
+            "description": "Current status for a canvas session.",
+        },
+        {
+            "uriTemplate": "tabula://session/{session_id}/history",
+            "name": "Canvas Session History",
+            "mimeType": "application/json",
+            "description": "Recent in-memory history for a canvas session.",
+        },
     ]
 
 
@@ -197,7 +228,6 @@ class TabulaMcpServer:
                 if self._wire_mode is None:
                     self._wire_mode = wire_mode
             except RpcError as exc:
-                # Parse-level errors do not have ids.
                 self._write(
                     {
                         "jsonrpc": "2.0",
@@ -222,7 +252,6 @@ class TabulaMcpServer:
             return
 
         if msg_id is None:
-            # Notification
             return
 
         try:
@@ -252,7 +281,10 @@ class TabulaMcpServer:
         if method == "initialize":
             return {
                 "protocolVersion": MCP_PROTOCOL_VERSION,
-                "capabilities": {"tools": {"listChanged": False}},
+                "capabilities": {
+                    "tools": {"listChanged": False},
+                    "resources": {"listChanged": False, "subscribe": False},
+                },
                 "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
             }
         if method == "ping":
@@ -261,6 +293,12 @@ class TabulaMcpServer:
             return {"tools": _tool_definitions()}
         if method == "tools/call":
             return self._dispatch_tool_call(params)
+        if method == "resources/list":
+            return self._resources_list()
+        if method == "resources/templates/list":
+            return {"resourceTemplates": _resource_templates()}
+        if method == "resources/read":
+            return self._resources_read(params)
 
         raise RpcError(-32601, f"method not found: {method}")
 
@@ -328,7 +366,80 @@ class TabulaMcpServer:
         if name == "canvas_status":
             return self.adapter.canvas_status(session_id=_require_str(args, "session_id"))
 
+        if name == "canvas_history":
+            session_id = _require_str(args, "session_id")
+            limit = args.get("limit", 20)
+            if not isinstance(limit, int):
+                raise ValueError("limit must be integer")
+            return self.adapter.canvas_history(session_id=session_id, limit=limit)
+
         raise ValueError(f"unknown tool: {name}")
+
+    def _resources_list(self) -> dict[str, Any]:
+        resources = [
+            {
+                "uri": "tabula://sessions",
+                "name": "Tabula Sessions",
+                "mimeType": "application/json",
+                "description": "List of known canvas sessions.",
+            }
+        ]
+        for session_id in self.adapter.list_sessions():
+            resources.append(
+                {
+                    "uri": f"tabula://session/{session_id}",
+                    "name": f"Session {session_id}",
+                    "mimeType": "application/json",
+                    "description": "Canvas session status.",
+                }
+            )
+            resources.append(
+                {
+                    "uri": f"tabula://session/{session_id}/history",
+                    "name": f"Session {session_id} History",
+                    "mimeType": "application/json",
+                    "description": "Recent session history.",
+                }
+            )
+        return {"resources": resources}
+
+    def _resources_read(self, params: dict[str, Any]) -> dict[str, Any]:
+        uri = params.get("uri")
+        if not isinstance(uri, str) or not uri.strip():
+            raise RpcError(-32602, "resources/read requires non-empty uri")
+
+        payload = self._resource_payload(uri)
+        return {
+            "contents": [
+                {
+                    "uri": uri,
+                    "mimeType": "application/json",
+                    "text": json.dumps(payload, sort_keys=True),
+                }
+            ]
+        }
+
+    def _resource_payload(self, uri: str) -> dict[str, Any]:
+        parsed = urlparse(uri)
+        if parsed.scheme != "tabula":
+            raise RpcError(-32602, f"unsupported uri scheme: {parsed.scheme}")
+
+        if parsed.netloc == "sessions":
+            return {"sessions": self.adapter.list_sessions()}
+
+        if parsed.netloc != "session":
+            raise RpcError(-32602, f"unsupported uri: {uri}")
+
+        parts = [part for part in parsed.path.split("/") if part]
+        if not parts:
+            raise RpcError(-32602, f"unsupported uri: {uri}")
+
+        session_id = parts[0]
+        if len(parts) == 1:
+            return self.adapter.canvas_status(session_id=session_id)
+        if len(parts) == 2 and parts[1] == "history":
+            return self.adapter.canvas_history(session_id=session_id)
+        raise RpcError(-32602, f"unsupported uri: {uri}")
 
 
 def _require_str(payload: dict[str, Any], key: str) -> str:
@@ -341,14 +452,12 @@ def _require_str(payload: dict[str, Any], key: str) -> str:
 def run_mcp_stdio_server(
     *,
     project_dir: Path,
-    events_path: Path,
     headless: bool = False,
     poll_interval_ms: int = 250,
     start_canvas: bool = True,
 ) -> int:
     adapter = CanvasAdapter(
         project_dir=project_dir,
-        events_path=events_path,
         headless=headless,
         start_canvas=start_canvas,
         poll_interval_ms=poll_interval_ms,

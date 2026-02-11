@@ -3,10 +3,8 @@ from __future__ import annotations
 import importlib
 import sys
 import types
-from pathlib import Path
 
 from tabula.events import ClearCanvasEvent, ImageArtifactEvent, PdfArtifactEvent, TextArtifactEvent
-from tabula.watcher import PollResult
 
 
 def _import_window_with_fake_pyside(monkeypatch, *, has_qtpdf: bool):
@@ -206,9 +204,9 @@ def _import_window_with_fake_pyside(monkeypatch, *, has_qtpdf: bool):
     }
 
 
-def test_window_apply_event_and_poll_paths_with_mocked_qtpdf(monkeypatch, tmp_path: Path) -> None:
+def test_window_apply_event_and_poll_paths_with_mocked_qtpdf(monkeypatch) -> None:
     window_module, fake = _import_window_with_fake_pyside(monkeypatch, has_qtpdf=True)
-    window = window_module.CanvasWindow(tmp_path / "events.jsonl", poll_interval_ms=123)
+    window = window_module.CanvasWindow(poll_interval_ms=123)
 
     window.apply_event(
         TextArtifactEvent(
@@ -272,28 +270,23 @@ def test_window_apply_event_and_poll_paths_with_mocked_qtpdf(monkeypatch, tmp_pa
     )
     assert "failed to load pdf bad.pdf" in window.status_label.text()
 
-    def fake_poll() -> PollResult:
-        return PollResult(
-            events=[
-                ClearCanvasEvent(
-                    event_id="e6",
-                    ts="2026-02-11T12:00:05Z",
-                    kind="clear_canvas",
-                    reason="done",
-                )
-            ],
-            errors=["line 9: bad payload"],
+    window._incoming.put(
+        ClearCanvasEvent(
+            event_id="e6",
+            ts="2026-02-11T12:00:05Z",
+            kind="clear_canvas",
+            reason="done",
         )
-
-    window._watcher = types.SimpleNamespace(poll=fake_poll)
+    )
+    window._errors.put("line 9: bad payload")
     window.poll_once()
     assert window.stack.current_widget is window.blank_label
     assert "line 9: bad payload" in window.status_label.text()
 
 
-def test_window_pdf_unavailable_branch_with_mocked_imports(monkeypatch, tmp_path: Path) -> None:
+def test_window_pdf_unavailable_branch_with_mocked_imports(monkeypatch) -> None:
     window_module, _ = _import_window_with_fake_pyside(monkeypatch, has_qtpdf=False)
-    window = window_module.CanvasWindow(tmp_path / "events.jsonl", poll_interval_ms=50)
+    window = window_module.CanvasWindow(poll_interval_ms=50)
     window.apply_event(
         PdfArtifactEvent(
             event_id="e1",
@@ -308,17 +301,17 @@ def test_window_pdf_unavailable_branch_with_mocked_imports(monkeypatch, tmp_path
     assert "QtPdf unavailable" in window.status_label.text()
 
 
-def test_run_canvas_reuses_existing_qapplication_instance(monkeypatch, tmp_path: Path) -> None:
+def test_run_canvas_reuses_existing_qapplication_instance(monkeypatch) -> None:
     window_module, fake = _import_window_with_fake_pyside(monkeypatch, has_qtpdf=False)
     fake["QApplication"]._instance = None
 
-    rc1 = window_module.run_canvas(tmp_path / "events.jsonl", poll_interval_ms=10)
+    rc1 = window_module.run_canvas(poll_interval_ms=10)
     app = fake["QApplication"].instance()
     assert rc1 == 42
     assert app is not None
     assert app.exec_calls == 1
 
-    rc2 = window_module.run_canvas(tmp_path / "events.jsonl", poll_interval_ms=20)
+    rc2 = window_module.run_canvas(poll_interval_ms=20)
     assert rc2 == 42
     assert fake["QApplication"].instance() is app
     assert app.exec_calls == 2

@@ -14,11 +14,6 @@ import pytest
 from tabula.cli import main
 
 
-def _write_jsonl(path: Path, payloads: list[dict[str, object]]) -> None:
-    lines = [json.dumps(item) for item in payloads]
-    path.write_text("\n".join(lines), encoding="utf-8")
-
-
 def test_given_schema_mode_when_invoked_then_prints_contract(capsys) -> None:
     rc = main(["schema"])
     out = capsys.readouterr().out
@@ -29,25 +24,21 @@ def test_given_schema_mode_when_invoked_then_prints_contract(capsys) -> None:
     assert len(schema["oneOf"]) == 4
 
 
-def test_given_canvas_mode_when_invoked_then_calls_ui_runner(monkeypatch, tmp_path: Path) -> None:
-    events_path = tmp_path / "events.jsonl"
+def test_given_canvas_mode_when_invoked_then_calls_ui_runner(monkeypatch) -> None:
     seen: dict[str, object] = {}
 
-    def fake_run_canvas(events: Path, *, poll_interval_ms: int) -> int:
-        seen["events"] = events
+    def fake_run_canvas(*, poll_interval_ms: int) -> int:
         seen["poll_ms"] = poll_interval_ms
         return 7
 
     monkeypatch.setitem(sys.modules, "tabula.window", types.SimpleNamespace(run_canvas=fake_run_canvas))
 
-    rc = main(["canvas", "--events", str(events_path), "--poll-ms", "999"])
+    rc = main(["canvas", "--poll-ms", "999"])
     assert rc == 7
-    assert seen["events"] == events_path
     assert seen["poll_ms"] == 999
 
 
-def test_given_canvas_mode_without_window_dependency_then_shows_install_hint(monkeypatch, tmp_path: Path, capsys) -> None:
-    events_path = tmp_path / "events.jsonl"
+def test_given_canvas_mode_without_window_dependency_then_shows_install_hint(monkeypatch, capsys) -> None:
     original_import = builtins.__import__
 
     def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
@@ -58,99 +49,11 @@ def test_given_canvas_mode_without_window_dependency_then_shows_install_hint(mon
     monkeypatch.delitem(sys.modules, "tabula.window", raising=False)
     monkeypatch.setattr(builtins, "__import__", fake_import)
 
-    rc = main(["canvas", "--events", str(events_path)])
+    rc = main(["canvas"])
     err = capsys.readouterr().err
 
     assert rc == 2
     assert "PySide6 is required for 'tabula canvas'" in err
-
-
-def test_given_missing_event_file_when_checking_then_nonzero_exit(tmp_path: Path, capsys) -> None:
-    missing = tmp_path / "nope.jsonl"
-    rc = main(["check-events", "--events", str(missing)])
-    err = capsys.readouterr().err
-
-    assert rc == 1
-    assert "event file does not exist" in err
-
-
-def test_given_valid_event_file_when_checking_then_passes(tmp_path: Path, capsys) -> None:
-    events = tmp_path / "events.jsonl"
-    image = tmp_path / "x.png"
-    image.write_bytes(b"x")
-
-    _write_jsonl(
-        events,
-        [
-            {
-                "event_id": "e1",
-                "ts": "2026-02-11T12:00:00Z",
-                "kind": "text_artifact",
-                "title": "draft",
-                "text": "hello",
-            },
-            {
-                "event_id": "e2",
-                "ts": "2026-02-11T12:00:01Z",
-                "kind": "image_artifact",
-                "title": "img",
-                "path": str(image),
-            },
-            {
-                "event_id": "e3",
-                "ts": "2026-02-11T12:00:02Z",
-                "kind": "clear_canvas",
-            },
-        ],
-    )
-
-    rc = main(["check-events", "--events", str(events)])
-    out = capsys.readouterr().out
-
-    assert rc == 0
-    assert "event validation passed" in out
-
-
-def test_given_invalid_event_lines_when_checking_then_reports_all_errors(tmp_path: Path, capsys) -> None:
-    events = tmp_path / "events.jsonl"
-    events.write_text(
-        "\n".join(
-            [
-                '{"event_id":"e1","ts":"bad","kind":"text_artifact","title":"x","text":"y"}',
-                '{"event_id":"e2","ts":"2026-02-11T12:00:00Z","kind":"clear_canvas","reason":42}',
-                "{broken",
-            ]
-        ),
-        encoding="utf-8",
-    )
-
-    rc = main(["check-events", "--events", str(events)])
-    err = capsys.readouterr().err
-
-    assert rc == 1
-    assert "event validation failed:" in err
-    assert "line 1:" in err
-    assert "line 2:" in err
-    assert "line 3:" in err
-
-
-def test_given_blank_lines_in_event_file_when_checking_then_blank_lines_are_ignored(tmp_path: Path, capsys) -> None:
-    events = tmp_path / "events.jsonl"
-    events.write_text(
-        "\n".join(
-            [
-                "",
-                '{"event_id":"e1","ts":"2026-02-11T12:00:00Z","kind":"clear_canvas"}',
-                "   ",
-            ]
-        ),
-        encoding="utf-8",
-    )
-
-    rc = main(["check-events", "--events", str(events)])
-    out = capsys.readouterr().out
-    assert rc == 0
-    assert "event validation passed" in out
 
 
 def test_given_bootstrap_mode_when_invoked_then_project_is_prepared(monkeypatch, tmp_path: Path, capsys) -> None:
@@ -201,7 +104,6 @@ def test_given_mcp_server_mode_when_invoked_then_bootstrap_and_server_runner_are
     @dataclass(frozen=True)
     class _Paths:
         project_dir: Path
-        events_path: Path
         agents_path: Path
         mcp_config_path: Path
 
@@ -216,16 +118,14 @@ def test_given_mcp_server_mode_when_invoked_then_bootstrap_and_server_runner_are
         return _Result(
             paths=_Paths(
                 project_dir=project_dir.resolve(),
-                events_path=(project_dir / ".tabula" / "canvas-events.jsonl").resolve(),
                 agents_path=(project_dir / "AGENTS.md").resolve(),
                 mcp_config_path=(project_dir / ".tabula" / "codex-mcp.toml").resolve(),
             ),
             git_initialized=False,
         )
 
-    def fake_run_server(*, project_dir: Path, events_path: Path, headless: bool, poll_interval_ms: int, start_canvas: bool) -> int:
+    def fake_run_server(*, project_dir: Path, headless: bool, poll_interval_ms: int, start_canvas: bool) -> int:
         calls["project_dir"] = project_dir
-        calls["events_path"] = events_path
         calls["headless"] = headless
         calls["poll"] = poll_interval_ms
         calls["start_canvas"] = start_canvas
@@ -237,7 +137,6 @@ def test_given_mcp_server_mode_when_invoked_then_bootstrap_and_server_runner_are
     rc = main(["mcp-server", "--project-dir", str(tmp_path), "--headless", "--no-canvas", "--poll-ms", "777"])
     assert rc == 11
     assert calls["project_dir"] == tmp_path.resolve()
-    assert calls["events_path"] == (tmp_path / ".tabula" / "canvas-events.jsonl").resolve()
     assert calls["headless"] is True
     assert calls["poll"] == 777
     assert calls["start_canvas"] is False
@@ -252,63 +151,6 @@ def test_given_mcp_server_bootstrap_failure_when_invoked_then_nonzero(monkeypatc
     err = capsys.readouterr().err
     assert rc == 1
     assert "mcp bootstrap failed" in err
-
-
-def test_given_mcp_server_with_relative_events_when_invoked_then_path_is_resolved_from_project(
-    monkeypatch, tmp_path: Path
-) -> None:
-    @dataclass(frozen=True)
-    class _Paths:
-        project_dir: Path
-        events_path: Path
-        agents_path: Path
-        mcp_config_path: Path
-
-    @dataclass(frozen=True)
-    class _Result:
-        paths: _Paths
-        git_initialized: bool
-
-    calls: dict[str, object] = {}
-
-    def fake_bootstrap(project_dir: Path):
-        root = project_dir.resolve()
-        return _Result(
-            paths=_Paths(
-                project_dir=root,
-                events_path=(root / ".tabula" / "canvas-events.jsonl"),
-                agents_path=(root / "AGENTS.md"),
-                mcp_config_path=(root / ".tabula" / "codex-mcp.toml"),
-            ),
-            git_initialized=False,
-        )
-
-    def fake_run_server(*, project_dir: Path, events_path: Path, headless: bool, poll_interval_ms: int, start_canvas: bool) -> int:
-        calls["project_dir"] = project_dir
-        calls["events_path"] = events_path
-        calls["headless"] = headless
-        calls["poll"] = poll_interval_ms
-        calls["start_canvas"] = start_canvas
-        return 0
-
-    monkeypatch.setattr("tabula.cli.bootstrap_project", fake_bootstrap)
-    monkeypatch.setattr("tabula.cli.run_mcp_stdio_server", fake_run_server)
-
-    rc = main(
-        [
-            "mcp-server",
-            "--project-dir",
-            str(tmp_path),
-            "--events",
-            "relative/canvas-events.jsonl",
-        ]
-    )
-    assert rc == 0
-    assert calls["project_dir"] == tmp_path.resolve()
-    assert calls["events_path"] == (tmp_path.resolve() / "relative/canvas-events.jsonl").resolve()
-    assert calls["headless"] is False
-    assert calls["poll"] == 250
-    assert calls["start_canvas"] is True
 
 
 def test_given_no_args_when_invoked_then_help_and_exit_2(capsys) -> None:
