@@ -153,36 +153,64 @@ def test_given_bootstrap_mode_when_invoked_then_project_is_prepared(monkeypatch,
     assert "git initialized" in out
 
 
-def test_given_markdown_mvp_mode_when_invoked_then_cli_returns_workflow_status(monkeypatch, tmp_path: Path, capsys) -> None:
+def test_given_default_tabula_mode_when_invoked_then_cli_returns_workflow_status(monkeypatch, tmp_path: Path, capsys) -> None:
     @dataclass(frozen=True)
     class _WorkflowResult:
         returncode: int
         message: str
 
-    def fake_workflow(*, user_prompt: str, project_dir: Path, mode: str, commit_message: str, skip_revision: bool):
+    def fake_workflow(
+        *,
+        user_prompt: str,
+        project_dir: Path,
+        mode: str,
+        headless: bool,
+        start_canvas: bool,
+        poll_interval_ms: int,
+    ):
         assert user_prompt == "draft text"
         assert project_dir == tmp_path
         assert mode == "project"
-        assert commit_message == "msg"
-        assert skip_revision is True
+        assert headless is True
+        assert start_canvas is False
+        assert poll_interval_ms == 333
         return _WorkflowResult(returncode=0, message="ok")
 
-    monkeypatch.setattr("tabula.cli.run_markdown_mvp", fake_workflow)
+    monkeypatch.setattr("tabula.cli.run_tabula_session", fake_workflow)
     rc = main(
         [
-            "markdown-mvp",
             "--project-dir",
             str(tmp_path),
             "--mode",
             "project",
             "--prompt",
             "draft text",
-            "--commit-message",
-            "msg",
-            "--skip-revision",
+            "--headless",
+            "--no-canvas",
+            "--poll-ms",
+            "333",
         ]
     )
     out = capsys.readouterr().out
 
     assert rc == 0
     assert "ok" in out
+
+
+def test_given_positional_prompt_when_default_tabula_mode_then_prompt_is_forwarded(monkeypatch, tmp_path: Path, capsys) -> None:
+    @dataclass(frozen=True)
+    class _WorkflowResult:
+        returncode: int
+        message: str
+
+    seen: dict[str, str] = {}
+
+    def fake_workflow(**kwargs):
+        seen["prompt"] = kwargs["user_prompt"]
+        return _WorkflowResult(returncode=0, message="ok")
+
+    monkeypatch.setattr("tabula.cli.run_tabula_session", fake_workflow)
+    rc = main(["--project-dir", str(tmp_path), "hello", "world"])
+    assert rc == 0
+    assert seen["prompt"] == "hello world"
+    assert "ok" in capsys.readouterr().out

@@ -1,12 +1,12 @@
 # tabula
 
-Minimal Python prototype focused on a terminal Codex session + separate canvas window.
+Minimal Python prototype for terminal-first Codex sessions with an optional canvas window.
 
 - start in `prompt` mode
 - switch to `discussion` when a valid canvas artifact event arrives
 - return to `prompt` on `clear_canvas`
 
-Codex stays in your terminal session. The canvas window is separate.
+`tabula` is the main command. It keeps Codex in your terminal and can launch a separate canvas window when display is available.
 
 ## Event bridge
 
@@ -24,15 +24,29 @@ Supported kinds:
 ```bash
 python -m pip install -e .[test]
 python -m pip install -e .[gui]   # optional, for canvas window
-tabula canvas --events .tabula/canvas-events.jsonl
+tabula --prompt "your task for codex"
 ```
 
-## Bootstrap protocol for a project
+Default behavior:
+- bootstraps protocol files in the project
+- launches canvas if display is available (unless `--no-canvas`)
+- falls back to headless automatically when no display is found
+- hands off to interactive `codex` in your current terminal
+
+Useful options:
+- `--project-dir <path>`
+- `--mode project|global`
+- `--prompt "..."` or positional prompt text
+- `--headless`
+- `--no-canvas`
+- `--poll-ms 250`
+
+## Bootstrap protocol files
 
 Creates/updates:
 - `AGENTS.md` protocol block for Codex
 - `.tabula/prompt-injection.txt` for extra prompt injection
-- `.tabula/artifacts/draft.md` as markdown artifact target
+- `.tabula/artifacts/` artifact directory
 - `.tabula/canvas-events.jsonl` bridge file
 - `.gitignore` binary-artifact ignore patterns
 - runs `git init` if `.git/` does not exist
@@ -41,26 +55,14 @@ Creates/updates:
 tabula bootstrap --project-dir /path/to/project
 ```
 
-## Interactive markdown MVP flow (Codex + Pandoc + git)
+## Example: markdown/pdf as user task (not built-in)
 
-This runs in your terminal with interactive `codex` sessions and no REPL takeover.
-
-Workflow:
-1. Codex draft round writes markdown.
-2. Pandoc renders PDF.
-3. Codex revision round updates markdown once (unless `--skip-revision`).
-4. Pandoc renders PDF again.
-5. JSONL `pdf_artifact` events are appended for canvas display.
-6. Git commits markdown only (`.tabula/artifacts/draft.md`).
+Use a normal prompt to ask Codex to do markdown/pdf work:
 
 ```bash
-tabula markdown-mvp \
-  --project-dir /path/to/project \
-  --mode project \
-  --prompt "Create a short markdown note about X and revise once"
+tabula --project-dir /path/to/project \
+  --prompt "Create a short markdown note, render PDF, revise once, and emit canvas events."
 ```
-
-Use `--mode global` to run Codex with `--skip-git-repo-check`.
 
 ## Validate events only
 
@@ -74,9 +76,17 @@ tabula check-events --events .tabula/canvas-events.jsonl
 tabula schema
 ```
 
-## Real-tool integration tests (optional)
+## Other commands
 
 ```bash
-TABULA_REAL_TOOLS=1 PYTHONPATH=src python -m pytest tests/integration/test_real_optional_tools.py::test_real_pandoc_render_markdown_to_pdf
-TABULA_REAL_CODEX=1 PYTHONPATH=src python -m pytest tests/integration/test_real_optional_tools.py::test_real_codex_exec_writes_output_file
+tabula canvas --events .tabula/canvas-events.jsonl
+tabula bootstrap --project-dir .
+tabula check-events --events .tabula/canvas-events.jsonl
+tabula schema
+```
+
+## Tests
+
+```bash
+PYTHONPATH=src python -m pytest
 ```

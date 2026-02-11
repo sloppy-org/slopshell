@@ -25,7 +25,8 @@ This MVP uses code + tests as canonical spec.
 - `tests/bdd/test_cli_usage_modes.py::test_given_valid_event_file_when_checking_then_passes`
 - `tests/bdd/test_cli_usage_modes.py::test_given_invalid_event_lines_when_checking_then_reports_all_errors`
 - `tests/bdd/test_cli_usage_modes.py::test_given_bootstrap_mode_when_invoked_then_project_is_prepared`
-- `tests/bdd/test_cli_usage_modes.py::test_given_markdown_mvp_mode_when_invoked_then_cli_returns_workflow_status`
+- `tests/bdd/test_cli_usage_modes.py::test_given_default_tabula_mode_when_invoked_then_cli_returns_workflow_status`
+- `tests/bdd/test_cli_usage_modes.py::test_given_positional_prompt_when_default_tabula_mode_then_prompt_is_forwarded`
 
 2. Prompt/discussion mode transitions
 - `tests/bdd/test_mode_and_event_scenarios.py::test_given_prompt_mode_when_artifact_event_arrives_then_mode_switches_to_discussion`
@@ -46,19 +47,16 @@ This MVP uses code + tests as canonical spec.
 - `tests/gui/test_window_mode_switch.py::test_window_poll_once_uses_watcher_results`
 
 6. Project bootstrap protocol (`AGENTS.md`, git init, binary ignore)
-- `tests/bdd/test_protocol_bootstrap_and_commit.py::test_given_new_project_when_bootstrapped_then_git_agents_and_binary_ignores_are_created`
-- `tests/bdd/test_protocol_bootstrap_and_commit.py::test_given_existing_agents_when_bootstrapped_then_protocol_block_is_upserted_without_losing_custom_text`
+- `tests/bdd/test_protocol_bootstrap.py::test_given_new_project_when_bootstrapped_then_git_agents_and_binary_ignores_are_created`
+- `tests/bdd/test_protocol_bootstrap.py::test_given_existing_agents_when_bootstrapped_then_protocol_block_is_upserted_without_losing_custom_text`
 
-7. Markdown-only commit policy
-- `tests/bdd/test_protocol_bootstrap_and_commit.py::test_given_markdown_changes_when_committing_then_only_markdown_path_is_staged_and_committed`
-- `tests/bdd/test_protocol_bootstrap_and_commit.py::test_given_no_markdown_changes_when_committing_then_no_commit_is_created`
+7. Interactive codex session flow (`tabula` primary command)
+- `tests/bdd/test_tabula_session_workflow.py::test_given_project_mode_when_running_tabula_then_codex_invoked_once_without_global_flag`
+- `tests/bdd/test_tabula_session_workflow.py::test_given_global_mode_when_running_tabula_then_codex_command_has_skip_repo_check`
+- `tests/bdd/test_tabula_session_workflow.py::test_given_no_display_when_running_tabula_then_session_auto_headless_and_no_canvas_launch`
+- `tests/bdd/test_tabula_session_workflow.py::test_given_injection_text_when_running_tabula_then_prompt_contains_injection`
+- `tests/bdd/test_tabula_session_workflow.py::test_given_codex_failure_when_running_tabula_then_failure_is_returned`
+- `tests/bdd/test_tabula_session_workflow.py::test_build_codex_command_supports_project_and_global_modes`
 
-8. Codex `project/global` markdown MVP flow
-- `tests/bdd/test_markdown_mvp_workflow.py::test_given_project_mode_when_running_markdown_mvp_then_two_codex_rounds_render_pdf_and_markdown_commit`
-- `tests/bdd/test_markdown_mvp_workflow.py::test_given_global_mode_when_running_markdown_mvp_then_codex_is_invoked_with_skip_repo_check`
-- `tests/bdd/test_markdown_mvp_workflow.py::test_given_missing_pandoc_when_running_markdown_mvp_then_workflow_fails_before_commit`
-- `tests/bdd/test_markdown_mvp_workflow.py::test_build_codex_command_supports_project_and_global_modes`
-
-9. Optional real-tool integration
-- `tests/integration/test_real_optional_tools.py::test_real_pandoc_render_markdown_to_pdf`
-- `tests/integration/test_real_optional_tools.py::test_real_codex_exec_writes_output_file`
+8. Real integration with PTY-backed tabula process
+- `tests/integration/test_real_tabula_session.py::test_real_tabula_headless_with_fake_codex`

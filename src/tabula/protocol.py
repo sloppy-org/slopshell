@@ -3,14 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from .runner import RunResult, SubprocessRunner
+from .runner import SubprocessRunner
 
 TABULA_DIR = Path(".tabula")
 ARTIFACT_DIR = TABULA_DIR / "artifacts"
 EVENTS_PATH = TABULA_DIR / "canvas-events.jsonl"
 INJECTION_PATH = TABULA_DIR / "prompt-injection.txt"
-DEFAULT_MARKDOWN_PATH = ARTIFACT_DIR / "draft.md"
-DEFAULT_PDF_PATH = ARTIFACT_DIR / "draft.pdf"
 
 AGENTS_PROTOCOL_BEGIN = "<!-- TABULA_PROTOCOL:BEGIN -->"
 AGENTS_PROTOCOL_END = "<!-- TABULA_PROTOCOL:END -->"
@@ -27,8 +25,7 @@ GITIGNORE_BINARY_PATTERNS = [
 @dataclass(frozen=True)
 class ProjectPaths:
     project_dir: Path
-    markdown_path: Path
-    pdf_path: Path
+    artifacts_dir: Path
     events_path: Path
     injection_path: Path
     agents_path: Path
@@ -40,19 +37,18 @@ class BootstrapResult:
     git_initialized: bool
 
 
-def _protocol_block(markdown_rel: Path, pdf_rel: Path, events_rel: Path, injection_rel: Path) -> str:
+def _protocol_block(artifacts_rel: Path, events_rel: Path, injection_rel: Path) -> str:
     lines = [
         AGENTS_PROTOCOL_BEGIN,
         "## Tabula Codex Protocol",
         "",
-        "Use this protocol for markdown->pdf artifact flow in this project.",
+        "Use this protocol for Tabula interactive sessions in this project.",
         "",
         f"1. Read extra instructions from `{injection_rel.as_posix()}` and apply them.",
-        f"2. Write markdown artifact only to `{markdown_rel.as_posix()}` unless user explicitly overrides.",
-        f"3. Render/update PDF at `{pdf_rel.as_posix()}` when asked.",
-        f"4. Emit canvas artifact events as JSONL lines in `{events_rel.as_posix()}`.",
-        "5. Never stage or commit binary artifacts from `.tabula/artifacts/*`.",
-        "6. Commits in this flow must include markdown files only.",
+        f"2. Keep generated artifacts under `{artifacts_rel.as_posix()}` unless user explicitly overrides.",
+        f"3. Emit canvas artifact events as strict JSONL lines in `{events_rel.as_posix()}`.",
+        "4. Keep interaction terminal-first; do not replace the terminal with a custom REPL.",
+        "5. Do not commit binary artifacts from `.tabula/artifacts/*` unless explicitly requested.",
         "",
         AGENTS_PROTOCOL_END,
         "",
@@ -103,8 +99,7 @@ def _ensure_git_repo(project_dir: Path, runner: SubprocessRunner) -> bool:
 def bootstrap_project(
     project_dir: Path,
     *,
-    markdown_rel: Path = DEFAULT_MARKDOWN_PATH,
-    pdf_rel: Path = DEFAULT_PDF_PATH,
+    artifacts_rel: Path = ARTIFACT_DIR,
     events_rel: Path = EVENTS_PATH,
     injection_rel: Path = INJECTION_PATH,
     runner: SubprocessRunner | None = None,
@@ -113,29 +108,26 @@ def bootstrap_project(
     project_dir = project_dir.resolve()
     project_dir.mkdir(parents=True, exist_ok=True)
 
-    markdown_path = (project_dir / markdown_rel).resolve()
-    pdf_path = (project_dir / pdf_rel).resolve()
+    artifacts_dir = (project_dir / artifacts_rel).resolve()
     events_path = (project_dir / events_rel).resolve()
     injection_path = (project_dir / injection_rel).resolve()
     agents_path = (project_dir / "AGENTS.md").resolve()
 
-    markdown_path.parent.mkdir(parents=True, exist_ok=True)
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
     events_path.parent.mkdir(parents=True, exist_ok=True)
     injection_path.parent.mkdir(parents=True, exist_ok=True)
 
-    if not markdown_path.exists():
-        markdown_path.write_text("# Draft\n\n", encoding="utf-8")
     if not events_path.exists():
         events_path.touch()
     if not injection_path.exists():
         injection_path.write_text(
-            "Keep output concise. Follow project AGENTS.md protocol. Do not commit binary artifacts.\n",
+            "Apply these extra instructions in all Tabula Codex prompts for this project.\n",
             encoding="utf-8",
         )
 
     _ensure_gitignore(project_dir)
 
-    block = _protocol_block(markdown_rel, pdf_rel, events_rel, injection_rel)
+    block = _protocol_block(artifacts_rel, events_rel, injection_rel)
     if agents_path.exists():
         existing = agents_path.read_text(encoding="utf-8")
     else:
@@ -146,8 +138,7 @@ def bootstrap_project(
     return BootstrapResult(
         paths=ProjectPaths(
             project_dir=project_dir,
-            markdown_path=markdown_path,
-            pdf_path=pdf_path,
+            artifacts_dir=artifacts_dir,
             events_path=events_path,
             injection_path=injection_path,
             agents_path=agents_path,
@@ -160,29 +151,3 @@ def load_injection_text(injection_path: Path) -> str:
     if not injection_path.exists():
         return ""
     return injection_path.read_text(encoding="utf-8").strip()
-
-
-def ensure_git_identity(project_dir: Path, runner: SubprocessRunner) -> None:
-    name = runner.run(["git", "config", "user.name"], cwd=project_dir, capture=True)
-    email = runner.run(["git", "config", "user.email"], cwd=project_dir, capture=True)
-    if name.returncode != 0 or not name.stdout.strip():
-        runner.run(["git", "config", "user.name", "Tabula Bot"], cwd=project_dir, capture=True)
-    if email.returncode != 0 or not email.stdout.strip():
-        runner.run(["git", "config", "user.email", "tabula@example.local"], cwd=project_dir, capture=True)
-
-
-def commit_markdown_only(project_dir: Path, markdown_path: Path, message: str, runner: SubprocessRunner) -> RunResult:
-    rel_md = markdown_path.relative_to(project_dir).as_posix()
-    add = runner.run(["git", "add", "--", rel_md], cwd=project_dir, capture=True)
-    if add.returncode != 0:
-        return add
-
-    status = runner.run(["git", "status", "--porcelain", "--", rel_md], cwd=project_dir, capture=True)
-    if status.returncode != 0:
-        return status
-    if not status.stdout.strip():
-        return RunResult(returncode=0, stdout="no markdown changes to commit\n", stderr="")
-
-    ensure_git_identity(project_dir, runner)
-    commit = runner.run(["git", "commit", "-m", message, "--", rel_md], cwd=project_dir, capture=True)
-    return commit
