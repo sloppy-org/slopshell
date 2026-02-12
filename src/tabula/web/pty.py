@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import fcntl
+import logging
 import os
 import pty as pty_module
 import struct
@@ -10,6 +11,8 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 from aiohttp import web
+
+_log = logging.getLogger(__name__)
 
 
 class PtyTransport(ABC):
@@ -38,12 +41,23 @@ class LocalPtyTransport(PtyTransport):
     @classmethod
     async def open(cls, cwd: str) -> LocalPtyTransport:
         master_fd, slave_fd = pty_module.openpty()
-        process = await asyncio.create_subprocess_exec(
-            os.environ.get("SHELL", "/bin/bash"),
-            stdin=slave_fd, stdout=slave_fd, stderr=slave_fd,
-            process_group=0,
-            cwd=cwd,
-        )
+        shell = os.environ.get("SHELL", "/bin/bash")
+        try:
+            try:
+                process = await asyncio.create_subprocess_exec(
+                    shell, stdin=slave_fd, stdout=slave_fd, stderr=slave_fd,
+                    process_group=0, cwd=cwd,
+                )
+            except (PermissionError, OSError) as exc:
+                _log.warning("process_group=0 failed (%s), retrying without", exc)
+                process = await asyncio.create_subprocess_exec(
+                    shell, stdin=slave_fd, stdout=slave_fd, stderr=slave_fd,
+                    cwd=cwd,
+                )
+        except BaseException:
+            os.close(slave_fd)
+            os.close(master_fd)
+            raise
         os.close(slave_fd)
         os.set_blocking(master_fd, False)
         return cls(master_fd, process)
