@@ -3,23 +3,10 @@ from __future__ import annotations
 import asyncio
 import os
 from pathlib import Path
-from unittest.mock import patch
 
 from tabula.web.pty import LocalPtyTransport
 
-
-async def _read_until(fd: int, marker: bytes, timeout: float = 5.0) -> bytes:
-    output = b""
-    deadline = asyncio.get_event_loop().time() + timeout
-    while asyncio.get_event_loop().time() < deadline:
-        try:
-            chunk = os.read(fd, 4096)
-            output += chunk
-            if marker in output:
-                return output
-        except BlockingIOError:
-            await asyncio.sleep(0.05)
-    return output
+from .conftest import read_pty_until
 
 
 def test_pty_open_and_echo(tmp_path: Path) -> None:
@@ -27,7 +14,7 @@ def test_pty_open_and_echo(tmp_path: Path) -> None:
         transport = await LocalPtyTransport.open(str(tmp_path))
         try:
             transport.write(b"echo PTY_ECHO_TEST_XYZ\n")
-            output = await _read_until(transport._fd, b"PTY_ECHO_TEST_XYZ")
+            output = await read_pty_until(transport._fd, b"PTY_ECHO_TEST_XYZ")
             assert b"PTY_ECHO_TEST_XYZ" in output
         finally:
             transport.close()
@@ -40,7 +27,7 @@ def test_pty_cwd(tmp_path: Path) -> None:
         transport = await LocalPtyTransport.open(str(tmp_path))
         try:
             transport.write(b"pwd\n")
-            output = await _read_until(transport._fd, str(tmp_path).encode())
+            output = await read_pty_until(transport._fd, str(tmp_path).encode())
             assert str(tmp_path).encode() in output
         finally:
             transport.close()
@@ -60,48 +47,19 @@ def test_pty_nonexistent_cwd() -> None:
     asyncio.run(_run())
 
 
-def test_pty_process_group(tmp_path: Path) -> None:
-    """Verify process_group=0 puts the child in its own group.
-
-    On systems where process_group=0 falls back (containers, restricted
-    envs), the child inherits the parent's pgid and this assertion won't
-    hold -- the fallback path is tested separately in
-    test_pty_process_group_fallback.
-    """
+def test_pty_session_leader(tmp_path: Path) -> None:
+    """Verify os.forkpty() makes the child a session and process group leader."""
 
     async def _run() -> None:
         transport = await LocalPtyTransport.open(str(tmp_path))
         try:
-            pid = transport._process.pid
+            pid = transport._pid
             pgid = os.getpgid(pid)
+            sid = os.getsid(pid)
             assert pgid == pid
+            assert sid == pid
         finally:
             transport.close()
-
-    asyncio.run(_run())
-
-
-def test_pty_process_group_fallback(tmp_path: Path) -> None:
-    call_count = 0
-    original = asyncio.create_subprocess_exec
-
-    async def _mock_exec(*args, **kwargs):
-        nonlocal call_count
-        call_count += 1
-        if "process_group" in kwargs:
-            raise PermissionError("process_group not allowed")
-        return await original(*args, **kwargs)
-
-    async def _run() -> None:
-        with patch("tabula.web.pty.asyncio.create_subprocess_exec", side_effect=_mock_exec):
-            transport = await LocalPtyTransport.open(str(tmp_path))
-            try:
-                assert call_count == 2
-                transport.write(b"echo FALLBACK_OK\n")
-                output = await _read_until(transport._fd, b"FALLBACK_OK")
-                assert b"FALLBACK_OK" in output
-            finally:
-                transport.close()
 
     asyncio.run(_run())
 
@@ -112,7 +70,7 @@ def test_pty_resize(tmp_path: Path) -> None:
         try:
             transport.resize(132, 50)
             transport.write(b"stty size\n")
-            output = await _read_until(transport._fd, b"50 132")
+            output = await read_pty_until(transport._fd, b"50 132")
             assert b"50 132" in output
         finally:
             transport.close()
@@ -123,14 +81,16 @@ def test_pty_resize(tmp_path: Path) -> None:
 def test_pty_close_cleanup(tmp_path: Path) -> None:
     async def _run() -> None:
         transport = await LocalPtyTransport.open(str(tmp_path))
-        pid = transport._process.pid
+        pid = transport._pid
         fd = transport._fd
         transport.close()
 
         for _ in range(40):
             try:
-                os.kill(pid, 0)
-            except ProcessLookupError:
+                reaped, _ = os.waitpid(pid, os.WNOHANG)
+                if reaped == pid:
+                    break
+            except ChildProcessError:
                 break
             await asyncio.sleep(0.05)
         else:
@@ -159,8 +119,8 @@ def test_pty_concurrent_sessions(tmp_path: Path) -> None:
             t1.write(b"echo SESSION_ONE_MARKER\n")
             t2.write(b"echo SESSION_TWO_MARKER\n")
 
-            out1 = await _read_until(t1._fd, b"SESSION_ONE_MARKER")
-            out2 = await _read_until(t2._fd, b"SESSION_TWO_MARKER")
+            out1 = await read_pty_until(t1._fd, b"SESSION_ONE_MARKER")
+            out2 = await read_pty_until(t2._fd, b"SESSION_TWO_MARKER")
 
             assert b"SESSION_ONE_MARKER" in out1
             assert b"SESSION_TWO_MARKER" in out2

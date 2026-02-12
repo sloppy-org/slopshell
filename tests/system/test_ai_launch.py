@@ -13,7 +13,9 @@ from aiohttp.test_utils import TestClient, TestServer
 
 from tabula.serve import TabulaServeApp
 
-from .conftest import make_serve_client
+from tabula.web.pty import LocalPtyTransport
+
+from .conftest import make_serve_client, read_pty_until
 
 MOCK_AI_SCRIPT = textwrap.dedent("""\
     import json
@@ -201,6 +203,51 @@ def test_ai_launch_unreachable_mcp_exits(tmp_path: Path) -> None:
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=10.0)
         assert proc.returncode != 0
         assert b"MCP connection failed" in stderr or b"Connection refused" in stderr
+
+    asyncio.run(_run())
+
+
+def test_pty_launches_claude_with_mcp_config(tmp_path: Path) -> None:
+    """End-to-end: the exact command launchAI() sends works through a PTY."""
+    mock_claude = tmp_path / "claude"
+    mock_claude.write_text(textwrap.dedent(f"""\
+        #!/usr/bin/env {sys.executable}
+        import json, sys, urllib.request
+        for i, arg in enumerate(sys.argv):
+            if arg == "--mcp-config":
+                cfg = json.loads(sys.argv[i + 1])
+                url = cfg["mcpServers"]["tabula-canvas"]["url"]
+                break
+        else:
+            sys.exit(1)
+        body = json.dumps({{"jsonrpc": "2.0", "id": 1,
+                            "method": "initialize", "params": {{}}}}).encode()
+        req = urllib.request.Request(url, data=body,
+                                    headers={{"Content-Type": "application/json"}})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read())
+            assert data["result"]["serverInfo"]["name"] == "tabula-canvas"
+        print("PTY_LAUNCH_OK")
+    """), encoding="utf-8")
+    mock_claude.chmod(mock_claude.stat().st_mode | stat.S_IEXEC)
+
+    async def _run() -> None:
+        client = await make_serve_client(tmp_path)
+        async with client:
+            mcp_url = f"http://127.0.0.1:{client.port}/mcp"
+            cfg = json.dumps({"mcpServers": {"tabula-canvas": {"url": mcp_url}}})
+            cmd = f"export PATH={tmp_path}:$PATH; claude --mcp-config '{cfg}'\n"
+
+            transport = await LocalPtyTransport.open(str(tmp_path))
+            try:
+                await asyncio.sleep(0.3)
+                transport.write(cmd.encode())
+                output = await read_pty_until(
+                    transport._fd, b"PTY_LAUNCH_OK", timeout=10.0,
+                )
+                assert b"PTY_LAUNCH_OK" in output
+            finally:
+                transport.close()
 
     asyncio.run(_run())
 

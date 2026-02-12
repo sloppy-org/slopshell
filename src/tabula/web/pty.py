@@ -4,7 +4,7 @@ import asyncio
 import fcntl
 import logging
 import os
-import pty as pty_module
+import signal
 import struct
 import termios
 from abc import ABC, abstractmethod
@@ -32,35 +32,26 @@ class PtyTransport(ABC):
 
 
 class LocalPtyTransport(PtyTransport):
-    """PTY transport using a local subprocess."""
+    """PTY transport using a local subprocess with proper session control."""
 
-    def __init__(self, master_fd: int, process: asyncio.subprocess.Process) -> None:
+    def __init__(self, master_fd: int, pid: int) -> None:
         self._fd = master_fd
-        self._process = process
+        self._pid = pid
 
     @classmethod
     async def open(cls, cwd: str) -> LocalPtyTransport:
-        master_fd, slave_fd = pty_module.openpty()
-        shell = os.environ.get("SHELL", "/bin/bash")
-        try:
+        if not os.path.isdir(cwd):
+            raise FileNotFoundError(f"No such directory: {cwd}")
+        pid, master_fd = os.forkpty()
+        if pid == 0:
             try:
-                process = await asyncio.create_subprocess_exec(
-                    shell, stdin=slave_fd, stdout=slave_fd, stderr=slave_fd,
-                    process_group=0, cwd=cwd,
-                )
-            except (PermissionError, OSError) as exc:
-                _log.warning("process_group=0 failed (%s), retrying without", exc)
-                process = await asyncio.create_subprocess_exec(
-                    shell, stdin=slave_fd, stdout=slave_fd, stderr=slave_fd,
-                    cwd=cwd,
-                )
-        except BaseException:
-            os.close(slave_fd)
-            os.close(master_fd)
-            raise
-        os.close(slave_fd)
+                os.chdir(cwd)
+                shell = os.environ.get("SHELL", "/bin/bash")
+                os.execvp(shell, ["-" + os.path.basename(shell)])
+            except BaseException:
+                os._exit(1)
         os.set_blocking(master_fd, False)
-        return cls(master_fd, process)
+        return cls(master_fd, pid)
 
     def write(self, data: bytes) -> None:
         os.write(self._fd, data)
@@ -74,8 +65,20 @@ class LocalPtyTransport(PtyTransport):
         except OSError:
             pass
         try:
-            self._process.terminate()
+            os.kill(self._pid, signal.SIGTERM)
         except ProcessLookupError:
+            return
+        try:
+            reaped, _ = os.waitpid(self._pid, os.WNOHANG)
+            if reaped:
+                return
+        except ChildProcessError:
+            return
+        pid = self._pid
+        try:
+            loop = asyncio.get_running_loop()
+            loop.run_in_executor(None, os.waitpid, pid, 0)
+        except RuntimeError:
             pass
 
     async def reader(self, ws: web.WebSocketResponse) -> None:

@@ -262,7 +262,13 @@ async function launchAI() {
   }
 
   const mcpUrl = state.mcpUrl || `http://127.0.0.1:${state.tunnelPort}/mcp`;
-  const cmd = `tabula run --assistant ${assistant} --mcp-url ${mcpUrl}\n`;
+  let cmd;
+  if (assistant === 'claude') {
+    const cfg = JSON.stringify({mcpServers: {'tabula-canvas': {url: mcpUrl}}});
+    cmd = `claude --mcp-config '${cfg}'\n`;
+  } else {
+    cmd = `codex --no-alt-screen --yolo --search -c 'mcp_servers.tabula-canvas.url=${JSON.stringify(mcpUrl)}'\n`;
+  }
 
   if (state.terminalWs.readyState === WebSocket.OPEN) {
     state.terminalWs.send(cmd);
