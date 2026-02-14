@@ -17,6 +17,10 @@ let resizeCallback = null;
 let renderScheduled = false;
 let isComposing = false;
 let compositionCommitPending = false;
+let touchStartX = 0;
+let touchStartY = 0;
+let touchTracking = false;
+let touchMoved = false;
 const decoder = new TextDecoder();
 
 function keyEventToTerminalData(event) {
@@ -163,11 +167,52 @@ function onContainerScroll() {
 }
 
 function onContainerActivateInput() {
-  const selection = window.getSelection();
-  if (selection && !selection.isCollapsed) {
-    return;
+  if (container) {
+    try {
+      container.focus({ preventScroll: true });
+    } catch {
+      container.focus();
+    }
   }
   focusInputCapture();
+}
+
+function onTouchStart(event) {
+  if (!event.touches || event.touches.length !== 1) {
+    touchTracking = false;
+    touchMoved = false;
+    return;
+  }
+  const t = event.touches[0];
+  touchStartX = t.clientX;
+  touchStartY = t.clientY;
+  touchTracking = true;
+  touchMoved = false;
+}
+
+function onTouchMove(event) {
+  if (!touchTracking || !event.touches || event.touches.length !== 1) {
+    return;
+  }
+  const t = event.touches[0];
+  const dx = Math.abs(t.clientX - touchStartX);
+  const dy = Math.abs(t.clientY - touchStartY);
+  if (dx > 8 || dy > 8) {
+    touchMoved = true;
+  }
+}
+
+function onTouchEnd() {
+  if (touchTracking && !touchMoved) {
+    onContainerActivateInput();
+  }
+  touchTracking = false;
+  touchMoved = false;
+}
+
+function onTouchCancel() {
+  touchTracking = false;
+  touchMoved = false;
 }
 
 function onKeyDown(event) {
@@ -304,6 +349,10 @@ export function initTerminal(containerEl) {
   container.addEventListener("keydown", onKeyDown);
   container.addEventListener("paste", onPaste);
   container.addEventListener("click", onContainerActivateInput);
+  container.addEventListener("touchstart", onTouchStart, { passive: true });
+  container.addEventListener("touchmove", onTouchMove, { passive: true });
+  container.addEventListener("touchend", onTouchEnd, { passive: true });
+  container.addEventListener("touchcancel", onTouchCancel, { passive: true });
 
   inputCapture.addEventListener("beforeinput", onBeforeInput);
   inputCapture.addEventListener("input", onInput);
@@ -348,6 +397,10 @@ export function destroyTerminal() {
     container.removeEventListener("keydown", onKeyDown);
     container.removeEventListener("paste", onPaste);
     container.removeEventListener("click", onContainerActivateInput);
+    container.removeEventListener("touchstart", onTouchStart);
+    container.removeEventListener("touchmove", onTouchMove);
+    container.removeEventListener("touchend", onTouchEnd);
+    container.removeEventListener("touchcancel", onTouchCancel);
     container.innerHTML = "";
   }
   container = null;
@@ -361,6 +414,8 @@ export function destroyTerminal() {
   renderScheduled = false;
   isComposing = false;
   compositionCommitPending = false;
+  touchTracking = false;
+  touchMoved = false;
   window._tabulaTerminal = null;
 }
 
