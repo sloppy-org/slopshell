@@ -67,14 +67,14 @@ Bootstrap behavior:
 
 ## MCP Tools
 
-- `canvas_activate`
-- `canvas_render_text`
-- `canvas_render_image`
-- `canvas_render_pdf`
-- `canvas_clear`
+- `canvas_session_open`
+- `canvas_artifact_show`
+- `canvas_mark_set`
+- `canvas_mark_delete`
+- `canvas_marks_list`
+- `canvas_mark_focus`
+- `canvas_commit`
 - `canvas_status`
-- `canvas_selection`
-- `canvas_history`
 
 Canvas state is MCP-first and in-memory; no filesystem event log is required.
 

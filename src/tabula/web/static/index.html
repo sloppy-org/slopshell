@@ -54,6 +54,19 @@
           <div id="canvas-header">
             <span id="canvas-title">Canvas</span>
             <span id="canvas-mode" class="badge">prompt</span>
+            <div class="canvas-annot-controls">
+              <label for="canvas-mark-type" class="sr-only">Mark type</label>
+              <select id="canvas-mark-type">
+                <option value="highlight">Highlight</option>
+                <option value="underline">Underline</option>
+                <option value="strikeout">Strikeout</option>
+                <option value="squiggly">Squiggly</option>
+                <option value="comment_point">Point Comment</option>
+              </select>
+              <input id="canvas-mark-comment" type="text" placeholder="Comment (optional)">
+              <button id="btn-canvas-commit" type="button">Commit</button>
+              <button id="btn-canvas-clear-draft" type="button">Clear Draft</button>
+            </div>
           </div>
           <div id="canvas-content">
             <div id="canvas-empty">No artifact. AI will render content here.</div>

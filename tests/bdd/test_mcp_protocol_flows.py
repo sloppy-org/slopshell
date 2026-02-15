@@ -99,7 +99,7 @@ def test_given_resources_templates_when_called_then_templates_are_returned(tmp_p
     templates = response["result"]["resourceTemplates"]
     uris = [item["uriTemplate"] for item in templates]
     assert "tabula://session/{session_id}" in uris
-    assert "tabula://session/{session_id}/history" in uris
+    assert "tabula://session/{session_id}/marks" in uris
 
 
 def test_given_tool_specific_bad_args_when_called_then_is_error_result_payload(tmp_path: Path) -> None:
@@ -158,8 +158,8 @@ def test_given_all_tool_happy_paths_when_called_then_status_and_mode_progression
             "id": 8,
             "method": "tools/call",
             "params": {
-                "name": "canvas_render_image",
-                "arguments": {"session_id": "s1", "title": "img", "path": str(image)},
+                "name": "canvas_artifact_show",
+                "arguments": {"session_id": "s1", "kind": "image", "title": "img", "path": str(image)},
             },
         },
     )
@@ -170,8 +170,8 @@ def test_given_all_tool_happy_paths_when_called_then_status_and_mode_progression
             "id": 9,
             "method": "tools/call",
             "params": {
-                "name": "canvas_render_pdf",
-                "arguments": {"session_id": "s1", "title": "pdf", "path": str(pdf), "page": 0},
+                "name": "canvas_artifact_show",
+                "arguments": {"session_id": "s1", "kind": "pdf", "title": "pdf", "path": str(pdf), "page": 0},
             },
         },
     )
@@ -186,28 +186,39 @@ def test_given_all_tool_happy_paths_when_called_then_status_and_mode_progression
     )
     assert status["result"]["isError"] is False
     assert status["result"]["structuredContent"]["mode"] == "review"
+    active_artifact_id = status["result"]["structuredContent"]["active_artifact_id"]
 
-    history = _call(
+    mark = _call(
         transport,
         {
             "jsonrpc": "2.0",
             "id": 11,
             "method": "tools/call",
-            "params": {"name": "canvas_history", "arguments": {"session_id": "s1", "limit": 10}},
+            "params": {
+                "name": "canvas_mark_set",
+                "arguments": {
+                    "session_id": "s1",
+                    "artifact_id": active_artifact_id,
+                    "intent": "draft",
+                    "type": "highlight",
+                    "target_kind": "text_range",
+                    "target": {"line_start": 1, "line_end": 1, "quote": "x"},
+                },
+            },
         },
     )
-    assert history["result"]["structuredContent"]["count"] == 2
-    selection = _call(
+    assert mark["result"]["isError"] is False
+    marks = _call(
         transport,
         {
             "jsonrpc": "2.0",
             "id": 111,
             "method": "tools/call",
-            "params": {"name": "canvas_selection", "arguments": {"session_id": "s1"}},
+            "params": {"name": "canvas_marks_list", "arguments": {"session_id": "s1"}},
         },
     )
-    assert selection["result"]["isError"] is False
-    assert selection["result"]["structuredContent"]["selection"]["has_selection"] is False
+    assert marks["result"]["isError"] is False
+    assert marks["result"]["structuredContent"]["count"] == 1
 
     cleared = _call(
         transport,
@@ -215,10 +226,10 @@ def test_given_all_tool_happy_paths_when_called_then_status_and_mode_progression
             "jsonrpc": "2.0",
             "id": 12,
             "method": "tools/call",
-            "params": {"name": "canvas_clear", "arguments": {"session_id": "s1", "reason": "done"}},
+            "params": {"name": "canvas_artifact_show", "arguments": {"session_id": "s1", "kind": "clear", "reason": "done"}},
         },
     )
-    assert cleared["result"]["structuredContent"]["mode"] == "prompt"
+    assert cleared["result"]["structuredContent"]["artifact"]["kind"] == "clear_canvas"
 
 
 def test_resources_read_unknown_uri_returns_jsonrpc_error(tmp_path: Path) -> None:

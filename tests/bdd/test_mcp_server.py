@@ -38,14 +38,14 @@ def test_tools_list_exposes_canvas_tools(tmp_path) -> None:
 
     response = _call(transport, {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
     names = [item["name"] for item in response["result"]["tools"]]
-    assert "canvas_activate" in names
-    assert "canvas_render_text" in names
-    assert "canvas_render_image" in names
-    assert "canvas_render_pdf" in names
-    assert "canvas_clear" in names
+    assert "canvas_session_open" in names
+    assert "canvas_artifact_show" in names
+    assert "canvas_mark_set" in names
+    assert "canvas_mark_delete" in names
+    assert "canvas_marks_list" in names
+    assert "canvas_mark_focus" in names
+    assert "canvas_commit" in names
     assert "canvas_status" in names
-    assert "canvas_selection" in names
-    assert "canvas_history" in names
 
 
 def test_tools_call_render_text_updates_state_and_history(tmp_path) -> None:
@@ -58,9 +58,10 @@ def test_tools_call_render_text_updates_state_and_history(tmp_path) -> None:
             "id": 3,
             "method": "tools/call",
             "params": {
-                "name": "canvas_render_text",
+                "name": "canvas_artifact_show",
                 "arguments": {
                     "session_id": "s1",
+                    "kind": "text",
                     "title": "draft",
                     "markdown_or_text": "hello",
                 },
@@ -80,30 +81,40 @@ def test_tools_call_render_text_updates_state_and_history(tmp_path) -> None:
         },
     )
     assert status["result"]["structuredContent"]["mode"] == "review"
-    assert status["result"]["structuredContent"]["selection"]["has_selection"] is False
+    assert status["result"]["structuredContent"]["marks_total"] == 0
 
-    selection = _call(
+    mark = _call(
         transport,
         {
             "jsonrpc": "2.0",
             "id": 41,
             "method": "tools/call",
-            "params": {"name": "canvas_selection", "arguments": {"session_id": "s1"}},
+            "params": {
+                "name": "canvas_mark_set",
+                "arguments": {
+                    "session_id": "s1",
+                    "intent": "draft",
+                    "type": "highlight",
+                    "target_kind": "text_range",
+                    "target": {"line_start": 1, "line_end": 1, "quote": "hello"},
+                },
+            },
         },
     )
-    assert selection["result"]["structuredContent"]["selection"]["has_selection"] is False
+    assert mark["result"]["isError"] is False
+    mark_id = mark["result"]["structuredContent"]["mark"]["mark_id"]
 
-    history = _call(
+    marks = _call(
         transport,
         {
             "jsonrpc": "2.0",
             "id": 5,
             "method": "tools/call",
-            "params": {"name": "canvas_history", "arguments": {"session_id": "s1", "limit": 10}},
+            "params": {"name": "canvas_marks_list", "arguments": {"session_id": "s1"}},
         },
     )
-    assert history["result"]["structuredContent"]["count"] == 1
-    assert history["result"]["structuredContent"]["events"][0]["kind"] == "text_artifact"
+    assert marks["result"]["structuredContent"]["count"] == 1
+    assert marks["result"]["structuredContent"]["marks"][0]["mark_id"] == mark_id
 
 
 def test_resources_list_and_read_surface_session_state(tmp_path) -> None:
@@ -116,8 +127,8 @@ def test_resources_list_and_read_surface_session_state(tmp_path) -> None:
             "id": 6,
             "method": "tools/call",
             "params": {
-                "name": "canvas_render_text",
-                "arguments": {"session_id": "s1", "title": "t", "markdown_or_text": "x"},
+                "name": "canvas_artifact_show",
+                "arguments": {"session_id": "s1", "kind": "text", "title": "t", "markdown_or_text": "x"},
             },
         },
     )
@@ -126,6 +137,7 @@ def test_resources_list_and_read_surface_session_state(tmp_path) -> None:
     uris = [item["uri"] for item in resources["result"]["resources"]]
     assert "tabula://sessions" in uris
     assert "tabula://session/s1" in uris
+    assert "tabula://session/s1/marks" in uris
 
     status_read = _call(
         transport,
@@ -137,6 +149,17 @@ def test_resources_list_and_read_surface_session_state(tmp_path) -> None:
         },
     )
     assert "review" in status_read["result"]["contents"][0]["text"]
+
+    marks_read = _call(
+        transport,
+        {
+            "jsonrpc": "2.0",
+            "id": 81,
+            "method": "resources/read",
+            "params": {"uri": "tabula://session/s1/marks"},
+        },
+    )
+    assert "\"marks\"" in marks_read["result"]["contents"][0]["text"]
 
 
 def test_tools_call_unknown_tool_returns_error_payload(tmp_path) -> None:

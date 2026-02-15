@@ -9,7 +9,9 @@ description = "MCP canvas adapter with local window, HTTP daemon, and web interf
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [{ name = "Tabula" }]
-dependencies = []
+dependencies = [
+  "pypdf>=4.3",
+]
 
 [project.optional-dependencies]
 gui = [

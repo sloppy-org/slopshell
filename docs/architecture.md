@@ -133,17 +133,17 @@ via a pure reducer. History is append-only per session.
 
 | Tool | Description |
 |------|-------------|
-| `canvas_activate` | Initialize session, optionally launch window |
-| `canvas_render_text` | Display text/markdown artifact |
-| `canvas_render_image` | Display image from local path |
-| `canvas_render_pdf` | Display PDF with optional page |
-| `canvas_clear` | Clear canvas, return to prompt mode |
+| `canvas_session_open` | Initialize/open session state |
+| `canvas_artifact_show` | Display text/image/pdf artifact or clear canvas |
+| `canvas_mark_set` | Create/update ephemeral, draft, or persistent marks |
+| `canvas_mark_delete` | Delete an existing mark |
+| `canvas_marks_list` | List marks for a session/artifact |
+| `canvas_mark_focus` | Set/clear focused mark |
+| `canvas_commit` | Persist draft marks, write sidecar, write PDF annotations |
 | `canvas_status` | Session state, selection, process health |
-| `canvas_selection` | Current text selection details |
-| `canvas_history` | Recent event history (default 20) |
 
 MCP resources: `tabula://sessions`, `tabula://session/{id}`,
-`tabula://session/{id}/history`.
+`tabula://session/{id}/marks`.
 
 ### Web Server Components
 
@@ -195,7 +195,7 @@ connect AI assistants to a remote `tabula serve` instance.
   SessionRecord.selection updated
        │
        ▼
-  AI queries via canvas_selection / canvas_status
+  AI queries via canvas_marks_list / canvas_status
 ```
 
 ## Dependencies

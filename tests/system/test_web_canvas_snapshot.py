@@ -76,9 +76,10 @@ def test_canvas_snapshot_endpoint_reports_text_image_pdf_and_clear(tmp_path: Pat
                 text = await _call_tool(
                     port,
                     msg_id=1,
-                    name="canvas_render_text",
+                    name="canvas_artifact_show",
                     arguments={
                         "session_id": LOCAL_SESSION_ID,
+                        "kind": "text",
                         "title": "Text Snapshot",
                         "markdown_or_text": "hello snapshot text",
                     },
@@ -92,9 +93,10 @@ def test_canvas_snapshot_endpoint_reports_text_image_pdf_and_clear(tmp_path: Pat
                 img = await _call_tool(
                     port,
                     msg_id=2,
-                    name="canvas_render_image",
+                    name="canvas_artifact_show",
                     arguments={
                         "session_id": LOCAL_SESSION_ID,
+                        "kind": "image",
                         "title": "Image Snapshot",
                         "path": str(image_path),
                     },
@@ -108,9 +110,10 @@ def test_canvas_snapshot_endpoint_reports_text_image_pdf_and_clear(tmp_path: Pat
                 pdf = await _call_tool(
                     port,
                     msg_id=3,
-                    name="canvas_render_pdf",
+                    name="canvas_artifact_show",
                     arguments={
                         "session_id": LOCAL_SESSION_ID,
+                        "kind": "pdf",
                         "title": "PDF Snapshot",
                         "path": str(pdf_path),
                         "page": 0,
@@ -125,13 +128,13 @@ def test_canvas_snapshot_endpoint_reports_text_image_pdf_and_clear(tmp_path: Pat
                 cleared = await _call_tool(
                     port,
                     msg_id=4,
-                    name="canvas_clear",
-                    arguments={"session_id": LOCAL_SESSION_ID, "reason": "done"},
+                    name="canvas_artifact_show",
+                    arguments={"session_id": LOCAL_SESSION_ID, "kind": "clear", "reason": "done"},
                 )
-                assert cleared["cleared"] is True
+                assert cleared["kind"] == "clear_canvas"
                 resp = await client.get(f"/api/canvas/{LOCAL_SESSION_ID}/snapshot")
                 snap = await resp.json()
                 assert snap["status"]["mode"] == "prompt"
-                assert snap["event"]["kind"] == "clear_canvas"
+                assert snap["event"] is None
 
     asyncio.run(_run())

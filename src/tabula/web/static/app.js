@@ -1,5 +1,5 @@
 import { initTerminal, destroyTerminal, writeToTerminal } from './terminal.js';
-import { renderCanvas, clearCanvas } from './canvas.js';
+import { renderCanvas, clearCanvas, initCanvasControls } from './canvas.js';
 import { loadHosts, initHostsView } from './hosts.js';
 import { initAuth } from './auth.js';
 import { initMcpLog, logEvent } from './mcp-log.js';
@@ -591,6 +591,7 @@ async function init() {
   initHostsView();
   initDivider();
   initMcpLog();
+  initCanvasControls();
 
   document.getElementById('host-select').addEventListener('change', (e) => {
     document.getElementById('btn-connect').disabled = !e.target.value;

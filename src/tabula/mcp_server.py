@@ -9,8 +9,7 @@ from urllib.parse import urlparse
 from .canvas_adapter import CanvasAdapter
 
 SERVER_NAME = "tabula-canvas"
-SERVER_VERSION = "0.1.0"
-# Codex CLI 0.98 currently negotiates MCP 2024-11-05.
+SERVER_VERSION = "0.2.0"
 SUPPORTED_PROTOCOL_VERSIONS = frozenset({"2024-11-05", "2025-03-26"})
 LATEST_PROTOCOL_VERSION = "2025-03-26"
 
@@ -91,8 +90,8 @@ def write_message(stream: BinaryIO, payload: dict[str, Any], *, framed: bool = T
 def _tool_definitions() -> list[dict[str, Any]]:
     return [
         {
-            "name": "canvas_activate",
-            "description": "Activate canvas session and optionally launch UI window.",
+            "name": "canvas_session_open",
+            "description": "Open canvas session and initialize runtime status.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -104,56 +103,96 @@ def _tool_definitions() -> list[dict[str, Any]]:
             },
         },
         {
-            "name": "canvas_render_text",
-            "description": "Render text/markdown artifact to canvas and switch mode to review.",
+            "name": "canvas_artifact_show",
+            "description": "Show one artifact kind in canvas: text, image, pdf, or clear.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "session_id": {"type": "string", "minLength": 1},
+                    "kind": {"type": "string", "enum": ["text", "image", "pdf", "clear"]},
                     "title": {"type": "string", "minLength": 1},
                     "markdown_or_text": {"type": "string"},
-                },
-                "required": ["session_id", "title", "markdown_or_text"],
-                "additionalProperties": False,
-            },
-        },
-        {
-            "name": "canvas_render_image",
-            "description": "Render image artifact from local path.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "session_id": {"type": "string", "minLength": 1},
-                    "title": {"type": "string", "minLength": 1},
-                    "path": {"type": "string", "minLength": 1},
-                },
-                "required": ["session_id", "title", "path"],
-                "additionalProperties": False,
-            },
-        },
-        {
-            "name": "canvas_render_pdf",
-            "description": "Render PDF artifact from local path and optional page index.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "session_id": {"type": "string", "minLength": 1},
-                    "title": {"type": "string", "minLength": 1},
                     "path": {"type": "string", "minLength": 1},
                     "page": {"type": "integer", "minimum": 0},
+                    "reason": {"type": "string"},
                 },
-                "required": ["session_id", "title", "path"],
+                "required": ["session_id", "kind"],
                 "additionalProperties": False,
             },
         },
         {
-            "name": "canvas_clear",
-            "description": "Clear current canvas artifact and switch mode back to prompt.",
+            "name": "canvas_mark_set",
+            "description": "Create or update a mark (selection/annotation) on the active artifact.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "session_id": {"type": "string", "minLength": 1},
-                    "reason": {"type": "string"},
+                    "mark_id": {"type": "string", "minLength": 1},
+                    "artifact_id": {"type": "string", "minLength": 1},
+                    "intent": {"type": "string", "enum": ["ephemeral", "draft", "persistent"]},
+                    "type": {
+                        "type": "string",
+                        "enum": ["highlight", "underline", "strikeout", "squiggly", "comment_point"],
+                    },
+                    "target_kind": {"type": "string", "enum": ["text_range", "pdf_quads", "pdf_point"]},
+                    "target": {"type": "object"},
+                    "comment": {"type": "string"},
+                    "author": {"type": "string"},
+                },
+                "required": ["session_id", "intent", "type", "target_kind", "target"],
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "canvas_mark_delete",
+            "description": "Delete a mark by id.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "minLength": 1},
+                    "mark_id": {"type": "string", "minLength": 1},
+                },
+                "required": ["session_id", "mark_id"],
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "canvas_marks_list",
+            "description": "List marks for a session, optionally filtered by artifact/intent.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "minLength": 1},
+                    "artifact_id": {"type": "string", "minLength": 1},
+                    "intent": {"type": "string", "enum": ["ephemeral", "draft", "persistent"]},
+                    "limit": {"type": "integer", "minimum": 1},
+                },
+                "required": ["session_id"],
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "canvas_mark_focus",
+            "description": "Set or clear currently focused mark.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "minLength": 1},
+                    "mark_id": {"type": "string", "minLength": 1},
+                },
+                "required": ["session_id"],
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "canvas_commit",
+            "description": "Commit draft marks to persistent annotations and write sidecar/PDF annotations.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string", "minLength": 1},
+                    "artifact_id": {"type": "string", "minLength": 1},
+                    "include_draft": {"type": "boolean"},
                 },
                 "required": ["session_id"],
                 "additionalProperties": False,
@@ -161,33 +200,10 @@ def _tool_definitions() -> list[dict[str, Any]]:
         },
         {
             "name": "canvas_status",
-            "description": "Get current mode/status for a canvas session.",
+            "description": "Get current session status and active artifact metadata.",
             "inputSchema": {
                 "type": "object",
                 "properties": {"session_id": {"type": "string", "minLength": 1}},
-                "required": ["session_id"],
-                "additionalProperties": False,
-            },
-        },
-        {
-            "name": "canvas_selection",
-            "description": "Get selected text info (line numbers + text) for current text artifact.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {"session_id": {"type": "string", "minLength": 1}},
-                "required": ["session_id"],
-                "additionalProperties": False,
-            },
-        },
-        {
-            "name": "canvas_history",
-            "description": "Get recent in-memory event history for a canvas session.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "session_id": {"type": "string", "minLength": 1},
-                    "limit": {"type": "integer", "minimum": 1},
-                },
                 "required": ["session_id"],
                 "additionalProperties": False,
             },
@@ -204,10 +220,16 @@ def _resource_templates() -> list[dict[str, Any]]:
             "description": "Current status for a canvas session.",
         },
         {
+            "uriTemplate": "tabula://session/{session_id}/marks",
+            "name": "Canvas Session Marks",
+            "mimeType": "application/json",
+            "description": "Current marks for a canvas session.",
+        },
+        {
             "uriTemplate": "tabula://session/{session_id}/history",
             "name": "Canvas Session History",
             "mimeType": "application/json",
-            "description": "Recent in-memory history for a canvas session.",
+            "description": "Recent event history for a canvas session.",
         },
     ]
 
@@ -293,12 +315,93 @@ class TabulaMcpServer:
             }
 
     def _call_tool(self, name: str, args: dict[str, Any]) -> dict[str, Any]:
-        if name == "canvas_activate":
-            session_id = _require_str(args, "session_id")
+        # Canonical API
+        if name == "canvas_session_open":
             mode_hint = args.get("mode_hint")
             if mode_hint is not None and not isinstance(mode_hint, str):
                 raise ValueError("mode_hint must be string")
-            return self.adapter.canvas_activate(session_id=session_id, mode_hint=mode_hint)
+            return self.adapter.canvas_session_open(
+                session_id=_require_str(args, "session_id"),
+                mode_hint=mode_hint,
+            )
+
+        if name == "canvas_artifact_show":
+            page_obj = args.get("page", 0)
+            if not isinstance(page_obj, int):
+                raise ValueError("page must be integer")
+            kind = _require_str(args, "kind")
+            title = _optional_str(args, "title")
+            markdown_or_text = _optional_str(args, "markdown_or_text")
+            path = _optional_str(args, "path")
+            reason = _optional_str(args, "reason")
+            return self.adapter.canvas_artifact_show(
+                session_id=_require_str(args, "session_id"),
+                kind=kind,
+                title=title,
+                markdown_or_text=markdown_or_text,
+                path=path,
+                page=page_obj,
+                reason=reason,
+            )
+
+        if name == "canvas_mark_set":
+            return self.adapter.canvas_mark_set(
+                session_id=_require_str(args, "session_id"),
+                mark_id=_optional_str(args, "mark_id"),
+                artifact_id=_optional_str(args, "artifact_id"),
+                intent=args.get("intent"),
+                mark_type=args.get("type"),
+                target_kind=args.get("target_kind"),
+                target=args.get("target"),
+                comment=_optional_str(args, "comment"),
+                author=_optional_str(args, "author"),
+            )
+
+        if name == "canvas_mark_delete":
+            return self.adapter.canvas_mark_delete(
+                session_id=_require_str(args, "session_id"),
+                mark_id=_require_str(args, "mark_id"),
+            )
+
+        if name == "canvas_marks_list":
+            limit = args.get("limit", 200)
+            if not isinstance(limit, int):
+                raise ValueError("limit must be integer")
+            return self.adapter.canvas_marks_list(
+                session_id=_require_str(args, "session_id"),
+                artifact_id=_optional_str(args, "artifact_id"),
+                intent=_optional_str(args, "intent"),
+                limit=limit,
+            )
+
+        if name == "canvas_mark_focus":
+            return self.adapter.canvas_mark_focus(
+                session_id=_require_str(args, "session_id"),
+                mark_id=_optional_str(args, "mark_id"),
+            )
+
+        if name == "canvas_commit":
+            include_draft = args.get("include_draft", True)
+            if not isinstance(include_draft, bool):
+                raise ValueError("include_draft must be boolean")
+            return self.adapter.canvas_commit(
+                session_id=_require_str(args, "session_id"),
+                artifact_id=_optional_str(args, "artifact_id"),
+                include_draft=include_draft,
+            )
+
+        if name == "canvas_status":
+            return self.adapter.canvas_status(session_id=_require_str(args, "session_id"))
+
+        # Compatibility aliases (not listed in tools/list).
+        if name == "canvas_activate":
+            mode_hint = args.get("mode_hint")
+            if mode_hint is not None and not isinstance(mode_hint, str):
+                raise ValueError("mode_hint must be string")
+            return self.adapter.canvas_activate(
+                session_id=_require_str(args, "session_id"),
+                mode_hint=mode_hint,
+            )
 
         if name == "canvas_render_text":
             return self.adapter.canvas_render_text(
@@ -331,18 +434,15 @@ class TabulaMcpServer:
                 raise ValueError("reason must be string")
             return self.adapter.canvas_clear(session_id=_require_str(args, "session_id"), reason=reason)
 
-        if name == "canvas_status":
-            return self.adapter.canvas_status(session_id=_require_str(args, "session_id"))
-
-        if name == "canvas_selection":
-            return self.adapter.canvas_selection(session_id=_require_str(args, "session_id"))
-
         if name == "canvas_history":
             session_id = _require_str(args, "session_id")
             limit = args.get("limit", 20)
             if not isinstance(limit, int):
                 raise ValueError("limit must be integer")
             return self.adapter.canvas_history(session_id=session_id, limit=limit)
+
+        if name == "canvas_selection":
+            return self.adapter.canvas_selection(session_id=_require_str(args, "session_id"))
 
         raise ValueError(f"unknown tool: {name}")
 
@@ -366,10 +466,18 @@ class TabulaMcpServer:
             )
             resources.append(
                 {
+                    "uri": f"tabula://session/{session_id}/marks",
+                    "name": f"Session {session_id} Marks",
+                    "mimeType": "application/json",
+                    "description": "Current marks for the session.",
+                }
+            )
+            resources.append(
+                {
                     "uri": f"tabula://session/{session_id}/history",
                     "name": f"Session {session_id} History",
                     "mimeType": "application/json",
-                    "description": "Recent session history.",
+                    "description": "Recent event history for the session.",
                 }
             )
         return {"resources": resources}
@@ -410,6 +518,8 @@ class TabulaMcpServer:
             return self.adapter.canvas_status(session_id=session_id)
         if len(parts) == 2 and parts[1] == "history":
             return self.adapter.canvas_history(session_id=session_id)
+        if len(parts) == 2 and parts[1] == "marks":
+            return self.adapter.canvas_marks_list(session_id=session_id)
         raise RpcError(-32602, f"unsupported uri: {uri}")
 
 
@@ -462,6 +572,17 @@ def _require_str(payload: dict[str, Any], key: str) -> str:
     value = payload.get(key)
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{key} must be non-empty string")
+    return value
+
+
+def _optional_str(payload: dict[str, Any], key: str) -> str | None:
+    if key not in payload:
+        return None
+    value = payload.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError(f"{key} must be string")
     return value
 
 

@@ -17,12 +17,10 @@ def test_given_review_status_and_text_history_when_snapshot_requested_then_lates
             assert tunnel_port == 9999
             assert arguments["session_id"] == "s1"
             if name == "canvas_status":
-                return {"mode": "review", "active": True}
-            if name == "canvas_history":
                 return {
-                    "events": [
-                        {"event_id": "e1", "kind": "text_artifact", "title": "T", "text": "hello"}
-                    ]
+                    "mode": "review",
+                    "active": True,
+                    "active_artifact": {"event_id": "e1", "kind": "text_artifact", "title": "T", "text": "hello"},
                 }
             raise AssertionError(f"unexpected tool call: {name}")
 
@@ -43,12 +41,10 @@ def test_given_review_status_and_image_history_when_snapshot_requested_then_late
 
         async def _fake_call(*, tunnel_port: int, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
             if name == "canvas_status":
-                return {"mode": "review", "active": True}
-            if name == "canvas_history":
                 return {
-                    "events": [
-                        {"event_id": "e2", "kind": "image_artifact", "title": "I", "path": "img.png"}
-                    ]
+                    "mode": "review",
+                    "active": True,
+                    "active_artifact": {"event_id": "e2", "kind": "image_artifact", "title": "I", "path": "img.png"},
                 }
             raise AssertionError(f"unexpected tool call: {name}")
 
@@ -69,18 +65,16 @@ def test_given_review_status_and_pdf_history_when_snapshot_requested_then_latest
 
         async def _fake_call(*, tunnel_port: int, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
             if name == "canvas_status":
-                return {"mode": "review", "active": True}
-            if name == "canvas_history":
                 return {
-                    "events": [
-                        {
-                            "event_id": "e3",
-                            "kind": "pdf_artifact",
-                            "title": "P",
-                            "path": "doc.pdf",
-                            "page": 0,
-                        }
-                    ]
+                    "mode": "review",
+                    "active": True,
+                    "active_artifact": {
+                        "event_id": "e3",
+                        "kind": "pdf_artifact",
+                        "title": "P",
+                        "path": "doc.pdf",
+                        "page": 0,
+                    },
                 }
             raise AssertionError(f"unexpected tool call: {name}")
 
@@ -101,9 +95,11 @@ def test_given_prompt_status_and_clear_history_when_snapshot_requested_then_clea
 
         async def _fake_call(*, tunnel_port: int, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
             if name == "canvas_status":
-                return {"mode": "prompt", "active": True}
-            if name == "canvas_history":
-                return {"events": [{"event_id": "e4", "kind": "clear_canvas", "reason": "done"}]}
+                return {
+                    "mode": "prompt",
+                    "active": True,
+                    "active_artifact": {"event_id": "e4", "kind": "clear_canvas", "reason": "done"},
+                }
             raise AssertionError(f"unexpected tool call: {name}")
 
         app._mcp_tools_call = _fake_call  # type: ignore[method-assign]
@@ -121,9 +117,7 @@ def test_given_prompt_status_and_empty_history_when_snapshot_requested_then_even
 
         async def _fake_call(*, tunnel_port: int, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
             if name == "canvas_status":
-                return {"mode": "prompt", "active": True}
-            if name == "canvas_history":
-                return {"events": []}
+                return {"mode": "prompt", "active": True, "active_artifact": None}
             raise AssertionError(f"unexpected tool call: {name}")
 
         app._mcp_tools_call = _fake_call  # type: ignore[method-assign]

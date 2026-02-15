@@ -396,19 +396,9 @@ class TabulaWebApp:
             name="canvas_status",
             arguments={"session_id": session_id},
         )
-        history = await self._mcp_tools_call(
-            tunnel_port=tunnel_port,
-            name="canvas_history",
-            arguments={"session_id": session_id, "limit": 1},
-        )
-
-        event: dict[str, Any] | None = None
-        events_obj = history.get("events")
-        if isinstance(events_obj, list) and events_obj:
-            candidate = events_obj[-1]
-            if isinstance(candidate, dict):
-                event = candidate
-
+        event = status.get("active_artifact")
+        if not isinstance(event, dict):
+            event = None
         return {"status": status, "event": event}
 
     async def handle_canvas_snapshot(self, request: web.Request) -> web.Response:
