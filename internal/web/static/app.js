@@ -56,6 +56,7 @@ function clearTerminalReconnectTimer() {
 }
 
 function scheduleTerminalReconnect() {
+  if (DESKTOP_CANVAS_ONLY) return;
   if (!state.connected || !state.sessionId) return;
   if (state.terminalReconnectTimer) return;
   const attempt = Math.max(0, Number(state.terminalReconnectAttempt) || 0);
@@ -187,6 +188,19 @@ function sendTerminalInput(text) {
 }
 
 function syncMobileTerminalUi() {
+  if (DESKTOP_CANVAS_ONLY) {
+    const keybar = document.getElementById('mobile-keybar');
+    const popRow = document.getElementById('terminal-pop-row');
+    const panel = document.getElementById('panel-terminal');
+    const workspace = document.getElementById('workspace');
+    const minBtn = document.getElementById('btn-terminal-minimize');
+    if (keybar) keybar.style.display = 'none';
+    if (popRow) popRow.style.display = 'none';
+    if (panel) panel.classList.remove('mobile-minimized');
+    if (workspace) workspace.classList.remove('terminal-minimized');
+    if (minBtn) minBtn.style.display = 'none';
+    return;
+  }
   const mobile = isMobileViewport();
   const terminalActive = Boolean(state.connected && state.terminalWs);
   if (!mobile || !terminalActive) {
@@ -285,6 +299,9 @@ async function restoreRemoteSessionOrHosts() {
 }
 
 async function tryRestoreRemoteSession() {
+  if (DESKTOP_CANVAS_ONLY) {
+    return false;
+  }
   const saved = loadSavedRemoteSession();
   if (!saved) {
     return false;
@@ -320,7 +337,9 @@ async function tryRestoreRemoteSession() {
     document.getElementById('btn-launch-ai').disabled = false;
     document.getElementById('host-select').disabled = true;
 
-    openTerminal();
+    if (!DESKTOP_CANVAS_ONLY) {
+      openTerminal();
+    }
     openCanvasWs();
     syncMobileTerminalUi();
     return true;
@@ -348,7 +367,9 @@ async function connectLocalSession() {
     document.getElementById('btn-launch-ai').disabled = false;
     setStatus(`local: ${data.local_session.project_dir}`, 'connected');
 
-    openTerminal();
+    if (!DESKTOP_CANVAS_ONLY) {
+      openTerminal();
+    }
     openCanvasWs();
     syncMobileTerminalUi();
   } catch (e) {
@@ -428,7 +449,9 @@ async function connect() {
     document.getElementById('host-select').disabled = true;
     saveRemoteSession();
 
-    openTerminal();
+    if (!DESKTOP_CANVAS_ONLY) {
+      openTerminal();
+    }
     syncMobileTerminalUi();
   } catch (e) {
     setStatus('error: ' + e.message, '');
@@ -481,6 +504,9 @@ async function disconnect() {
 }
 
 function openTerminal() {
+  if (DESKTOP_CANVAS_ONLY) {
+    return;
+  }
   if (state.terminalWs && (state.terminalWs.readyState === WebSocket.OPEN || state.terminalWs.readyState === WebSocket.CONNECTING)) {
     return;
   }
@@ -593,6 +619,7 @@ async function loadCanvasSnapshot() {
 }
 
 async function launchAI() {
+  if (DESKTOP_CANVAS_ONLY) return;
   if (!state.sessionId) return;
 
   const assistant = document.getElementById('assistant-select').value;
@@ -700,14 +727,23 @@ async function init() {
     syncMobileTerminalUi();
 
     if (DESKTOP_CANVAS_ONLY) {
-      const hostsBtn = document.getElementById('btn-hosts');
-      if (hostsBtn) hostsBtn.style.display = 'none';
-      const hostSel = document.getElementById('host-select');
-      if (hostSel) hostSel.style.display = 'none';
-      const connectBtn = document.getElementById('btn-connect');
-      if (connectBtn) connectBtn.style.display = 'none';
-      const disconnectBtn = document.getElementById('btn-disconnect');
-      if (disconnectBtn) disconnectBtn.style.display = 'none';
+      const hideIds = [
+        'host-select',
+        'btn-connect',
+        'btn-disconnect',
+        'assistant-select',
+        'btn-launch-ai',
+        'btn-mcp-log',
+        'btn-hosts',
+        'btn-terminal-minimize',
+        'mobile-keybar',
+        'terminal-pop-row',
+        'mcp-log-panel',
+      ];
+      hideIds.forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = 'none';
+      });
     }
 
     const resp = await fetch('/api/setup');

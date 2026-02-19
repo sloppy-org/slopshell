@@ -125,14 +125,29 @@ function isSelectionInside(root, selection) {
   return root.contains(range.commonAncestorContainer);
 }
 
-function getTextOffset(root, node, offset) {
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  let total = 0;
-  while (walker.nextNode()) {
-    if (walker.currentNode === node) return total + offset;
-    total += walker.currentNode.textContent.length;
+function getSelectionOffsets(root, range) {
+  const startProbe = range.cloneRange();
+  startProbe.selectNodeContents(root);
+  startProbe.setEnd(range.startContainer, range.startOffset);
+  const startOffset = startProbe.toString().length;
+
+  const endProbe = range.cloneRange();
+  endProbe.selectNodeContents(root);
+  endProbe.setEnd(range.endContainer, range.endOffset);
+  const endOffset = endProbe.toString().length;
+
+  return { startOffset, endOffset };
+}
+
+function lineFromOffset(lines, charOffset) {
+  let charCount = 0;
+  for (let i = 0; i < lines.length; i++) {
+    if (charCount + lines[i].length >= charOffset) {
+      return i + 1;
+    }
+    charCount += lines[i].length + 1;
   }
-  return total + offset;
+  return Math.max(1, lines.length);
 }
 
 function sendSelectionFeedback(payload) {
@@ -148,14 +163,35 @@ function setupTextSelection(eventId) {
   if (e.text._selectionHandler) {
     document.removeEventListener('selectionchange', e.text._selectionHandler);
   }
+  if (e.text._mouseUpSelectionHandler) {
+    e.text.removeEventListener('mouseup', e.text._mouseUpSelectionHandler);
+  }
+  if (e.text._keyUpSelectionHandler) {
+    e.text.removeEventListener('keyup', e.text._keyUpSelectionHandler);
+  }
 
-  const handler = () => {
+  const clearDraftSelection = () => {
+    if (draftMark && draftMark.event_id === eventId) {
+      draftMark = null;
+      clearOverlay();
+      const state = window._tabulaApp?.getState?.();
+      sendSelectionFeedback({
+        kind: 'mark_clear_draft',
+        session_id: state?.sessionId || '',
+        artifact_id: eventId,
+      });
+    }
+  };
+
+  const handleSelection = () => {
     const selection = window.getSelection();
     if (!selection || selection.isCollapsed || !isSelectionInside(e.text, selection)) {
+      clearDraftSelection();
       return;
     }
     const text = selection.toString();
     if (!text) {
+      clearDraftSelection();
       return;
     }
 
@@ -163,30 +199,13 @@ function setupTextSelection(eventId) {
     const fullText = e.text.textContent || '';
     const lines = fullText.split('\n');
 
-    let charCount = 0;
-    let lineStart = 1;
-    let lineEnd = 1;
-    const startOffset = getTextOffset(e.text, range.startContainer, range.startOffset);
-    const endOffset = getTextOffset(e.text, range.endContainer, range.endOffset);
-
-    for (let i = 0; i < lines.length; i++) {
-      if (charCount + lines[i].length >= startOffset) {
-        lineStart = i + 1;
-        break;
-      }
-      charCount += lines[i].length + 1;
-    }
-    charCount = 0;
-    for (let i = 0; i < lines.length; i++) {
-      if (charCount + lines[i].length >= endOffset) {
-        lineEnd = i + 1;
-        break;
-      }
-      charCount += lines[i].length + 1;
-    }
+    const { startOffset, endOffset } = getSelectionOffsets(e.text, range);
+    const lineStart = lineFromOffset(lines, startOffset);
+    const lineEnd = lineFromOffset(lines, endOffset);
 
     const markType = getSelectedMarkType();
     const rects = computeRectsFromRange(e.text, range);
+    const state = window._tabulaApp?.getState?.();
     draftMark = {
       event_id: eventId,
       type: markType,
@@ -202,6 +221,8 @@ function setupTextSelection(eventId) {
 
     sendSelectionFeedback({
       kind: 'text_selection',
+      session_id: state?.sessionId || '',
+      artifact_id: eventId,
       event_id: eventId,
       line_start: lineStart,
       line_end: lineEnd,
@@ -214,8 +235,22 @@ function setupTextSelection(eventId) {
     });
   };
 
+  const handler = () => {
+    if (e.text._selectionRaf) {
+      cancelAnimationFrame(e.text._selectionRaf);
+    }
+    e.text._selectionRaf = requestAnimationFrame(() => {
+      e.text._selectionRaf = null;
+      handleSelection();
+    });
+  };
+
   document.addEventListener('selectionchange', handler);
   e.text._selectionHandler = handler;
+  e.text._mouseUpSelectionHandler = handler;
+  e.text._keyUpSelectionHandler = handler;
+  e.text.addEventListener('mouseup', handler);
+  e.text.addEventListener('keyup', handler);
 
   if (e.text._scrollHandler) {
     e.text.removeEventListener('scroll', e.text._scrollHandler);
@@ -324,6 +359,18 @@ export function clearCanvas() {
   if (e.text._selectionHandler) {
     document.removeEventListener('selectionchange', e.text._selectionHandler);
     e.text._selectionHandler = null;
+  }
+  if (e.text._mouseUpSelectionHandler) {
+    e.text.removeEventListener('mouseup', e.text._mouseUpSelectionHandler);
+    e.text._mouseUpSelectionHandler = null;
+  }
+  if (e.text._keyUpSelectionHandler) {
+    e.text.removeEventListener('keyup', e.text._keyUpSelectionHandler);
+    e.text._keyUpSelectionHandler = null;
+  }
+  if (e.text._selectionRaf) {
+    cancelAnimationFrame(e.text._selectionRaf);
+    e.text._selectionRaf = null;
   }
   if (e.text._scrollHandler) {
     e.text.removeEventListener('scroll', e.text._scrollHandler);
