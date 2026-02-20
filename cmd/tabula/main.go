@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -102,8 +101,6 @@ func cmdMCPServer(args []string) int {
 	projectDir := fs.String("project-dir", ".", "project dir")
 	headless := fs.Bool("headless", false, "headless")
 	noCanvas := fs.Bool("no-canvas", false, "no canvas")
-	_ = fs.Bool("fresh-canvas", false, "compat flag")
-	_ = fs.Int("poll-ms", 250, "compat flag")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -191,7 +188,6 @@ func cmdPtyd(args []string) int {
 
 func cmdCanvas(args []string) int {
 	fs := flag.NewFlagSet("canvas", flag.ContinueOnError)
-	_ = fs.Int("poll-ms", 250, "compat flag")
 	host := fs.String("host", "127.0.0.1", "host")
 	port := fs.Int("port", 8420, "port")
 	dataDir := fs.String("data-dir", filepath.Join(os.Getenv("HOME"), ".tabula-web"), "data dir")
@@ -227,10 +223,7 @@ func cmdRun(args []string) int {
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 	projectDir := fs.String("project-dir", ".", "project dir")
 	assistant := fs.String("assistant", "codex", "assistant: codex|claude")
-	headless := fs.Bool("headless", false, "headless")
-	noCanvas := fs.Bool("no-canvas", false, "no canvas")
-	pollMS := fs.Int("poll-ms", 250, "poll ms")
-	mcpURL := fs.String("mcp-url", "", "external mcp url")
+	mcpURL := fs.String("mcp-url", "http://127.0.0.1:9420/mcp", "mcp url")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -243,48 +236,15 @@ func cmdRun(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-
-	if *mcpURL != "" {
-		return dispatchAssistant(*assistant, res.Paths.ProjectDir, *mcpURL, "", prompt)
-	}
-
-	argsMCP := []string{"mcp-server", "--project-dir", res.Paths.ProjectDir, "--poll-ms", strconv.Itoa(*pollMS), "--fresh-canvas"}
-	if *headless {
-		argsMCP = append(argsMCP, "--headless")
-	}
-	if *noCanvas {
-		argsMCP = append(argsMCP, "--no-canvas")
-	}
-	shellCmd := buildMcpShell(argsMCP)
-	return dispatchAssistant(*assistant, res.Paths.ProjectDir, "", shellCmd, prompt)
+	return dispatchAssistant(*assistant, res.Paths.ProjectDir, *mcpURL, prompt)
 }
 
-func buildMcpShell(args []string) string {
-	parts := []string{"tabula"}
-	parts = append(parts, args...)
-	cmd := strings.Join(parts, " ")
-	prefix := []string{}
-	for _, k := range []string{"DISPLAY", "WAYLAND_DISPLAY", "XAUTHORITY", "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS"} {
-		if v := os.Getenv(k); v != "" {
-			prefix = append(prefix, fmt.Sprintf("%s=%q", k, v))
-		}
-	}
-	if len(prefix) > 0 {
-		return strings.Join(prefix, " ") + " exec " + cmd
-	}
-	return "exec " + cmd
-}
-
-func dispatchAssistant(assistant, cwd, mcpURL, mcpShell, prompt string) int {
+func dispatchAssistant(assistant, cwd, mcpURL, prompt string) int {
 	var cmd *exec.Cmd
 	switch assistant {
 	case "codex":
 		args := []string{"--no-alt-screen", "--yolo", "--search", "-C", cwd}
-		if mcpURL != "" {
-			args = append(args, "-c", fmt.Sprintf("mcp_servers.tabula.url=%q", mcpURL))
-		} else {
-			args = append(args, "-c", `mcp_servers.tabula.command="bash"`, "-c", fmt.Sprintf("mcp_servers.tabula.args=[\"-lc\",%q]", mcpShell))
-		}
+		args = append(args, "-c", fmt.Sprintf("mcp_servers.tabula.url=%q", mcpURL))
 		if prompt != "" {
 			args = append(args, prompt)
 		}
@@ -292,12 +252,7 @@ func dispatchAssistant(assistant, cwd, mcpURL, mcpShell, prompt string) int {
 	case "claude":
 		cfg := map[string]interface{}{"mcpServers": map[string]interface{}{"tabula": map[string]interface{}{}}}
 		m := cfg["mcpServers"].(map[string]interface{})["tabula"].(map[string]interface{})
-		if mcpURL != "" {
-			m["url"] = mcpURL
-		} else {
-			m["command"] = "bash"
-			m["args"] = []string{"-lc", mcpShell}
-		}
+		m["url"] = mcpURL
 		b, _ := json.Marshal(cfg)
 		args := []string{"--dangerously-skip-permissions", "--mcp-config", string(b)}
 		if prompt != "" {

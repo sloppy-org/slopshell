@@ -33,7 +33,6 @@ printf '%s\n' "$BASE_JSON" | jq -S --arg mcp_url "$MCP_URL" '
   end
   | .mcpServers = (.mcpServers // {})
   | .mcpServers |= (if type == "object" then . else {} end)
-  | .mcpServers |= del(."tabula-broker")
   | .mcpServers.tabula = {"url": $mcp_url}
 ' >"$TMP_OUT"
 

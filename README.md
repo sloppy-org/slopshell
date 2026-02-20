@@ -24,7 +24,7 @@ Requirements:
 
 ```bash
 tabula bootstrap --project-dir .
-tabula mcp-server --project-dir . --headless --no-canvas --fresh-canvas
+tabula mcp-server --project-dir . --headless --no-canvas
 tabula run --project-dir . "your prompt"
 tabula run --assistant claude --project-dir . "your prompt"
 tabula run --project-dir . --mcp-url http://127.0.0.1:9420/mcp "prompt via HTTP MCP"
@@ -37,8 +37,8 @@ tabula schema
 ```
 
 Notes:
-- `tabula run` defaults to `codex` and configures MCP inline.
-- stdio mode accepts compatibility flags (`--fresh-canvas`, `--poll-ms`) for older launchers.
+- `tabula run` defaults to `codex` and uses MCP URL mode.
+- `tabula run` defaults to `http://127.0.0.1:9420/mcp`; override with `--mcp-url`.
 - when no `DISPLAY`/`WAYLAND_DISPLAY` is available, canvas runtime falls back to headless mode.
 - `tabula web --dev-runtime` enables `/api/runtime` metadata used by browser auto-reload.
 - `tabula canvas` opens the desktop canvas view in your default browser (`/canvas` -> `/?desktop=1`).
