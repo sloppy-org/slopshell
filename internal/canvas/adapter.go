@@ -182,7 +182,7 @@ func (a *Adapter) launchErrOrNil() interface{} {
 	return a.launchErr
 }
 
-func (a *Adapter) CanvasArtifactShow(sessionID, kind, title, markdownOrText, path string, page int, reason string) (map[string]interface{}, error) {
+func (a *Adapter) CanvasArtifactShow(sessionID, kind, title, markdownOrText, path string, page int, reason string, meta map[string]interface{}) (map[string]interface{}, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	r := a.ensureSession(sessionID)
@@ -208,6 +208,7 @@ func (a *Adapter) CanvasArtifactShow(sessionID, kind, title, markdownOrText, pat
 	default:
 		return nil, fmt.Errorf("unsupported kind: %s", kind)
 	}
+	ev.Meta = cloneMeta(meta)
 
 	if ev.Kind == EventClear {
 		r.Mode = "prompt"
@@ -226,6 +227,17 @@ func (a *Adapter) CanvasArtifactShow(sessionID, kind, title, markdownOrText, pat
 		"artifact":    ev,
 	}
 	return resp, nil
+}
+
+func cloneMeta(meta map[string]interface{}) map[string]interface{} {
+	if len(meta) == 0 {
+		return nil
+	}
+	cloned := make(map[string]interface{}, len(meta))
+	for k, v := range meta {
+		cloned[k] = v
+	}
+	return cloned
 }
 
 func (a *Adapter) CanvasMarkSet(sessionID, markID, artifactID string, intent MarkIntent, markType MarkType, targetKind TargetKind, target map[string]interface{}, comment, author string) (map[string]interface{}, error) {

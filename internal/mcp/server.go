@@ -156,15 +156,16 @@ func (s *Server) callTool(name string, args map[string]interface{}) (map[string]
 			strArg(args, "path"),
 			intArg(args, "page", 0),
 			strArg(args, "reason"),
+			nil,
 		)
 	case "canvas_render_text":
-		return s.adapter.CanvasArtifactShow(sid, "text", strArg(args, "title"), strArg(args, "markdown_or_text"), "", 0, "")
+		return s.adapter.CanvasArtifactShow(sid, "text", strArg(args, "title"), strArg(args, "markdown_or_text"), "", 0, "", nil)
 	case "canvas_render_image":
-		return s.adapter.CanvasArtifactShow(sid, "image", strArg(args, "title"), "", strArg(args, "path"), 0, "")
+		return s.adapter.CanvasArtifactShow(sid, "image", strArg(args, "title"), "", strArg(args, "path"), 0, "", nil)
 	case "canvas_render_pdf":
-		return s.adapter.CanvasArtifactShow(sid, "pdf", strArg(args, "title"), "", strArg(args, "path"), intArg(args, "page", 0), "")
+		return s.adapter.CanvasArtifactShow(sid, "pdf", strArg(args, "title"), "", strArg(args, "path"), intArg(args, "page", 0), "", nil)
 	case "canvas_clear":
-		return s.adapter.CanvasArtifactShow(sid, "clear", "", "", "", 0, strArg(args, "reason"))
+		return s.adapter.CanvasArtifactShow(sid, "clear", "", "", "", 0, strArg(args, "reason"), nil)
 	case "canvas_mark_set":
 		target, _ := args["target"].(map[string]interface{})
 		return s.adapter.CanvasMarkSet(
@@ -230,7 +231,7 @@ func (s *Server) canvasImportHandoff(sessionID string, args map[string]interface
 	title := strings.TrimSpace(strArg(args, "title"))
 	switch env.Kind {
 	case handoffKindMailHeader:
-		return s.importMailHeaders(sessionID, handoffID, title, env)
+		return s.importMailHeaders(sessionID, handoffID, producerMCPURL, title, env)
 	case handoffKindFile:
 		return s.importFile(sessionID, handoffID, title, env)
 	default:
@@ -308,7 +309,7 @@ func decodeEnvelope(payload map[string]interface{}) (handoffEnvelope, error) {
 	return env, nil
 }
 
-func (s *Server) importMailHeaders(sessionID, handoffID, title string, env handoffEnvelope) (map[string]interface{}, error) {
+func (s *Server) importMailHeaders(sessionID, handoffID, producerMCPURL, title string, env handoffEnvelope) (map[string]interface{}, error) {
 	raw, _ := json.Marshal(env.Payload["headers"])
 	headers := []importedMailHeader{}
 	if len(raw) > 0 && string(raw) != "null" {
@@ -320,7 +321,12 @@ func (s *Server) importMailHeaders(sessionID, handoffID, title string, env hando
 		title = "Mail Headers"
 	}
 	markdown := renderMailHeadersMarkdown(env.Meta, headers)
-	shown, err := s.adapter.CanvasArtifactShow(sessionID, "text", title, markdown, "", 0, "")
+	shown, err := s.adapter.CanvasArtifactShow(sessionID, "text", title, markdown, "", 0, "", map[string]interface{}{
+		"handoff_kind":      handoffKindMailHeader,
+		"handoff_id":        handoffID,
+		"producer_mcp_url":  producerMCPURL,
+		"message_triage_v1": buildMailHeadersViewModel(env.Meta, headers),
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -369,14 +375,14 @@ func (s *Server) importFile(sessionID, handoffID, title string, env handoffEnvel
 	var shown map[string]interface{}
 	switch {
 	case mimeType == "application/pdf":
-		shown, err = s.adapter.CanvasArtifactShow(sessionID, "pdf", title, "", relativePath, 0, "")
+		shown, err = s.adapter.CanvasArtifactShow(sessionID, "pdf", title, "", relativePath, 0, "", nil)
 	case strings.HasPrefix(mimeType, "image/"):
-		shown, err = s.adapter.CanvasArtifactShow(sessionID, "image", title, "", relativePath, 0, "")
+		shown, err = s.adapter.CanvasArtifactShow(sessionID, "image", title, "", relativePath, 0, "", nil)
 	case strings.HasPrefix(mimeType, "text/") && utf8.Valid(content):
-		shown, err = s.adapter.CanvasArtifactShow(sessionID, "text", title, string(content), "", 0, "")
+		shown, err = s.adapter.CanvasArtifactShow(sessionID, "text", title, string(content), "", 0, "", nil)
 	default:
 		summary := fmt.Sprintf("# Imported File\n\n- Filename: `%s`\n- MIME: `%s`\n- Size: `%d` bytes\n- Stored at: `%s`\n\nPreview not available for this file type.", filename, mimeType, len(content), relativePath)
-		shown, err = s.adapter.CanvasArtifactShow(sessionID, "text", title, summary, "", 0, "")
+		shown, err = s.adapter.CanvasArtifactShow(sessionID, "text", title, summary, "", 0, "", nil)
 	}
 	if err != nil {
 		return nil, err
@@ -521,6 +527,26 @@ func renderMailHeadersMarkdown(meta map[string]interface{}, headers []importedMa
 		b.WriteString("\n")
 	}
 	return b.String()
+}
+
+func buildMailHeadersViewModel(meta map[string]interface{}, headers []importedMailHeader) map[string]interface{} {
+	out := map[string]interface{}{
+		"count":   len(headers),
+		"headers": headers,
+	}
+	if meta == nil {
+		return out
+	}
+	if provider := strings.TrimSpace(fmt.Sprint(meta["provider"])); provider != "" && provider != "<nil>" {
+		out["provider"] = provider
+	}
+	if folder := strings.TrimSpace(fmt.Sprint(meta["folder"])); folder != "" && folder != "<nil>" {
+		out["folder"] = folder
+	}
+	if count, ok := asInt(meta["count"]); ok && count >= 0 {
+		out["count"] = count
+	}
+	return out
 }
 
 func (s *Server) dispatchResourceRead(params map[string]interface{}) (map[string]interface{}, *RPCError) {

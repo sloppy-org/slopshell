@@ -348,6 +348,91 @@ body.desktop-canvas-only #panel-canvas {
 #canvas-text pre code .hl-diff-del { color: inherit; background: #ff000033; }
 #canvas-text pre code .hl-diff-ctx { color: #3B3B3B; }
 
+#canvas-text.mail-artifact {
+  white-space: normal;
+}
+
+.mail-triage-head {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem 0.8rem;
+  margin-bottom: 0.85rem;
+  font-size: 0.85rem;
+}
+
+.mail-capability-hint {
+  grid-column: 1 / -1;
+  font-weight: 600;
+}
+
+.mail-triage-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.mail-triage-table th,
+.mail-triage-table td {
+  border: 1px solid var(--border);
+  padding: 0.35rem 0.45rem;
+  vertical-align: top;
+}
+
+.mail-triage-table th {
+  text-align: left;
+  background: var(--bg-elevated);
+}
+
+.mail-row-actions {
+  min-width: 260px;
+}
+
+.mail-action-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.mail-action-buttons button,
+.mail-defer-controls button {
+  padding: 0.2rem 0.45rem;
+  font-size: 0.72rem;
+}
+
+.mail-defer-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-top: 0.25rem;
+}
+
+.mail-defer-controls input {
+  height: 26px;
+  padding: 0.1rem 0.3rem;
+  font-size: 0.75rem;
+}
+
+.mail-row-status {
+  margin-top: 0.25rem;
+  min-height: 1.1em;
+  font-size: 0.75rem;
+}
+
+.mail-row-status-info { color: var(--text-dim); }
+.mail-row-status-success { color: var(--success); font-weight: 600; }
+.mail-row-status-warning { color: var(--warning); font-weight: 600; }
+.mail-row-status-error { color: var(--error); font-weight: 600; }
+
+.mail-row-busy {
+  opacity: 0.75;
+}
+
+.mail-row-archived,
+.mail-row-deferred,
+.mail-row-deleted {
+  background: var(--bg-elevated);
+}
+
 #canvas-img { max-width: 100%; height: auto; }
 
 /* Hosts */
@@ -489,5 +574,13 @@ body.desktop-canvas-only #panel-canvas {
   .canvas-annot-controls input {
     flex: 1;
     min-width: 120px;
+  }
+  .mail-triage-head {
+    grid-template-columns: 1fr;
+  }
+  .mail-triage-table {
+    display: block;
+    overflow-x: auto;
+    white-space: nowrap;
   }
 }

@@ -16,14 +16,15 @@ const (
 )
 
 type Event struct {
-	EventID string    `json:"event_id"`
-	TS      string    `json:"ts"`
-	Kind    EventKind `json:"kind"`
-	Title   string    `json:"title,omitempty"`
-	Text    string    `json:"text,omitempty"`
-	Path    string    `json:"path,omitempty"`
-	Page    int       `json:"page,omitempty"`
-	Reason  string    `json:"reason,omitempty"`
+	EventID string                 `json:"event_id"`
+	TS      string                 `json:"ts"`
+	Kind    EventKind              `json:"kind"`
+	Title   string                 `json:"title,omitempty"`
+	Text    string                 `json:"text,omitempty"`
+	Path    string                 `json:"path,omitempty"`
+	Page    int                    `json:"page,omitempty"`
+	Reason  string                 `json:"reason,omitempty"`
+	Meta    map[string]interface{} `json:"meta,omitempty"`
 }
 
 func NewEvent(kind EventKind) Event {

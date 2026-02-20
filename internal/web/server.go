@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -23,12 +24,13 @@ import (
 )
 
 const (
-	DefaultHost     = "127.0.0.1"
-	DefaultPort     = 8420
-	SessionCookie   = "tabula_session"
-	cookieMaxAgeSec = 60 * 60 * 24 * 365
-	DaemonPort      = 9420
-	LocalSessionID  = "local"
+	DefaultHost           = "127.0.0.1"
+	DefaultPort           = 8420
+	SessionCookie         = "tabula_session"
+	cookieMaxAgeSec       = 60 * 60 * 24 * 365
+	DaemonPort            = 9420
+	LocalSessionID        = "local"
+	defaultProducerMCPURL = "http://127.0.0.1:8090/mcp"
 )
 
 //go:embed static/* static/vendor/*
@@ -145,6 +147,8 @@ func (a *App) Router() http.Handler {
 	// canvas/file proxy
 	r.Get("/api/canvas/{session_id}/snapshot", a.handleCanvasSnapshot)
 	r.Get("/api/files/{session_id}/*", a.handleFilesProxy)
+	r.Post("/api/mail/action-capabilities", a.handleMailActionCapabilities)
+	r.Post("/api/mail/action", a.handleMailAction)
 
 	// ws
 	r.Get("/ws/terminal/{session_id}", a.handleTerminalWS)
@@ -586,10 +590,85 @@ func (a *App) handleCanvasSnapshot(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]interface{}{"status": status, "event": event})
 }
 
+func (a *App) handleMailActionCapabilities(w http.ResponseWriter, r *http.Request) {
+	if !a.requireAuth(w, r) {
+		return
+	}
+	var req struct {
+		Provider       string `json:"provider"`
+		ProducerMCPURL string `json:"producer_mcp_url"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+	mcpURL, err := normalizeProducerMCPURL(req.ProducerMCPURL)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	resp, err := mcpToolsCallURL(mcpURL, "email_action_capabilities", map[string]interface{}{"provider": req.Provider})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	writeJSON(w, resp)
+}
+
+func (a *App) handleMailAction(w http.ResponseWriter, r *http.Request) {
+	if !a.requireAuth(w, r) {
+		return
+	}
+	var req struct {
+		Provider       string `json:"provider"`
+		Action         string `json:"action"`
+		MessageID      string `json:"message_id"`
+		UntilAt        string `json:"until_at"`
+		ProducerMCPURL string `json:"producer_mcp_url"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.Action) == "" || strings.TrimSpace(req.MessageID) == "" {
+		http.Error(w, "action and message_id are required", http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.UntilAt) != "" {
+		if _, err := time.Parse(time.RFC3339, req.UntilAt); err != nil {
+			http.Error(w, "until_at must be RFC3339", http.StatusBadRequest)
+			return
+		}
+	}
+	mcpURL, err := normalizeProducerMCPURL(req.ProducerMCPURL)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	args := map[string]interface{}{
+		"provider":   req.Provider,
+		"action":     req.Action,
+		"message_id": req.MessageID,
+	}
+	if strings.TrimSpace(req.UntilAt) != "" {
+		args["until_at"] = req.UntilAt
+	}
+	resp, err := mcpToolsCallURL(mcpURL, "email_action", args)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	writeJSON(w, resp)
+}
+
 func (a *App) mcpToolsCall(port int, name string, arguments map[string]interface{}) (map[string]interface{}, error) {
+	return mcpToolsCallURL(fmt.Sprintf("http://127.0.0.1:%d/mcp", port), name, arguments)
+}
+
+func mcpToolsCallURL(mcpURL, name string, arguments map[string]interface{}) (map[string]interface{}, error) {
 	payload := map[string]interface{}{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": map[string]interface{}{"name": name, "arguments": arguments}}
 	b, _ := json.Marshal(payload)
-	resp, err := http.Post(fmt.Sprintf("http://127.0.0.1:%d/mcp", port), "application/json", strings.NewReader(string(b)))
+	resp, err := http.Post(mcpURL, "application/json", strings.NewReader(string(b)))
 	if err != nil {
 		return nil, err
 	}
@@ -611,6 +690,45 @@ func (a *App) mcpToolsCall(port int, name string, arguments map[string]interface
 		return nil, errors.New("MCP call failed: missing structuredContent")
 	}
 	return sc, nil
+}
+
+func normalizeProducerMCPURL(raw string) (string, error) {
+	candidate := strings.TrimSpace(raw)
+	if candidate == "" {
+		candidate = defaultProducerMCPURL
+	}
+	u, err := url.Parse(candidate)
+	if err != nil {
+		return "", fmt.Errorf("invalid producer_mcp_url")
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return "", fmt.Errorf("producer_mcp_url must use http or https")
+	}
+	host := u.Hostname()
+	if host == "" {
+		return "", fmt.Errorf("producer_mcp_url must include host")
+	}
+	if !isLoopbackHost(host) {
+		return "", fmt.Errorf("producer_mcp_url host must be loopback")
+	}
+	if strings.TrimSpace(u.Path) == "" || u.Path == "/" {
+		u.Path = "/mcp"
+	}
+	if u.Path != "/mcp" {
+		return "", fmt.Errorf("producer_mcp_url path must be /mcp")
+	}
+	if u.RawQuery != "" || u.Fragment != "" {
+		return "", fmt.Errorf("producer_mcp_url must not include query or fragment")
+	}
+	return u.String(), nil
+}
+
+func isLoopbackHost(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func (a *App) handleFilesProxy(w http.ResponseWriter, r *http.Request) {
