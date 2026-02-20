@@ -257,7 +257,93 @@ test('swipe thresholds map to archive/delete exactly once', async ({ page }) => 
   expect(actionCalls.filter((a) => a === 'delete')).toHaveLength(1);
 });
 
-test('draft reply shows editable unsent draft and cancel does not trigger action mutate', async ({ page }) => {
+test('draft reply assist uses shared action_id handler with state transitions in list/detail', async ({ page }) => {
+  let mutateCalls = 0;
+  const draftCalls: Array<Record<string, unknown>> = [];
+
+  await page.route('**/api/mail/action-capabilities', async (route) => {
+    await route.fulfill({
+      json: {
+        capabilities: {
+          provider: 'gmail',
+          supports_open: true,
+          supports_archive: true,
+          supports_delete_to_trash: true,
+          supports_native_defer: true,
+        },
+      },
+    });
+  });
+
+  await page.route('**/api/mail/action', async (route) => {
+    mutateCalls += 1;
+    await route.fulfill({ json: { result: { status: 'ok' } } });
+  });
+
+  await page.route('**/api/mail/read', async (route) => {
+    const body = JSON.parse(route.request().postData() || '{}');
+    await route.fulfill({
+      json: {
+        message: {
+          ID: body.message_id,
+          Subject: `Subject ${body.message_id}`,
+          Sender: 'Alice <alice@example.com>',
+          Recipients: ['Bob <bob@example.com>'],
+          Date: '2026-02-20T09:00:00Z',
+          BodyText: `Full message body ${body.message_id}`,
+        },
+      },
+    });
+  });
+
+  await page.route('**/api/mail/mark-read', async (route) => {
+    await route.fulfill({ json: { marked: 1 } });
+  });
+
+  await page.route('**/api/mail/draft-reply', async (route) => {
+    const body = JSON.parse(route.request().postData() || '{}');
+    draftCalls.push(body);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    await route.fulfill({
+      json: {
+        source: 'llm',
+        draft_text: `Draft for ${body.message_id}`,
+      },
+    });
+  });
+
+  await renderMail(page, 'gmail', [
+    { id: 'm3', date: '2026-02-20T07:00:00Z', sender: 'Alice <alice@example.com>', subject: 'Status' },
+    { id: 'm4', date: '2026-02-20T06:00:00Z', sender: 'Bob <bob@example.com>', subject: 'Follow-up' },
+  ]);
+
+  await expect(page.locator('tr[data-message-id="m3"] button[data-mail-action="draft-reply"]')).toHaveAttribute('data-mail-action-id', 'mail.draft_reply');
+  await page.click('tr[data-message-id="m3"] button[data-mail-action="draft-reply"]');
+  await expect.poll(async () => page.locator('#canvas-text').getAttribute('data-mail-assist-history')).toContain('capturing>generating');
+  await expect.poll(async () => page.locator('#canvas-text').getAttribute('data-mail-assist-state')).toBe('ready');
+  const draftText = page.locator('[data-mail-draft-panel] [data-mail-draft-text]');
+  await expect(draftText).toHaveValue(/Draft for m3/);
+  await expect(page.locator('tr[data-message-id="m3"] [data-mail-row-status]')).toContainText('Draft ready');
+
+  await page.click('[data-mail-draft-panel] button[data-mail-action="draft-cancel"]');
+  await expect(page.locator('[data-mail-draft-panel]')).toBeHidden();
+  await expect.poll(async () => page.locator('#canvas-text').getAttribute('data-mail-assist-state')).toBe('idle');
+
+  await page.click('tr[data-message-id="m4"] button[data-mail-action="open"]');
+  await expect(page.locator('[data-mail-detail-root]')).toBeVisible();
+  await expect(page.locator('.mail-detail-actions button[data-mail-action="draft-reply"]')).toHaveAttribute('data-mail-action-id', 'mail.draft_reply');
+  await page.click('.mail-detail-actions button[data-mail-action="draft-reply"]');
+  await expect(draftText).toHaveValue(/Draft for m4/);
+  await expect(page.locator('[data-mail-detail-status]')).toContainText('Draft ready');
+
+  expect(draftCalls).toHaveLength(2);
+  expect(draftCalls.map((c) => c.message_id)).toEqual(['m3', 'm4']);
+  expect(Object.keys(draftCalls[0] || {}).sort()).toEqual(Object.keys(draftCalls[1] || {}).sort());
+  expect(mutateCalls).toBe(0);
+});
+
+test('unregistered assist action_id returns deterministic error without network call', async ({ page }) => {
+  let draftCalls = 0;
   let mutateCalls = 0;
 
   await page.route('**/api/mail/action-capabilities', async (route) => {
@@ -280,23 +366,24 @@ test('draft reply shows editable unsent draft and cancel does not trigger action
   });
 
   await page.route('**/api/mail/draft-reply', async (route) => {
-    await route.fulfill({
-      json: {
-        source: 'llm',
-        draft_text: 'Hi Alice,\\n\\nThanks for the update.\\n\\nBest,\\nMe',
-      },
-    });
+    draftCalls += 1;
+    await route.fulfill({ json: { source: 'llm', draft_text: 'unexpected call' } });
   });
 
   await renderMail(page, 'gmail', [
-    { id: 'm3', date: '2026-02-20T07:00:00Z', sender: 'Alice <alice@example.com>', subject: 'Status' },
+    { id: 'm5', date: '2026-02-20T05:00:00Z', sender: 'Eve <eve@example.com>', subject: 'Question' },
   ]);
 
-  await page.click('tr[data-message-id="m3"] button[data-mail-action="draft-reply"]');
-  const draftText = page.locator('[data-mail-draft-panel] [data-mail-draft-text]');
-  await expect(draftText).toHaveValue(/Thanks for the update/);
+  await page.evaluate(() => {
+    const btn = document.querySelector('tr[data-message-id="m5"] button[data-mail-action="draft-reply"]');
+    if (btn) {
+      btn.setAttribute('data-mail-action-id', 'mail.unknown');
+    }
+  });
 
-  await page.click('[data-mail-draft-panel] button[data-mail-action="draft-cancel"]');
-  await expect(page.locator('[data-mail-draft-panel]')).toBeHidden();
+  await page.click('tr[data-message-id="m5"] button[data-mail-action="draft-reply"]');
+  await expect(page.locator('tr[data-message-id="m5"] [data-mail-row-status]')).toContainText('Unsupported assist action_id: mail.unknown');
+  await expect.poll(async () => page.locator('#canvas-text').getAttribute('data-mail-assist-state')).toBe('error');
+  expect(draftCalls).toBe(0);
   expect(mutateCalls).toBe(0);
 });

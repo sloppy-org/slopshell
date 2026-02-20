@@ -118,6 +118,14 @@ const DETAIL_SWIPE_NAV_THRESHOLD_PX = 90;
 const UNDO_TIMEOUT_MS = Number(window.__TABULA_UNDO_TIMEOUT_MS || 5000);
 
 let pendingUndoAction = null;
+const MAIL_ASSIST_STATE = Object.freeze({
+  IDLE: 'idle',
+  CAPTURING: 'capturing',
+  GENERATING: 'generating',
+  READY: 'ready',
+  ERROR: 'error',
+});
+const mailAssistActionRegistry = new Map();
 
 function getEls() {
   if (!els.empty) {
@@ -318,6 +326,16 @@ function flushPendingUndoAction() {
   void pending.execute();
 }
 
+function resetMailAssistDomState() {
+  const e = getEls();
+  if (!e.text) return;
+  delete e.text.dataset.mailAssistState;
+  delete e.text.dataset.mailAssistActionId;
+  delete e.text.dataset.mailAssistMessageId;
+  delete e.text.dataset.mailAssistError;
+  delete e.text.dataset.mailAssistHistory;
+}
+
 function clearSelectionInteractionHandlers() {
   const e = getEls();
   if (e.text._selectionHandler) {
@@ -367,6 +385,7 @@ function clearMailInteractionHandlers() {
     e.text._mailDetailKeyDownHandler = null;
   }
   closeDraftPanel();
+  resetMailAssistDomState();
   e.text.classList.remove('mail-artifact');
   activeMailContext = null;
 }
@@ -644,9 +663,166 @@ function getMailViewState(context) {
       detailMessage: null,
       detailStatus: '',
       detailStatusTone: 'info',
+      assist: {
+        state: MAIL_ASSIST_STATE.IDLE,
+        actionId: '',
+        messageId: '',
+        error: '',
+        transitions: [MAIL_ASSIST_STATE.IDLE],
+      },
     };
   }
   return context.viewState;
+}
+
+function setMailAssistDomState(context) {
+  const e = getEls();
+  const assist = getMailViewState(context).assist;
+  if (!assist) {
+    resetMailAssistDomState();
+    return;
+  }
+  e.text.dataset.mailAssistState = assist.state || MAIL_ASSIST_STATE.IDLE;
+  e.text.dataset.mailAssistActionId = assist.actionId || '';
+  e.text.dataset.mailAssistMessageId = assist.messageId || '';
+  if (assist.error) {
+    e.text.dataset.mailAssistError = assist.error;
+  } else {
+    delete e.text.dataset.mailAssistError;
+  }
+  e.text.dataset.mailAssistHistory = (assist.transitions || []).join('>');
+}
+
+function setMailAssistState(context, nextState, details = {}) {
+  const state = getMailViewState(context);
+  if (!state.assist) {
+    state.assist = {
+      state: MAIL_ASSIST_STATE.IDLE,
+      actionId: '',
+      messageId: '',
+      error: '',
+      transitions: [MAIL_ASSIST_STATE.IDLE],
+    };
+  }
+  const assist = state.assist;
+  assist.state = nextState || MAIL_ASSIST_STATE.IDLE;
+  assist.actionId = String(details.actionId ?? assist.actionId ?? '').trim();
+  assist.messageId = String(details.messageId ?? assist.messageId ?? '').trim();
+  assist.error = String(details.error ?? '').trim();
+  if (!Array.isArray(assist.transitions)) {
+    assist.transitions = [MAIL_ASSIST_STATE.IDLE];
+  }
+  const last = assist.transitions[assist.transitions.length - 1];
+  if (last !== assist.state) {
+    assist.transitions.push(assist.state);
+    if (assist.transitions.length > 12) {
+      assist.transitions = assist.transitions.slice(-12);
+    }
+  }
+  setMailAssistDomState(context);
+}
+
+function setMailAssistStatus(context, row, inDetail, text, tone) {
+  if (row) {
+    setMailRowStatus(row, text, tone);
+    return;
+  }
+  if (inDetail) {
+    setMailDetailStatus(context, text, tone);
+  }
+}
+
+function setMailAssistBusy(row, inDetail, busy) {
+  if (row) {
+    setMailRowBusy(row, busy);
+  }
+  if (inDetail) {
+    setMailDetailBusy(busy);
+  }
+}
+
+function resolveMailAssistActionID(button, action) {
+  const explicit = String(button?.dataset?.mailActionId || '').trim();
+  if (explicit) return explicit;
+  if (action === 'draft-reply') return 'mail.draft_reply';
+  return '';
+}
+
+function registerMailAssistAction(actionId, handler) {
+  const key = String(actionId || '').trim();
+  if (!key || !handler || typeof handler.prepare !== 'function' || typeof handler.execute !== 'function') {
+    return;
+  }
+  mailAssistActionRegistry.set(key, handler);
+}
+
+async function dispatchMailAssistAction(eventId, context, invocation) {
+  const actionId = String(invocation?.actionId || '').trim();
+  const row = invocation?.row || null;
+  const inDetail = Boolean(invocation?.inDetail && !row);
+  const messageID = String(invocation?.messageID || '').trim();
+  const handler = mailAssistActionRegistry.get(actionId);
+  if (!handler) {
+    const msg = `Unsupported assist action_id: ${actionId || '(empty)'}`;
+    setMailAssistState(context, MAIL_ASSIST_STATE.ERROR, { actionId, messageId: messageID, error: msg });
+    setMailAssistStatus(context, row, inDetail, msg, 'error');
+    return;
+  }
+
+  setMailAssistBusy(row, inDetail, true);
+  try {
+    setMailAssistState(context, MAIL_ASSIST_STATE.CAPTURING, { actionId, messageId: messageID, error: '' });
+    if (typeof handler.onCapturing === 'function') {
+      handler.onCapturing({ context, row, inDetail, messageID, actionId });
+    } else {
+      setMailAssistStatus(context, row, inDetail, 'Capturing assist context...', 'info');
+    }
+
+    const prepared = await handler.prepare({
+      context,
+      eventId,
+      row,
+      inDetail,
+      messageID,
+      actionId,
+      selectionText: window.getSelection()?.toString?.() || '',
+    });
+    if (activeTextEventId !== eventId) return;
+
+    setMailAssistState(context, MAIL_ASSIST_STATE.GENERATING, { actionId, messageId: messageID, error: '' });
+    if (typeof handler.onGenerating === 'function') {
+      handler.onGenerating({ context, row, inDetail, messageID, actionId, prepared });
+    } else {
+      setMailAssistStatus(context, row, inDetail, 'Generating assist output...', 'info');
+    }
+
+    const payload = await handler.execute(prepared, { context, eventId, row, inDetail, messageID, actionId });
+    if (activeTextEventId !== eventId) return;
+
+    if (typeof handler.onReady === 'function') {
+      handler.onReady(payload, prepared, { context, row, inDetail, messageID, actionId });
+    } else {
+      setMailAssistStatus(context, row, inDetail, 'Assist output ready.', 'success');
+    }
+    setMailAssistState(context, MAIL_ASSIST_STATE.READY, { actionId, messageId: messageID, error: '' });
+  } catch (err) {
+    if (activeTextEventId !== eventId) return;
+    const message = String(err?.message || err || 'assist action failed');
+    if (typeof handler.onError === 'function') {
+      handler.onError(message, { context, row, inDetail, messageID, actionId });
+    } else {
+      setMailAssistStatus(context, row, inDetail, message, 'error');
+    }
+    setMailAssistState(context, MAIL_ASSIST_STATE.ERROR, { actionId, messageId: messageID, error: message });
+  } finally {
+    if (activeTextEventId !== eventId) return;
+    if (row && row.isConnected) {
+      setMailRowBusy(row, false);
+    }
+    if (inDetail) {
+      setMailDetailBusy(false);
+    }
+  }
 }
 
 function openDraftPanel(content, sourceLabel) {
@@ -676,6 +852,44 @@ function closeDraftPanel() {
   }
   panel.hidden = true;
 }
+
+function registerDefaultMailAssistActions() {
+  registerMailAssistAction('mail.draft_reply', {
+    onCapturing() {
+      openDraftPanel('', 'Preparing draft assist...');
+    },
+    prepare({ context, messageID, selectionText }) {
+      const header = findMailHeader(context, messageID);
+      return {
+        context,
+        message: {
+          id: messageID,
+          sender: header?.sender || '',
+          subject: header?.subject || '',
+          selectionText: selectionText || '',
+        },
+      };
+    },
+    onGenerating() {
+      openDraftPanel('', 'Generating...');
+    },
+    execute(prepared) {
+      return callDraftReply(prepared.context, prepared.message);
+    },
+    onReady(payload, _prepared, invocation) {
+      const draftText = String(payload?.draft_text || '').trim();
+      const source = String(payload?.source || 'llm').trim();
+      openDraftPanel(draftText, source === 'llm' ? 'Generated by LLM (unsent)' : 'Fallback draft (unsent)');
+      setMailAssistStatus(invocation.context, invocation.row, invocation.inDetail, 'Draft ready. Review and edit before sending.', 'success');
+    },
+    onError(message, invocation) {
+      closeDraftPanel();
+      setMailAssistStatus(invocation.context, invocation.row, invocation.inDetail, message, 'error');
+    },
+  });
+}
+
+registerDefaultMailAssistActions();
 
 function firstMailField(message, keys) {
   if (!message || typeof message !== 'object') return '';
@@ -707,7 +921,7 @@ function renderMailListHtml(context) {
           <button type="button" data-mail-action="archive">Archive</button>
           <button type="button" data-mail-action="delete">Delete</button>
           <button type="button" data-mail-action="defer">Defer</button>
-          <button type="button" data-mail-action="draft-reply">Draft Reply</button>
+          <button type="button" data-mail-action="draft-reply" data-mail-action-id="mail.draft_reply">Draft Reply</button>
         </div>
         <div class="mail-defer-controls" data-mail-defer-controls hidden>
           <input type="datetime-local" data-mail-defer-input>
@@ -794,7 +1008,7 @@ function renderMailDetailHtml(context) {
         <button type="button" data-mail-action="archive">Archive</button>
         <button type="button" data-mail-action="delete">Delete</button>
         <button type="button" data-mail-action="defer">Defer</button>
-        <button type="button" data-mail-action="draft-reply">Draft Reply</button>
+        <button type="button" data-mail-action="draft-reply" data-mail-action-id="mail.draft_reply">Draft Reply</button>
       </div>
       <div class="mail-defer-controls" data-mail-detail-defer-controls hidden>
         <input type="datetime-local" data-mail-detail-defer-input>
@@ -1229,6 +1443,7 @@ function setupMailActionHandlers(eventId, context) {
     }
     if (action === 'draft-cancel') {
       closeDraftPanel();
+      setMailAssistState(context, MAIL_ASSIST_STATE.IDLE, { actionId: '', messageId: '', error: '' });
       return;
     }
     if (action === 'draft-copy') {
@@ -1247,50 +1462,9 @@ function setupMailActionHandlers(eventId, context) {
     const messageID = row ? (row.dataset.messageId || '') : String(detailRoot?.dataset.messageId || '');
     if (!messageID) return;
 
-    if (action === 'draft-reply') {
-      const header = findMailHeader(context, messageID);
-      const message = {
-        id: messageID,
-        sender: header?.sender || '',
-        subject: header?.subject || '',
-        selectionText: window.getSelection()?.toString?.() || '',
-      };
-      if (row) {
-        setMailRowBusy(row, true);
-        setMailRowStatus(row, 'Generating draft reply...', 'info');
-      } else {
-        setMailDetailBusy(true);
-        setMailDetailStatus(context, 'Generating draft reply...', 'info');
-      }
-      openDraftPanel('', 'Generating...');
-      void callDraftReply(context, message)
-        .then((payload) => {
-          if (activeTextEventId !== eventId) return;
-          const draftText = String(payload.draft_text || '').trim();
-          const source = String(payload.source || 'llm').trim();
-          openDraftPanel(draftText, source === 'llm' ? 'Generated by LLM (unsent)' : 'Fallback draft (unsent)');
-          if (row) {
-            setMailRowStatus(row, 'Draft ready. Review and edit before sending.', 'success');
-          } else {
-            setMailDetailStatus(context, 'Draft ready. Review and edit before sending.', 'success');
-          }
-        })
-        .catch((err) => {
-          if (activeTextEventId !== eventId) return;
-          closeDraftPanel();
-          if (row) {
-            setMailRowStatus(row, String(err?.message || err || 'draft generation failed'), 'error');
-          } else {
-            setMailDetailStatus(context, String(err?.message || err || 'draft generation failed'), 'error');
-          }
-        })
-        .finally(() => {
-          if (activeTextEventId !== eventId) return;
-          if (row && row.isConnected) {
-            setMailRowBusy(row, false);
-          }
-          setMailDetailBusy(false);
-        });
+    const assistActionId = resolveMailAssistActionID(button, action);
+    if (assistActionId) {
+      void dispatchMailAssistAction(eventId, context, { actionId: assistActionId, row, inDetail, messageID });
       return;
     }
 
@@ -1453,6 +1627,7 @@ function renderMailArtifact(eventId, context) {
       state.currentIndex = Math.max(0, Math.min(state.currentIndex, context.headers.length - 1));
     }
     e.text.innerHTML = renderMailDetailHtml(context);
+    setMailAssistDomState(context);
     setupMailActionHandlers(eventId, context);
     setupMailGestureHandlers(eventId, context);
     setupMailDetailKeyboardHandlers(eventId, context);
@@ -1461,6 +1636,7 @@ function renderMailArtifact(eventId, context) {
     return;
   }
   e.text.innerHTML = renderMailListHtml(context);
+  setMailAssistDomState(context);
   setupMailActionHandlers(eventId, context);
   setupMailGestureHandlers(eventId, context);
   setCapabilityHint(context);
