@@ -439,6 +439,14 @@ body.desktop-canvas-only #panel-canvas {
 #canvas-text pre code .hl-diff-add { color: inherit; background: #9bb95533; }
 #canvas-text pre code .hl-diff-del { color: inherit; background: #ff000033; }
 #canvas-text pre code .hl-diff-ctx { color: #3B3B3B; }
+#canvas-text mjx-container {
+  max-width: 100%;
+}
+#canvas-text mjx-container[display="true"] {
+  overflow-x: auto;
+  overflow-y: hidden;
+  margin: 0.85em 0;
+}
 
 #canvas-text.mail-artifact {
   white-space: normal;

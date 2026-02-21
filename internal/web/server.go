@@ -218,8 +218,19 @@ func (a *App) serveIndex(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "web client not found", http.StatusNotFound)
 		return
 	}
+	page := string(data)
+	boot := strings.TrimSpace(a.bootID)
+	if boot != "" {
+		styleTag := `href="/static/style.css"`
+		styleTagVer := fmt.Sprintf(`href="/static/style.css?v=%s"`, url.QueryEscape(boot))
+		scriptTag := `src="/static/app.js"`
+		scriptTagVer := fmt.Sprintf(`src="/static/app.js?v=%s"`, url.QueryEscape(boot))
+		page = strings.Replace(page, styleTag, styleTagVer, 1)
+		page = strings.Replace(page, scriptTag, scriptTagVer, 1)
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = w.Write(data)
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write([]byte(page))
 }
 
 func (a *App) serveCanvas(w http.ResponseWriter, r *http.Request) {

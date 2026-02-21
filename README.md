@@ -68,6 +68,12 @@ In `v0.0.5`, STT is routed through VoxType MCP (`/api/stt/push-to-prompt`) and n
 For always-on local usage, run the user `systemd` bridge service `tabula-voxtype-mcp.service`.
 It is configured to prefer daemon-backed capture mode and talks to the already-running `voxtype.service` daemon.
 
+## Markdown LaTeX Rendering
+
+Markdown text artifacts support TeX math rendering via MathJax.
+- Inline math: `$...$` or `\(...\)`
+- Display math: `$$...$$` or `\[...\]`
+
 ## Novel UI Focus (What To Evaluate First)
 
 1. Object-scoped invocation behavior (`long press` and local prompt/capture paths).

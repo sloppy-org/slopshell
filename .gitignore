@@ -10,3 +10,4 @@ __pycache__/
 .tabula/artifacts/
 playwright-report/
 test-results/
+tests/manual/

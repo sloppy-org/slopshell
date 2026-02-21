@@ -155,6 +155,7 @@ const mailAssistActionRegistry = new Map();
 const DRAFT_PROMPT_CANCELLED_CODE = 'draft_prompt_cancelled';
 let pendingDraftPromptCapture = null;
 const POINT_COMMENT_MARK_SIZE_PX = 16;
+const MATH_SEGMENT_TOKEN_PREFIX = '@@TABULA_MATH_SEGMENT_';
 
 function getEls() {
   if (!els.empty) {
@@ -188,6 +189,90 @@ function sanitizeHtml(html) {
     }
   });
   return doc.body.innerHTML;
+}
+
+function extractMathSegments(markdownSource) {
+  const source = String(markdownSource || '');
+  const stash = [];
+  let text = source;
+
+  const normalizeMathSegment = (segment) => {
+    const raw = String(segment || '');
+    const trimmed = raw.trim();
+    if (!trimmed.startsWith('$$') || !trimmed.endsWith('$$')) {
+      return raw;
+    }
+    const inner = trimmed.slice(2, -2).trim();
+    if (!inner) return raw;
+    const hasTagOrLabel = /\\(?:tag|label)\{[^}]+\}/.test(inner);
+    const hasDisplayEnv = /\\begin\{(?:equation|equation\*|align|align\*|aligned|gather|gather\*|multline|multline\*|split|eqnarray)\}/.test(inner);
+    if (!hasTagOrLabel || hasDisplayEnv) {
+      return raw;
+    }
+    return `\\begin{equation}\n${inner}\n\\end{equation}`;
+  };
+
+  const patterns = [
+    /\$\$[\s\S]+?\$\$/g,
+    /\\\[[\s\S]+?\\\]/g,
+    /\\\([\s\S]+?\\\)/g,
+  ];
+
+  for (const pattern of patterns) {
+    text = text.replace(pattern, (segment) => {
+      const token = `${MATH_SEGMENT_TOKEN_PREFIX}${stash.length}@@`;
+      stash.push(normalizeMathSegment(segment));
+      return token;
+    });
+  }
+
+  return { text, stash };
+}
+
+function restoreMathSegments(renderedHtml, mathSegments) {
+  let output = String(renderedHtml || '');
+  if (!Array.isArray(mathSegments) || mathSegments.length === 0) {
+    return output;
+  }
+  for (let i = 0; i < mathSegments.length; i += 1) {
+    const token = `${MATH_SEGMENT_TOKEN_PREFIX}${i}@@`;
+    const safeSegment = escapeHtml(String(mathSegments[i] || ''));
+    output = output.replaceAll(token, safeSegment);
+  }
+  return output;
+}
+
+function typesetMarkdownMath(root, attempt = 0) {
+  if (!(root instanceof Element) || !root.isConnected) return;
+  const mj = window.MathJax;
+  if (!mj || typeof mj.typesetPromise !== 'function') {
+    if (attempt >= 40) return;
+    window.setTimeout(() => typesetMarkdownMath(root, attempt + 1), 75);
+    return;
+  }
+  const startupReady = mj.startup && mj.startup.promise && typeof mj.startup.promise.then === 'function'
+    ? mj.startup.promise
+    : Promise.resolve();
+  const originalMathText = root.textContent || '';
+  const needsRefPass = /\\(?:eq)?ref\{[^}]+\}/.test(originalMathText) || /\\label\{[^}]+\}/.test(originalMathText);
+  void startupReady
+    .then(() => {
+      if (!root.isConnected) return;
+      if (typeof mj.texReset === 'function') {
+        // Reset equation numbers/labels so each artifact is independent.
+        mj.texReset();
+      }
+      if (typeof mj.typesetClear === 'function') {
+        mj.typesetClear([root]);
+      }
+      return mj.typesetPromise([root]).then(() => {
+        if (!needsRefPass || !root.isConnected) return;
+        return mj.typesetPromise([root]);
+      });
+    })
+    .catch((err) => {
+      console.warn('MathJax typeset failed:', err);
+    });
 }
 
 function hideAll() {
@@ -823,7 +908,7 @@ function openReviewCommentPopover(eventId, options = {}) {
       }
       return;
     }
-    const isCommitShortcut = ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey) && !ev.shiftKey && !ev.altKey;
+    const isCommitShortcut = ev.key === 'Enter' && !ev.shiftKey && !ev.altKey;
     if (!isCommitShortcut) return;
     const target = ev.target instanceof Element ? ev.target : null;
     if (!target || !popover.contains(target)) return;
@@ -1038,7 +1123,7 @@ function clearSelectionInteractionHandlers() {
     e.text._scrollHandler = null;
   }
   if (e.text._reviewContextMenuHandler) {
-    e.text.removeEventListener('contextmenu', e.text._reviewContextMenuHandler);
+    e.text.removeEventListener('contextmenu', e.text._reviewContextMenuHandler, true);
     e.text._reviewContextMenuHandler = null;
   }
   if (e.text._reviewExistingMarkClickHandler) {
@@ -1053,6 +1138,11 @@ function clearSelectionInteractionHandlers() {
     e.text.removeEventListener('mouseleave', e.text._reviewHoverLeaveHandler);
     e.text._reviewHoverLeaveHandler = null;
   }
+  if (e.text._reviewAnchorPointerHandler) {
+    e.text.removeEventListener('mousemove', e.text._reviewAnchorPointerHandler);
+    e.text.removeEventListener('pointerdown', e.text._reviewAnchorPointerHandler);
+    e.text._reviewAnchorPointerHandler = null;
+  }
   if (e.text._reviewLongPressPointerDownHandler) {
     e.text.removeEventListener('pointerdown', e.text._reviewLongPressPointerDownHandler);
     e.text._reviewLongPressPointerDownHandler = null;
@@ -1066,6 +1156,19 @@ function clearSelectionInteractionHandlers() {
     window.removeEventListener('pointercancel', e.text._reviewLongPressPointerUpHandler);
     e.text._reviewLongPressPointerUpHandler = null;
   }
+  if (e.text._reviewCtrlKeyDownHandler) {
+    document.removeEventListener('keydown', e.text._reviewCtrlKeyDownHandler, true);
+    e.text._reviewCtrlKeyDownHandler = null;
+  }
+  if (e.text._reviewCtrlKeyUpHandler) {
+    document.removeEventListener('keyup', e.text._reviewCtrlKeyUpHandler, true);
+    e.text._reviewCtrlKeyUpHandler = null;
+  }
+  if (e.text._reviewCtrlBlurHandler) {
+    window.removeEventListener('blur', e.text._reviewCtrlBlurHandler);
+    e.text._reviewCtrlBlurHandler = null;
+  }
+  e.text._reviewLastAnchor = null;
   const reviewVoiceCapture = e.text._reviewVoiceCapture;
   if (reviewVoiceCapture) {
     reviewVoiceCapture.cancelled = true;
@@ -1442,10 +1545,10 @@ function base64FromBytes(bytes) {
   return btoa(out);
 }
 
-async function callPushToPromptAction(context, action, payload = {}) {
+async function callPushToPromptAction(context, action, actionPayload = {}) {
   const req = {
     action,
-    ...payload,
+    ...actionPayload,
   };
   const producerMCPURL = String(context?.producerMcpUrl || '').trim();
   if (producerMCPURL) {
@@ -1460,11 +1563,11 @@ async function callPushToPromptAction(context, action, payload = {}) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(req),
   });
-  let payload = {};
+  let responsePayload = {};
   const raw = await resp.text();
   if (raw) {
     try {
-      payload = JSON.parse(raw);
+      responsePayload = JSON.parse(raw);
     } catch (_) {
       if (!resp.ok) {
         throw new Error(raw);
@@ -1472,14 +1575,14 @@ async function callPushToPromptAction(context, action, payload = {}) {
     }
   }
   if (!resp.ok) {
-    throw new Error(typeof payload === 'object' && payload !== null && payload.error
-      ? payload.error
+    throw new Error(typeof responsePayload === 'object' && responsePayload !== null && responsePayload.error
+      ? responsePayload.error
       : raw || 'push-to-prompt request failed');
   }
-  if (typeof payload !== 'object' || payload === null) {
+  if (typeof responsePayload !== 'object' || responsePayload === null) {
     throw new Error('push-to-prompt request returned invalid response');
   }
-  return payload;
+  return responsePayload;
 }
 
 async function callMailSTT(context, audioBlob) {
@@ -3516,6 +3619,75 @@ function setupTextSelection(eventId) {
     return false;
   };
 
+  const isTextInputTarget = (target) => {
+    if (!(target instanceof Element)) return false;
+    return Boolean(target.closest('input,textarea,select,[contenteditable="true"]'));
+  };
+
+  const updateReviewAnchorFromPoint = (clientX, clientY) => {
+    if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) return;
+    const rect = e.text.getBoundingClientRect();
+    if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) return;
+    e.text._reviewLastAnchor = { clientX, clientY };
+  };
+
+  const resolveReviewVoiceAnchorPoint = () => {
+    const prior = e.text._reviewLastAnchor;
+    if (prior && Number.isFinite(prior.clientX) && Number.isFinite(prior.clientY)) {
+      updateReviewAnchorFromPoint(prior.clientX, prior.clientY);
+      if (e.text._reviewLastAnchor) {
+        return e.text._reviewLastAnchor;
+      }
+    }
+
+    const selection = window.getSelection();
+    if (selection && selection.isCollapsed && selection.rangeCount > 0) {
+      const range = selection.getRangeAt(0);
+      if (isSelectionInside(e.text, selection)) {
+        const rect = range.getBoundingClientRect();
+        if (rect && Number.isFinite(rect.left) && Number.isFinite(rect.top)) {
+          const x = rect.left + Math.max(1, Math.min(12, rect.width || 1));
+          const y = rect.top + Math.max(1, Math.min(12, rect.height || 1));
+          updateReviewAnchorFromPoint(x, y);
+          if (e.text._reviewLastAnchor) {
+            return e.text._reviewLastAnchor;
+          }
+        }
+      }
+    }
+
+    const rect = e.text.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return null;
+    const fallback = {
+      clientX: rect.left + Math.min(rect.width - 1, Math.max(1, rect.width * 0.5)),
+      clientY: rect.top + Math.min(rect.height - 1, Math.max(1, rect.height * 0.5)),
+    };
+    updateReviewAnchorFromPoint(fallback.clientX, fallback.clientY);
+    return e.text._reviewLastAnchor || fallback;
+  };
+
+  const createReviewVoiceCapture = (cfg) => ({
+    pointerId: cfg.pointerId ?? null,
+    source: String(cfg.source || 'long_press'),
+    clientX: Number(cfg.clientX || 0),
+    clientY: Number(cfg.clientY || 0),
+    startX: Number(cfg.startX ?? cfg.clientX ?? 0),
+    startY: Number(cfg.startY ?? cfg.clientY ?? 0),
+    target: cfg.target || pointTargetFromClientPoint(e.text, cfg.clientX, cfg.clientY),
+    longPressTimer: null,
+    active: false,
+    cancelled: false,
+    stopping: false,
+    stopRequested: false,
+    mediaStream: null,
+    mediaRecorder: null,
+    sttSessionID: '',
+    appendSeq: 0,
+    appendChain: Promise.resolve(),
+    appendError: '',
+    captureBackend: '',
+  });
+
   const stopReviewVoiceMedia = (capture) => {
     if (!capture) return;
     if (capture.mediaRecorder) {
@@ -3613,12 +3785,10 @@ function setupTextSelection(eventId) {
     if (e.text._reviewPopoverEl) {
       closeReviewCommentPopover();
     }
-    showReviewVoiceHint(
-      capture.source === 'contextmenu'
-        ? 'Recording voice note... right-click again to stop.'
-        : 'Recording voice note... release to submit.',
-      'recording',
-    );
+    const recordingHint = capture.source === 'keyboard_ctrl'
+      ? 'Recording voice note... release Ctrl to submit.'
+      : 'Recording voice note... release to submit.';
+    showReviewVoiceHint(recordingHint, 'recording');
 
     capture.sttSessionID = createPushToPromptSessionID();
     capture.appendSeq = 0;
@@ -3723,7 +3893,7 @@ function setupTextSelection(eventId) {
       return;
     }
     if (e.text._reviewVoiceCapture) return;
-    const capture = {
+    const capture = createReviewVoiceCapture({
       pointerId: ev.pointerId,
       source: 'long_press',
       clientX: ev.clientX,
@@ -3731,18 +3901,7 @@ function setupTextSelection(eventId) {
       startX: ev.clientX,
       startY: ev.clientY,
       target: pointTargetFromClientPoint(e.text, ev.clientX, ev.clientY),
-      longPressTimer: null,
-      active: false,
-      cancelled: false,
-      stopping: false,
-      stopRequested: false,
-      mediaStream: null,
-      mediaRecorder: null,
-      sttSessionID: '',
-      appendSeq: 0,
-      appendChain: Promise.resolve(),
-      appendError: '',
-    };
+    });
     capture.longPressTimer = window.setTimeout(() => {
       void beginReviewVoiceCapture(capture).catch((err) => {
         const message = String(err?.message || err || 'voice capture failed');
@@ -3769,7 +3928,7 @@ function setupTextSelection(eventId) {
   const onReviewLongPressPointerUp = (ev) => {
     const capture = e.text._reviewVoiceCapture;
     if (!capture) return;
-    if (capture.source !== 'contextmenu' && capture.pointerId !== ev.pointerId) return;
+    if (capture.source !== 'long_press' || capture.pointerId !== ev.pointerId) return;
     if (capture.longPressTimer) {
       capture.cancelled = true;
       cleanupReviewVoiceCapture(capture, false);
@@ -3793,6 +3952,78 @@ function setupTextSelection(eventId) {
   window.addEventListener('pointerup', onReviewLongPressPointerUp);
   window.addEventListener('pointercancel', onReviewLongPressPointerUp);
 
+  const onReviewAnchorPointer = (ev) => {
+    if (activeTextEventId !== eventId) return;
+    const target = ev.target instanceof Element ? ev.target : null;
+    if (!target || !e.text.contains(target)) return;
+    if (target.closest('[data-review-popover]')) return;
+    updateReviewAnchorFromPoint(ev.clientX, ev.clientY);
+  };
+  e.text._reviewAnchorPointerHandler = onReviewAnchorPointer;
+  e.text.addEventListener('mousemove', onReviewAnchorPointer);
+  e.text.addEventListener('pointerdown', onReviewAnchorPointer);
+
+  const onReviewCtrlKeyDown = (ev) => {
+    if (activeTextEventId !== eventId) return;
+    if (ev.key !== 'Control' || ev.repeat) return;
+    if (e.text.classList.contains('mail-artifact')) return;
+    if (e.text._reviewVoiceCapture) return;
+    if (ev.metaKey || ev.altKey) return;
+    if (isTextInputTarget(ev.target instanceof Element ? ev.target : null)) return;
+    const anchor = resolveReviewVoiceAnchorPoint();
+    if (!anchor) return;
+
+    const capture = createReviewVoiceCapture({
+      pointerId: null,
+      source: 'keyboard_ctrl',
+      clientX: anchor.clientX,
+      clientY: anchor.clientY,
+      startX: anchor.clientX,
+      startY: anchor.clientY,
+      target: pointTargetFromClientPoint(e.text, anchor.clientX, anchor.clientY),
+    });
+    e.text._reviewVoiceCapture = capture;
+    ev.preventDefault();
+    void beginReviewVoiceCapture(capture).catch((err) => {
+      const message = String(err?.message || err || 'voice capture failed');
+      showReviewVoiceHint(`Voice capture failed: ${message}`, 'error');
+      cleanupReviewVoiceCapture(capture, true);
+    });
+  };
+
+  const onReviewCtrlKeyUp = (ev) => {
+    if (activeTextEventId !== eventId) return;
+    if (ev.key !== 'Control') return;
+    const capture = e.text._reviewVoiceCapture;
+    if (!capture || capture.source !== 'keyboard_ctrl') return;
+    ev.preventDefault();
+    if (capture.longPressTimer || !capture.active) {
+      capture.cancelled = true;
+      cleanupReviewVoiceCapture(capture, false);
+      clearReviewVoiceHint();
+      return;
+    }
+    void stopAndSubmitReviewVoiceCapture(capture);
+  };
+
+  const onReviewCtrlWindowBlur = () => {
+    const capture = e.text._reviewVoiceCapture;
+    if (!capture || capture.source !== 'keyboard_ctrl') return;
+    if (capture.active) {
+      void stopAndSubmitReviewVoiceCapture(capture);
+      return;
+    }
+    capture.cancelled = true;
+    cleanupReviewVoiceCapture(capture, true);
+    clearReviewVoiceHint();
+  };
+  e.text._reviewCtrlKeyDownHandler = onReviewCtrlKeyDown;
+  e.text._reviewCtrlKeyUpHandler = onReviewCtrlKeyUp;
+  e.text._reviewCtrlBlurHandler = onReviewCtrlWindowBlur;
+  document.addEventListener('keydown', onReviewCtrlKeyDown, true);
+  document.addEventListener('keyup', onReviewCtrlKeyUp, true);
+  window.addEventListener('blur', onReviewCtrlWindowBlur);
+
   const onContextMenu = (ev) => {
     if (activeTextEventId !== eventId) return;
     const target = ev.target;
@@ -3800,68 +4031,25 @@ function setupTextSelection(eventId) {
     if (!e.text.contains(target)) return;
     if (target.closest('[data-review-popover]')) return;
     if (target.closest('button,input,textarea,select,[contenteditable="true"]')) return;
+    ev.preventDefault();
+    ev.stopPropagation();
     const activeCapture = e.text._reviewVoiceCapture;
-    if (activeCapture?.source === 'contextmenu' && activeCapture.active) {
-      ev.preventDefault();
-      ev.stopPropagation();
-      void stopAndSubmitReviewVoiceCapture(activeCapture);
-      return;
+    if (activeCapture) {
+      activeCapture.cancelled = true;
+      cleanupReviewVoiceCapture(activeCapture, true);
+      clearReviewVoiceHint();
     }
     if (e.text._reviewPopoverEl) {
-      e.text._suppressNextReviewOpen = true;
       closeReviewCommentPopover();
-      ev.preventDefault();
-      ev.stopPropagation();
-      return;
     }
     if (shouldSuppressNextReviewOpen(e.text)) {
-      ev.preventDefault();
-      ev.stopPropagation();
       return;
     }
     const hit = findSubmittedMarkAtPoint(e.text, eventId, ev.clientX, ev.clientY);
     if (hit && hit.local_id) {
-      ev.preventDefault();
-      ev.stopPropagation();
-      closeReviewCommentPopover();
-      removeSubmittedDraftMark(eventId, hit.local_id);
-      renderDraftOverlay();
-      const state = window._tabulaApp?.getState?.();
-      sendSelectionFeedback({
-        kind: 'mark_delete',
-        session_id: state?.sessionId || '',
-        mark_id: hit.local_id,
-      });
-      return;
-    }
-    ev.preventDefault();
-    const useVoice = !ev.shiftKey && !e.text.classList.contains('mail-artifact');
-    if (useVoice) {
-      const capture = {
-        pointerId: null,
-        source: 'contextmenu',
-        clientX: ev.clientX,
-        clientY: ev.clientY,
-        startX: ev.clientX,
-        startY: ev.clientY,
-        target: pointTargetFromClientPoint(e.text, ev.clientX, ev.clientY),
-        longPressTimer: null,
-        active: false,
-        cancelled: false,
-        stopping: false,
-        stopRequested: false,
-        mediaStream: null,
-        mediaRecorder: null,
-        sttSessionID: '',
-        appendSeq: 0,
-        appendChain: Promise.resolve(),
-        appendError: '',
-      };
-      e.text._reviewVoiceCapture = capture;
-      void beginReviewVoiceCapture(capture).catch((err) => {
-        const message = String(err?.message || err || 'voice capture failed');
-        showReviewVoiceHint(`Voice capture failed: ${message}`, 'error');
-        cleanupReviewVoiceCapture(capture, true);
+      openReviewCommentPopover(eventId, {
+        source: 'existing',
+        existingMark: hit,
       });
       return;
     }
@@ -3871,7 +4059,7 @@ function setupTextSelection(eventId) {
     });
   };
   e.text._reviewContextMenuHandler = onContextMenu;
-  e.text.addEventListener('contextmenu', onContextMenu);
+  e.text.addEventListener('contextmenu', onContextMenu, true);
 
   const onExistingMarkClick = (ev) => {
     if (activeTextEventId !== eventId) return;
@@ -4069,7 +4257,10 @@ export function renderCanvas(event) {
       return;
     }
     activeMailContext = null;
-    e.text.innerHTML = sanitizeHtml(marked.parse(event.text || ''));
+    const { text: markdownText, stash: mathSegments } = extractMathSegments(event.text || '');
+    const renderedMarkdownHtml = marked.parse(markdownText);
+    e.text.innerHTML = restoreMathSegments(sanitizeHtml(renderedMarkdownHtml), mathSegments);
+    typesetMarkdownMath(e.text);
     setupTextSelection(event.event_id);
     renderDraftOverlay();
   } else if (event.kind === 'image_artifact') {
@@ -4152,18 +4343,21 @@ export function initCanvasControls() {
   if (commitBtn) {
     commitBtn.addEventListener('click', runCommit);
 
-    if (!document.__tabulaCommitShortcutHandler) {
-      const shortcutHandler = (ev) => {
-        const isCommitShortcut = ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey) && !ev.shiftKey && !ev.altKey;
-        if (!isCommitShortcut) return;
+	    if (!document.__tabulaCommitShortcutHandler) {
+	      const shortcutHandler = (ev) => {
+	        const isCommitShortcut = ev.key === 'Enter' && !ev.ctrlKey && !ev.metaKey && !ev.shiftKey && !ev.altKey;
+	        if (!isCommitShortcut) return;
 
-        if (document.querySelector('[data-review-popover="true"]')) {
-          return;
-        }
-        const activeEl = document.activeElement;
-        if (activeEl && document.getElementById('terminal-container')?.contains(activeEl)) {
-          return;
-        }
+	        if (document.querySelector('[data-review-popover="true"]')) {
+	          return;
+	        }
+	        const activeEl = document.activeElement;
+	        if (activeEl && activeEl.matches('input,textarea,select,[contenteditable="true"]')) {
+	          return;
+	        }
+	        if (activeEl && document.getElementById('terminal-container')?.contains(activeEl)) {
+	          return;
+	        }
         const artifactID = activeArtifactIDForCommit();
         if (!artifactID) return;
 
