@@ -148,7 +148,7 @@ const MAIL_DRAFT_INTENT_FALLBACK_POLICY = MAIL_DRAFT_INTENT.PROMPT;
 const mailAssistActionRegistry = new Map();
 const DRAFT_PROMPT_CANCELLED_CODE = 'draft_prompt_cancelled';
 let pendingDraftPromptCapture = null;
-const POINT_COMMENT_MARK_SIZE_PX = 14;
+const POINT_COMMENT_MARK_SIZE_PX = 12;
 
 function getEls() {
   if (!els.empty) {
