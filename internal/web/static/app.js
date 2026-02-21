@@ -33,6 +33,7 @@ const sttActionCancel = 'cancel';
 let devReloadBootID = '';
 let devReloadTimer = null;
 let devReloadInFlight = false;
+let devReloadRequested = false;
 
 const renderer = new marked.Renderer();
 renderer.code = ({ text, lang }) => {
@@ -147,18 +148,20 @@ async function fetchRuntimeMeta() {
 }
 
 async function pollRuntimeForDevReload() {
-  if (devReloadInFlight) return;
+  if (devReloadInFlight || devReloadRequested) return;
   devReloadInFlight = true;
   try {
     const runtime = await fetchRuntimeMeta();
     const isDevMode = Boolean(runtime?.dev_mode);
     const bootID = String(runtime?.boot_id || '').trim();
-    if (!isDevMode || !bootID) return;
+    if (!isDevMode) return;
+    if (!bootID) return;
     if (!devReloadBootID) {
       devReloadBootID = bootID;
       return;
     }
     if (devReloadBootID !== bootID) {
+      devReloadRequested = true;
       showStatus('UI changed; reloading...');
       forceUiHardReload();
     }
@@ -171,20 +174,17 @@ async function pollRuntimeForDevReload() {
 
 function startDevReloadWatcher() {
   if (devReloadTimer !== null) return;
-  void (async () => {
-    try {
-      const runtime = await fetchRuntimeMeta();
-      const isDevMode = Boolean(runtime?.dev_mode);
-      const bootID = String(runtime?.boot_id || '').trim();
-      if (!isDevMode || !bootID) return;
-      devReloadBootID = bootID;
-      devReloadTimer = window.setInterval(() => {
-        void pollRuntimeForDevReload();
-      }, DEV_UI_RELOAD_POLL_MS);
-    } catch (_) {
-      // Ignore startup failures; chat/canvas runtime handles connectivity separately.
+  const tick = () => {
+    void pollRuntimeForDevReload();
+  };
+  devReloadTimer = window.setInterval(tick, DEV_UI_RELOAD_POLL_MS);
+  tick();
+  window.addEventListener('focus', tick);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+      tick();
     }
-  })();
+  });
 }
 
 function chatInputEl() {
