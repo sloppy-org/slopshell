@@ -90,6 +90,7 @@ async function selectTextFromSelector(page: Page, selector: string) {
     selection.removeAllRanges();
     selection.addRange(range);
     document.dispatchEvent(new Event('selectionchange'));
+    root.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
     return true;
   }, selector);
   if (!selected) throw new Error(`unable to select text from ${selector}`);
@@ -179,6 +180,43 @@ test('right-click inline comment popover submits a comment_point draft mark', as
   expect(markSet.comment).toBe('Check this sentence.');
   expect(Number((markSet.target as any).line_start)).toBeGreaterThanOrEqual(1);
   expect(Number((markSet.target as any).start_offset)).toBeGreaterThanOrEqual(0);
+});
+
+test('highlight selection opens immediate comment popover and submits a highlight draft mark', async ({ page }) => {
+  await renderArtifact(page, plainTextEvent('evt-highlight-1', '# Notes\nHighlight this sentence now'));
+  await selectTextFromSelector(page, '#canvas-text');
+
+  const popover = page.locator('[data-review-popover="true"]');
+  await expect(popover).toBeVisible();
+  await popover.locator('input').fill('Add context to this highlight.');
+  await popover.locator('button[type="submit"]').click();
+  await expect(popover).toHaveCount(0);
+
+  const markSet = await waitForLastMessageOfKind(page, 'mark_set');
+  expect(markSet.artifact_id).toBe('evt-highlight-1');
+  expect(markSet.intent).toBe('draft');
+  expect(markSet.type).toBe('highlight');
+  expect(markSet.target_kind).toBe('text_range');
+  expect(markSet.comment).toBe('Add context to this highlight.');
+  expect(Number((markSet.target as any).line_start)).toBeGreaterThanOrEqual(1);
+  expect(Number((markSet.target as any).end_offset)).toBeGreaterThan(Number((markSet.target as any).start_offset));
+});
+
+test('highlight selection cancel clears draft without creating a mark', async ({ page }) => {
+  await renderArtifact(page, plainTextEvent('evt-highlight-2', '# Notes\nCancel this highlighted draft'));
+  await selectTextFromSelector(page, '#canvas-text');
+
+  const popover = page.locator('[data-review-popover="true"]');
+  await expect(popover).toBeVisible();
+  await popover.locator('button[data-review-cancel]').click();
+  await expect(popover).toHaveCount(0);
+
+  await page.waitForTimeout(50);
+  const messages = await getHarnessMessages(page);
+  expect(messages.filter((m) => m.kind === 'mark_set')).toHaveLength(0);
+  const clearDrafts = messages.filter((m) => m.kind === 'mark_clear_draft');
+  expect(clearDrafts.length).toBeGreaterThan(0);
+  expect((clearDrafts[clearDrafts.length - 1] as any).artifact_id).toBe('evt-highlight-2');
 });
 
 test('right-click inline comment popover cancel and outside click do not create marks', async ({ page }) => {

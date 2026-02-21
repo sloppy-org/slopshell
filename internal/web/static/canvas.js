@@ -342,6 +342,7 @@ function closeReviewCommentPopover() {
     e.text._reviewPopoverEl.parentNode.removeChild(e.text._reviewPopoverEl);
   }
   e.text._reviewPopoverEl = null;
+  e.text._reviewPopoverSource = null;
 }
 
 function positionReviewCommentPopover(popover, root, x, y) {
@@ -358,10 +359,40 @@ function positionReviewCommentPopover(popover, root, x, y) {
   popover.style.top = `${top}px`;
 }
 
-function openReviewCommentPopover(eventId, contextmenuEvent) {
+function selectionTargetFromDraftMark(eventId) {
+  if (!draftMark || draftMark.event_id !== eventId) return null;
+  const rects = Array.isArray(draftMark.rects) ? draftMark.rects : [];
+  let pointX = 12;
+  let pointY = 12;
+  if (rects.length > 0 && Array.isArray(rects[rects.length - 1])) {
+    const anchor = rects[rects.length - 1];
+    pointX = Number(anchor[0]) + Math.max(8, Number(anchor[2] || 0) / 2);
+    pointY = Number(anchor[1]) + Math.max(12, Number(anchor[3] || 0)) + 8;
+  }
+  return {
+    lineStart: Number(draftMark.line_start || 1),
+    lineEnd: Number(draftMark.line_end || 1),
+    startOffset: Number(draftMark.start_offset || 0),
+    endOffset: Number(draftMark.end_offset || 0),
+    rects,
+    pointX,
+    pointY,
+    markType: draftMark.type || 'highlight',
+  };
+}
+
+function openReviewCommentPopover(eventId, options = {}) {
   const e = getEls();
   if (!e.text) return;
-  const target = pointTargetFromClientPoint(e.text, contextmenuEvent.clientX, contextmenuEvent.clientY);
+  let target = null;
+  if (options.source === 'selection') {
+    target = selectionTargetFromDraftMark(eventId);
+    if (!target) return;
+  } else {
+    const pointEvent = options.contextmenuEvent;
+    if (!pointEvent) return;
+    target = pointTargetFromClientPoint(e.text, pointEvent.clientX, pointEvent.clientY);
+  }
   closeReviewCommentPopover();
 
   const popover = document.createElement('form');
@@ -388,6 +419,9 @@ function openReviewCommentPopover(eventId, contextmenuEvent) {
     cancelBtn.addEventListener('click', (ev) => {
       ev.preventDefault();
       closeReviewCommentPopover();
+      if (typeof options.onCancel === 'function') {
+        options.onCancel();
+      }
     });
   }
 
@@ -401,7 +435,7 @@ function openReviewCommentPopover(eventId, contextmenuEvent) {
       session_id: state?.sessionId || '',
       artifact_id: eventId,
       intent: 'draft',
-      type: 'comment_point',
+      type: options.source === 'selection' ? (target.markType || 'highlight') : 'comment_point',
       target_kind: 'text_range',
       target: {
         line_start: target.lineStart,
@@ -412,12 +446,18 @@ function openReviewCommentPopover(eventId, contextmenuEvent) {
       },
       comment,
     });
+    if (options.source === 'selection' && draftMark && draftMark.event_id === eventId) {
+      draftMark.comment = comment;
+    }
     closeReviewCommentPopover();
   });
 
   const outsideHandler = (ev) => {
     if (!popover.contains(ev.target)) {
       closeReviewCommentPopover();
+      if (typeof options.onCancel === 'function') {
+        options.onCancel();
+      }
     }
   };
   document.addEventListener('pointerdown', outsideHandler, true);
@@ -427,11 +467,15 @@ function openReviewCommentPopover(eventId, contextmenuEvent) {
     if (ev.key === 'Escape') {
       ev.preventDefault();
       closeReviewCommentPopover();
+      if (typeof options.onCancel === 'function') {
+        options.onCancel();
+      }
     }
   };
   document.addEventListener('keydown', keyDownHandler, true);
   e.text._reviewPopoverKeyDownHandler = keyDownHandler;
   e.text._reviewPopoverEl = popover;
+  e.text._reviewPopoverSource = options.source || 'point';
 }
 
 function sendSelectionFeedback(payload) {
@@ -1953,6 +1997,8 @@ function renderMailArtifact(eventId, context) {
 function setupTextSelection(eventId) {
   const e = getEls();
   clearSelectionInteractionHandlers();
+  let autoPopoverSelectionKey = '';
+  let pendingSelectionFinalize = false;
 
   const clearDraftSelection = () => {
     if (draftMark && draftMark.event_id === eventId) {
@@ -1964,11 +2010,21 @@ function setupTextSelection(eventId) {
         session_id: state?.sessionId || '',
         artifact_id: eventId,
       });
+      closeReviewCommentPopover();
     }
+    autoPopoverSelectionKey = '';
   };
 
-  const handleSelection = () => {
+  const handleSelection = (finalizeSelection) => {
+    if (e.text._reviewPopoverEl && e.text._reviewPopoverSource === 'selection') {
+      return;
+    }
     const selection = window.getSelection();
+    const popover = e.text._reviewPopoverEl;
+    const anchorNode = selection?.anchorNode || null;
+    if (popover && anchorNode && popover.contains(anchorNode)) {
+      return;
+    }
     if (!selection || selection.isCollapsed || !isSelectionInside(e.text, selection)) {
       clearDraftSelection();
       return;
@@ -2017,15 +2073,31 @@ function setupTextSelection(eventId) {
       mark_type: markType,
       comment: getMarkComment(),
     });
+
+    if (markType === 'highlight' && finalizeSelection) {
+      const key = `${eventId}:${startOffset}:${endOffset}:${text}`;
+      if (autoPopoverSelectionKey !== key) {
+        autoPopoverSelectionKey = key;
+        openReviewCommentPopover(eventId, {
+          source: 'selection',
+          onCancel: clearDraftSelection,
+        });
+      }
+    }
   };
 
-  const handler = () => {
+  const handler = (ev) => {
     if (e.text._selectionRaf) {
       cancelAnimationFrame(e.text._selectionRaf);
     }
+    const triggerType = ev?.type || '';
+    if (triggerType === 'mouseup' || triggerType === 'keyup') {
+      pendingSelectionFinalize = true;
+    }
     e.text._selectionRaf = requestAnimationFrame(() => {
       e.text._selectionRaf = null;
-      handleSelection();
+      handleSelection(pendingSelectionFinalize);
+      pendingSelectionFinalize = false;
     });
   };
 
@@ -2044,7 +2116,10 @@ function setupTextSelection(eventId) {
     if (target.closest('[data-review-popover]')) return;
     if (target.closest('button,input,textarea,select,a,[contenteditable="true"]')) return;
     ev.preventDefault();
-    openReviewCommentPopover(eventId, ev);
+    openReviewCommentPopover(eventId, {
+      source: 'point',
+      contextmenuEvent: ev,
+    });
   };
   e.text._reviewContextMenuHandler = onContextMenu;
   e.text.addEventListener('contextmenu', onContextMenu);
