@@ -1,11 +1,11 @@
 # tabula
 
-Tabula is a local-first MCP canvas and review runtime built around an object-scoped intent interface.
+Tabula is a local-first chat-and-canvas MCP runtime built around Codex App Server.
 
 Core paradigm:
-- Invoke AI on the object itself, not in a persistent global chat panel.
+- Start in a persistent project chat canvas (browser-first).
+- Switch to review canvas when needed, without forced auto-navigation.
 - Capture intent in context (voice, prompt, or comment mode).
-- Keep all generated output as explicit proposals under user control.
 - Commit changes through review workflows instead of hidden auto-apply.
 
 License: MIT (`LICENSE`)
@@ -41,7 +41,6 @@ tabula bootstrap --project-dir .
 tabula mcp-server --project-dir . --headless --no-canvas
 tabula serve --project-dir . --host 127.0.0.1 --port 9420
 tabula web --data-dir ~/.tabula-web --project-dir . --host 127.0.0.1 --port 8420 --app-server-url ws://127.0.0.1:8787
-tabula ptyd --data-dir ~/.local/share/tabula-ptyd --host 127.0.0.1 --port 9333
 tabula voxtype-mcp --bind 127.0.0.1 --port 8091
 tabula canvas
 ```
@@ -50,10 +49,16 @@ tabula canvas
 
 - Web UI: `http://localhost:8420`
 - MCP HTTP: `http://127.0.0.1:9420/mcp`
-- Canvas websocket: `ws://127.0.0.1:9420/ws/canvas`
+- Canvas websocket (internal relay source): `ws://127.0.0.1:9420/ws/canvas`
 - Codex app-server websocket: `ws://127.0.0.1:8787`
 - VoxType MCP bridge: `http://127.0.0.1:8091/mcp`
-- Local browser session id: `local`
+- Local canvas session id: `local`
+
+Chat-first behavior:
+- Browser opens in `Chat` tab by default.
+- `Canvas` tab is manual switch only (no auto-switch on artifact updates).
+- Slash commands are supported, including `/plan`, `/plan on`, `/plan off`.
+- Assistant responses render Markdown + LaTeX.
 
 Commit-triggered AI rewrite:
 - On `Commit`, Tabula now aggregates persistent review comments for the active artifact.

@@ -4,18 +4,18 @@ This document captures the 2026 integration direction for Tabula’s AI path.
 
 ## Why App Server-Centered
 
-Tabula now treats Codex app-server as the primary AI backend for commit-time review flows:
+Tabula now treats Codex app-server as the primary AI backend for both chat turns and commit-time review flows:
 
-1. Canvas `commit` stays the explicit human control point.
-2. Backend aggregates all persistent comments for the active artifact.
-3. Backend sends a single structured prompt to Codex app-server.
-4. Backend renders the returned rewrite/review output as a new canvas text artifact.
+1. Browser starts in a persistent project chat canvas.
+2. Backend streams assistant turn events to the chat UI.
+3. Canvas `commit` remains the explicit human control point for annotation persistence.
+4. Commit-time rewrite/review still routes through Codex app-server.
 
 ## Transport and Runtime Choices
 
 1. A persistent user service runs `codex app-server --listen ws://127.0.0.1:8787`.
-2. Tabula Web connects to app-server via WebSocket JSON-RPC on-demand per commit.
-3. For each commit trigger, Tabula opens a short-lived app-server session:
+2. Tabula Web backend connects to app-server via WebSocket JSON-RPC for chat/commit turns.
+3. For each turn trigger, Tabula opens an app-server session:
    - `initialize`
    - `thread/start`
    - `turn/start`
@@ -76,7 +76,7 @@ Install/restart scripts were updated so app-server is started and restarted with
 
 ## Current Tabula Behavior
 
-1. Commit triggers backend aggregation of persistent comments on the active artifact.
-2. Text artifacts get full rewritten text output.
-3. PDF artifacts get AI-authored review-note text output (not binary PDF mutation).
-4. Output is rendered back into canvas as a new text artifact for explicit review/next commit.
+1. Chat tab is the default shell and persists per-project message history.
+2. Assistant responses stream to browser chat and render Markdown + LaTeX.
+3. Canvas tab stays manual-switch (no forced auto-switch on new artifacts).
+4. Commit triggers backend aggregation of persistent comments and app-server rewrite/review output.

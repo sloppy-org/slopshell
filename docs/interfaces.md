@@ -18,18 +18,16 @@ Auth and setup:
 - `POST /api/login`
 - `POST /api/logout`
 
-Session and host management:
-- `GET /api/hosts`
-- `POST /api/hosts`
-- `GET /api/hosts/{id}`
-- `POST /api/connect`
-- `POST /api/disconnect`
-- `GET /api/sessions`
+Runtime and chat session management:
 - `GET /api/runtime`
-- `POST /api/daemon/start`
+- `POST /api/chat/sessions`
+- `GET /api/chat/sessions/{session_id}/history`
+- `POST /api/chat/sessions/{session_id}/messages`
+- `POST /api/chat/sessions/{session_id}/commands`
 
 Canvas/files:
 - `GET /api/canvas/{session_id}/snapshot`
+- `POST /api/canvas/{session_id}/commit`
 - `GET /api/files/{session_id}/*`
 
 Mail interaction endpoints:
@@ -43,7 +41,7 @@ Mail interaction endpoints:
 - `POST /api/stt/push-to-prompt`
 
 Websocket routes:
-- `GET /ws/terminal/{session_id}`
+- `GET /ws/chat/{session_id}`
 - `GET /ws/canvas/{session_id}`
 
 ## MCP Tool Surface

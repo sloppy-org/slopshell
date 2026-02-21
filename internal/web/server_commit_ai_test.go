@@ -164,7 +164,7 @@ func TestCanvasCommitTriggersAppServerRewriteForTextArtifact(t *testing.T) {
 	defer appServer.Close()
 
 	wsURL := "ws" + strings.TrimPrefix(appServer.URL, "http")
-	app, err := New(t.TempDir(), t.TempDir(), mcp.URL, "", wsURL, false)
+	app, err := New(t.TempDir(), t.TempDir(), mcp.URL, wsURL, false)
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}
@@ -325,7 +325,7 @@ func TestCanvasCommitTriggersAppServerReviewNotesForPDFArtifact(t *testing.T) {
 	}))
 	defer appServer.Close()
 
-	app, err := New(t.TempDir(), t.TempDir(), mcp.URL, "", "ws"+strings.TrimPrefix(appServer.URL, "http"), false)
+	app, err := New(t.TempDir(), t.TempDir(), mcp.URL, "ws"+strings.TrimPrefix(appServer.URL, "http"), false)
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}

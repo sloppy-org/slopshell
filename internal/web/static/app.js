@@ -1,578 +1,726 @@
-import { initTerminal, destroyTerminal, writeToTerminal } from './terminal.js';
+import { marked } from './vendor/marked.esm.js';
 import { renderCanvas, clearCanvas, initCanvasControls } from './canvas.js';
-import { loadHosts, initHostsView } from './hosts.js';
-import { initAuth } from './auth.js';
-import { initMcpLog, logEvent } from './mcp-log.js';
 
 const state = {
-  authenticated: false,
-  sessionId: null,
-  hostId: null,
-  terminalWs: null,
+  sessionId: 'local',
   canvasWs: null,
-  tunnelPort: null,
-  connected: false,
-  localSession: null,
-  mcpUrl: null,
-  mobileTerminalMinimized: false,
-  terminalReconnectAttempt: 0,
-  terminalReconnectTimer: null,
-  runtimeBootId: null,
-  runtimePollTimer: null,
+  chatWs: null,
+  chatSessionId: '',
+  chatMode: 'chat',
+  activeTab: 'chat',
+  canvasHasUnread: false,
+  pendingByTurn: new Map(),
+  pendingQueue: [],
+  chatCtrlHoldTimer: null,
+  chatVoiceCapture: null,
 };
 
-const DESKTOP_CANVAS_ONLY = location.pathname === '/canvas' || new URLSearchParams(location.search).get('desktop') === '1';
-
-export function getState() { return state; }
+export function getState() {
+  return state;
+}
 
 window._tabulaApp = { getState };
-const SAVED_REMOTE_SESSION_KEY = 'tabula.remoteSession.v1';
 
-const MOBILE_BREAKPOINT_PX = 768;
-const MOBILE_KEY_PAYLOADS = {
-  tab: '\t',
-  esc: '\u001b',
-  up: '\u001b[A',
-  down: '\u001b[B',
-  left: '\u001b[D',
-  right: '\u001b[C',
+const MATH_SEGMENT_TOKEN_PREFIX = '@@TABULA_CHAT_MATH_SEGMENT_';
+let localMessageSeq = 0;
+const CHAT_CTRL_LONG_PRESS_MS = 180;
+const sttActionStart = 'start';
+const sttActionAppend = 'append';
+const sttActionStop = 'stop';
+const sttActionCancel = 'cancel';
+
+const renderer = new marked.Renderer();
+renderer.code = ({ text, lang }) => {
+  const safeLang = escapeHtml((lang || 'plaintext').toLowerCase());
+  return `<pre><code class="language-${safeLang}">${escapeHtml(text || '')}</code></pre>\n`;
 };
+marked.setOptions({ breaks: true, renderer });
 
-function showView(viewId) {
-  document.querySelectorAll('.view').forEach(v => v.style.display = 'none');
-  document.getElementById(viewId).style.display = '';
+function escapeHtml(text) {
+  return String(text || '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
 }
 
-function applyDesktopMode() {
-  if (!DESKTOP_CANVAS_ONLY) return;
-  document.body.classList.add('desktop-canvas-only');
-}
-
-function clearTerminalReconnectTimer() {
-  if (state.terminalReconnectTimer) {
-    clearTimeout(state.terminalReconnectTimer);
-    state.terminalReconnectTimer = null;
-  }
-}
-
-function scheduleTerminalReconnect() {
-  if (DESKTOP_CANVAS_ONLY) return;
-  if (!state.connected || !state.sessionId) return;
-  if (state.terminalReconnectTimer) return;
-  const attempt = Math.max(0, Number(state.terminalReconnectAttempt) || 0);
-  const delayMs = Math.min(5000, 500 + attempt * 400);
-  state.terminalReconnectTimer = setTimeout(() => {
-    state.terminalReconnectTimer = null;
-    if (!state.connected || !state.sessionId || state.terminalWs) return;
-    state.terminalReconnectAttempt = attempt + 1;
-    openTerminal();
-  }, delayMs);
-}
-
-function stopRuntimePolling() {
-  if (state.runtimePollTimer) {
-    clearInterval(state.runtimePollTimer);
-    state.runtimePollTimer = null;
-  }
-}
-
-async function pollRuntimeStatus() {
-  try {
-    const resp = await fetch('/api/runtime');
-    if (!resp.ok) return;
-    const payload = await resp.json();
-    if (!payload || typeof payload !== 'object') return;
-    if (payload.dev_mode !== true) {
-      stopRuntimePolling();
-      state.runtimeBootId = null;
-      return;
+function sanitizeHtml(html) {
+  const doc = new DOMParser().parseFromString(String(html || ''), 'text/html');
+  const dangerous = doc.querySelectorAll('script,iframe,object,embed,link[rel="import"],form,svg,base,style');
+  dangerous.forEach((el) => el.remove());
+  doc.querySelectorAll('*').forEach((el) => {
+    for (const attr of [...el.attributes]) {
+      const val = attr.value.trim().toLowerCase();
+      const isDangerous = attr.name.startsWith('on')
+        || val.startsWith('javascript:')
+        || val.startsWith('vbscript:')
+        || (val.startsWith('data:') && !val.startsWith('data:image/'));
+      if (isDangerous) {
+        el.removeAttribute(attr.name);
+      }
     }
-    const bootId = typeof payload.boot_id === 'string' ? payload.boot_id : null;
-    if (!bootId) return;
-    if (!state.runtimeBootId) {
-      state.runtimeBootId = bootId;
-      return;
-    }
-    if (state.runtimeBootId !== bootId) {
-      location.reload();
-    }
-  } catch (_) {
-    // ignore transient errors while service restarts
-  }
-}
-
-function startRuntimePolling() {
-  if (state.runtimePollTimer) return;
-  void pollRuntimeStatus();
-  state.runtimePollTimer = setInterval(() => {
-    void pollRuntimeStatus();
-  }, 1500);
-}
-
-function loadSavedRemoteSession() {
-  try {
-    const raw = window.localStorage.getItem(SAVED_REMOTE_SESSION_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== 'object') return null;
-    if (typeof parsed.sessionId !== 'string' || !parsed.sessionId) return null;
-    return parsed;
-  } catch (_) {
-    return null;
-  }
-}
-
-function saveRemoteSession() {
-  if (state.localSession || !state.connected || !state.sessionId || !state.hostId) {
-    window.localStorage.removeItem(SAVED_REMOTE_SESSION_KEY);
-    return;
-  }
-  const sel = document.getElementById('host-select');
-  const selected = sel?.selectedOptions?.[0];
-  const payload = {
-    sessionId: state.sessionId,
-    hostId: Number(state.hostId),
-    hostLabel: selected ? selected.textContent : '',
-  };
-  window.localStorage.setItem(SAVED_REMOTE_SESSION_KEY, JSON.stringify(payload));
-}
-
-function clearSavedRemoteSession() {
-  window.localStorage.removeItem(SAVED_REMOTE_SESSION_KEY);
-}
-
-function shellSingleQuote(value) {
-  return `'${String(value).replace(/'/g, `'\"'\"'`)}'`;
-}
-
-function buildClaudeCommand(mcpUrl) {
-  const cfg = JSON.stringify({
-    mcpServers: {
-      'tabula': {
-        url: mcpUrl,
-      },
-    },
   });
-  return `claude --dangerously-skip-permissions --mcp-config ${shellSingleQuote(cfg)}\n`;
+  return doc.body.innerHTML;
 }
 
-function isMobileViewport() {
-  return window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX}px)`).matches;
-}
+function extractMathSegments(markdownSource) {
+  const source = String(markdownSource || '');
+  const stash = [];
+  let text = source;
 
-function terminalApi() {
-  return window._tabulaTerminal || null;
-}
+  const patterns = [
+    /\$\$[\s\S]+?\$\$/g,
+    /\\\[[\s\S]+?\\\]/g,
+    /\\\([\s\S]+?\\\)/g,
+  ];
 
-function updateCtrlButtonState(armed) {
-  const btn = document.getElementById('btn-key-ctrl');
-  if (!btn) return;
-  const next = Boolean(armed);
-  btn.classList.toggle('is-active', next);
-  btn.setAttribute('aria-pressed', next ? 'true' : 'false');
-}
-
-function sendTerminalInput(text) {
-  if (state.terminalWs && state.terminalWs.readyState === WebSocket.OPEN) {
-    state.terminalWs.send(text);
-    return true;
-  }
-  const term = terminalApi();
-  if (term && typeof term.send === 'function' && state.connected) {
-    term.send(text);
-    return true;
-  }
-  return false;
-}
-
-function syncMobileTerminalUi() {
-  if (DESKTOP_CANVAS_ONLY) {
-    const keybar = document.getElementById('mobile-keybar');
-    const popRow = document.getElementById('terminal-pop-row');
-    const panel = document.getElementById('panel-terminal');
-    const workspace = document.getElementById('workspace');
-    const minBtn = document.getElementById('btn-terminal-minimize');
-    if (keybar) keybar.style.display = 'none';
-    if (popRow) popRow.style.display = 'none';
-    if (panel) panel.classList.remove('mobile-minimized');
-    if (workspace) workspace.classList.remove('terminal-minimized');
-    if (minBtn) minBtn.style.display = 'none';
-    return;
-  }
-  const mobile = isMobileViewport();
-  const terminalActive = Boolean(state.connected && state.terminalWs);
-  if (!mobile || !terminalActive) {
-    state.mobileTerminalMinimized = false;
-  }
-
-  const minimized = Boolean(mobile && terminalActive && state.mobileTerminalMinimized);
-  const keybar = document.getElementById('mobile-keybar');
-  const popRow = document.getElementById('terminal-pop-row');
-  const panel = document.getElementById('panel-terminal');
-  const workspace = document.getElementById('workspace');
-  const minBtn = document.getElementById('btn-terminal-minimize');
-
-  if (keybar) {
-    keybar.style.display = mobile && terminalActive ? 'flex' : 'none';
-  }
-  if (popRow) {
-    popRow.style.display = minimized ? 'block' : 'none';
-  }
-  if (minBtn) {
-    minBtn.style.display = mobile && terminalActive ? '' : 'none';
-  }
-  if (panel) {
-    panel.classList.toggle('mobile-minimized', minimized);
-  }
-  if (workspace) {
-    workspace.classList.toggle('terminal-minimized', minimized);
-  }
-
-  if (!mobile || !terminalActive) {
-    const term = terminalApi();
-    if (term && typeof term.setCtrlArmed === 'function') {
-      term.setCtrlArmed(false);
-    }
-    updateCtrlButtonState(false);
-  }
-}
-
-function sendCurrentTerminalSize() {
-  const term = terminalApi();
-  if (!term || !state.terminalWs || state.terminalWs.readyState !== WebSocket.OPEN) {
-    return;
-  }
-  state.terminalWs.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
-}
-
-function setTerminalMinimized(minimized) {
-  state.mobileTerminalMinimized = Boolean(minimized);
-  syncMobileTerminalUi();
-  if (!state.mobileTerminalMinimized) {
-    const container = document.getElementById('terminal-container');
-    if (container) {
-      container.click();
-    }
-    requestAnimationFrame(() => sendCurrentTerminalSize());
-  }
-}
-
-function handleMobileTerminalKey(event) {
-  const key = event.currentTarget?.dataset?.terminalKey;
-  if (!key) return;
-
-  const term = terminalApi();
-  if (key === 'ctrl') {
-    if (!term || typeof term.toggleCtrlArmed !== 'function') return;
-    const armed = term.toggleCtrlArmed();
-    updateCtrlButtonState(armed);
-    return;
-  }
-
-  const payload = MOBILE_KEY_PAYLOADS[key];
-  if (!payload) return;
-  sendTerminalInput(payload);
-  const container = document.getElementById('terminal-container');
-  if (container) container.click();
-}
-
-export function showMain() {
-  showView('view-main');
-  applyDesktopMode();
-  syncMobileTerminalUi();
-  startRuntimePolling();
-  if (state.localSession) {
-    clearSavedRemoteSession();
-    connectLocalSession();
-  } else {
-    void restoreRemoteSessionOrHosts();
-  }
-}
-
-async function restoreRemoteSessionOrHosts() {
-  const restored = await tryRestoreRemoteSession();
-  if (!restored) {
-    await refreshHosts();
-  }
-}
-
-async function tryRestoreRemoteSession() {
-  if (DESKTOP_CANVAS_ONLY) {
-    return false;
-  }
-  const saved = loadSavedRemoteSession();
-  if (!saved) {
-    return false;
-  }
-
-  try {
-    await refreshHosts();
-    const sessionsResp = await fetch('/api/sessions');
-    if (!sessionsResp.ok) {
-      return false;
-    }
-    const sessionsData = await sessionsResp.json();
-    const sessions = Array.isArray(sessionsData.sessions) ? sessionsData.sessions : [];
-    if (!sessions.includes(saved.sessionId)) {
-      clearSavedRemoteSession();
-      return false;
-    }
-
-    state.sessionId = saved.sessionId;
-    state.hostId = Number(saved.hostId) || null;
-    state.connected = true;
-
-    const sel = document.getElementById('host-select');
-    if (state.hostId && sel && sel.querySelector(`option[value="${state.hostId}"]`)) {
-      sel.value = String(state.hostId);
-    }
-
-    const selected = sel?.selectedOptions?.[0];
-    const label = selected ? selected.textContent : saved.hostLabel || saved.sessionId;
-    setStatus(`connected: ${label}`, 'connected');
-    document.getElementById('btn-connect').style.display = 'none';
-    document.getElementById('btn-disconnect').style.display = '';
-    document.getElementById('btn-launch-ai').disabled = false;
-    document.getElementById('host-select').disabled = true;
-
-    if (!DESKTOP_CANVAS_ONLY) {
-      openTerminal();
-    }
-    openCanvasWs();
-    syncMobileTerminalUi();
-    return true;
-  } catch (e) {
-    console.error('remote session restore failed:', e);
-    return false;
-  }
-}
-
-async function connectLocalSession() {
-  try {
-    const resp = await fetch('/api/sessions');
-    if (!resp.ok) { refreshHosts(); return; }
-    const data = await resp.json();
-    if (!data.local_session) { refreshHosts(); return; }
-
-    state.sessionId = data.local_session.session_id;
-    state.mcpUrl = data.local_session.mcp_url;
-    state.connected = true;
-    state.localSession = data.local_session;
-
-    document.getElementById('host-select').style.display = 'none';
-    document.getElementById('btn-connect').style.display = 'none';
-    document.getElementById('btn-disconnect').style.display = 'none';
-    document.getElementById('btn-launch-ai').disabled = false;
-    setStatus(`local: ${data.local_session.project_dir}`, 'connected');
-
-    if (!DESKTOP_CANVAS_ONLY) {
-      openTerminal();
-    }
-    openCanvasWs();
-    syncMobileTerminalUi();
-  } catch (e) {
-    console.error('local session connect failed:', e);
-    refreshHosts();
-    syncMobileTerminalUi();
-  }
-}
-
-export function showHosts() {
-  if (DESKTOP_CANVAS_ONLY) return;
-  showView('view-hosts');
-  loadHosts();
-}
-
-export function showAuth() {
-  showView('view-auth');
-  syncMobileTerminalUi();
-}
-
-function setStatus(text, statusClass) {
-  const dot = document.getElementById('status-indicator');
-  const label = document.getElementById('status-text');
-  dot.className = 'status-dot ' + (statusClass || '');
-  label.textContent = text;
-}
-
-async function refreshHosts() {
-  try {
-    const resp = await fetch('/api/hosts');
-    if (!resp.ok) return;
-    const hosts = await resp.json();
-    const sel = document.getElementById('host-select');
-    const current = sel.value;
-    sel.innerHTML = '<option value="">-- select host --</option>';
-    hosts.forEach(h => {
-      const opt = document.createElement('option');
-      opt.value = h.id;
-      opt.textContent = `${h.name} (${h.username}@${h.hostname})`;
-      sel.appendChild(opt);
+  for (const pattern of patterns) {
+    text = text.replace(pattern, (segment) => {
+      const token = `${MATH_SEGMENT_TOKEN_PREFIX}${stash.length}@@`;
+      stash.push(segment);
+      return token;
     });
-    if (current) sel.value = current;
-    document.getElementById('btn-connect').disabled = !sel.value;
-  } catch (e) {
-    console.error('failed to refresh hosts:', e);
   }
+
+  return { text, stash };
 }
 
-async function connect() {
-  const hostId = parseInt(document.getElementById('host-select').value);
-  if (!hostId) return;
+function restoreMathSegments(renderedHtml, mathSegments) {
+  let output = String(renderedHtml || '');
+  for (let i = 0; i < mathSegments.length; i += 1) {
+    const token = `${MATH_SEGMENT_TOKEN_PREFIX}${i}@@`;
+    output = output.replaceAll(token, escapeHtml(String(mathSegments[i] || '')));
+  }
+  return output;
+}
 
-  setStatus('connecting...', 'connecting');
-  document.getElementById('btn-connect').disabled = true;
-
-  try {
-    const resp = await fetch('/api/connect', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ host_id: hostId }),
+function typesetMath(root, attempt = 0) {
+  if (!(root instanceof Element) || !root.isConnected) return Promise.resolve();
+  const mj = window.MathJax;
+  if (!mj || typeof mj.typesetPromise !== 'function') {
+    if (attempt >= 40) return Promise.resolve();
+    return new Promise((resolve) => {
+      window.setTimeout(() => {
+        void typesetMath(root, attempt + 1).then(resolve);
+      }, 75);
     });
-    if (!resp.ok) {
-      const text = await resp.text();
-      setStatus('failed: ' + text, '');
-      document.getElementById('btn-connect').disabled = false;
-      return;
-    }
-    const data = await resp.json();
-    state.sessionId = data.session_id;
-    state.hostId = hostId;
-    state.connected = true;
+  }
+  const startupReady = mj.startup?.promise && typeof mj.startup.promise.then === 'function'
+    ? mj.startup.promise
+    : Promise.resolve();
+  return startupReady
+    .then(() => {
+      if (!root.isConnected) return undefined;
+      return mj.typesetPromise([root]);
+    })
+    .catch(() => {});
+}
 
-    setStatus('connected', 'connected');
-    document.getElementById('btn-connect').style.display = 'none';
-    document.getElementById('btn-disconnect').style.display = '';
-    document.getElementById('btn-launch-ai').disabled = false;
-    document.getElementById('host-select').disabled = true;
-    saveRemoteSession();
+function showStatus(text) {
+  const el = document.getElementById('status-text');
+  if (el) el.textContent = text;
+}
 
-    if (!DESKTOP_CANVAS_ONLY) {
-      openTerminal();
-    }
-    syncMobileTerminalUi();
-  } catch (e) {
-    setStatus('error: ' + e.message, '');
-    document.getElementById('btn-connect').disabled = false;
-    syncMobileTerminalUi();
+function chatInputEl() {
+  const el = document.getElementById('chat-input');
+  return el instanceof HTMLTextAreaElement ? el : null;
+}
+
+function isEditableTarget(target) {
+  if (!(target instanceof Element)) return false;
+  return Boolean(target.closest('input,textarea,select,[contenteditable="true"]'));
+}
+
+function focusChatInput({ placeCursorAtEnd = false } = {}) {
+  if (state.activeTab !== 'chat') return;
+  const input = chatInputEl();
+  if (!input) return;
+  if (document.activeElement === input) return;
+  try {
+    input.focus({ preventScroll: true });
+  } catch (_) {
+    input.focus();
+  }
+  if (placeCursorAtEnd) {
+    const end = input.value.length;
+    input.setSelectionRange(end, end);
   }
 }
 
-async function disconnect() {
-  if (state.terminalWs) {
-    state.terminalWs.close();
-    state.terminalWs = null;
-  }
-  if (state.canvasWs) {
-    state.canvasWs.close();
-    state.canvasWs = null;
-  }
-  destroyTerminal();
-  clearCanvas();
+function createPushToPromptSessionID() {
+  const rand = Math.random().toString(36).slice(2, 10);
+  return `ptp-chat-${Date.now().toString(36)}-${rand}`;
+}
 
-  if (state.sessionId) {
+function base64FromBytes(bytes) {
+  if (!bytes || !bytes.length) return '';
+  const chunkSize = 0x8000;
+  let out = '';
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    out += String.fromCharCode(...chunk);
+  }
+  return btoa(out);
+}
+
+function newMediaRecorder(stream) {
+  let recorder = null;
+  try {
+    const preferredType = 'audio/webm;codecs=opus';
+    if (typeof window.MediaRecorder?.isTypeSupported === 'function'
+      && window.MediaRecorder.isTypeSupported(preferredType)) {
+      recorder = new window.MediaRecorder(stream, { mimeType: preferredType });
+    } else {
+      recorder = new window.MediaRecorder(stream);
+    }
+  } catch (_) {
+    recorder = new window.MediaRecorder(stream);
+  }
+  return recorder;
+}
+
+async function callPushToPromptAction(action, actionPayload = {}) {
+  const req = {
+    action,
+    ...actionPayload,
+  };
+  const customMCPURL = String(window.__TABULA_VOXTYPE_MCP_URL || '').trim();
+  if (customMCPURL) {
+    req.voxtype_mcp_url = customMCPURL;
+  }
+  const resp = await fetch('/api/stt/push-to-prompt', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req),
+  });
+  let responsePayload = {};
+  const raw = await resp.text();
+  if (raw) {
     try {
-      await fetch('/api/disconnect', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: state.sessionId }),
-      });
-    } catch (e) {
-      console.error('disconnect error:', e);
+      responsePayload = JSON.parse(raw);
+    } catch (_) {
+      if (!resp.ok) {
+        throw new Error(raw);
+      }
     }
   }
-
-  state.sessionId = null;
-  state.hostId = null;
-  state.connected = false;
-  state.mobileTerminalMinimized = false;
-  state.terminalReconnectAttempt = 0;
-  clearTerminalReconnectTimer();
-  stopRuntimePolling();
-  state.runtimeBootId = null;
-  clearSavedRemoteSession();
-  setStatus('disconnected', '');
-  document.getElementById('btn-connect').style.display = '';
-  document.getElementById('btn-connect').disabled = false;
-  document.getElementById('btn-disconnect').style.display = 'none';
-  document.getElementById('btn-launch-ai').disabled = true;
-  document.getElementById('host-select').disabled = false;
-  updateCtrlButtonState(false);
-  syncMobileTerminalUi();
+  if (!resp.ok) {
+    throw new Error(typeof responsePayload === 'object' && responsePayload !== null && responsePayload.error
+      ? responsePayload.error
+      : raw || 'push-to-prompt request failed');
+  }
+  if (typeof responsePayload !== 'object' || responsePayload === null) {
+    throw new Error('push-to-prompt request returned invalid response');
+  }
+  return responsePayload;
 }
 
-function openTerminal() {
-  if (DESKTOP_CANVAS_ONLY) {
-    return;
+function canUseMicrophoneCapture() {
+  return Boolean(window.MediaRecorder)
+    && Boolean(navigator.mediaDevices)
+    && typeof navigator.mediaDevices.getUserMedia === 'function';
+}
+
+async function appendChatVoiceChunk(capture, chunkBlob) {
+  if (!capture?.sttSessionID) return;
+  if (!chunkBlob || typeof chunkBlob.arrayBuffer !== 'function' || chunkBlob.size <= 0) return;
+  const bytes = new Uint8Array(await chunkBlob.arrayBuffer());
+  if (!bytes.length) return;
+  const seq = Number(capture.appendSeq || 0);
+  capture.appendSeq = seq + 1;
+  const payload = {
+    session_id: capture.sttSessionID,
+    seq,
+    audio_base64: base64FromBytes(bytes),
+  };
+  const chain = capture.appendChain || Promise.resolve();
+  capture.appendChain = chain.then(() => callPushToPromptAction(sttActionAppend, payload));
+  await capture.appendChain;
+}
+
+function stopChatVoiceMedia(capture) {
+  if (!capture) return;
+  if (capture.mediaRecorder) {
+    try {
+      if (capture.mediaRecorder.state !== 'inactive') {
+        capture.mediaRecorder.stop();
+      }
+    } catch (_) {
+      // noop
+    }
   }
-  if (state.terminalWs && (state.terminalWs.readyState === WebSocket.OPEN || state.terminalWs.readyState === WebSocket.CONNECTING)) {
-    return;
-  }
-  const container = document.getElementById('terminal-container');
-  const term = terminalApi() || initTerminal(container);
-  clearTerminalReconnectTimer();
-  updateCtrlButtonState(false);
-  syncMobileTerminalUi();
-
-  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const wsUrl = `${proto}//${location.host}/ws/terminal/${state.sessionId}`;
-  const ws = new WebSocket(wsUrl);
-  ws.binaryType = 'arraybuffer';
-  state.terminalWs = ws;
-
-  ws.onopen = () => {
-    state.terminalReconnectAttempt = 0;
-    const sendResize = () => {
-      if (ws.readyState !== WebSocket.OPEN) return;
-      const safeCols = Math.max(40, Number(term.cols) || 120);
-      const safeRows = Math.max(10, Number(term.rows) || 40);
-      ws.send(JSON.stringify({ type: 'resize', cols: safeCols, rows: safeRows }));
-    };
-
-    term.onData(data => {
-      if (ws.readyState === WebSocket.OPEN) ws.send(data);
-    });
-    term.onResize(({ cols, rows }) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'resize', cols, rows }));
+  if (capture.mediaStream && typeof capture.mediaStream.getTracks === 'function') {
+    capture.mediaStream.getTracks().forEach((track) => {
+      if (track && typeof track.stop === 'function') {
+        track.stop();
       }
     });
-    // Force an initial resize so stale PTY dimensions from prior sessions
-    // cannot leak into a newly attached browser terminal.
-    sendResize();
-    setTimeout(sendResize, 100);
-    syncMobileTerminalUi();
+  }
+  capture.mediaRecorder = null;
+  capture.mediaStream = null;
+}
+
+function stopChatVoiceMediaAndFlush(capture) {
+  if (!capture?.mediaRecorder) {
+    stopChatVoiceMedia(capture);
+    return Promise.resolve();
+  }
+  const recorder = capture.mediaRecorder;
+  if (recorder.state === 'inactive') {
+    stopChatVoiceMedia(capture);
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    const onStop = () => {
+      recorder.removeEventListener('error', onError);
+      stopChatVoiceMedia(capture);
+      resolve();
+    };
+    const onError = () => {
+      recorder.removeEventListener('stop', onStop);
+      stopChatVoiceMedia(capture);
+      resolve();
+    };
+    recorder.addEventListener('stop', onStop, { once: true });
+    recorder.addEventListener('error', onError, { once: true });
+    try {
+      recorder.stop();
+    } catch (_) {
+      recorder.removeEventListener('stop', onStop);
+      recorder.removeEventListener('error', onError);
+      stopChatVoiceMedia(capture);
+      resolve();
+    }
+  });
+}
+
+async function beginChatVoiceCapture() {
+  if (state.activeTab !== 'chat') return;
+  if (state.chatVoiceCapture) return;
+  const capture = {
+    active: false,
+    stopping: false,
+    stopRequested: false,
+    sttSessionID: createPushToPromptSessionID(),
+    appendSeq: 0,
+    appendChain: Promise.resolve(),
+    appendError: '',
+    captureBackend: '',
+    mediaStream: null,
+    mediaRecorder: null,
+  };
+  state.chatVoiceCapture = capture;
+  showStatus('push-to-prompt recording...');
+  try {
+    const startResp = await callPushToPromptAction(sttActionStart, {
+      session_id: capture.sttSessionID,
+      mime_type: 'audio/webm',
+    });
+    capture.active = true;
+    capture.captureBackend = String(startResp?.capture_backend || '').trim().toLowerCase() || 'buffered';
+    if (capture.captureBackend === 'daemon') {
+      return;
+    }
+    if (!canUseMicrophoneCapture()) {
+      throw new Error('Microphone capture is unavailable in this browser.');
+    }
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    if (state.chatVoiceCapture !== capture) {
+      if (typeof stream.getTracks === 'function') {
+        stream.getTracks().forEach((track) => {
+          if (track && typeof track.stop === 'function') track.stop();
+        });
+      }
+      return;
+    }
+    const recorder = newMediaRecorder(stream);
+    capture.mediaStream = stream;
+    capture.mediaRecorder = recorder;
+    recorder.addEventListener('dataavailable', (ev) => {
+      if (!ev?.data || ev.data.size <= 0) return;
+      const chain = appendChatVoiceChunk(capture, ev.data);
+      capture.appendChain = chain.catch((err) => {
+        capture.appendError = String(err?.message || err || 'audio chunk append failed');
+        throw err;
+      });
+      void capture.appendChain.catch(() => {});
+    });
+    recorder.start(300);
+    if (capture.stopRequested) {
+      await stopChatVoiceMediaAndFlush(capture);
+    }
+  } catch (err) {
+    const message = String(err?.message || err || 'push-to-prompt failed');
+    showStatus(`push-to-prompt failed: ${message}`);
+    if (capture.sttSessionID) {
+      void callPushToPromptAction(sttActionCancel, { session_id: capture.sttSessionID }).catch(() => {});
+    }
+    stopChatVoiceMedia(capture);
+    if (state.chatVoiceCapture === capture) {
+      state.chatVoiceCapture = null;
+    }
+  }
+}
+
+async function stopChatVoiceCaptureAndApply() {
+  const capture = state.chatVoiceCapture;
+  if (!capture || capture.stopping) return;
+  capture.stopping = true;
+  capture.stopRequested = true;
+  let remoteStopped = false;
+  try {
+    if (!capture.active) {
+      return;
+    }
+    await stopChatVoiceMediaAndFlush(capture);
+    await (capture.appendChain || Promise.resolve());
+    if (capture.appendError) {
+      throw new Error(capture.appendError);
+    }
+    const stt = await callPushToPromptAction(sttActionStop, { session_id: capture.sttSessionID });
+    remoteStopped = true;
+    const transcript = String(stt?.text || '').trim();
+    if (!transcript) {
+      throw new Error('speech recognizer returned empty text');
+    }
+    const input = chatInputEl();
+    if (!input) return;
+    const needsSpace = input.value.trim() && !/[ \n]$/.test(input.value);
+    input.value = `${input.value}${needsSpace ? ' ' : ''}${transcript}`;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    focusChatInput({ placeCursorAtEnd: true });
+    showStatus('dictation ready (press Enter to send)');
+  } catch (err) {
+    const message = String(err?.message || err || 'push-to-prompt failed');
+    showStatus(`push-to-prompt failed: ${message}`);
+  } finally {
+    if (!remoteStopped && capture?.sttSessionID) {
+      void callPushToPromptAction(sttActionCancel, { session_id: capture.sttSessionID }).catch(() => {});
+    }
+    stopChatVoiceMedia(capture);
+    if (state.chatVoiceCapture === capture) {
+      state.chatVoiceCapture = null;
+    }
+  }
+}
+
+function cancelChatVoiceCapture() {
+  const capture = state.chatVoiceCapture;
+  if (!capture) return;
+  if (capture.sttSessionID) {
+    void callPushToPromptAction(sttActionCancel, { session_id: capture.sttSessionID }).catch(() => {});
+  }
+  stopChatVoiceMedia(capture);
+  state.chatVoiceCapture = null;
+}
+
+function setActiveTab(tab) {
+  const workspace = document.getElementById('workspace');
+  const chatBtn = document.getElementById('tab-chat');
+  const canvasBtn = document.getElementById('tab-canvas');
+  if (!workspace || !chatBtn || !canvasBtn) return;
+  state.activeTab = tab === 'canvas' ? 'canvas' : 'chat';
+  workspace.classList.toggle('workspace-chat', state.activeTab === 'chat');
+  workspace.classList.toggle('workspace-canvas', state.activeTab === 'canvas');
+  chatBtn.classList.toggle('is-active', state.activeTab === 'chat');
+  canvasBtn.classList.toggle('is-active', state.activeTab === 'canvas');
+  if (state.activeTab === 'canvas') {
+    state.canvasHasUnread = false;
+    updateCanvasIndicator();
+  } else {
+    window.setTimeout(() => focusChatInput({ placeCursorAtEnd: true }), 0);
+  }
+}
+
+function updateCanvasIndicator() {
+  const dot = document.getElementById('tab-canvas-indicator');
+  if (!dot) return;
+  dot.style.display = state.canvasHasUnread ? 'inline-block' : 'none';
+}
+
+function chatHistoryEl() {
+  return document.getElementById('chat-history');
+}
+
+function scrollChatToBottom(host) {
+  if (!(host instanceof HTMLElement)) return;
+  host.scrollTop = host.scrollHeight;
+}
+
+function syncChatScroll(host) {
+  if (!(host instanceof HTMLElement)) return;
+  scrollChatToBottom(host);
+  window.requestAnimationFrame(() => scrollChatToBottom(host));
+}
+
+function setChatMode(mode) {
+  state.chatMode = String(mode || 'chat').toLowerCase() === 'plan' ? 'plan' : 'chat';
+  const pill = document.getElementById('chat-mode-pill');
+  if (pill) {
+    pill.textContent = state.chatMode;
+    pill.className = `badge ${state.chatMode === 'plan' ? 'review' : ''}`;
+  }
+}
+
+function nextLocalMessageId() {
+  localMessageSeq += 1;
+  return `local-msg-${Date.now()}-${localMessageSeq}`;
+}
+
+function appendPlainMessage(role, text, options = {}) {
+  const host = chatHistoryEl();
+  if (!host) return null;
+  const row = document.createElement('div');
+  row.className = `chat-message chat-${role}`;
+  if (options.pending) row.classList.add('is-pending');
+  row.dataset.role = role;
+  if (options.turnId) row.dataset.turnId = options.turnId;
+  if (options.localId) row.dataset.localId = options.localId;
+
+  const meta = document.createElement('div');
+  meta.className = 'chat-message-meta';
+  meta.textContent = role;
+
+  const bubble = document.createElement('div');
+  bubble.className = 'chat-bubble';
+  bubble.textContent = String(text || '');
+
+  row.appendChild(meta);
+  row.appendChild(bubble);
+  host.appendChild(row);
+  syncChatScroll(host);
+  return row;
+}
+
+function appendRenderedAssistant(markdownText, options = {}) {
+  const host = chatHistoryEl();
+  if (!host) return null;
+  const row = document.createElement('div');
+  row.className = 'chat-message chat-assistant';
+  if (options.pending) row.classList.add('is-pending');
+  row.dataset.role = 'assistant';
+  if (options.turnId) row.dataset.turnId = options.turnId;
+  if (options.localId) row.dataset.localId = options.localId;
+
+  const meta = document.createElement('div');
+  meta.className = 'chat-message-meta';
+  meta.textContent = 'assistant';
+
+  const bubble = document.createElement('div');
+  bubble.className = 'chat-bubble markdown';
+  const { text: markdownBody, stash: mathSegments } = extractMathSegments(markdownText);
+  const rendered = marked.parse(markdownBody || '');
+  bubble.innerHTML = restoreMathSegments(sanitizeHtml(rendered), mathSegments);
+  row.appendChild(meta);
+  row.appendChild(bubble);
+  host.appendChild(row);
+  syncChatScroll(host);
+  void typesetMath(bubble).finally(() => syncChatScroll(host));
+  return row;
+}
+
+function updateAssistantRow(row, markdownText, pending = true) {
+  if (!row) return;
+  const host = chatHistoryEl();
+  row.classList.toggle('is-pending', pending);
+  const bubble = row.querySelector('.chat-bubble');
+  if (!(bubble instanceof HTMLElement)) return;
+  const { text: markdownBody, stash: mathSegments } = extractMathSegments(markdownText);
+  const rendered = marked.parse(markdownBody || '');
+  bubble.innerHTML = restoreMathSegments(sanitizeHtml(rendered), mathSegments);
+  syncChatScroll(host);
+  void typesetMath(bubble).finally(() => syncChatScroll(host));
+}
+
+function ensurePendingForTurn(turnID) {
+  const key = String(turnID || '').trim();
+  if (key && state.pendingByTurn.has(key)) {
+    return state.pendingByTurn.get(key);
+  }
+  let row = state.pendingQueue.shift() || null;
+  if (!row) {
+    row = appendRenderedAssistant('_Thinking..._', { pending: true, localId: nextLocalMessageId() });
+  }
+  if (key) {
+    row.dataset.turnId = key;
+    state.pendingByTurn.set(key, row);
+  }
+  return row;
+}
+
+async function ensureChatSession() {
+  const resp = await fetch('/api/chat/sessions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!resp.ok) {
+    throw new Error(`chat session create failed: HTTP ${resp.status}`);
+  }
+  const payload = await resp.json();
+  state.chatSessionId = String(payload.session_id || '');
+  setChatMode(payload.mode || 'chat');
+  if (!state.chatSessionId) {
+    throw new Error('chat session ID missing');
+  }
+  showStatus('ready');
+}
+
+async function loadChatHistory() {
+  if (!state.chatSessionId) return;
+  const host = chatHistoryEl();
+  if (!host) return;
+  host.innerHTML = '';
+  const resp = await fetch(`/api/chat/sessions/${encodeURIComponent(state.chatSessionId)}/history`);
+  if (!resp.ok) {
+    throw new Error(`chat history failed: HTTP ${resp.status}`);
+  }
+  const payload = await resp.json();
+  const session = payload?.session || {};
+  setChatMode(session.mode || state.chatMode);
+  const messages = Array.isArray(payload?.messages) ? payload.messages : [];
+  for (const msg of messages) {
+    const role = String(msg.role || 'assistant').toLowerCase();
+    const markdown = String(msg.content_markdown || '');
+    const plain = String(msg.content_plain || markdown);
+    if (role === 'assistant') {
+      appendRenderedAssistant(markdown || plain);
+    } else {
+      appendPlainMessage(role, plain);
+    }
+  }
+  scrollChatToBottom(host);
+}
+
+function openChatWs() {
+  if (!state.chatSessionId) return;
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const wsUrl = `${proto}//${location.host}/ws/chat/${encodeURIComponent(state.chatSessionId)}`;
+  const ws = new WebSocket(wsUrl);
+  state.chatWs = ws;
+
+  ws.onopen = () => {
+    showStatus('chat connected');
   };
 
   ws.onmessage = (event) => {
-    if (typeof event.data === 'string') {
-      try {
-        const payload = JSON.parse(event.data);
-        if (payload && payload.type === 'terminal_frame') {
-          writeToTerminal(payload);
-          return;
-        }
-      } catch (_) {
-        // Keep backward compatibility with plain text terminal streams.
-      }
+    let payload = null;
+    try {
+      payload = JSON.parse(event.data);
+    } catch (_) {
+      return;
     }
-    writeToTerminal(event.data);
+    handleChatEvent(payload);
   };
 
   ws.onclose = () => {
-    state.terminalWs = null;
-    syncMobileTerminalUi();
-    if (state.connected) {
-      scheduleTerminalReconnect();
-    }
+    state.chatWs = null;
+    showStatus('reconnecting chat...');
+    window.setTimeout(() => openChatWs(), 1200);
   };
 }
 
-function openCanvasWs() {
-  if (!state.sessionId) return;
+function handleChatEvent(payload) {
+  const type = String(payload?.type || '').trim();
+  if (!type) return;
 
+  if (type === 'mode_changed') {
+    setChatMode(payload.mode || 'chat');
+    const message = String(payload.message || '').trim();
+    if (message) {
+      appendPlainMessage('system', message);
+    }
+    return;
+  }
+
+  if (type === 'action') {
+    const action = String(payload.action || '').trim();
+    if (action === 'open_canvas') {
+      setActiveTab('canvas');
+    } else if (action === 'open_chat') {
+      setActiveTab('chat');
+    } else if (action === 'commit_canvas') {
+      void commitCanvasFromChat();
+    }
+    return;
+  }
+
+  if (type === 'turn_started') {
+    ensurePendingForTurn(payload.turn_id);
+    return;
+  }
+
+  if (type === 'assistant_message') {
+    const turnID = String(payload.turn_id || '').trim();
+    const row = ensurePendingForTurn(turnID);
+    updateAssistantRow(row, String(payload.message || ''), true);
+    return;
+  }
+
+  if (type === 'message_persisted') {
+    if (String(payload.role || '') !== 'assistant') return;
+    const turnID = String(payload.turn_id || '').trim();
+    let row = null;
+    if (turnID && state.pendingByTurn.has(turnID)) {
+      row = state.pendingByTurn.get(turnID);
+      state.pendingByTurn.delete(turnID);
+    } else {
+      row = state.pendingQueue.shift() || null;
+    }
+    if (row) {
+      updateAssistantRow(row, String(payload.message || ''), false);
+    } else {
+      appendRenderedAssistant(String(payload.message || ''));
+    }
+    return;
+  }
+
+  if (type === 'error') {
+    const errText = String(payload.error || 'assistant request failed');
+    appendPlainMessage('system', errText);
+  }
+}
+
+async function sendChatMessage() {
+  const input = document.getElementById('chat-input');
+  if (!(input instanceof HTMLTextAreaElement)) return;
+  const text = input.value.trim();
+  if (!text || !state.chatSessionId) return;
+  input.value = '';
+  input.style.height = 'auto';
+  focusChatInput({ placeCursorAtEnd: true });
+  appendPlainMessage('user', text);
+
+  if (!text.startsWith('/')) {
+    const pending = appendRenderedAssistant('_Thinking..._', { pending: true, localId: nextLocalMessageId() });
+    state.pendingQueue.push(pending);
+  }
+
+  try {
+    const resp = await fetch(`/api/chat/sessions/${encodeURIComponent(state.chatSessionId)}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+    if (!resp.ok) {
+      const detail = (await resp.text()).trim() || `HTTP ${resp.status}`;
+      appendPlainMessage('system', `Send failed: ${detail}`);
+      return;
+    }
+    const payload = await resp.json();
+    if (payload?.kind === 'command' && payload?.result?.message) {
+      appendPlainMessage('system', String(payload.result.message));
+    }
+  } catch (err) {
+    appendPlainMessage('system', `Send failed: ${String(err?.message || err)}`);
+  }
+  focusChatInput({ placeCursorAtEnd: true });
+}
+
+function openCanvasWs() {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const wsUrl = `${proto}//${location.host}/ws/canvas/${state.sessionId}`;
+  const wsUrl = `${proto}//${location.host}/ws/canvas/${encodeURIComponent(state.sessionId)}`;
   const ws = new WebSocket(wsUrl);
   state.canvasWs = ws;
 
@@ -583,188 +731,219 @@ function openCanvasWs() {
   ws.onmessage = (event) => {
     try {
       const payload = JSON.parse(event.data);
-      logEvent('in', payload);
       renderCanvas(payload);
-    } catch (e) {
-      console.error('canvas ws parse error:', e);
+      if (state.activeTab !== 'canvas') {
+        state.canvasHasUnread = true;
+        updateCanvasIndicator();
+      }
+    } catch (_) {
+      // ignore malformed payloads
     }
   };
 
   ws.onclose = () => {
-    if (state.connected) {
-      setTimeout(() => openCanvasWs(), 3000);
-    }
+    state.canvasWs = null;
+    window.setTimeout(() => openCanvasWs(), 1200);
   };
 }
 
 async function loadCanvasSnapshot() {
-  if (!state.sessionId) return;
   try {
     const resp = await fetch(`/api/canvas/${encodeURIComponent(state.sessionId)}/snapshot`);
-    if (!resp.ok) return;
+    if (!resp.ok) {
+      clearCanvas();
+      return;
+    }
     const payload = await resp.json();
-    if (payload && payload.event) {
-      logEvent('in', payload.event);
+    if (payload?.event) {
       renderCanvas(payload.event);
       return;
     }
-    if (payload && payload.status && payload.status.mode === 'prompt') {
-      clearCanvas();
-    }
-  } catch (e) {
-    console.error('canvas snapshot fetch failed:', e);
+    clearCanvas();
+  } catch (_) {
+    clearCanvas();
   }
 }
 
-async function launchAI() {
-  if (DESKTOP_CANVAS_ONLY) return;
-  if (!state.sessionId) return;
+async function runChatCommand(command) {
+  if (!state.chatSessionId) return;
+  const resp = await fetch(`/api/chat/sessions/${encodeURIComponent(state.chatSessionId)}/commands`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ command }),
+  });
+  if (!resp.ok) {
+    const detail = (await resp.text()).trim() || `HTTP ${resp.status}`;
+    appendPlainMessage('system', detail);
+    return;
+  }
+  const payload = await resp.json();
+  const message = String(payload?.result?.message || '').trim();
+  if (message) {
+    appendPlainMessage('system', message);
+  }
+}
 
-  const assistant = document.getElementById('assistant-select').value;
-  const term = window._tabulaTerminal;
-  if (!term || !state.terminalWs) return;
-
-  if (!state.localSession) {
-    try {
-      const resp = await fetch('/api/daemon/start', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: state.sessionId }),
-      });
-      if (!resp.ok) {
-        const text = await resp.text();
-        writeToTerminal(`\r\n[daemon start failed: ${text}]\r\n`);
-        return;
-      }
-      const data = await resp.json();
-      state.tunnelPort = data.tunnel_port;
-    } catch (e) {
-      writeToTerminal(`\r\n[daemon start error: ${e.message}]\r\n`);
+async function commitCanvasFromChat() {
+  try {
+    const resp = await fetch(`/api/canvas/${encodeURIComponent(state.sessionId)}/commit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ include_draft: true }),
+    });
+    if (!resp.ok) {
+      const detail = (await resp.text()).trim() || `HTTP ${resp.status}`;
+      appendPlainMessage('system', `Commit failed: ${detail}`);
       return;
     }
-    openCanvasWs();
+    appendPlainMessage('system', 'Draft annotations committed.');
+  } catch (err) {
+    appendPlainMessage('system', `Commit failed: ${String(err?.message || err)}`);
   }
-
-  // Commands run inside the PTY host, so they should use the host-local daemon port.
-  const mcpUrl = state.mcpUrl || 'http://127.0.0.1:9420/mcp';
-  let cmd;
-  if (assistant === 'claude') {
-    cmd = buildClaudeCommand(mcpUrl);
-  } else {
-    cmd = `codex --no-alt-screen --yolo --search -c 'mcp_servers.tabula.url=${JSON.stringify(mcpUrl)}'\n`;
-  }
-
-  sendTerminalInput(cmd);
 }
 
-async function logout() {
-  await disconnect();
-  try {
-    await fetch('/api/logout', { method: 'POST' });
-  } catch (e) {
-    console.error('logout error:', e);
+function bindUi() {
+  document.getElementById('tab-chat')?.addEventListener('click', () => setActiveTab('chat'));
+  document.getElementById('tab-canvas')?.addEventListener('click', () => setActiveTab('canvas'));
+
+  document.getElementById('btn-plan-toggle')?.addEventListener('click', () => {
+    void runChatCommand('/plan');
+  });
+  document.getElementById('btn-open-canvas')?.addEventListener('click', () => setActiveTab('canvas'));
+  document.getElementById('btn-commit-from-chat')?.addEventListener('click', () => {
+    void commitCanvasFromChat();
+  });
+
+  const form = document.getElementById('chat-form');
+  form?.addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    void sendChatMessage();
+  });
+
+  const input = document.getElementById('chat-input');
+  if (input instanceof HTMLTextAreaElement) {
+    input.addEventListener('keydown', (ev) => {
+      const isEnter = ev.key === 'Enter';
+      if (!isEnter) return;
+      if (ev.shiftKey) return;
+      ev.preventDefault();
+      void sendChatMessage();
+    });
+    input.addEventListener('input', () => {
+      input.style.height = 'auto';
+      input.style.height = `${Math.min(input.scrollHeight, 240)}px`;
+    });
   }
-  clearSavedRemoteSession();
-  state.authenticated = false;
-  showAuth();
-}
 
-function initDivider() {
-  if (DESKTOP_CANVAS_ONLY) return;
-  const divider = document.getElementById('panel-divider');
-  const workspace = document.getElementById('workspace');
-  const left = document.getElementById('panel-terminal');
-  const right = document.getElementById('panel-canvas');
-  let dragging = false;
+  document.addEventListener('keydown', (ev) => {
+    if (state.activeTab !== 'chat') return;
 
-  divider.addEventListener('mousedown', (e) => {
-    dragging = true;
-    e.preventDefault();
+    if (ev.key === 'Control' && !ev.repeat) {
+      if (state.chatCtrlHoldTimer || state.chatVoiceCapture) return;
+      state.chatCtrlHoldTimer = window.setTimeout(() => {
+        state.chatCtrlHoldTimer = null;
+        void beginChatVoiceCapture();
+      }, CHAT_CTRL_LONG_PRESS_MS);
+      return;
+    }
+
+    if (ev.ctrlKey && ev.key !== 'Control') {
+      if (state.chatCtrlHoldTimer) {
+        clearTimeout(state.chatCtrlHoldTimer);
+        state.chatCtrlHoldTimer = null;
+      }
+      if (state.chatVoiceCapture) {
+        cancelChatVoiceCapture();
+        showStatus('ready');
+      }
+      return;
+    }
+
+    if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
+    if (isEditableTarget(ev.target)) return;
+
+    const inputEl = chatInputEl();
+    if (!inputEl) return;
+
+    if (ev.key.length === 1) {
+      ev.preventDefault();
+      focusChatInput({ placeCursorAtEnd: true });
+      const start = inputEl.selectionStart ?? inputEl.value.length;
+      const end = inputEl.selectionEnd ?? inputEl.value.length;
+      inputEl.value = `${inputEl.value.slice(0, start)}${ev.key}${inputEl.value.slice(end)}`;
+      const caret = start + ev.key.length;
+      inputEl.setSelectionRange(caret, caret);
+      inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+      return;
+    }
+
+    if (ev.key === 'Enter') {
+      ev.preventDefault();
+      if (inputEl.value.trim()) {
+        void sendChatMessage();
+      } else {
+        focusChatInput({ placeCursorAtEnd: true });
+      }
+    }
+  }, true);
+
+  document.addEventListener('keyup', (ev) => {
+    if (ev.key !== 'Control') return;
+    if (state.chatCtrlHoldTimer) {
+      clearTimeout(state.chatCtrlHoldTimer);
+      state.chatCtrlHoldTimer = null;
+      return;
+    }
+    if (state.activeTab === 'chat' && state.chatVoiceCapture) {
+      void stopChatVoiceCaptureAndApply();
+    }
+  }, true);
+
+  window.addEventListener('blur', () => {
+    if (state.chatCtrlHoldTimer) {
+      clearTimeout(state.chatCtrlHoldTimer);
+      state.chatCtrlHoldTimer = null;
+    }
+    if (state.chatVoiceCapture) {
+      cancelChatVoiceCapture();
+      showStatus('ready');
+    }
   });
 
-  document.addEventListener('mousemove', (e) => {
-    if (!dragging) return;
-    const rect = workspace.getBoundingClientRect();
-    const pct = ((e.clientX - rect.left) / rect.width) * 100;
-    const clamped = Math.max(20, Math.min(80, pct));
-    left.style.flex = 'none';
-    right.style.flex = 'none';
-    left.style.width = clamped + '%';
-    right.style.width = (100 - clamped) + '%';
+  window.addEventListener('focus', () => {
+    if (state.activeTab === 'chat') {
+      window.setTimeout(() => focusChatInput({ placeCursorAtEnd: true }), 20);
+    }
   });
 
-  document.addEventListener('mouseup', () => { dragging = false; });
+  const panelChat = document.getElementById('panel-chat');
+  panelChat?.addEventListener('click', (ev) => {
+    if (state.activeTab !== 'chat') return;
+    const target = ev.target;
+    if (target instanceof Element) {
+      if (target.closest('button,a,input,textarea,select,[contenteditable="true"]')) return;
+      const selection = window.getSelection();
+      if (selection && !selection.isCollapsed) return;
+    }
+    focusChatInput({ placeCursorAtEnd: true });
+  });
 }
 
 async function init() {
-  try {
-    initAuth();
-    initHostsView();
-    initDivider();
-    initMcpLog();
-    initCanvasControls();
+  bindUi();
+  initCanvasControls();
+  clearCanvas();
+  setActiveTab('chat');
+  showStatus('starting...');
 
-    document.getElementById('host-select').addEventListener('change', (e) => {
-      document.getElementById('btn-connect').disabled = !e.target.value;
-    });
-    document.getElementById('btn-connect').addEventListener('click', connect);
-    document.getElementById('btn-disconnect').addEventListener('click', disconnect);
-    document.getElementById('btn-launch-ai').addEventListener('click', launchAI);
-    document.getElementById('btn-hosts').addEventListener('click', showHosts);
-    document.getElementById('btn-logout').addEventListener('click', logout);
-    document.getElementById('btn-terminal-minimize').addEventListener('click', () => setTerminalMinimized(true));
-    document.getElementById('btn-terminal-pop').addEventListener('click', () => setTerminalMinimized(false));
-    document.querySelectorAll('#mobile-keybar [data-terminal-key]').forEach((btn) => {
-      btn.addEventListener('click', handleMobileTerminalKey);
-    });
-    window.addEventListener('resize', syncMobileTerminalUi);
-    window.addEventListener('orientationchange', syncMobileTerminalUi);
-    window.addEventListener('tabula-terminal-ctrl', (event) => {
-      updateCtrlButtonState(Boolean(event?.detail?.armed));
-    });
-    syncMobileTerminalUi();
-
-    if (DESKTOP_CANVAS_ONLY) {
-      const hideIds = [
-        'host-select',
-        'btn-connect',
-        'btn-disconnect',
-        'assistant-select',
-        'btn-launch-ai',
-        'btn-mcp-log',
-        'btn-hosts',
-        'btn-terminal-minimize',
-        'mobile-keybar',
-        'terminal-pop-row',
-        'mcp-log-panel',
-      ];
-      hideIds.forEach((id) => {
-        const el = document.getElementById(id);
-        if (el) el.style.display = 'none';
-      });
-    }
-
-    const resp = await fetch('/api/setup');
-    const data = await resp.json();
-    if (data.local_session) {
-      state.localSession = { session_id: data.local_session };
-    }
-    if (data.authenticated) {
-      state.authenticated = true;
-      showMain();
-    } else {
-      showAuth();
-      syncMobileTerminalUi();
-    }
-  } catch (e) {
-    console.error('tabula web init failed:', e);
-    const errorEl = document.getElementById('auth-error');
-    if (errorEl) {
-      errorEl.textContent = 'UI init error. Try hard-refreshing the page.';
-    }
-    showAuth();
-    syncMobileTerminalUi();
-  }
+  openCanvasWs();
+  await ensureChatSession();
+  await loadChatHistory();
+  openChatWs();
+  focusChatInput({ placeCursorAtEnd: true });
 }
 
-init();
+init().catch((err) => {
+  showStatus('failed');
+  appendPlainMessage('system', `Initialization failed: ${String(err?.message || err)}`);
+});

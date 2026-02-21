@@ -8,49 +8,39 @@
 </head>
 <body>
   <div id="app">
-    <div id="view-auth" class="view">
-      <div class="auth-card">
-        <h1>Tabula</h1>
-        <p id="auth-subtitle"></p>
-        <form id="auth-form">
-          <input type="password" id="auth-password" placeholder="Admin password" autocomplete="current-password" required minlength="8">
-          <button type="submit" id="auth-submit">Login</button>
-        </form>
-        <p id="auth-error" class="error"></p>
-      </div>
-    </div>
-
-    <div id="view-main" class="view" style="display:none">
+    <div id="view-main" class="view">
       <header id="toolbar">
         <span class="brand">Tabula</span>
-        <select id="host-select">
-          <option value="">-- select host --</option>
-        </select>
-        <button id="btn-connect" disabled>Connect</button>
-        <button id="btn-disconnect" style="display:none">Disconnect</button>
-        <span id="status-indicator" class="status-dot"></span>
-        <span id="status-text">disconnected</span>
+        <span id="status-text">starting...</span>
+        <span id="chat-mode-pill" class="badge">chat</span>
         <div class="toolbar-spacer"></div>
-        <select id="assistant-select">
-          <option value="claude">Claude</option>
-          <option value="codex">Codex</option>
-        </select>
-        <button id="btn-launch-ai" disabled>Launch AI</button>
-        <button id="btn-mcp-log" title="Toggle MCP log">MCP Log</button>
-        <button id="btn-hosts" title="Manage hosts">Hosts</button>
-        <button id="btn-logout" title="Logout">Logout</button>
+        <div id="main-tabs" role="tablist" aria-label="Primary views">
+          <button id="tab-chat" class="tab-btn is-active" type="button" role="tab" aria-selected="true">Chat</button>
+          <button id="tab-canvas" class="tab-btn" type="button" role="tab" aria-selected="false">
+            Canvas
+            <span id="tab-canvas-indicator" class="tab-indicator" style="display:none" aria-hidden="true"></span>
+          </button>
+        </div>
       </header>
 
-      <div id="workspace">
-        <div id="panel-terminal" class="panel">
-          <div id="terminal-header">
-            <span id="terminal-title">Terminal</span>
-            <button id="btn-terminal-minimize" type="button" style="display:none">Minimize</button>
-          </div>
-          <div id="terminal-container"></div>
-        </div>
-        <div id="panel-divider" class="divider"></div>
-        <div id="panel-canvas" class="panel">
+      <div id="workspace" class="workspace-chat">
+        <section id="panel-chat" class="panel" aria-label="Chat canvas">
+          <div id="chat-history" aria-live="polite"></div>
+          <form id="chat-form" autocomplete="off">
+            <div id="chat-action-row">
+              <button type="button" id="btn-plan-toggle">/plan</button>
+              <button type="button" id="btn-open-canvas">Open Canvas</button>
+              <button type="button" id="btn-commit-from-chat">Commit Draft</button>
+            </div>
+            <textarea id="chat-input" rows="1" placeholder="Ask Tabula anything. Use /plan for planning mode."></textarea>
+            <div class="chat-compose-row">
+              <span id="chat-hint">Enter sends. Shift+Enter inserts newline.</span>
+              <button id="btn-chat-send" type="submit">Send</button>
+            </div>
+          </form>
+        </section>
+
+        <section id="panel-canvas" class="panel" aria-label="Review canvas">
           <div id="canvas-header">
             <span id="canvas-title">Canvas</span>
             <span id="canvas-mode" class="badge">prompt</span>
@@ -69,48 +59,12 @@
             </div>
           </div>
           <div id="canvas-content">
-            <div id="canvas-empty">No artifact. AI will render content here.</div>
+            <div id="canvas-empty">No artifact. Ask in chat, then open Canvas when needed.</div>
             <div id="canvas-text" style="display:none"></div>
             <div id="canvas-image" style="display:none"><img id="canvas-img" alt="artifact"></div>
             <div id="canvas-pdf" style="display:none"></div>
           </div>
-        </div>
-      </div>
-      <div id="mobile-keybar" style="display:none">
-        <button type="button" id="btn-key-ctrl" data-terminal-key="ctrl">Ctrl</button>
-        <button type="button" data-terminal-key="tab">Tab</button>
-        <button type="button" data-terminal-key="esc">Esc</button>
-        <button type="button" data-terminal-key="up">↑</button>
-        <button type="button" data-terminal-key="left">←</button>
-        <button type="button" data-terminal-key="down">↓</button>
-        <button type="button" data-terminal-key="right">→</button>
-      </div>
-      <div id="terminal-pop-row" style="display:none">
-        <button type="button" id="btn-terminal-pop">Show Terminal</button>
-      </div>
-      <div id="mcp-log-panel" style="display:none">
-        <div class="log-header">MCP Activity</div>
-        <div id="mcp-log-entries"></div>
-      </div>
-    </div>
-
-    <div id="view-hosts" class="view" style="display:none">
-      <div class="hosts-panel">
-        <div class="hosts-header">
-          <h2>SSH Hosts</h2>
-          <button id="btn-hosts-back">Back</button>
-        </div>
-        <div id="hosts-list"></div>
-        <h3>Add Host</h3>
-        <form id="host-form">
-          <label>Name <input type="text" name="name" required></label>
-          <label>Hostname <input type="text" name="hostname" required></label>
-          <label>Port <input type="number" name="port" value="22" min="1" max="65535"></label>
-          <label>Username <input type="text" name="username" required></label>
-          <label>SSH Key Path <input type="text" name="key_path" placeholder="~/.ssh/id_ed25519"></label>
-          <label>Project Directory <input type="text" name="project_dir" value="~"></label>
-          <button type="submit">Add Host</button>
-        </form>
+        </section>
       </div>
     </div>
   </div>

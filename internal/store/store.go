@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -28,6 +29,25 @@ type HostConfig struct {
 
 type Store struct {
 	db *sql.DB
+}
+
+type ChatSession struct {
+	ID          string `json:"id"`
+	ProjectKey  string `json:"project_key"`
+	AppThreadID string `json:"app_thread_id"`
+	Mode        string `json:"mode"`
+	CreatedAt   int64  `json:"created_at"`
+	UpdatedAt   int64  `json:"updated_at"`
+}
+
+type ChatMessage struct {
+	ID              int64  `json:"id"`
+	SessionID       string `json:"session_id"`
+	Role            string `json:"role"`
+	ContentMarkdown string `json:"content_markdown"`
+	ContentPlain    string `json:"content_plain"`
+	RenderFormat    string `json:"render_format"`
+	CreatedAt       int64  `json:"created_at"`
 }
 
 const pbkdfIter = 600000
@@ -76,6 +96,35 @@ CREATE TABLE IF NOT EXISTS remote_sessions (
   host_id INTEGER NOT NULL,
   created_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS chat_sessions (
+  id TEXT PRIMARY KEY,
+  project_key TEXT NOT NULL UNIQUE,
+  app_thread_id TEXT NOT NULL DEFAULT '',
+  mode TEXT NOT NULL DEFAULT 'chat',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS chat_messages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id TEXT NOT NULL,
+  role TEXT NOT NULL,
+  content_markdown TEXT NOT NULL DEFAULT '',
+  content_plain TEXT NOT NULL DEFAULT '',
+  render_format TEXT NOT NULL DEFAULT 'markdown',
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_session_created
+  ON chat_messages(session_id, created_at, id);
+CREATE TABLE IF NOT EXISTS chat_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id TEXT NOT NULL,
+  turn_id TEXT NOT NULL DEFAULT '',
+  event_type TEXT NOT NULL,
+  payload_json TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_chat_events_session_created
+  ON chat_events(session_id, created_at, id);
 `
 	_, err := s.db.Exec(schema)
 	return err
@@ -273,4 +322,181 @@ func (s *Store) ListRemoteSessions() ([][2]interface{}, error) {
 		out = append(out, [2]interface{}{sid, hid})
 	}
 	return out, nil
+}
+
+func normalizeChatMode(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "plan":
+		return "plan"
+	default:
+		return "chat"
+	}
+}
+
+func (s *Store) GetOrCreateChatSession(projectKey string) (ChatSession, error) {
+	key := strings.TrimSpace(projectKey)
+	if key == "" {
+		key = "default"
+	}
+	if existing, err := s.GetChatSessionByProjectKey(key); err == nil {
+		return existing, nil
+	}
+	now := time.Now().Unix()
+	id := fmt.Sprintf("chat-%s", randomHex(8))
+	_, err := s.db.Exec(
+		`INSERT INTO chat_sessions (id, project_key, app_thread_id, mode, created_at, updated_at) VALUES (?,?,?,?,?,?)`,
+		id, key, "", "chat", now, now,
+	)
+	if err != nil {
+		return ChatSession{}, err
+	}
+	return s.GetChatSession(id)
+}
+
+func (s *Store) GetChatSessionByProjectKey(projectKey string) (ChatSession, error) {
+	key := strings.TrimSpace(projectKey)
+	if key == "" {
+		key = "default"
+	}
+	var out ChatSession
+	err := s.db.QueryRow(
+		`SELECT id, project_key, app_thread_id, mode, created_at, updated_at FROM chat_sessions WHERE project_key = ?`,
+		key,
+	).Scan(&out.ID, &out.ProjectKey, &out.AppThreadID, &out.Mode, &out.CreatedAt, &out.UpdatedAt)
+	if err != nil {
+		return ChatSession{}, err
+	}
+	out.Mode = normalizeChatMode(out.Mode)
+	return out, nil
+}
+
+func (s *Store) GetChatSession(id string) (ChatSession, error) {
+	var out ChatSession
+	err := s.db.QueryRow(
+		`SELECT id, project_key, app_thread_id, mode, created_at, updated_at FROM chat_sessions WHERE id = ?`,
+		strings.TrimSpace(id),
+	).Scan(&out.ID, &out.ProjectKey, &out.AppThreadID, &out.Mode, &out.CreatedAt, &out.UpdatedAt)
+	if err != nil {
+		return ChatSession{}, err
+	}
+	out.Mode = normalizeChatMode(out.Mode)
+	return out, nil
+}
+
+func (s *Store) UpdateChatSessionMode(id, mode string) (ChatSession, error) {
+	normalizedMode := normalizeChatMode(mode)
+	now := time.Now().Unix()
+	_, err := s.db.Exec(
+		`UPDATE chat_sessions SET mode = ?, updated_at = ? WHERE id = ?`,
+		normalizedMode, now, strings.TrimSpace(id),
+	)
+	if err != nil {
+		return ChatSession{}, err
+	}
+	return s.GetChatSession(id)
+}
+
+func (s *Store) UpdateChatSessionThread(id, appThreadID string) error {
+	_, err := s.db.Exec(
+		`UPDATE chat_sessions SET app_thread_id = ?, updated_at = ? WHERE id = ?`,
+		strings.TrimSpace(appThreadID), time.Now().Unix(), strings.TrimSpace(id),
+	)
+	return err
+}
+
+func normalizeChatRole(role string) string {
+	switch strings.ToLower(strings.TrimSpace(role)) {
+	case "assistant":
+		return "assistant"
+	case "system":
+		return "system"
+	default:
+		return "user"
+	}
+}
+
+func normalizeRenderFormat(format string) string {
+	switch strings.ToLower(strings.TrimSpace(format)) {
+	case "text":
+		return "text"
+	default:
+		return "markdown"
+	}
+}
+
+func (s *Store) AddChatMessage(sessionID, role, contentMarkdown, contentPlain, renderFormat string) (ChatMessage, error) {
+	role = normalizeChatRole(role)
+	renderFormat = normalizeRenderFormat(renderFormat)
+	now := time.Now().Unix()
+	res, err := s.db.Exec(
+		`INSERT INTO chat_messages (session_id, role, content_markdown, content_plain, render_format, created_at) VALUES (?,?,?,?,?,?)`,
+		strings.TrimSpace(sessionID),
+		role,
+		contentMarkdown,
+		contentPlain,
+		renderFormat,
+		now,
+	)
+	if err != nil {
+		return ChatMessage{}, err
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return ChatMessage{}, err
+	}
+	return ChatMessage{
+		ID:              id,
+		SessionID:       strings.TrimSpace(sessionID),
+		Role:            role,
+		ContentMarkdown: contentMarkdown,
+		ContentPlain:    contentPlain,
+		RenderFormat:    renderFormat,
+		CreatedAt:       now,
+	}, nil
+}
+
+func (s *Store) ListChatMessages(sessionID string, limit int) ([]ChatMessage, error) {
+	if limit <= 0 {
+		limit = 200
+	}
+	rows, err := s.db.Query(
+		`SELECT id, session_id, role, content_markdown, content_plain, render_format, created_at
+		 FROM chat_messages WHERE session_id = ? ORDER BY id ASC LIMIT ?`,
+		strings.TrimSpace(sessionID), limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]ChatMessage, 0, limit)
+	for rows.Next() {
+		var item ChatMessage
+		if err := rows.Scan(
+			&item.ID,
+			&item.SessionID,
+			&item.Role,
+			&item.ContentMarkdown,
+			&item.ContentPlain,
+			&item.RenderFormat,
+			&item.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		item.Role = normalizeChatRole(item.Role)
+		item.RenderFormat = normalizeRenderFormat(item.RenderFormat)
+		out = append(out, item)
+	}
+	return out, nil
+}
+
+func (s *Store) AddChatEvent(sessionID, turnID, eventType, payloadJSON string) error {
+	_, err := s.db.Exec(
+		`INSERT INTO chat_events (session_id, turn_id, event_type, payload_json, created_at) VALUES (?,?,?,?,?)`,
+		strings.TrimSpace(sessionID),
+		strings.TrimSpace(turnID),
+		strings.TrimSpace(eventType),
+		payloadJSON,
+		time.Now().Unix(),
+	)
+	return err
 }

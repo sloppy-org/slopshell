@@ -13,11 +13,9 @@ Tabula is a Go-first MCP canvas/runtime stack with a browser UI.
 - `internal/serve/app.go`
   - MCP HTTP daemon (`/mcp`) and canvas websocket (`/ws/canvas`).
 - `internal/web/server.go`
-  - Auth, host/session APIs, mail action APIs, terminal/canvas websocket routes.
+  - Browser APIs for chat sessions, canvas/mail actions, and chat/canvas websocket routes.
 - `internal/store/store.go`
-  - SQLite persistence for auth/session mappings.
-- `internal/pty/*.go`, `internal/ptyd/app.go`
-  - PTY session transport and daemon lifecycle.
+  - SQLite persistence for auth and chat session/message history.
 - `internal/protocol/bootstrap.go`
   - Bootstrap behavior for project-local integration files.
 
@@ -26,7 +24,6 @@ Tabula is a Go-first MCP canvas/runtime stack with a browser UI.
 - `tabula mcp-server`: stdio MCP runtime
 - `tabula serve`: HTTP MCP + canvas websocket runtime
 - `tabula web`: browser-facing runtime
-- `tabula ptyd`: terminal session daemon
 - `tabula canvas`: convenience browser launcher
 
 ## Primary Data Flows
@@ -34,7 +31,7 @@ Tabula is a Go-first MCP canvas/runtime stack with a browser UI.
 1. MCP client calls tool on `tabula mcp-server` or `tabula serve`.
 2. Tool dispatch in `internal/mcp/server.go` resolves into adapter operations.
 3. Adapter updates session/artifact/mark state in memory and emits events.
-4. Browser canvas consumes websocket events and renders UI state.
+4. Browser chat and canvas consume websocket events and render UI state.
 5. `canvas_commit` persists review annotations sidecar files.
 
 ## Handoff Import Flow

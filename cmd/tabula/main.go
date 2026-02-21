@@ -5,15 +5,12 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/krystophny/tabula/internal/canvas"
 	"github.com/krystophny/tabula/internal/mcp"
 	"github.com/krystophny/tabula/internal/protocol"
-	"github.com/krystophny/tabula/internal/ptyd"
 	"github.com/krystophny/tabula/internal/serve"
 	"github.com/krystophny/tabula/internal/voxtypemcp"
 	"github.com/krystophny/tabula/internal/web"
@@ -40,14 +37,10 @@ func run(args []string) int {
 		return cmdServe(args[1:])
 	case "web":
 		return cmdWeb(args[1:])
-	case "ptyd":
-		return cmdPtyd(args[1:])
 	case "voxtype-mcp":
 		return cmdVoxTypeMCP(args[1:])
 	case "canvas":
 		return cmdCanvas(args[1:])
-	case "run":
-		return cmdRun(args[1:])
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", args[0])
 		printHelp()
@@ -57,7 +50,7 @@ func run(args []string) int {
 
 func printHelp() {
 	fmt.Println("tabula <command> [flags]")
-	fmt.Println("commands: canvas schema bootstrap mcp-server serve web ptyd voxtype-mcp run")
+	fmt.Println("commands: canvas schema bootstrap mcp-server serve web voxtype-mcp")
 }
 
 func cmdSchema() int {
@@ -151,7 +144,6 @@ func cmdWeb(args []string) int {
 	host := fs.String("host", web.DefaultHost, "host")
 	port := fs.Int("port", web.DefaultPort, "port")
 	localMCPURL := fs.String("local-mcp-url", "", "external local MCP URL")
-	ptydURL := fs.String("ptyd-url", "", "external PTY daemon URL")
 	appServerURL := fs.String("app-server-url", web.DefaultAppServerURL, "Codex app-server websocket URL")
 	devRuntime := fs.Bool("dev-runtime", false, "dev runtime endpoint")
 	if err := fs.Parse(args); err != nil {
@@ -162,27 +154,11 @@ func cmdWeb(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	app, err := web.New(*dataDir, res.Paths.ProjectDir, *localMCPURL, *ptydURL, *appServerURL, *devRuntime)
+	app, err := web.New(*dataDir, res.Paths.ProjectDir, *localMCPURL, *appServerURL, *devRuntime)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	if err := app.Start(*host, *port); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	return 0
-}
-
-func cmdPtyd(args []string) int {
-	fs := flag.NewFlagSet("ptyd", flag.ContinueOnError)
-	dataDir := fs.String("data-dir", filepath.Join(os.Getenv("HOME"), ".local", "share", "tabula-ptyd"), "data dir")
-	host := fs.String("host", ptyd.DefaultHost, "host")
-	port := fs.Int("port", ptyd.DefaultPort, "port")
-	if err := fs.Parse(args); err != nil {
-		return 2
-	}
-	app := ptyd.New(*dataDir)
 	if err := app.Start(*host, *port); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -220,7 +196,7 @@ func cmdCanvas(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	app, err := web.New(*dataDir, res.Paths.ProjectDir, "", "", web.DefaultAppServerURL, false)
+	app, err := web.New(*dataDir, res.Paths.ProjectDir, "", web.DefaultAppServerURL, false)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -232,68 +208,6 @@ func cmdCanvas(args []string) int {
 		}()
 	}
 	if err := app.Start(*host, *port); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	return 0
-}
-
-func cmdRun(args []string) int {
-	fs := flag.NewFlagSet("run", flag.ContinueOnError)
-	projectDir := fs.String("project-dir", ".", "project dir")
-	assistant := fs.String("assistant", "codex", "assistant: codex|claude")
-	mcpURL := fs.String("mcp-url", "http://127.0.0.1:9420/mcp", "mcp url")
-	if err := fs.Parse(args); err != nil {
-		return 2
-	}
-	prompt := ""
-	if rest := fs.Args(); len(rest) > 0 {
-		prompt = strings.Join(rest, " ")
-	}
-	res, err := protocol.BootstrapProject(*projectDir)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	return dispatchAssistant(*assistant, res.Paths.ProjectDir, *mcpURL, prompt)
-}
-
-func dispatchAssistant(assistant, cwd, mcpURL, prompt string) int {
-	var cmd *exec.Cmd
-	switch assistant {
-	case "codex":
-		args := []string{"--no-alt-screen", "--yolo", "--search", "-C", cwd}
-		args = append(args, "-c", fmt.Sprintf("mcp_servers.tabula.url=%q", mcpURL))
-		if prompt != "" {
-			args = append(args, prompt)
-		}
-		cmd = exec.Command("codex", args...)
-	case "claude":
-		cfg := map[string]interface{}{"mcpServers": map[string]interface{}{"tabula": map[string]interface{}{}}}
-		m := cfg["mcpServers"].(map[string]interface{})["tabula"].(map[string]interface{})
-		m["url"] = mcpURL
-		b, _ := json.Marshal(cfg)
-		args := []string{"--dangerously-skip-permissions", "--mcp-config", string(b)}
-		if prompt != "" {
-			args = append(args, prompt)
-		}
-		cmd = exec.Command("claude", args...)
-		cmd.Dir = cwd
-	default:
-		fmt.Fprintf(os.Stderr, "unsupported assistant: %s\n", assistant)
-		return 1
-	}
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		if ee, ok := err.(*exec.Error); ok && ee.Err != nil {
-			fmt.Fprintf(os.Stderr, "%s CLI not found on PATH\n", assistant)
-			return 1
-		}
-		if ex, ok := err.(*exec.ExitError); ok {
-			return ex.ExitCode()
-		}
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}

@@ -28,7 +28,6 @@ Release notes:
 - `cmd/tabula/main.go`
 - `internal/serve/app.go`
 - `internal/web/server.go`
-- `internal/ptyd/app.go`
 
 ### MCP Surface
 
@@ -41,7 +40,6 @@ Release notes:
 - `internal/web/static/index.html`
 - `internal/web/static/app.js`
 - `internal/web/static/canvas.js`
-- `internal/web/static/terminal.js`
 - `internal/web/static/style.css`
 
 ## Scope Boundaries

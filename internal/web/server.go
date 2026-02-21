@@ -23,7 +23,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/gorilla/websocket"
 	"github.com/krystophny/tabula/internal/appserver"
-	"github.com/krystophny/tabula/internal/pty"
 	"github.com/krystophny/tabula/internal/serve"
 	"github.com/krystophny/tabula/internal/store"
 )
@@ -47,7 +46,6 @@ type App struct {
 	dataDir         string
 	localProjectDir string
 	localMCPURL     string
-	ptydURL         string
 	appServerURL    string
 	appServerModel  string
 	devRuntime      bool
@@ -60,8 +58,8 @@ type App struct {
 	upgrader websocket.Upgrader
 
 	mu               sync.Mutex
-	terminalWS       map[string]*websocket.Conn
 	canvasWS         map[string]map[*websocket.Conn]struct{}
+	chatWS           map[string]map[*websocket.Conn]struct{}
 	remoteCanvasWS   map[string]*websocket.Conn
 	tunnelPorts      map[string]int
 	relayCancel      map[string]context.CancelFunc
@@ -72,7 +70,7 @@ type App struct {
 	startedAt string
 }
 
-func New(dataDir, localProjectDir, localMCPURL, ptydURL, appServerURL string, devRuntime bool) (*App, error) {
+func New(dataDir, localProjectDir, localMCPURL, appServerURL string, devRuntime bool) (*App, error) {
 	s, err := store.New(pathJoin(dataDir, "tabula.db"))
 	if err != nil {
 		return nil, err
@@ -86,20 +84,23 @@ func New(dataDir, localProjectDir, localMCPURL, ptydURL, appServerURL string, de
 			return nil, err
 		}
 	}
+	noAuth := !envTruthy("TABULA_REQUIRE_AUTH")
+	if envTruthy("TABULA_NO_AUTH") {
+		noAuth = true
+	}
 	return &App{
 		dataDir:         dataDir,
 		localProjectDir: localProjectDir,
 		localMCPURL:     localMCPURL,
-		ptydURL:         ptydURL,
 		appServerURL:    appServerURL,
 		appServerModel:  strings.TrimSpace(os.Getenv("TABULA_APP_SERVER_MODEL")),
 		devRuntime:      devRuntime,
-		noAuth:          envTruthy("TABULA_NO_AUTH"),
+		noAuth:          noAuth,
 		store:           s,
 		appServerClient: appServerClient,
 		upgrader:        websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }},
-		terminalWS:      map[string]*websocket.Conn{},
 		canvasWS:        map[string]map[*websocket.Conn]struct{}{},
+		chatWS:          map[string]map[*websocket.Conn]struct{}{},
 		remoteCanvasWS:  map[string]*websocket.Conn{},
 		tunnelPorts:     map[string]int{},
 		relayCancel:     map[string]context.CancelFunc{},
@@ -158,19 +159,12 @@ func (a *App) Router() http.Handler {
 	r.Post("/api/login", a.handleLogin)
 	r.Post("/api/logout", a.handleLogout)
 
-	// hosts
-	r.Get("/api/hosts", a.handleHostsList)
-	r.Post("/api/hosts", a.handleHostsCreate)
-	r.Get("/api/hosts/{id}", a.handleHostsGet)
-	r.Put("/api/hosts/{id}", a.handleHostsUpdate)
-	r.Delete("/api/hosts/{id}", a.handleHostsDelete)
-
-	// sessions/runtime
-	r.Post("/api/connect", a.handleConnect)
-	r.Post("/api/disconnect", a.handleDisconnect)
-	r.Get("/api/sessions", a.handleSessions)
+	// runtime
 	r.Get("/api/runtime", a.handleRuntime)
-	r.Post("/api/daemon/start", a.handleDaemonStart)
+	r.Post("/api/chat/sessions", a.handleChatSessionCreate)
+	r.Get("/api/chat/sessions/{session_id}/history", a.handleChatSessionHistory)
+	r.Post("/api/chat/sessions/{session_id}/messages", a.handleChatSessionMessage)
+	r.Post("/api/chat/sessions/{session_id}/commands", a.handleChatSessionCommand)
 
 	// canvas/file proxy
 	r.Get("/api/canvas/{session_id}/snapshot", a.handleCanvasSnapshot)
@@ -186,7 +180,7 @@ func (a *App) Router() http.Handler {
 	r.Post("/api/stt/push-to-prompt", a.handlePushToPromptSTT)
 
 	// ws
-	r.Get("/ws/terminal/{session_id}", a.handleTerminalWS)
+	r.Get("/ws/chat/{session_id}", a.handleChatWS)
 	r.Get("/ws/canvas/{session_id}", a.handleCanvasWS)
 
 	// static
@@ -333,151 +327,6 @@ func envTruthy(key string) bool {
 	}
 }
 
-func (a *App) handleHostsList(w http.ResponseWriter, r *http.Request) {
-	if !a.requireAuth(w, r) {
-		return
-	}
-	hosts, err := a.store.ListHosts()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	writeJSON(w, hosts)
-}
-
-func (a *App) handleHostsCreate(w http.ResponseWriter, r *http.Request) {
-	if !a.requireAuth(w, r) {
-		return
-	}
-	var req store.HostConfig
-	if err := decodeJSON(r, &req); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
-		return
-	}
-	h, err := a.store.AddHost(req)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	w.WriteHeader(http.StatusCreated)
-	writeJSON(w, h)
-}
-
-func parseID(r *http.Request) (int, error) {
-	idStr := chi.URLParam(r, "id")
-	return strconv.Atoi(idStr)
-}
-
-func (a *App) handleHostsGet(w http.ResponseWriter, r *http.Request) {
-	if !a.requireAuth(w, r) {
-		return
-	}
-	id, err := parseID(r)
-	if err != nil {
-		http.Error(w, "invalid host id", http.StatusBadRequest)
-		return
-	}
-	h, err := a.store.GetHost(id)
-	if err != nil {
-		http.Error(w, "host not found", http.StatusNotFound)
-		return
-	}
-	writeJSON(w, h)
-}
-
-func (a *App) handleHostsUpdate(w http.ResponseWriter, r *http.Request) {
-	if !a.requireAuth(w, r) {
-		return
-	}
-	id, err := parseID(r)
-	if err != nil {
-		http.Error(w, "invalid host id", http.StatusBadRequest)
-		return
-	}
-	var updates map[string]interface{}
-	if err := decodeJSON(r, &updates); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
-		return
-	}
-	h, err := a.store.UpdateHost(id, updates)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	writeJSON(w, h)
-}
-
-func (a *App) handleHostsDelete(w http.ResponseWriter, r *http.Request) {
-	if !a.requireAuth(w, r) {
-		return
-	}
-	id, err := parseID(r)
-	if err != nil {
-		http.Error(w, "invalid host id", http.StatusBadRequest)
-		return
-	}
-	_ = a.store.DeleteHost(id)
-	w.WriteHeader(http.StatusNoContent)
-}
-
-func (a *App) handleConnect(w http.ResponseWriter, r *http.Request) {
-	if !a.requireAuth(w, r) {
-		return
-	}
-	http.Error(w, "SSH remote sessions are not yet implemented in Go port", http.StatusNotImplemented)
-}
-
-func (a *App) handleDisconnect(w http.ResponseWriter, r *http.Request) {
-	if !a.requireAuth(w, r) {
-		return
-	}
-	var req struct {
-		SessionID string `json:"session_id"`
-	}
-	if err := decodeJSON(r, &req); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
-		return
-	}
-	a.mu.Lock()
-	if ws := a.terminalWS[req.SessionID]; ws != nil {
-		_ = ws.Close()
-		delete(a.terminalWS, req.SessionID)
-	}
-	if set := a.canvasWS[req.SessionID]; set != nil {
-		for ws := range set {
-			_ = ws.Close()
-		}
-		delete(a.canvasWS, req.SessionID)
-	}
-	if cancel := a.relayCancel[req.SessionID]; cancel != nil {
-		cancel()
-		delete(a.relayCancel, req.SessionID)
-	}
-	if rc := a.remoteCanvasWS[req.SessionID]; rc != nil {
-		_ = rc.Close()
-		delete(a.remoteCanvasWS, req.SessionID)
-	}
-	delete(a.tunnelPorts, req.SessionID)
-	a.mu.Unlock()
-	_ = a.store.DeleteRemoteSession(req.SessionID)
-	writeJSON(w, map[string]bool{"ok": true})
-}
-
-func (a *App) handleSessions(w http.ResponseWriter, r *http.Request) {
-	if !a.requireAuth(w, r) {
-		return
-	}
-	res := map[string]interface{}{"sessions": []string{}}
-	if a.localProjectDir != "" {
-		mcpURL := a.localMCPURL
-		if mcpURL == "" {
-			mcpURL = fmt.Sprintf("http://127.0.0.1:%d/mcp", DaemonPort)
-		}
-		res["local_session"] = map[string]interface{}{"session_id": LocalSessionID, "project_dir": a.localProjectDir, "mcp_url": mcpURL}
-	}
-	writeJSON(w, res)
-}
-
 func (a *App) handleRuntime(w http.ResponseWriter, r *http.Request) {
 	if !a.requireAuth(w, r) {
 		return
@@ -487,7 +336,6 @@ func (a *App) handleRuntime(w http.ResponseWriter, r *http.Request) {
 		"started_at":       a.startedAt,
 		"version":          "0.0.5",
 		"dev_mode":         a.devRuntime,
-		"ptyd_url":         emptyToNil(a.ptydURL),
 		"local_mcp_url":    emptyToNil(a.localMCPURL),
 		"app_server_url":   emptyToNil(a.appServerURL),
 		"app_server_model": emptyToNil(a.appServerModel),
@@ -499,100 +347,6 @@ func emptyToNil(v string) interface{} {
 		return nil
 	}
 	return v
-}
-
-func (a *App) handleDaemonStart(w http.ResponseWriter, r *http.Request) {
-	if !a.requireAuth(w, r) {
-		return
-	}
-	var req struct {
-		SessionID string `json:"session_id"`
-	}
-	if err := decodeJSON(r, &req); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
-		return
-	}
-	a.mu.Lock()
-	port, ok := a.tunnelPorts[req.SessionID]
-	a.mu.Unlock()
-	if !ok {
-		http.Error(w, "session not found", http.StatusNotFound)
-		return
-	}
-	writeJSON(w, map[string]interface{}{"tunnel_port": port, "status": "running"})
-}
-
-func (a *App) createTerminalTransport(sessionID string) (pty.Transport, error) {
-	if sessionID != LocalSessionID || a.localProjectDir == "" {
-		return nil, errors.New("session not found")
-	}
-	if a.ptydURL != "" {
-		return pty.OpenPtyd(a.ptydURL, sessionID, a.localProjectDir, 120, 40)
-	}
-	return pty.OpenLocal(a.localProjectDir)
-}
-
-func (a *App) handleTerminalWS(w http.ResponseWriter, r *http.Request) {
-	if !a.requireAuth(w, r) {
-		return
-	}
-	sid := chi.URLParam(r, "session_id")
-	ws, err := a.upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		return
-	}
-	tr, err := a.createTerminalTransport(sid)
-	if err != nil {
-		_ = ws.Close()
-		return
-	}
-	a.mu.Lock()
-	a.terminalWS[sid] = ws
-	a.mu.Unlock()
-	defer func() {
-		_ = tr.Close()
-		_ = ws.Close()
-		a.mu.Lock()
-		if a.terminalWS[sid] == ws {
-			delete(a.terminalWS, sid)
-		}
-		a.mu.Unlock()
-	}()
-
-	done := make(chan struct{})
-	go func() {
-		_ = tr.ReadLoop(func(data []byte) error {
-			return ws.WriteMessage(websocket.BinaryMessage, data)
-		})
-		close(done)
-	}()
-
-	for {
-		select {
-		case <-done:
-			return
-		default:
-		}
-		mt, msg, err := ws.ReadMessage()
-		if err != nil {
-			return
-		}
-		switch mt {
-		case websocket.BinaryMessage:
-			_ = tr.Write(msg)
-		case websocket.TextMessage:
-			var payload map[string]interface{}
-			if json.Unmarshal(msg, &payload) == nil {
-				if typ, _ := payload["type"].(string); typ == "resize" {
-					cols := intFromAny(payload["cols"], 120)
-					rows := intFromAny(payload["rows"], 40)
-					_ = tr.Resize(cols, rows)
-					continue
-				}
-			}
-			_ = tr.Write(msg)
-		}
-	}
 }
 
 func intFromAny(v interface{}, d int) int {
@@ -1670,9 +1424,6 @@ func (a *App) Start(host string, port int) error {
 		fmt.Printf("  local project: %s\n", a.localProjectDir)
 		fmt.Printf("  local MCP:     %s\n", mcpURL)
 	}
-	if a.ptydURL != "" {
-		fmt.Printf("  local PTYD:    %s\n", a.ptydURL)
-	}
 	err := srv.ListenAndServe()
 	if err == http.ErrServerClosed {
 		return nil
@@ -1687,6 +1438,11 @@ func (a *App) Shutdown(ctx context.Context) error {
 	}
 	for _, ws := range a.remoteCanvasWS {
 		_ = ws.Close()
+	}
+	for _, set := range a.chatWS {
+		for ws := range set {
+			_ = ws.Close()
+		}
 	}
 	a.mu.Unlock()
 	if a.localServe != nil {

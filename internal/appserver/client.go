@@ -33,6 +33,15 @@ type PromptResponse struct {
 	Message  string
 }
 
+type StreamEvent struct {
+	Type     string
+	ThreadID string
+	TurnID   string
+	Message  string
+	Delta    string
+	Error    string
+}
+
 func NewClient(rawURL string) (*Client, error) {
 	normalized, err := NormalizeURL(rawURL)
 	if err != nil {
@@ -85,6 +94,10 @@ func isLoopbackHost(host string) bool {
 }
 
 func (c *Client) SendPrompt(ctx context.Context, req PromptRequest) (*PromptResponse, error) {
+	return c.SendPromptStream(ctx, req, nil)
+}
+
+func (c *Client) SendPromptStream(ctx context.Context, req PromptRequest, onEvent func(StreamEvent)) (*PromptResponse, error) {
 	if c == nil {
 		return nil, errors.New("app-server client is nil")
 	}
@@ -152,7 +165,7 @@ func (c *Client) SendPrompt(ctx context.Context, req PromptRequest) (*PromptResp
 		"sandbox":                "danger-full-access",
 		"experimentalRawEvents":  false,
 		"persistExtendedHistory": true,
-		"ephemeral":              true,
+		"ephemeral":              false,
 	}
 	if strings.TrimSpace(req.Model) != "" {
 		threadParams["model"] = strings.TrimSpace(req.Model)
@@ -173,6 +186,9 @@ func (c *Client) SendPrompt(ctx context.Context, req PromptRequest) (*PromptResp
 	if threadID == "" {
 		return nil, errors.New("thread/start missing thread id")
 	}
+	if onEvent != nil {
+		onEvent(StreamEvent{Type: "thread_started", ThreadID: threadID})
+	}
 
 	if err := c.writeJSON(ctx, conn, map[string]interface{}{
 		"jsonrpc": "2.0",
@@ -190,7 +206,7 @@ func (c *Client) SendPrompt(ctx context.Context, req PromptRequest) (*PromptResp
 		return nil, err
 	}
 
-	turnID, message, err := c.readTurnUntilComplete(ctx, conn)
+	turnID, message, err := c.readTurnUntilComplete(ctx, conn, threadID, onEvent)
 	if err != nil {
 		return nil, err
 	}
@@ -225,10 +241,11 @@ func (c *Client) waitForResponse(ctx context.Context, conn *websocket.Conn, id i
 	}
 }
 
-func (c *Client) readTurnUntilComplete(ctx context.Context, conn *websocket.Conn) (string, string, error) {
+func (c *Client) readTurnUntilComplete(ctx context.Context, conn *websocket.Conn, threadID string, onEvent func(StreamEvent)) (string, string, error) {
 	turnResponseSeen := false
 	turnID := ""
 	message := ""
+	previousMessage := ""
 	turnCompleted := false
 
 	for {
@@ -239,7 +256,11 @@ func (c *Client) readTurnUntilComplete(ctx context.Context, conn *websocket.Conn
 
 		if msgID, hasID := jsonRPCID(msg); hasID && msgID == 3 {
 			if errObj, ok := msg["error"].(map[string]interface{}); ok && errObj != nil {
-				return "", "", fmt.Errorf("turn/start rpc error: %s", strings.TrimSpace(fmt.Sprint(errObj["message"])))
+				errText := strings.TrimSpace(fmt.Sprint(errObj["message"]))
+				if onEvent != nil {
+					onEvent(StreamEvent{Type: "error", ThreadID: threadID, TurnID: turnID, Error: errText})
+				}
+				return "", "", fmt.Errorf("turn/start rpc error: %s", errText)
 			}
 			turnResponseSeen = true
 			if result, _ := msg["result"].(map[string]interface{}); result != nil {
@@ -248,6 +269,9 @@ func (c *Client) readTurnUntilComplete(ctx context.Context, conn *websocket.Conn
 						turnID = id
 					}
 				}
+			}
+			if onEvent != nil {
+				onEvent(StreamEvent{Type: "turn_started", ThreadID: threadID, TurnID: turnID})
 			}
 			continue
 		}
@@ -270,6 +294,9 @@ func (c *Client) readTurnUntilComplete(ctx context.Context, conn *websocket.Conn
 					turnID = id
 				}
 			}
+			if onEvent != nil {
+				onEvent(StreamEvent{Type: "turn_completed", ThreadID: threadID, TurnID: turnID, Message: strings.TrimSpace(message)})
+			}
 		case "codex/event/agent_message":
 			if msgObj, _ := params["msg"].(map[string]interface{}); msgObj != nil {
 				if text, _ := msgObj["message"].(string); strings.TrimSpace(text) != "" {
@@ -286,19 +313,52 @@ func (c *Client) readTurnUntilComplete(ctx context.Context, conn *websocket.Conn
 			if params != nil {
 				errText := strings.TrimSpace(fmt.Sprint(params["message"]))
 				if errText != "" && errText != "<nil>" {
+					if onEvent != nil {
+						onEvent(StreamEvent{Type: "error", ThreadID: threadID, TurnID: turnID, Error: errText})
+					}
 					return "", "", errors.New(errText)
 				}
 			}
 		}
 
+		trimmed := strings.TrimSpace(message)
+		if onEvent != nil && trimmed != "" && trimmed != previousMessage {
+			onEvent(StreamEvent{
+				Type:     "assistant_message",
+				ThreadID: threadID,
+				TurnID:   turnID,
+				Message:  trimmed,
+				Delta:    computeSuffixDelta(previousMessage, trimmed),
+			})
+			previousMessage = trimmed
+		}
+
 		if turnResponseSeen && turnCompleted {
 			final := strings.TrimSpace(message)
 			if final == "" {
+				if onEvent != nil {
+					onEvent(StreamEvent{Type: "error", ThreadID: threadID, TurnID: turnID, Error: "app-server returned an empty assistant message"})
+				}
 				return turnID, "", errors.New("app-server returned an empty assistant message")
 			}
 			return turnID, final, nil
 		}
 	}
+}
+
+func computeSuffixDelta(previous, current string) string {
+	if previous == "" {
+		return current
+	}
+	i := 0
+	max := len(previous)
+	if len(current) < max {
+		max = len(current)
+	}
+	for i < max && previous[i] == current[i] {
+		i++
+	}
+	return current[i:]
 }
 
 func parseThreadID(msg map[string]interface{}) string {
