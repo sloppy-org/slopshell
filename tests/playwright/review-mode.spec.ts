@@ -118,6 +118,12 @@ async function waitForLastMessageOfKind(page: Page, kind: string): Promise<Harne
   return matches[matches.length - 1];
 }
 
+async function countOverlayMarks(page: Page, markType: string): Promise<number> {
+  return page.evaluate((type) => {
+    return document.querySelectorAll(`.canvas-mark-overlay .canvas-mark-${type}`).length;
+  }, markType);
+}
+
 test.beforeEach(async ({ page }) => {
   await page.goto('/tests/playwright/harness.html');
   await clearHarnessMessages(page);
@@ -220,6 +226,15 @@ test('highlight selection popover submits with Enter key as a highlight draft ma
   expect(markSet.comment).toBe('Add context to this highlight.');
   expect(Number((markSet.target as any).line_start)).toBeGreaterThanOrEqual(1);
   expect(Number((markSet.target as any).end_offset)).toBeGreaterThan(Number((markSet.target as any).start_offset));
+
+  await page.evaluate(() => {
+    const selection = window.getSelection();
+    if (!selection) return;
+    selection.removeAllRanges();
+    document.dispatchEvent(new Event('selectionchange'));
+  });
+  await page.waitForTimeout(50);
+  await expect.poll(async () => countOverlayMarks(page, 'highlight')).toBeGreaterThan(0);
 });
 
 test('highlight review flow emits mark_set with comment and mark_commit for persistence', async ({ page }) => {
@@ -312,6 +327,21 @@ test('right-click inline comment popover cancel and outside click do not create 
   await page.waitForTimeout(50);
   messages = await getHarnessMessages(page);
   expect(messages.filter((m) => m.kind === 'mark_set')).toHaveLength(0);
+});
+
+test('right-click inline comment leaves a visible comment marker', async ({ page }) => {
+  await renderArtifact(page, plainTextEvent('evt-comment-visible', '# Notes\nVisible point comment test'));
+  await page.click('#canvas-text', { button: 'right', position: { x: 84, y: 68 } });
+
+  const popover = page.locator('[data-review-popover="true"]');
+  await expect(popover).toBeVisible();
+  await popover.locator('input').fill('Pin this location.');
+  await popover.locator('button[type="submit"]').click();
+  await expect(popover).toHaveCount(0);
+
+  const markSet = await waitForLastMessageOfKind(page, 'mark_set');
+  expect(markSet.type).toBe('comment_point');
+  await expect.poll(async () => countOverlayMarks(page, 'comment_point')).toBeGreaterThan(0);
 });
 
 test('popover opened near viewport edge stays within visible text canvas bounds', async ({ page }) => {

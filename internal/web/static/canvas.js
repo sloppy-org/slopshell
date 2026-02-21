@@ -106,6 +106,7 @@ const els = {};
 let activeTextEventId = null;
 let activePdfEvent = null;
 let draftMark = null;
+let submittedDraftMarks = [];
 let activeMailContext = null;
 let mailCapabilitiesRequestSeq = 0;
 
@@ -208,6 +209,41 @@ function clearOverlay() {
   }
 }
 
+function cloneMarkForOverlay(mark) {
+  if (!mark || typeof mark !== 'object') return null;
+  const rects = Array.isArray(mark.rects)
+    ? mark.rects
+      .filter((rect) => Array.isArray(rect) && rect.length === 4)
+      .map((rect) => rect.map((v) => Number(v)))
+    : [];
+  if (!rects.length) return null;
+  return {
+    event_id: mark.event_id,
+    type: mark.type || 'highlight',
+    line_start: Number(mark.line_start || 1),
+    line_end: Number(mark.line_end || 1),
+    start_offset: Number(mark.start_offset || 0),
+    end_offset: Number(mark.end_offset || 0),
+    text: String(mark.text || ''),
+    comment: String(mark.comment || ''),
+    rects,
+  };
+}
+
+function addSubmittedDraftMark(mark) {
+  const normalized = cloneMarkForOverlay(mark);
+  if (!normalized || !normalized.event_id) return;
+  submittedDraftMarks.push(normalized);
+}
+
+function clearSubmittedDraftMarksForEvent(eventId) {
+  if (!eventId) {
+    submittedDraftMarks = [];
+    return;
+  }
+  submittedDraftMarks = submittedDraftMarks.filter((mark) => mark.event_id !== eventId);
+}
+
 function getSelectedMarkType() {
   const e = getEls();
   if (!e.markType) return 'highlight';
@@ -223,24 +259,36 @@ function getMarkComment() {
 
 function renderDraftOverlay() {
   clearOverlay();
-  if (!draftMark || !activeTextEventId || draftMark.event_id !== activeTextEventId) {
+  if (!activeTextEventId) {
     return;
   }
-  if (!Array.isArray(draftMark.rects) || !draftMark.rects.length) {
+
+  const marks = [];
+  for (const mark of submittedDraftMarks) {
+    if (mark && mark.event_id === activeTextEventId) {
+      marks.push(mark);
+    }
+  }
+  if (draftMark && draftMark.event_id === activeTextEventId) {
+    marks.push(draftMark);
+  }
+  if (!marks.length) {
     return;
   }
 
   const overlay = ensureTextOverlay();
-  const markType = draftMark.type || 'highlight';
-  for (const rect of draftMark.rects) {
-    if (!Array.isArray(rect) || rect.length !== 4) continue;
-    const el = document.createElement('div');
-    el.className = `canvas-mark-rect canvas-mark-${markType}`;
-    el.style.left = `${rect[0]}px`;
-    el.style.top = `${rect[1]}px`;
-    el.style.width = `${Math.max(1, rect[2])}px`;
-    el.style.height = `${Math.max(2, rect[3])}px`;
-    overlay.appendChild(el);
+  for (const mark of marks) {
+    const markType = mark.type || 'highlight';
+    for (const rect of mark.rects || []) {
+      if (!Array.isArray(rect) || rect.length !== 4) continue;
+      const el = document.createElement('div');
+      el.className = `canvas-mark-rect canvas-mark-${markType}`;
+      el.style.left = `${rect[0]}px`;
+      el.style.top = `${rect[1]}px`;
+      el.style.width = `${Math.max(1, rect[2])}px`;
+      el.style.height = `${Math.max(2, rect[3])}px`;
+      overlay.appendChild(el);
+    }
   }
 }
 
@@ -491,6 +539,21 @@ function openReviewCommentPopover(eventId, options = {}) {
     });
     if (options.source === 'selection' && draftMark && draftMark.event_id === eventId) {
       draftMark.comment = comment;
+      addSubmittedDraftMark(draftMark);
+      draftMark = null;
+      renderDraftOverlay();
+    } else if (options.source !== 'selection') {
+      addSubmittedDraftMark({
+        event_id: eventId,
+        type: 'comment_point',
+        line_start: target.lineStart,
+        line_end: target.lineEnd,
+        start_offset: target.startOffset,
+        end_offset: target.endOffset,
+        comment,
+        rects: target.rects,
+      });
+      renderDraftOverlay();
     }
     closeReviewCommentPopover();
   });
@@ -2742,6 +2805,7 @@ function setupMailActionHandlers(eventId, context) {
 function renderMailArtifact(eventId, context) {
   const e = getEls();
   const state = getMailViewState(context);
+  clearSubmittedDraftMarksForEvent(eventId);
   e.text.classList.add('mail-artifact');
   if (!context.headers.length) {
     state.mode = 'list';
@@ -2968,16 +3032,19 @@ export function renderCanvas(event) {
     activeTextEventId = event.event_id;
     activePdfEvent = null;
     clearOverlay();
+    clearSubmittedDraftMarksForEvent(event.event_id);
     const mailContext = normalizeMailHeadersContext(event);
     if (mailContext) {
       activeMailContext = mailContext;
       renderMailArtifact(event.event_id, mailContext);
       setupTextSelection(event.event_id);
+      renderDraftOverlay();
       return;
     }
     activeMailContext = null;
     e.text.innerHTML = sanitizeHtml(marked.parse(event.text || ''));
     setupTextSelection(event.event_id);
+    renderDraftOverlay();
   } else if (event.kind === 'image_artifact') {
     clearTextInteractionHandlers();
     hideAll();
@@ -2992,6 +3059,7 @@ export function renderCanvas(event) {
     activeTextEventId = null;
     activePdfEvent = null;
     draftMark = null;
+    submittedDraftMarks = [];
     clearOverlay();
   } else if (event.kind === 'pdf_artifact') {
     clearTextInteractionHandlers();
@@ -3010,6 +3078,7 @@ export function renderCanvas(event) {
     activeTextEventId = null;
     activePdfEvent = event;
     draftMark = null;
+    submittedDraftMarks = [];
     clearOverlay();
     setupPdfOverlay();
   } else if (event.kind === 'clear_canvas') {
@@ -3029,6 +3098,7 @@ export function clearCanvas() {
   activeTextEventId = null;
   activePdfEvent = null;
   draftMark = null;
+  submittedDraftMarks = [];
   clearOverlay();
 }
 
@@ -3063,6 +3133,7 @@ export function initCanvasControls() {
         artifact_id: activeTextEventId,
       }));
       draftMark = null;
+      clearSubmittedDraftMarksForEvent(activeTextEventId);
       clearOverlay();
     });
   }
