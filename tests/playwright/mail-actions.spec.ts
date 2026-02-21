@@ -356,6 +356,105 @@ test('draft reply assist uses shared action_id handler with state transitions in
   expect(mutateCalls).toBe(0);
 });
 
+test('draft reply assist shows consistent backend errors in list/detail', async ({ page }) => {
+  let mutateCalls = 0;
+  const readCalls: string[] = [];
+  const markReadCalls: string[] = [];
+  const draftCalls: Array<Record<string, unknown>> = [];
+
+  await page.route('**/api/mail/action-capabilities', async (route) => {
+    await route.fulfill({
+      json: {
+        capabilities: {
+          provider: 'gmail',
+          supports_open: true,
+          supports_archive: true,
+          supports_delete_to_trash: true,
+          supports_native_defer: true,
+        },
+      },
+    });
+  });
+
+  await page.route('**/api/mail/action', async (route) => {
+    mutateCalls += 1;
+    await route.fulfill({ json: { result: { status: 'ok' } } });
+  });
+
+  await page.route('**/api/mail/read', async (route) => {
+    const body = JSON.parse(route.request().postData() || '{}');
+    readCalls.push(String(body.message_id || ''));
+    await route.fulfill({
+      json: {
+        message: {
+          ID: body.message_id,
+          Subject: `Subject ${body.message_id}`,
+          Sender: 'Alice <alice@example.com>',
+          Recipients: ['Bob <bob@example.com>'],
+          Date: '2026-02-20T09:00:00Z',
+          BodyText: `Full message body ${body.message_id}`,
+        },
+      },
+    });
+  });
+
+  await page.route('**/api/mail/mark-read', async (route) => {
+    const body = JSON.parse(route.request().postData() || '{}');
+    markReadCalls.push(String(body.message_id || ''));
+    await route.fulfill({ json: { marked: 1 } });
+  });
+
+  await page.route('**/api/mail/draft-reply', async (route) => {
+    const body = JSON.parse(route.request().postData() || '{}');
+    draftCalls.push(body);
+    await route.fulfill({
+      status: 502,
+      json: {
+        error: 'draft backend unavailable',
+      },
+    });
+  });
+
+  await renderMail(page, 'gmail', [
+    { id: 'm12', date: '2026-02-20T07:00:00Z', sender: 'Alice <alice@example.com>', subject: 'First' },
+    { id: 'm13', date: '2026-02-20T06:00:00Z', sender: 'Bob <bob@example.com>', subject: 'Second' },
+  ]);
+
+  await page.click('tr[data-message-id="m12"] button[data-mail-action="draft-reply"]');
+  const promptInput = page.locator('[data-mail-draft-panel] [data-mail-draft-prompt]');
+  await expect(promptInput).toBeFocused();
+  await promptInput.fill('List prompt should fail.');
+  await page.click('[data-mail-draft-panel] button[data-mail-action="draft-generate"]');
+  await expect.poll(async () => page.locator('#canvas-text').getAttribute('data-mail-assist-state')).toBe('error');
+  await expect.poll(async () => page.locator('#canvas-text').getAttribute('data-mail-assist-error')).toBe('draft backend unavailable');
+  await expect(page.locator('[data-mail-draft-panel]')).toBeHidden();
+  await expect(page.locator('tr[data-message-id="m12"] [data-mail-row-status]')).toContainText('draft backend unavailable');
+
+  await page.click('tr[data-message-id="m13"] button[data-mail-action="open"]');
+  await expect.poll(() => readCalls.length).toBe(1);
+  await expect.poll(() => markReadCalls.length).toBe(1);
+  await expect(page.locator('[data-mail-detail-root]')).toHaveAttribute('data-message-id', 'm13');
+  await page.click('.mail-detail-actions button[data-mail-action="draft-reply"]');
+  await expect(promptInput).toBeFocused();
+  await promptInput.fill('Detail prompt should also fail.');
+  await page.click('[data-mail-draft-panel] button[data-mail-action="draft-generate"]');
+  await expect.poll(async () => page.locator('#canvas-text').getAttribute('data-mail-assist-state')).toBe('error');
+  await expect.poll(async () => page.locator('#canvas-text').getAttribute('data-mail-assist-error')).toBe('draft backend unavailable');
+  await expect(page.locator('[data-mail-draft-panel]')).toBeHidden();
+  await expect(page.locator('[data-mail-detail-status]')).toContainText('draft backend unavailable');
+
+  expect(draftCalls).toHaveLength(2);
+  expect(draftCalls.map((c) => c.message_id)).toEqual(['m12', 'm13']);
+  expect(draftCalls.map((c) => c.selection_text)).toEqual([
+    'List prompt should fail.',
+    'Detail prompt should also fail.',
+  ]);
+  expect(Object.keys(draftCalls[0] || {}).sort()).toEqual(Object.keys(draftCalls[1] || {}).sort());
+  expect(readCalls).toEqual(['m13']);
+  expect(markReadCalls).toEqual(['m13']);
+  expect(mutateCalls).toBe(0);
+});
+
 test('detail navigation cancels pending draft capture and keeps draft context on current message', async ({ page }) => {
   let mutateCalls = 0;
   const readCalls: string[] = [];
