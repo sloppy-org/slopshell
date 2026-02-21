@@ -293,6 +293,7 @@ func TestMailActionRejectsNonMCPPath(t *testing.T) {
 
 func TestMailDraftReplyUsesProducerDraftTool(t *testing.T) {
 	calls := []string{}
+	callArgs := []map[string]any{}
 	producer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
 		var req map[string]any
@@ -302,6 +303,8 @@ func TestMailDraftReplyUsesProducerDraftTool(t *testing.T) {
 		params, _ := req["params"].(map[string]any)
 		name, _ := params["name"].(string)
 		calls = append(calls, name)
+		args, _ := params["arguments"].(map[string]any)
+		callArgs = append(callArgs, args)
 		if name != "draft_reply" {
 			t.Fatalf("unexpected tool call: %s", name)
 		}
@@ -342,6 +345,25 @@ func TestMailDraftReplyUsesProducerDraftTool(t *testing.T) {
 	}
 	if len(calls) != 1 || calls[0] != "draft_reply" {
 		t.Fatalf("unexpected producer tool calls: %#v", calls)
+	}
+	if len(callArgs) != 1 {
+		t.Fatalf("expected one argument payload, got %#v", callArgs)
+	}
+	args := callArgs[0]
+	if got := args["provider"]; got != "gmail" {
+		t.Fatalf("expected provider=gmail, got %#v", got)
+	}
+	if got := args["message_id"]; got != "m42" {
+		t.Fatalf("expected message_id=m42, got %#v", got)
+	}
+	if got := args["subject"]; got != "Question" {
+		t.Fatalf("expected subject=Question, got %#v", got)
+	}
+	if got := args["sender"]; got != "Alice <alice@example.com>" {
+		t.Fatalf("expected sender=Alice <alice@example.com>, got %#v", got)
+	}
+	if got := args["selection_text"]; got != "Can you reply by Friday?" {
+		t.Fatalf("expected selection_text forwarded, got %#v", got)
 	}
 }
 
