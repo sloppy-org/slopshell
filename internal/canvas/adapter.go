@@ -122,6 +122,7 @@ func (a *Adapter) ensureSession(sessionID string) *SessionRecord {
 		return r
 	}
 	r = newSessionRecord(true)
+	a.loadPersistedAnnotationsLocked(sessionID, r)
 	a.sessions[sessionID] = r
 	return r
 }
@@ -256,9 +257,14 @@ func (a *Adapter) CanvasMarkSet(sessionID, markID, artifactID string, intent Mar
 	}
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	m, exists := r.Marks[markID]
+	oldArtifactID := ""
+	oldIntent := MarkIntent("")
 	if !exists {
 		m = &Mark{MarkID: markID, CreatedAt: now, State: "active"}
 		r.Marks[markID] = m
+	} else {
+		oldArtifactID = m.ArtifactID
+		oldIntent = m.Intent
 	}
 	m.SessionID = sessionID
 	m.ArtifactID = artifactID
@@ -270,9 +276,17 @@ func (a *Adapter) CanvasMarkSet(sessionID, markID, artifactID string, intent Mar
 	m.Author = author
 	m.UpdatedAt = now
 
+	if oldIntent == IntentDraft && (intent != IntentDraft || oldArtifactID != artifactID) {
+		if r.DraftByArtifactID[oldArtifactID] == markID {
+			delete(r.DraftByArtifactID, oldArtifactID)
+		}
+	}
 	if intent == IntentDraft {
 		r.DraftByArtifactID[artifactID] = markID
+	} else {
+		removeDraftIndexForMarkLocked(r, markID)
 	}
+	pruneDraftIndexLocked(r)
 
 	return map[string]interface{}{"mark": m}, nil
 }
@@ -281,17 +295,8 @@ func (a *Adapter) CanvasMarkDelete(sessionID, markID string) (map[string]interfa
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	r := a.ensureSession(sessionID)
-	if _, ok := r.Marks[markID]; !ok {
+	if !deleteMarkLocked(r, markID) {
 		return nil, fmt.Errorf("mark not found: %s", markID)
-	}
-	delete(r.Marks, markID)
-	for artifactID, did := range r.DraftByArtifactID {
-		if did == markID {
-			delete(r.DraftByArtifactID, artifactID)
-		}
-	}
-	if r.FocusedMarkID == markID {
-		r.FocusedMarkID = ""
 	}
 	return map[string]interface{}{"deleted": true, "mark_id": markID}, nil
 }
@@ -359,9 +364,11 @@ func (a *Adapter) CanvasCommit(sessionID, artifactID string, includeDraft bool) 
 		if includeDraft && m.Intent == IntentDraft {
 			m.Intent = IntentPersistent
 			m.UpdatedAt = time.Now().UTC().Format(time.RFC3339Nano)
+			removeDraftIndexForMarkLocked(r, m.MarkID)
 			persistent++
 		}
 	}
+	pruneDraftIndexLocked(r)
 	path, err := a.writeAnnotationsFile(sessionID, r)
 	if err != nil {
 		return nil, err
@@ -390,13 +397,11 @@ func countPersistent(r *SessionRecord, artifactID string) int {
 }
 
 func (a *Adapter) writeAnnotationsFile(sessionID string, r *SessionRecord) (string, error) {
-	h := sha256.Sum256([]byte(sessionID))
-	name := hex8(h[:]) + ".annotations.json"
-	dir := filepath.Join(a.projectDir, ".tabula", "artifacts", "annotations")
+	path := a.annotationsPath(sessionID)
+	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
-	path := filepath.Join(dir, name)
 	marks := make([]*Mark, 0, len(r.Marks))
 	for _, m := range r.Marks {
 		marks = append(marks, m)
@@ -558,6 +563,7 @@ func (a *Adapter) clearDraft(sessionID, artifactID string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	r := a.ensureSession(sessionID)
+	var toDelete []string
 	for id, m := range r.Marks {
 		if m.Intent != IntentDraft {
 			continue
@@ -565,8 +571,19 @@ func (a *Adapter) clearDraft(sessionID, artifactID string) {
 		if artifactID != "" && m.ArtifactID != artifactID {
 			continue
 		}
-		delete(r.Marks, id)
+		toDelete = append(toDelete, id)
 	}
+	for _, id := range toDelete {
+		deleteMarkLocked(r, id)
+	}
+	if artifactID != "" {
+		if markID, ok := r.DraftByArtifactID[artifactID]; ok {
+			if _, exists := r.Marks[markID]; !exists {
+				delete(r.DraftByArtifactID, artifactID)
+			}
+		}
+	}
+	pruneDraftIndexLocked(r)
 }
 
 func asString(v interface{}) string {
@@ -607,4 +624,76 @@ func (a *Adapter) ListSessions() []string {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.listSessions()
+}
+
+func (a *Adapter) annotationsPath(sessionID string) string {
+	h := sha256.Sum256([]byte(sessionID))
+	name := hex8(h[:]) + ".annotations.json"
+	return filepath.Join(a.projectDir, ".tabula", "artifacts", "annotations", name)
+}
+
+func (a *Adapter) loadPersistedAnnotationsLocked(sessionID string, r *SessionRecord) {
+	path := a.annotationsPath(sessionID)
+	buf, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	var payload struct {
+		Marks []*Mark `json:"marks"`
+	}
+	if err := json.Unmarshal(buf, &payload); err != nil {
+		return
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	for _, m := range payload.Marks {
+		if m == nil || strings.TrimSpace(m.MarkID) == "" {
+			continue
+		}
+		if m.SessionID == "" {
+			m.SessionID = sessionID
+		}
+		if m.State == "" {
+			m.State = "active"
+		}
+		if m.CreatedAt == "" {
+			m.CreatedAt = now
+		}
+		if m.UpdatedAt == "" {
+			m.UpdatedAt = m.CreatedAt
+		}
+		r.Marks[m.MarkID] = m
+		if m.Intent == IntentDraft && m.ArtifactID != "" {
+			r.DraftByArtifactID[m.ArtifactID] = m.MarkID
+		}
+	}
+	pruneDraftIndexLocked(r)
+}
+
+func removeDraftIndexForMarkLocked(r *SessionRecord, markID string) {
+	for artifactID, draftID := range r.DraftByArtifactID {
+		if draftID == markID {
+			delete(r.DraftByArtifactID, artifactID)
+		}
+	}
+}
+
+func pruneDraftIndexLocked(r *SessionRecord) {
+	for artifactID, draftID := range r.DraftByArtifactID {
+		m, ok := r.Marks[draftID]
+		if !ok || m.Intent != IntentDraft || m.ArtifactID != artifactID {
+			delete(r.DraftByArtifactID, artifactID)
+		}
+	}
+}
+
+func deleteMarkLocked(r *SessionRecord, markID string) bool {
+	if _, ok := r.Marks[markID]; !ok {
+		return false
+	}
+	delete(r.Marks, markID)
+	removeDraftIndexForMarkLocked(r, markID)
+	if r.FocusedMarkID == markID {
+		r.FocusedMarkID = ""
+	}
+	return true
 }
