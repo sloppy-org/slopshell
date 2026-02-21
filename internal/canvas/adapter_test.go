@@ -143,6 +143,66 @@ func TestCanvasCommitConvertsDraftAndCleansDraftIndex(t *testing.T) {
 	}
 }
 
+func TestHandleFeedbackSelectionMarkCommitPipelineRetainsComment(t *testing.T) {
+	a := NewAdapter(t.TempDir(), nil, true)
+	const sessionID = "s-feedback-pipeline"
+	const artifactID = "artifact-review-1"
+	const markID = "draft-review-1"
+	const comment = "Persist this review note"
+
+	a.HandleFeedback(`{"kind":"text_selection","session_id":"s-feedback-pipeline","line_start":2,"line_end":2,"start_offset":7,"end_offset":18,"text":"review span"}`)
+	selectionResp := a.CanvasSelection(sessionID)
+	selection, ok := selectionResp["selection"].(Selection)
+	if !ok {
+		t.Fatalf("expected Selection payload, got %T", selectionResp["selection"])
+	}
+	if !selection.HasSelection {
+		t.Fatalf("expected selection to be set")
+	}
+	if selection.Text != "review span" {
+		t.Fatalf("expected selection text to persist, got %q", selection.Text)
+	}
+
+	a.HandleFeedback(`{"kind":"mark_set","session_id":"s-feedback-pipeline","mark_id":"draft-review-1","artifact_id":"artifact-review-1","intent":"draft","type":"highlight","target_kind":"text_range","target":{"line_start":2,"line_end":2,"start_offset":7,"end_offset":18},"comment":"Persist this review note"}`)
+
+	marks := marksFromResult(t, a.CanvasMarksList(sessionID, artifactID, "", 0))
+	if len(marks) != 1 {
+		t.Fatalf("expected one draft mark after mark_set feedback, got %d", len(marks))
+	}
+	if marks[0].MarkID != markID {
+		t.Fatalf("expected draft mark id %q, got %q", markID, marks[0].MarkID)
+	}
+	if marks[0].Intent != IntentDraft {
+		t.Fatalf("expected draft intent before commit, got %q", marks[0].Intent)
+	}
+	if marks[0].Comment != comment {
+		t.Fatalf("expected draft comment %q, got %q", comment, marks[0].Comment)
+	}
+
+	a.HandleFeedback(`{"kind":"mark_commit","session_id":"s-feedback-pipeline","artifact_id":"artifact-review-1","include_draft":true}`)
+
+	marks = marksFromResult(t, a.CanvasMarksList(sessionID, artifactID, "", 0))
+	if len(marks) != 1 {
+		t.Fatalf("expected one mark after commit, got %d", len(marks))
+	}
+	if marks[0].Intent != IntentPersistent {
+		t.Fatalf("expected committed mark intent %q, got %q", IntentPersistent, marks[0].Intent)
+	}
+	if marks[0].Comment != comment {
+		t.Fatalf("expected committed comment %q, got %q", comment, marks[0].Comment)
+	}
+
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	record := a.sessions[sessionID]
+	if record == nil {
+		t.Fatalf("missing session record")
+	}
+	if _, ok := record.DraftByArtifactID[artifactID]; ok {
+		t.Fatalf("expected no draft index for artifact after commit")
+	}
+}
+
 func TestCanvasSessionOpenLoadsPersistedAnnotations(t *testing.T) {
 	tmpDir := t.TempDir()
 	const sessionID = "s-reload"

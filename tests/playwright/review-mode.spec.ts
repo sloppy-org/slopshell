@@ -202,6 +202,32 @@ test('highlight selection popover submits with Enter key as a highlight draft ma
   expect(Number((markSet.target as any).end_offset)).toBeGreaterThan(Number((markSet.target as any).start_offset));
 });
 
+test('highlight review flow emits mark_set with comment and mark_commit for persistence', async ({ page }) => {
+  await renderArtifact(page, plainTextEvent('evt-highlight-persist', '# Notes\nPersist this highlighted sentence'));
+  await selectTextFromSelector(page, '#canvas-text');
+
+  const popover = page.locator('[data-review-popover="true"]');
+  await expect(popover).toBeVisible();
+  await popover.locator('input').fill('Persist this note.');
+  await popover.locator('input').press('Enter');
+  await expect(popover).toHaveCount(0);
+
+  const draftMarkSet = await waitForLastMessageOfKind(page, 'mark_set');
+  expect(draftMarkSet.artifact_id).toBe('evt-highlight-persist');
+  expect(draftMarkSet.intent).toBe('draft');
+  expect(draftMarkSet.type).toBe('highlight');
+  expect(draftMarkSet.comment).toBe('Persist this note.');
+
+  await page.evaluate(() => {
+    const btn = document.getElementById('btn-canvas-commit') as HTMLButtonElement | null;
+    btn?.click();
+  });
+
+  const commitMessage = await waitForLastMessageOfKind(page, 'mark_commit');
+  expect(commitMessage.session_id).toBe('local');
+  expect(commitMessage.include_draft).toBe(true);
+});
+
 test('popover Escape cancels and returns focus to the review canvas', async ({ page }) => {
   await renderArtifact(page, plainTextEvent('evt-comment-esc', '# Notes\nEscape key should cancel this popover'));
   await page.evaluate(() => {
