@@ -1083,7 +1083,7 @@ function clearSelectionInteractionHandlers() {
     e.text._scrollHandler = null;
   }
   if (e.text._reviewContextMenuHandler) {
-    e.text.removeEventListener('contextmenu', e.text._reviewContextMenuHandler);
+    e.text.removeEventListener('contextmenu', e.text._reviewContextMenuHandler, true);
     e.text._reviewContextMenuHandler = null;
   }
   if (e.text._reviewExistingMarkClickHandler) {
@@ -4019,7 +4019,7 @@ function setupTextSelection(eventId) {
     });
   };
   e.text._reviewContextMenuHandler = onContextMenu;
-  e.text.addEventListener('contextmenu', onContextMenu);
+  e.text.addEventListener('contextmenu', onContextMenu, true);
 
   const onExistingMarkClick = (ev) => {
     if (activeTextEventId !== eventId) return;
