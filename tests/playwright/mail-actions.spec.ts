@@ -356,6 +356,104 @@ test('draft reply assist uses shared action_id handler with state transitions in
   expect(mutateCalls).toBe(0);
 });
 
+test('detail navigation cancels pending draft capture and keeps draft context on current message', async ({ page }) => {
+  let mutateCalls = 0;
+  const readCalls: string[] = [];
+  const markReadCalls: string[] = [];
+  const draftCalls: Array<Record<string, unknown>> = [];
+
+  await page.route('**/api/mail/action-capabilities', async (route) => {
+    await route.fulfill({
+      json: {
+        capabilities: {
+          provider: 'gmail',
+          supports_open: true,
+          supports_archive: true,
+          supports_delete_to_trash: true,
+          supports_native_defer: true,
+        },
+      },
+    });
+  });
+
+  await page.route('**/api/mail/action', async (route) => {
+    mutateCalls += 1;
+    await route.fulfill({ json: { result: { status: 'ok' } } });
+  });
+
+  await page.route('**/api/mail/read', async (route) => {
+    const body = JSON.parse(route.request().postData() || '{}');
+    readCalls.push(String(body.message_id || ''));
+    await route.fulfill({
+      json: {
+        message: {
+          ID: body.message_id,
+          Subject: `Subject ${body.message_id}`,
+          Sender: 'Alice <alice@example.com>',
+          Recipients: ['Bob <bob@example.com>'],
+          Date: '2026-02-20T09:00:00Z',
+          BodyText: `Full message body ${body.message_id}`,
+        },
+      },
+    });
+  });
+
+  await page.route('**/api/mail/mark-read', async (route) => {
+    const body = JSON.parse(route.request().postData() || '{}');
+    markReadCalls.push(String(body.message_id || ''));
+    await route.fulfill({ json: { marked: 1 } });
+  });
+
+  await page.route('**/api/mail/draft-reply', async (route) => {
+    const body = JSON.parse(route.request().postData() || '{}');
+    draftCalls.push(body);
+    await route.fulfill({
+      json: {
+        source: 'llm',
+        draft_text: `Draft for ${body.message_id}`,
+      },
+    });
+  });
+
+  await renderMail(page, 'gmail', [
+    { id: 'm10', date: '2026-02-20T07:00:00Z', sender: 'Alice <alice@example.com>', subject: 'First' },
+    { id: 'm11', date: '2026-02-20T06:00:00Z', sender: 'Bob <bob@example.com>', subject: 'Second' },
+  ]);
+
+  await page.click('tr[data-message-id="m10"] button[data-mail-action="open"]');
+  await expect.poll(() => readCalls.length).toBe(1);
+  await expect.poll(() => markReadCalls.length).toBe(1);
+  await expect(page.locator('[data-mail-detail-root]')).toHaveAttribute('data-message-id', 'm10');
+
+  await page.click('.mail-detail-actions button[data-mail-action="draft-reply"]');
+  const promptInput = page.locator('[data-mail-draft-panel] [data-mail-draft-prompt]');
+  await expect(promptInput).toBeFocused();
+  await expect.poll(async () => page.locator('#canvas-text').getAttribute('data-mail-assist-state')).toBe('capturing');
+  await promptInput.fill('This prompt should be canceled by navigation.');
+
+  await page.click('button[data-mail-action="detail-next"]');
+  await expect.poll(() => readCalls.length).toBe(2);
+  await expect.poll(() => markReadCalls.length).toBe(2);
+  await expect(page.locator('[data-mail-detail-root]')).toHaveAttribute('data-message-id', 'm11');
+  await expect(page.locator('[data-mail-draft-panel]')).toBeHidden();
+  await expect.poll(async () => page.locator('#canvas-text').getAttribute('data-mail-assist-state')).toBe('idle');
+
+  await page.click('.mail-detail-actions button[data-mail-action="draft-reply"]');
+  await expect(promptInput).toBeFocused();
+  await promptInput.fill('Reply with confirmation for m11.');
+  await page.click('[data-mail-draft-panel] button[data-mail-action="draft-generate"]');
+  await expect.poll(async () => page.locator('#canvas-text').getAttribute('data-mail-assist-state')).toBe('ready');
+  await expect(page.locator('[data-mail-draft-panel] [data-mail-draft-text]')).toHaveValue(/Draft for m11/);
+  await expect(page.locator('[data-mail-detail-status]')).toContainText('Draft ready');
+
+  expect(draftCalls).toHaveLength(1);
+  expect(draftCalls[0]?.message_id).toBe('m11');
+  expect(draftCalls[0]?.selection_text).toBe('Reply with confirmation for m11.');
+  expect(readCalls).toEqual(['m10', 'm11']);
+  expect(markReadCalls).toEqual(['m10', 'm11']);
+  expect(mutateCalls).toBe(0);
+});
+
 test('draft reply prompt capture focuses input and cancel keeps state idle without mutations', async ({ page }) => {
   let draftCalls = 0;
   let mutateCalls = 0;

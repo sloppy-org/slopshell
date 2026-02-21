@@ -1171,6 +1171,11 @@ function closeDraftPanel() {
   panel.hidden = true;
 }
 
+function resetMailAssistDraftContext(context) {
+  closeDraftPanel();
+  setMailAssistState(context, MAIL_ASSIST_STATE.IDLE, { actionId: '', messageId: '', error: '' });
+}
+
 function registerDefaultMailAssistActions() {
   registerMailAssistAction('mail.draft_reply', {
     onCapturing(invocation) {
@@ -1454,7 +1459,7 @@ function backToMailList(eventId, context) {
   state.detailStatus = '';
   state.detailStatusTone = 'info';
   closeMailDetailDeferControls();
-  closeDraftPanel();
+  resetMailAssistDraftContext(context);
   renderMailArtifact(eventId, context);
   requestAnimationFrame(() => {
     e.text.scrollTop = Math.max(0, state.listScrollTop || 0);
@@ -1472,6 +1477,7 @@ async function openMailDetailAtIndex(eventId, context, index, row) {
   const state = getMailViewState(context);
   const header = context.headers[index];
   if (!header) return;
+  resetMailAssistDraftContext(context);
 
   if (row) {
     state.listScrollTop = getEls().text.scrollTop;
@@ -1790,8 +1796,7 @@ function setupMailActionHandlers(eventId, context) {
       return;
     }
     if (action === 'draft-cancel') {
-      closeDraftPanel();
-      setMailAssistState(context, MAIL_ASSIST_STATE.IDLE, { actionId: '', messageId: '', error: '' });
+      resetMailAssistDraftContext(context);
       return;
     }
     if (action === 'draft-generate') {
