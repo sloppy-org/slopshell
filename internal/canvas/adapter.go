@@ -523,6 +523,8 @@ func (a *Adapter) HandleFeedback(line string) {
 		a.handleTextSelection(sessionID, payload)
 	case "mark_set":
 		a.handleMarkSetFeedback(sessionID, payload)
+	case "mark_delete":
+		a.handleMarkDeleteFeedback(sessionID, payload)
 	case "mark_commit":
 		_, _ = a.CanvasCommit(sessionID, asString(payload["artifact_id"]), asBool(payload["include_draft"], true))
 	case "mark_clear_draft":
@@ -557,6 +559,10 @@ func (a *Adapter) handleMarkSetFeedback(sessionID string, payload map[string]int
 		asString(payload["comment"]),
 		asString(payload["author"]),
 	)
+}
+
+func (a *Adapter) handleMarkDeleteFeedback(sessionID string, payload map[string]interface{}) {
+	_, _ = a.CanvasMarkDelete(sessionID, asString(payload["mark_id"]))
 }
 
 func (a *Adapter) clearDraft(sessionID, artifactID string) {

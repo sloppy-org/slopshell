@@ -320,7 +320,7 @@ body.desktop-canvas-only #panel-canvas {
 .canvas-mark-underline { background: rgba(0, 0, 0, 0.08); border-bottom: 2px solid #111111; opacity: 0.9; }
 .canvas-mark-strikeout { background: rgba(255, 90, 90, 0.2); border-top: 2px solid #ff5a5a; opacity: 0.9; }
 .canvas-mark-squiggly { background: rgba(89, 206, 143, 0.25); border-bottom: 2px dotted #59ce8f; opacity: 0.9; }
-.canvas-mark-comment_point { background: rgba(255, 170, 0, 0.5); border: 1px solid #ffb022; opacity: 0.95; }
+.canvas-mark-comment_point { background: rgba(255, 170, 0, 0.58); border: 1px solid #ffb022; border-radius: 999px; opacity: 0.98; }
 
 .canvas-review-popover {
   position: absolute;

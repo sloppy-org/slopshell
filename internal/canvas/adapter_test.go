@@ -203,6 +203,24 @@ func TestHandleFeedbackSelectionMarkCommitPipelineRetainsComment(t *testing.T) {
 	}
 }
 
+func TestHandleFeedbackMarkDeleteRemovesOnlyTargetMark(t *testing.T) {
+	a := NewAdapter(t.TempDir(), nil, true)
+	const sessionID = "s-feedback-delete"
+
+	a.HandleFeedback(`{"kind":"mark_set","session_id":"s-feedback-delete","mark_id":"draft-a","artifact_id":"artifact-a","intent":"draft","type":"comment_point","target_kind":"text_range","target":{"line_start":1,"line_end":1,"start_offset":0,"end_offset":0},"comment":"A"}`)
+	a.HandleFeedback(`{"kind":"mark_set","session_id":"s-feedback-delete","mark_id":"draft-b","artifact_id":"artifact-a","intent":"draft","type":"comment_point","target_kind":"text_range","target":{"line_start":2,"line_end":2,"start_offset":1,"end_offset":1},"comment":"B"}`)
+
+	a.HandleFeedback(`{"kind":"mark_delete","session_id":"s-feedback-delete","mark_id":"draft-a"}`)
+
+	marks := marksFromResult(t, a.CanvasMarksList(sessionID, "artifact-a", "", 0))
+	if len(marks) != 1 {
+		t.Fatalf("expected one remaining mark after mark_delete, got %d", len(marks))
+	}
+	if marks[0].MarkID != "draft-b" {
+		t.Fatalf("expected draft-b to remain, got %q", marks[0].MarkID)
+	}
+}
+
 func TestCanvasSessionOpenLoadsPersistedAnnotations(t *testing.T) {
 	tmpDir := t.TempDir()
 	const sessionID = "s-reload"

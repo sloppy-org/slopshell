@@ -148,6 +148,7 @@ const MAIL_DRAFT_INTENT_FALLBACK_POLICY = MAIL_DRAFT_INTENT.PROMPT;
 const mailAssistActionRegistry = new Map();
 const DRAFT_PROMPT_CANCELLED_CODE = 'draft_prompt_cancelled';
 let pendingDraftPromptCapture = null;
+const POINT_COMMENT_MARK_SIZE_PX = 14;
 
 function getEls() {
   if (!els.empty) {
@@ -251,6 +252,16 @@ function addSubmittedDraftMark(mark) {
     return;
   }
   submittedDraftMarks.push(normalized);
+}
+
+function removeSubmittedDraftMark(eventId, localMarkID) {
+  if (!eventId || !localMarkID) return null;
+  const idx = submittedDraftMarks.findIndex((mark) => (
+    mark.event_id === eventId && mark.local_id === localMarkID
+  ));
+  if (idx < 0) return null;
+  const [removed] = submittedDraftMarks.splice(idx, 1);
+  return removed || null;
 }
 
 function clearSubmittedDraftMarksForEvent(eventId) {
@@ -442,12 +453,13 @@ function pointTargetFromClientPoint(root, clientX, clientY) {
   const rootRect = root.getBoundingClientRect();
   const pointX = clientX - rootRect.left + root.scrollLeft;
   const pointY = clientY - rootRect.top + root.scrollTop;
+  const half = Math.round(POINT_COMMENT_MARK_SIZE_PX / 2);
   const fallback = {
     lineStart: 1,
     lineEnd: 1,
     startOffset: 0,
     endOffset: 0,
-    rects: [[pointX - 5, pointY - 5, 10, 10]],
+    rects: [[pointX - half, pointY - half, POINT_COMMENT_MARK_SIZE_PX, POINT_COMMENT_MARK_SIZE_PX]],
     pointX,
     pointY,
   };
@@ -616,6 +628,17 @@ function openReviewCommentPopover(eventId, options = {}) {
     const input = popover.querySelector(`#${CSS.escape(inputId)}`);
     const comment = String(input?.value || '').trim();
     const state = window._tabulaApp?.getState?.();
+    let outgoingMarkID = '';
+    if (options.source === 'selection' && draftMark && draftMark.event_id === eventId) {
+      if (!draftMark.local_id) {
+        draftMark.local_id = nextSubmittedDraftMarkID();
+      }
+      outgoingMarkID = draftMark.local_id;
+    } else if (options.source === 'existing') {
+      outgoingMarkID = String(target.localMarkID || options.existingMark?.local_id || '').trim();
+    } else {
+      outgoingMarkID = nextSubmittedDraftMarkID();
+    }
     const outgoingMarkType = options.source === 'selection'
       ? (target.markType || 'highlight')
       : options.source === 'existing'
@@ -624,6 +647,7 @@ function openReviewCommentPopover(eventId, options = {}) {
     sendSelectionFeedback({
       kind: 'mark_set',
       session_id: state?.sessionId || '',
+      mark_id: outgoingMarkID,
       artifact_id: eventId,
       intent: 'draft',
       type: outgoingMarkType,
@@ -639,6 +663,7 @@ function openReviewCommentPopover(eventId, options = {}) {
     });
     if (options.source === 'selection' && draftMark && draftMark.event_id === eventId) {
       draftMark.comment = comment;
+      draftMark.local_id = outgoingMarkID;
       addSubmittedDraftMark(draftMark);
       draftMark = null;
       renderDraftOverlay();
@@ -646,7 +671,7 @@ function openReviewCommentPopover(eventId, options = {}) {
       options.existingMark.comment = comment;
       addSubmittedDraftMark({
         ...options.existingMark,
-        local_id: target.localMarkID || options.existingMark.local_id || '',
+        local_id: outgoingMarkID || target.localMarkID || options.existingMark.local_id || '',
         type: outgoingMarkType,
         line_start: target.lineStart,
         line_end: target.lineEnd,
@@ -658,6 +683,7 @@ function openReviewCommentPopover(eventId, options = {}) {
       renderDraftOverlay();
     } else if (options.source !== 'selection') {
       addSubmittedDraftMark({
+        local_id: outgoingMarkID,
         event_id: eventId,
         type: 'comment_point',
         line_start: target.lineStart,
@@ -3074,6 +3100,21 @@ function setupTextSelection(eventId) {
     if (!e.text.contains(target)) return;
     if (target.closest('[data-review-popover]')) return;
     if (target.closest('button,input,textarea,select,[contenteditable="true"]')) return;
+    const hit = findSubmittedMarkAtPoint(e.text, eventId, ev.clientX, ev.clientY);
+    if (hit && hit.local_id) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      closeReviewCommentPopover();
+      removeSubmittedDraftMark(eventId, hit.local_id);
+      renderDraftOverlay();
+      const state = window._tabulaApp?.getState?.();
+      sendSelectionFeedback({
+        kind: 'mark_delete',
+        session_id: state?.sessionId || '',
+        mark_id: hit.local_id,
+      });
+      return;
+    }
     ev.preventDefault();
     openReviewCommentPopover(eventId, {
       source: 'point',
@@ -3145,10 +3186,11 @@ function setupPdfOverlay() {
 
     const marker = document.createElement('div');
     marker.className = 'canvas-mark-rect canvas-mark-comment_point';
-    marker.style.left = `${x - 5}px`;
-    marker.style.top = `${y - 5}px`;
-    marker.style.width = '10px';
-    marker.style.height = '10px';
+    const half = Math.round(POINT_COMMENT_MARK_SIZE_PX / 2);
+    marker.style.left = `${x - half}px`;
+    marker.style.top = `${y - half}px`;
+    marker.style.width = `${POINT_COMMENT_MARK_SIZE_PX}px`;
+    marker.style.height = `${POINT_COMMENT_MARK_SIZE_PX}px`;
     marker.style.position = 'absolute';
     marker.style.pointerEvents = 'none';
     if (window.getComputedStyle(e.pdf).position === 'static') {
