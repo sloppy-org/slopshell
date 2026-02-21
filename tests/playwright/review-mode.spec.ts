@@ -124,7 +124,7 @@ async function countOverlayMarks(page: Page, markType: string): Promise<number> 
   }, markType);
 }
 
-async function clickFirstOverlayMark(page: Page, markType: string, button: 'left' | 'right' = 'left') {
+async function firstOverlayMarkPoint(page: Page, markType: string): Promise<{ x: number, y: number }> {
   const point = await page.evaluate((type) => {
     const el = document.querySelector(`.canvas-mark-overlay .canvas-mark-${type}`);
     if (!el) return null;
@@ -138,6 +138,11 @@ async function clickFirstOverlayMark(page: Page, markType: string, button: 'left
   if (!point) {
     throw new Error(`unable to locate overlay mark for ${markType}`);
   }
+  return point;
+}
+
+async function clickFirstOverlayMark(page: Page, markType: string, button: 'left' | 'right' = 'left') {
+  const point = await firstOverlayMarkPoint(page, markType);
   await page.mouse.click(point.x, point.y, { button });
 }
 
@@ -417,6 +422,61 @@ test('clicking an existing point comment reopens its comment popover with prior 
   popover = page.locator('[data-review-popover="true"]');
   await expect(popover).toBeVisible();
   await expect(popover.locator('input')).toHaveValue('Remember this point comment.');
+});
+
+test('second single-click on a marked region closes the open popover without reopening', async ({ page }) => {
+  await renderArtifact(page, plainTextEvent('evt-second-click-close', '# Notes\nSecond click should close popover'));
+  await page.click('#canvas-text', { button: 'right', position: { x: 94, y: 74 } });
+
+  let popover = page.locator('[data-review-popover="true"]');
+  await expect(popover).toBeVisible();
+  await popover.locator('input').fill('Close on second click.');
+  await popover.locator('button[type="submit"]').click();
+  await expect(popover).toHaveCount(0);
+
+  await clickFirstOverlayMark(page, 'comment_point');
+  popover = page.locator('[data-review-popover="true"]');
+  await expect(popover).toBeVisible();
+
+  await clickFirstOverlayMark(page, 'comment_point');
+  await expect(popover).toHaveCount(0);
+  await page.waitForTimeout(100);
+  await expect(popover).toHaveCount(0);
+});
+
+test('hovering an existing annotation shows pointer cursor', async ({ page }) => {
+  await renderArtifact(page, plainTextEvent('evt-hover-pointer', '# Notes\nHover pointer should appear on annotation'));
+  await page.click('#canvas-text', { button: 'right', position: { x: 96, y: 76 } });
+
+  const popover = page.locator('[data-review-popover="true"]');
+  await expect(popover).toBeVisible();
+  await popover.locator('input').fill('Hover me.');
+  await popover.locator('button[type="submit"]').click();
+  await expect(popover).toHaveCount(0);
+  await expect.poll(async () => countOverlayMarks(page, 'comment_point')).toBeGreaterThan(0);
+
+  const point = await firstOverlayMarkPoint(page, 'comment_point');
+  await page.mouse.move(point.x, point.y);
+  await expect.poll(async () => {
+    return page.evaluate(() => {
+      const root = document.getElementById('canvas-text');
+      return root ? getComputedStyle(root).cursor : '';
+    });
+  }).toBe('pointer');
+
+  const outside = await page.evaluate(() => {
+    const root = document.getElementById('canvas-text');
+    if (!root) return { x: 0, y: 0 };
+    const rect = root.getBoundingClientRect();
+    return { x: rect.right + 12, y: rect.bottom + 12 };
+  });
+  await page.mouse.move(outside.x, outside.y);
+  await expect.poll(async () => {
+    return page.evaluate(() => {
+      const root = document.getElementById('canvas-text');
+      return root ? getComputedStyle(root).cursor : '';
+    });
+  }).not.toBe('pointer');
 });
 
 test('popover opened near viewport edge stays within visible text canvas bounds', async ({ page }) => {

@@ -521,6 +521,12 @@ function closeReviewCommentPopover() {
   }
 }
 
+function shouldSuppressNextReviewOpen(root) {
+  if (!root || !root._suppressNextReviewOpen) return false;
+  root._suppressNextReviewOpen = false;
+  return true;
+}
+
 function positionReviewCommentPopover(popover, root, x, y) {
   const pad = 10;
   const width = popover.offsetWidth || 260;
@@ -623,6 +629,18 @@ function openReviewCommentPopover(eventId, options = {}) {
     });
   }
 
+  popover.addEventListener('pointerdown', (ev) => {
+    if (ev.target !== popover) return;
+    ev.preventDefault();
+    if (e.text) {
+      e.text._suppressNextReviewOpen = true;
+    }
+    closeReviewCommentPopover();
+    if (typeof options.onCancel === 'function') {
+      options.onCancel();
+    }
+  });
+
   popover.addEventListener('submit', (ev) => {
     ev.preventDefault();
     const input = popover.querySelector(`#${CSS.escape(inputId)}`);
@@ -700,6 +718,11 @@ function openReviewCommentPopover(eventId, options = {}) {
 
   const outsideHandler = (ev) => {
     if (!popover.contains(ev.target)) {
+      if (e.text) {
+        const shouldSuppress = activeTextEventId === eventId
+          && !!findSubmittedMarkAtPoint(e.text, eventId, ev.clientX, ev.clientY);
+        e.text._suppressNextReviewOpen = shouldSuppress;
+      }
       closeReviewCommentPopover();
       if (typeof options.onCancel === 'function') {
         options.onCancel();
@@ -804,6 +827,10 @@ function resetMailRecordingDomState() {
 function clearSelectionInteractionHandlers() {
   const e = getEls();
   closeReviewCommentPopover();
+  if (e.text) {
+    e.text._suppressNextReviewOpen = false;
+    e.text.style.cursor = '';
+  }
   if (e.text._selectionHandler) {
     document.removeEventListener('selectionchange', e.text._selectionHandler);
     e.text._selectionHandler = null;
@@ -831,6 +858,14 @@ function clearSelectionInteractionHandlers() {
   if (e.text._reviewExistingMarkClickHandler) {
     e.text.removeEventListener('click', e.text._reviewExistingMarkClickHandler);
     e.text._reviewExistingMarkClickHandler = null;
+  }
+  if (e.text._reviewHoverMoveHandler) {
+    e.text.removeEventListener('mousemove', e.text._reviewHoverMoveHandler);
+    e.text._reviewHoverMoveHandler = null;
+  }
+  if (e.text._reviewHoverLeaveHandler) {
+    e.text.removeEventListener('mouseleave', e.text._reviewHoverLeaveHandler);
+    e.text._reviewHoverLeaveHandler = null;
   }
 }
 
@@ -3100,6 +3135,18 @@ function setupTextSelection(eventId) {
     if (!e.text.contains(target)) return;
     if (target.closest('[data-review-popover]')) return;
     if (target.closest('button,input,textarea,select,[contenteditable="true"]')) return;
+    if (e.text._reviewPopoverEl) {
+      e.text._suppressNextReviewOpen = true;
+      closeReviewCommentPopover();
+      ev.preventDefault();
+      ev.stopPropagation();
+      return;
+    }
+    if (shouldSuppressNextReviewOpen(e.text)) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      return;
+    }
     const hit = findSubmittedMarkAtPoint(e.text, eventId, ev.clientX, ev.clientY);
     if (hit && hit.local_id) {
       ev.preventDefault();
@@ -3127,10 +3174,14 @@ function setupTextSelection(eventId) {
   const onExistingMarkClick = (ev) => {
     if (activeTextEventId !== eventId) return;
     if (ev.button !== 0) return;
-    if (e.text._reviewPopoverEl) return;
     const target = ev.target;
     if (!(target instanceof Element)) return;
     if (target.closest('[data-review-popover]')) return;
+    if (shouldSuppressNextReviewOpen(e.text)) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      return;
+    }
     const selection = window.getSelection();
     if (selection && !selection.isCollapsed && isSelectionInside(e.text, selection)) {
       return;
@@ -3139,6 +3190,10 @@ function setupTextSelection(eventId) {
     if (!hit) return;
     ev.preventDefault();
     ev.stopPropagation();
+    if (e.text._reviewPopoverEl) {
+      closeReviewCommentPopover();
+      return;
+    }
     openReviewCommentPopover(eventId, {
       source: 'existing',
       existingMark: hit,
@@ -3146,6 +3201,22 @@ function setupTextSelection(eventId) {
   };
   e.text._reviewExistingMarkClickHandler = onExistingMarkClick;
   e.text.addEventListener('click', onExistingMarkClick);
+
+  const onReviewHoverMove = (ev) => {
+    if (activeTextEventId !== eventId) {
+      e.text.style.cursor = '';
+      return;
+    }
+    const hit = findSubmittedMarkAtPoint(e.text, eventId, ev.clientX, ev.clientY);
+    e.text.style.cursor = hit ? 'pointer' : '';
+  };
+  const onReviewHoverLeave = () => {
+    e.text.style.cursor = '';
+  };
+  e.text._reviewHoverMoveHandler = onReviewHoverMove;
+  e.text._reviewHoverLeaveHandler = onReviewHoverLeave;
+  e.text.addEventListener('mousemove', onReviewHoverMove);
+  e.text.addEventListener('mouseleave', onReviewHoverLeave);
 
   if (e.text._scrollHandler) {
     e.text.removeEventListener('scroll', e.text._scrollHandler);
