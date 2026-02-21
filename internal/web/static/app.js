@@ -909,6 +909,8 @@ async function sendChatMessage() {
   if (!(input instanceof HTMLTextAreaElement)) return;
   const text = input.value.trim();
   if (!text || !state.chatSessionId) return;
+  state.assistantLastError = '';
+  updateAssistantActivityIndicator();
   input.value = '';
   input.style.height = 'auto';
   focusChatInput({ placeCursorAtEnd: true });
@@ -951,7 +953,7 @@ async function cancelActiveAssistantTurn() {
   if (!state.chatSessionId || state.assistantCancelInFlight) return;
   await refreshAssistantActivity();
   if (!isAssistantWorking()) {
-    showStatus('assistant idle');
+    showStatus(state.assistantLastError ? state.assistantLastError : 'assistant idle');
     updateAssistantActivityIndicator();
     return;
   }
@@ -972,7 +974,7 @@ async function cancelActiveAssistantTurn() {
     if (canceled <= 0) {
       await refreshAssistantActivity();
       if (!isAssistantWorking()) {
-        showStatus('assistant idle');
+        showStatus(state.assistantLastError ? state.assistantLastError : 'assistant idle');
       }
     }
   } catch (err) {
