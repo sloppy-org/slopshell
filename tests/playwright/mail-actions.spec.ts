@@ -742,6 +742,28 @@ test('global recording stop semantics support click and space in hold/toggle mod
   await expect.poll(async () => canvasText.getAttribute('data-mail-recording-history')).toContain('mode:toggle');
 });
 
+test.describe('touch stop semantics', () => {
+  test.use({ hasTouch: true });
+
+  test('global recording stop semantics support tap in hold mode', async ({ page }) => {
+    await mockCapabilities(page);
+
+    await renderMail(page, 'gmail', [
+      { id: 'm31', date: '2026-02-20T11:45:00Z', sender: 'tap@example.com', subject: 'Tap stop test' },
+    ]);
+
+    const trigger = page.locator('button[data-mail-record-action="trigger"]');
+    const stopButton = page.locator('button[data-mail-record-action="stop"]');
+    const canvasText = page.locator('#canvas-text');
+
+    await trigger.dispatchEvent('pointerdown', { button: 0, pointerId: 44 });
+    await expect(canvasText).toHaveAttribute('data-mail-recording-state', 'recording');
+    await stopButton.tap();
+    await expect(canvasText).toHaveAttribute('data-mail-recording-state', 'idle');
+    await expect(canvasText).toHaveAttribute('data-mail-recording-last-stop', 'click');
+  });
+});
+
 test('keyboardless flow can complete full recording cycle via global button', async ({ page }) => {
   await mockCapabilities(page);
 
@@ -830,6 +852,109 @@ test('recording stop sends STT transcript into draft reply pipeline', async ({ p
   expect(draftCalls[0]?.selection_text).toBe(transcript);
   await expect(page.locator('[data-mail-draft-panel] [data-mail-draft-text]')).toHaveValue(/Voice draft for m23/);
   await expect(page.locator('tr[data-message-id="m23"] [data-mail-row-status]')).toContainText('Draft ready');
+});
+
+test('detail Draft Reply voice flow routes transcript through prompt branch and renders draft output', async ({ page }) => {
+  const readCalls: string[] = [];
+  const markReadCalls: string[] = [];
+  const sttCalls: Array<Record<string, unknown>> = [];
+  const intentCalls: Array<Record<string, unknown>> = [];
+  const draftCalls: Array<Record<string, unknown>> = [];
+  const transcript = 'Send a quick update with timing options.';
+
+  await mockCapabilities(page);
+  await mockMicrophoneCapture(page, 'voice-bytes');
+
+  await page.route('**/api/mail/read', async (route) => {
+    const body = JSON.parse(route.request().postData() || '{}');
+    readCalls.push(String(body.message_id || ''));
+    await route.fulfill({
+      json: {
+        message: {
+          ID: body.message_id,
+          Subject: `Subject ${body.message_id}`,
+          Sender: 'Alice <alice@example.com>',
+          Recipients: ['Bob <bob@example.com>'],
+          Date: '2026-02-20T09:00:00Z',
+          BodyText: `Full message body ${body.message_id}`,
+        },
+      },
+    });
+  });
+
+  await page.route('**/api/mail/mark-read', async (route) => {
+    const body = JSON.parse(route.request().postData() || '{}');
+    markReadCalls.push(String(body.message_id || ''));
+    await route.fulfill({ json: { marked: 1 } });
+  });
+
+  await page.route('**/api/mail/stt', async (route) => {
+    const body = JSON.parse(route.request().postData() || '{}');
+    sttCalls.push(body);
+    await route.fulfill({
+      json: {
+        text: transcript,
+        language: 'en',
+        language_probability: 0.98,
+        source: 'helpy_stt',
+        attempts: 1,
+      },
+    });
+  });
+
+  await page.route('**/api/mail/draft-intent', async (route) => {
+    const body = JSON.parse(route.request().postData() || '{}');
+    intentCalls.push(body);
+    await route.fulfill({
+      json: {
+        intent: 'prompt',
+        reason: 'instruction_signals',
+        fallback_applied: false,
+        fallback_policy: 'prompt',
+      },
+    });
+  });
+
+  await page.route('**/api/mail/draft-reply', async (route) => {
+    const body = JSON.parse(route.request().postData() || '{}');
+    draftCalls.push(body);
+    await route.fulfill({
+      json: {
+        source: 'llm',
+        draft_text: `Voice detail draft for ${body.message_id}`,
+      },
+    });
+  });
+
+  await renderMail(page, 'gmail', [
+    { id: 'm27', date: '2026-02-20T14:45:00Z', sender: 'detail-voice@example.com', subject: 'Voice detail path' },
+  ]);
+
+  await page.click('tr[data-message-id="m27"] button[data-mail-action="open"]');
+  await expect.poll(() => readCalls.length).toBe(1);
+  await expect.poll(() => markReadCalls.length).toBe(1);
+  await expect(page.locator('[data-mail-detail-root]')).toHaveAttribute('data-message-id', 'm27');
+
+  await page.click('.mail-detail-actions button[data-mail-action="draft-reply"]');
+  await expect.poll(async () => page.locator('#canvas-text').getAttribute('data-mail-assist-state')).toBe('capturing');
+
+  await page.click('button[data-mail-record-mode="toggle"]');
+  const trigger = page.locator('button[data-mail-record-action="trigger"]');
+  await trigger.click();
+  await expect(page.locator('#canvas-text')).toHaveAttribute('data-mail-recording-state', 'recording');
+  await trigger.click();
+  await expect(page.locator('#canvas-text')).toHaveAttribute('data-mail-recording-state', 'idle');
+
+  await expect.poll(() => sttCalls.length).toBe(1);
+  await expect.poll(() => intentCalls.length).toBe(1);
+  await expect.poll(() => draftCalls.length).toBe(1);
+  expect(readCalls).toEqual(['m27']);
+  expect(markReadCalls).toEqual(['m27']);
+  expect(String(sttCalls[0]?.audio_base64 || '')).not.toBe('');
+  expect(intentCalls[0]?.transcript).toBe(transcript);
+  expect(draftCalls[0]?.selection_text).toBe(transcript);
+  await expect(page.locator('[data-mail-draft-panel] [data-mail-draft-text]')).toHaveValue(/Voice detail draft for m27/);
+  await expect(page.locator('[data-mail-detail-status]')).toContainText('Draft ready');
 });
 
 test('voice dictation intent uses transcript as editable draft without generator call', async ({ page }) => {
