@@ -138,6 +138,11 @@ const MAIL_RECORDING_ORIGIN = Object.freeze({
   HOLD_KEYBOARD: 'hold_keyboard',
   TOGGLE_BUTTON: 'toggle_button',
 });
+const MAIL_DRAFT_INTENT = Object.freeze({
+  PROMPT: 'prompt',
+  DICTATION: 'dictation',
+});
+const MAIL_DRAFT_INTENT_FALLBACK_POLICY = MAIL_DRAFT_INTENT.PROMPT;
 const mailAssistActionRegistry = new Map();
 const DRAFT_PROMPT_CANCELLED_CODE = 'draft_prompt_cancelled';
 let pendingDraftPromptCapture = null;
@@ -987,6 +992,38 @@ async function callMailSTT(context, audioBlob) {
   return payload;
 }
 
+async function callMailDraftIntent(context, transcript) {
+  const resp = await fetch('/api/mail/draft-intent', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      provider: context.provider,
+      transcript: String(transcript || ''),
+      producer_mcp_url: context.producerMcpUrl,
+    }),
+  });
+  let payload = {};
+  const raw = await resp.text();
+  if (raw) {
+    try {
+      payload = JSON.parse(raw);
+    } catch (_) {
+      if (!resp.ok) {
+        throw new Error(raw);
+      }
+    }
+  }
+  if (!resp.ok) {
+    throw new Error(typeof payload === 'object' && payload !== null && payload.error
+      ? payload.error
+      : raw || 'draft intent inference failed');
+  }
+  if (typeof payload !== 'object' || payload === null) {
+    throw new Error('draft intent inference returned invalid response');
+  }
+  return payload;
+}
+
 function findMailHeader(context, messageID) {
   for (const h of context.headers || []) {
     if (h.id === messageID) return h;
@@ -1312,7 +1349,43 @@ async function transcribePendingDraftPrompt(context, token) {
     if (!transcript) {
       throw new Error('Speech recognizer returned empty text.');
     }
-    resolvePendingDraftPromptCapture(transcript, 'Transcribed from voice input.', pending);
+    let captureResult = {
+      text: transcript,
+      intent: MAIL_DRAFT_INTENT_FALLBACK_POLICY,
+      fallbackApplied: false,
+      fallbackPolicy: MAIL_DRAFT_INTENT_FALLBACK_POLICY,
+      reason: 'intent_inference_unavailable',
+    };
+    let sourceLabel = 'Transcribed from voice input. Generating draft...';
+    try {
+      const inferred = await callMailDraftIntent(context, transcript);
+      const inferredIntent = String(inferred?.intent || '').trim().toLowerCase();
+      const intent = inferredIntent === MAIL_DRAFT_INTENT.DICTATION
+        ? MAIL_DRAFT_INTENT.DICTATION
+        : MAIL_DRAFT_INTENT.PROMPT;
+      const fallbackApplied = Boolean(inferred?.fallback_applied);
+      const fallbackPolicy = String(inferred?.fallback_policy || MAIL_DRAFT_INTENT_FALLBACK_POLICY).trim().toLowerCase() || MAIL_DRAFT_INTENT_FALLBACK_POLICY;
+      const reason = String(inferred?.reason || '').trim() || 'intent_inferred';
+      captureResult = {
+        text: transcript,
+        intent,
+        fallbackApplied,
+        fallbackPolicy,
+        reason,
+      };
+      if (intent === MAIL_DRAFT_INTENT.DICTATION) {
+        sourceLabel = 'Detected dictation. Using transcript as editable draft.';
+      } else if (fallbackApplied) {
+        sourceLabel = 'Intent ambiguous. Using prompt fallback policy to generate draft.';
+      } else {
+        sourceLabel = 'Detected prompt intent. Generating draft...';
+      }
+    } catch (_) {
+      captureResult.fallbackApplied = true;
+      captureResult.reason = 'intent_inference_failed';
+      sourceLabel = 'Intent inference unavailable. Using prompt fallback policy to generate draft.';
+    }
+    resolvePendingDraftPromptCapture(captureResult, sourceLabel, pending);
   } catch (err) {
     if (!isSamePending()) {
       return;
@@ -1541,11 +1614,28 @@ function getDraftPromptControls() {
   return { panel, promptInput, generateBtn };
 }
 
-function resolvePendingDraftPromptCapture(promptText, sourceLabel, expectedPending = null) {
+function normalizeDraftPromptCaptureResult(capture) {
+  const raw = typeof capture === 'string' ? { text: capture } : (capture || {});
+  const text = String(raw.text || '').trim();
+  const intent = String(raw.intent || '').trim().toLowerCase() === MAIL_DRAFT_INTENT.DICTATION
+    ? MAIL_DRAFT_INTENT.DICTATION
+    : MAIL_DRAFT_INTENT.PROMPT;
+  const fallbackPolicy = String(raw.fallbackPolicy || MAIL_DRAFT_INTENT_FALLBACK_POLICY).trim().toLowerCase() || MAIL_DRAFT_INTENT_FALLBACK_POLICY;
+  return {
+    text,
+    intent,
+    fallbackApplied: Boolean(raw.fallbackApplied),
+    fallbackPolicy,
+    reason: String(raw.reason || '').trim() || 'manual_prompt',
+  };
+}
+
+function resolvePendingDraftPromptCapture(capture, sourceLabel, expectedPending = null) {
   if (!pendingDraftPromptCapture) return false;
   if (expectedPending && pendingDraftPromptCapture !== expectedPending) return false;
   const pending = pendingDraftPromptCapture;
-  const normalized = String(promptText || '').trim();
+  const normalizedCapture = normalizeDraftPromptCaptureResult(capture);
+  const normalized = normalizedCapture.text;
   if (!normalized) {
     setMailAssistStatus(pending.context, pending.row, pending.inDetail, 'Speech transcript was empty. Retry recording or type a prompt.', 'warning');
     return false;
@@ -1559,7 +1649,7 @@ function resolvePendingDraftPromptCapture(promptText, sourceLabel, expectedPendi
     generateBtn.disabled = true;
   }
   pendingDraftPromptCapture = null;
-  pending.resolve(normalized);
+  pending.resolve(normalizedCapture);
   setMailAssistStatus(
     pending.context,
     pending.row,
@@ -1588,7 +1678,13 @@ function submitPendingDraftPromptCapture() {
   if (generateBtn) {
     generateBtn.disabled = true;
   }
-  return resolvePendingDraftPromptCapture(promptText, 'Prompt captured. Generating draft...');
+  return resolvePendingDraftPromptCapture({
+    text: promptText,
+    intent: MAIL_DRAFT_INTENT.PROMPT,
+    fallbackApplied: false,
+    fallbackPolicy: MAIL_DRAFT_INTENT_FALLBACK_POLICY,
+    reason: 'manual_prompt',
+  }, 'Prompt captured. Generating draft...');
 }
 
 function waitForDraftPromptCapture(context, row, inDetail, messageID, actionId) {
@@ -1696,21 +1792,29 @@ function registerDefaultMailAssistActions() {
     },
     async prepare({ context, row, inDetail, messageID, actionId, selectionText }) {
       const header = findMailHeader(context, messageID);
-      const promptText = await waitForDraftPromptCapture(context, row, inDetail, messageID, actionId);
+      const capture = await waitForDraftPromptCapture(context, row, inDetail, messageID, actionId);
+      const promptText = String(capture?.text || selectionText || '').trim();
       return {
         context,
         message: {
           id: messageID,
           sender: header?.sender || '',
           subject: header?.subject || '',
-          selectionText: promptText || selectionText || '',
+          selectionText: promptText,
           promptText,
+          inputIntent: String(capture?.intent || MAIL_DRAFT_INTENT.PROMPT).trim().toLowerCase(),
+          intentFallbackApplied: Boolean(capture?.fallbackApplied),
+          intentFallbackPolicy: String(capture?.fallbackPolicy || MAIL_DRAFT_INTENT_FALLBACK_POLICY).trim().toLowerCase() || MAIL_DRAFT_INTENT_FALLBACK_POLICY,
+          intentReason: String(capture?.reason || '').trim(),
         },
       };
     },
     onGenerating({ prepared }) {
       const promptText = prepared?.message?.promptText || '';
-      openDraftPanel('', 'Generating...', {
+      const sourceLabel = prepared?.message?.inputIntent === MAIL_DRAFT_INTENT.DICTATION
+        ? 'Applying dictation transcript...'
+        : 'Generating...';
+      openDraftPanel('', sourceLabel, {
         showPrompt: true,
         promptText,
         promptDisabled: true,
@@ -1718,12 +1822,25 @@ function registerDefaultMailAssistActions() {
       });
     },
     execute(prepared) {
+      if (prepared?.message?.inputIntent === MAIL_DRAFT_INTENT.DICTATION) {
+        return Promise.resolve({
+          source: 'dictation',
+          draft_text: String(prepared?.message?.promptText || ''),
+          intent: MAIL_DRAFT_INTENT.DICTATION,
+        });
+      }
       return callDraftReply(prepared.context, prepared.message);
     },
     onReady(payload, prepared, invocation) {
       const draftText = String(payload?.draft_text || '').trim();
       const source = String(payload?.source || 'llm').trim();
-      openDraftPanel(draftText, source === 'llm' ? 'Generated by LLM (unsent)' : 'Fallback draft (unsent)', {
+      let sourceLabel = source === 'llm' ? 'Generated by LLM (unsent)' : 'Fallback draft (unsent)';
+      if (source === 'dictation') {
+        sourceLabel = 'Captured dictation draft (editable, unsent)';
+      } else if (prepared?.message?.intentFallbackApplied && prepared?.message?.intentFallbackPolicy === MAIL_DRAFT_INTENT_FALLBACK_POLICY) {
+        sourceLabel = 'Generated by LLM after ambiguous intent fallback (unsent)';
+      }
+      openDraftPanel(draftText, sourceLabel, {
         showPrompt: true,
         promptText: prepared?.message?.promptText || '',
         promptDisabled: false,

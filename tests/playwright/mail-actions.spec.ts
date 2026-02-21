@@ -763,6 +763,7 @@ test('keyboardless flow can complete full recording cycle via global button', as
 
 test('recording stop sends STT transcript into draft reply pipeline', async ({ page }) => {
   const sttCalls: Array<Record<string, unknown>> = [];
+  const intentCalls: Array<Record<string, unknown>> = [];
   const draftCalls: Array<Record<string, unknown>> = [];
   const transcript = 'Please confirm delivery by Friday.';
 
@@ -779,6 +780,19 @@ test('recording stop sends STT transcript into draft reply pipeline', async ({ p
         language_probability: 0.98,
         source: 'helpy_stt',
         attempts: 1,
+      },
+    });
+  });
+
+  await page.route('**/api/mail/draft-intent', async (route) => {
+    const body = JSON.parse(route.request().postData() || '{}');
+    intentCalls.push(body);
+    await route.fulfill({
+      json: {
+        intent: 'prompt',
+        reason: 'instruction_signals',
+        fallback_applied: false,
+        fallback_policy: 'prompt',
       },
     });
   });
@@ -809,11 +823,119 @@ test('recording stop sends STT transcript into draft reply pipeline', async ({ p
   await expect(page.locator('#canvas-text')).toHaveAttribute('data-mail-recording-state', 'idle');
 
   await expect.poll(() => sttCalls.length).toBe(1);
+  await expect.poll(() => intentCalls.length).toBe(1);
   await expect.poll(() => draftCalls.length).toBe(1);
   expect(String(sttCalls[0]?.audio_base64 || '')).not.toBe('');
+  expect(intentCalls[0]?.transcript).toBe(transcript);
   expect(draftCalls[0]?.selection_text).toBe(transcript);
   await expect(page.locator('[data-mail-draft-panel] [data-mail-draft-text]')).toHaveValue(/Voice draft for m23/);
   await expect(page.locator('tr[data-message-id="m23"] [data-mail-row-status]')).toContainText('Draft ready');
+});
+
+test('voice dictation intent uses transcript as editable draft without generator call', async ({ page }) => {
+  let draftCalls = 0;
+  const transcript = 'Hi Bob,\n\nThanks for the update. I can send details tomorrow.\n\nBest,\nAlice';
+
+  await mockCapabilities(page);
+  await mockMicrophoneCapture(page, 'voice-bytes');
+
+  await page.route('**/api/mail/stt', async (route) => {
+    await route.fulfill({
+      json: {
+        text: transcript,
+        language: 'en',
+        language_probability: 0.95,
+        source: 'helpy_stt',
+        attempts: 1,
+      },
+    });
+  });
+
+  await page.route('**/api/mail/draft-intent', async (route) => {
+    await route.fulfill({
+      json: {
+        intent: 'dictation',
+        reason: 'dictation_signals',
+        fallback_applied: false,
+        fallback_policy: 'prompt',
+      },
+    });
+  });
+
+  await page.route('**/api/mail/draft-reply', async (route) => {
+    draftCalls += 1;
+    await route.fulfill({ json: { source: 'llm', draft_text: 'unexpected generator call' } });
+  });
+
+  await renderMail(page, 'gmail', [
+    { id: 'm25', date: '2026-02-20T14:00:00Z', sender: 'dictation@example.com', subject: 'Dictation path' },
+  ]);
+
+  await page.click('tr[data-message-id="m25"] button[data-mail-action="draft-reply"]');
+  await page.click('button[data-mail-record-mode="toggle"]');
+  const trigger = page.locator('button[data-mail-record-action="trigger"]');
+  await trigger.click();
+  await trigger.click();
+
+  await expect.poll(() => draftCalls).toBe(0);
+  await expect(page.locator('[data-mail-draft-panel] [data-mail-draft-text]')).toHaveValue(transcript);
+  await expect(page.locator('[data-mail-draft-panel] [data-mail-draft-source]')).toContainText('Captured dictation draft');
+});
+
+test('ambiguous voice intent uses deterministic prompt fallback policy', async ({ page }) => {
+  const draftCalls: Array<Record<string, unknown>> = [];
+  const transcript = 'Tomorrow should work.';
+
+  await mockCapabilities(page);
+  await mockMicrophoneCapture(page, 'voice-bytes');
+
+  await page.route('**/api/mail/stt', async (route) => {
+    await route.fulfill({
+      json: {
+        text: transcript,
+        language: 'en',
+        language_probability: 0.6,
+        source: 'helpy_stt',
+        attempts: 1,
+      },
+    });
+  });
+
+  await page.route('**/api/mail/draft-intent', async (route) => {
+    await route.fulfill({
+      json: {
+        intent: 'prompt',
+        reason: 'ambiguous_signals',
+        fallback_applied: true,
+        fallback_policy: 'prompt',
+      },
+    });
+  });
+
+  await page.route('**/api/mail/draft-reply', async (route) => {
+    const body = JSON.parse(route.request().postData() || '{}');
+    draftCalls.push(body);
+    await route.fulfill({
+      json: {
+        source: 'llm',
+        draft_text: `Fallback generated for ${body.message_id}`,
+      },
+    });
+  });
+
+  await renderMail(page, 'gmail', [
+    { id: 'm26', date: '2026-02-20T14:30:00Z', sender: 'fallback@example.com', subject: 'Fallback path' },
+  ]);
+
+  await page.click('tr[data-message-id="m26"] button[data-mail-action="draft-reply"]');
+  await page.click('button[data-mail-record-mode="toggle"]');
+  const trigger = page.locator('button[data-mail-record-action="trigger"]');
+  await trigger.click();
+  await trigger.click();
+
+  await expect.poll(() => draftCalls.length).toBe(1);
+  expect(draftCalls[0]?.selection_text).toBe(transcript);
+  await expect(page.locator('[data-mail-draft-panel] [data-mail-draft-source]')).toContainText('ambiguous intent fallback');
 });
 
 test('recording STT failure remains recoverable via manual prompt retry', async ({ page }) => {

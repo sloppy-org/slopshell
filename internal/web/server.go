@@ -159,6 +159,7 @@ func (a *App) Router() http.Handler {
 	r.Post("/api/mail/mark-read", a.handleMailMarkRead)
 	r.Post("/api/mail/action", a.handleMailAction)
 	r.Post("/api/mail/draft-reply", a.handleMailDraftReply)
+	r.Post("/api/mail/draft-intent", a.handleMailDraftIntent)
 	r.Post("/api/mail/stt", a.handleMailSTT)
 
 	// ws
@@ -799,6 +800,31 @@ func (a *App) handleMailDraftReply(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]interface{}{
 		"draft_text": draft,
 		"source":     "fallback",
+	})
+}
+
+func (a *App) handleMailDraftIntent(w http.ResponseWriter, r *http.Request) {
+	if !a.requireAuth(w, r) {
+		return
+	}
+	var req struct {
+		Transcript string `json:"transcript"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+	transcript := strings.TrimSpace(req.Transcript)
+	if transcript == "" {
+		http.Error(w, "transcript is required", http.StatusBadRequest)
+		return
+	}
+	intent := classifyDraftReplyIntent(transcript)
+	writeJSON(w, map[string]interface{}{
+		"intent":           intent.Intent,
+		"reason":           intent.Reason,
+		"fallback_applied": intent.FallbackApplied,
+		"fallback_policy":  intent.FallbackPolicy,
 	})
 }
 
