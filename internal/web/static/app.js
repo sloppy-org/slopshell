@@ -16,6 +16,7 @@ const state = {
   assistantUnknownTurns: 0,
   assistantRemoteActiveCount: 0,
   assistantCancelInFlight: false,
+  assistantLastError: '',
   chatCtrlHoldTimer: null,
   chatVoiceCapture: null,
 };
@@ -557,17 +558,23 @@ function updateAssistantActivityIndicator() {
   if (!(el instanceof HTMLElement)) return;
   const working = isAssistantWorking();
   const stopping = state.assistantCancelInFlight;
+  const failed = !working && !stopping && Boolean(state.assistantLastError);
   if (stopping) {
     el.textContent = 'Assistant stopping...';
+  } else if (failed) {
+    el.textContent = 'Assistant error';
   } else {
     el.textContent = working ? 'Assistant is working...' : 'Assistant idle';
   }
+  el.title = failed ? String(state.assistantLastError) : '';
   el.classList.toggle('is-working', working && !stopping);
   el.classList.toggle('is-stopping', stopping);
-  el.classList.toggle('is-idle', !working && !stopping);
+  el.classList.toggle('is-error', failed);
+  el.classList.toggle('is-idle', !working && !stopping && !failed);
 }
 
 function trackAssistantTurnStarted(turnID) {
+  state.assistantLastError = '';
   const key = String(turnID || '').trim();
   if (key) {
     state.assistantActiveTurns.add(key);
@@ -860,7 +867,9 @@ function handleChatEvent(payload) {
       appendRenderedAssistant(String(payload.message || ''));
     }
     trackAssistantTurnFinished(turnID);
+    state.assistantLastError = '';
     showStatus('ready');
+    updateAssistantActivityIndicator();
     void refreshAssistantActivity();
     return;
   }
@@ -872,7 +881,9 @@ function handleChatEvent(payload) {
       updateAssistantRow(row, '_Stopped._', false);
     }
     trackAssistantTurnFinished(turnID);
+    state.assistantLastError = '';
     showStatus('assistant stopped');
+    updateAssistantActivityIndicator();
     void refreshAssistantActivity();
     return;
   }
@@ -885,7 +896,10 @@ function handleChatEvent(payload) {
     }
     trackAssistantTurnFinished(turnID);
     const errText = String(payload.error || 'assistant request failed');
+    state.assistantLastError = errText;
     appendPlainMessage('system', errText);
+    showStatus(errText);
+    updateAssistantActivityIndicator();
     void refreshAssistantActivity();
   }
 }
