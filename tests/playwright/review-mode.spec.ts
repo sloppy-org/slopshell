@@ -182,14 +182,14 @@ test('right-click inline comment popover submits a comment_point draft mark', as
   expect(Number((markSet.target as any).start_offset)).toBeGreaterThanOrEqual(0);
 });
 
-test('highlight selection opens immediate comment popover and submits a highlight draft mark', async ({ page }) => {
+test('highlight selection popover submits with Enter key as a highlight draft mark', async ({ page }) => {
   await renderArtifact(page, plainTextEvent('evt-highlight-1', '# Notes\nHighlight this sentence now'));
   await selectTextFromSelector(page, '#canvas-text');
 
   const popover = page.locator('[data-review-popover="true"]');
   await expect(popover).toBeVisible();
   await popover.locator('input').fill('Add context to this highlight.');
-  await popover.locator('button[type="submit"]').click();
+  await popover.locator('input').press('Enter');
   await expect(popover).toHaveCount(0);
 
   const markSet = await waitForLastMessageOfKind(page, 'mark_set');
@@ -200,6 +200,34 @@ test('highlight selection opens immediate comment popover and submits a highligh
   expect(markSet.comment).toBe('Add context to this highlight.');
   expect(Number((markSet.target as any).line_start)).toBeGreaterThanOrEqual(1);
   expect(Number((markSet.target as any).end_offset)).toBeGreaterThan(Number((markSet.target as any).start_offset));
+});
+
+test('popover Escape cancels and returns focus to the review canvas', async ({ page }) => {
+  await renderArtifact(page, plainTextEvent('evt-comment-esc', '# Notes\nEscape key should cancel this popover'));
+  await page.evaluate(() => {
+    const existing = document.getElementById('review-focus-anchor');
+    if (existing) existing.remove();
+    const focusAnchor = document.createElement('button');
+    focusAnchor.id = 'review-focus-anchor';
+    focusAnchor.type = 'button';
+    focusAnchor.textContent = 'focus anchor';
+    document.body.appendChild(focusAnchor);
+    focusAnchor.focus();
+  });
+
+  await page.click('#canvas-text', { button: 'right', position: { x: 88, y: 72 } });
+  const popover = page.locator('[data-review-popover="true"]');
+  await expect(popover).toBeVisible();
+  await expect(popover.locator('input')).toBeFocused();
+
+  await page.keyboard.press('Escape');
+  await expect(popover).toHaveCount(0);
+  await page.waitForTimeout(50);
+
+  const activeElementId = await page.evaluate(() => document.activeElement?.id || '');
+  expect(activeElementId).toBe('canvas-text');
+  const messages = await getHarnessMessages(page);
+  expect(messages.filter((m) => m.kind === 'mark_set')).toHaveLength(0);
 });
 
 test('highlight selection cancel clears draft without creating a mark', async ({ page }) => {
@@ -238,6 +266,45 @@ test('right-click inline comment popover cancel and outside click do not create 
   await page.waitForTimeout(50);
   messages = await getHarnessMessages(page);
   expect(messages.filter((m) => m.kind === 'mark_set')).toHaveLength(0);
+});
+
+test('popover opened near viewport edge stays within visible text canvas bounds', async ({ page }) => {
+  await renderArtifact(page, plainTextEvent('evt-comment-edge', '# Notes\nEdge positioning test text'));
+
+  const box = await page.locator('#canvas-text').boundingBox();
+  if (!box) throw new Error('expected #canvas-text to have a bounding box');
+
+  await page.click('#canvas-text', {
+    button: 'right',
+    position: { x: Math.max(2, box.width - 2), y: Math.max(2, box.height - 2) },
+  });
+
+  const popover = page.locator('[data-review-popover="true"]');
+  await expect(popover).toBeVisible();
+
+  const bounds = await page.evaluate(() => {
+    const root = document.getElementById('canvas-text');
+    const overlay = root?.querySelector('[data-review-popover="true"]');
+    if (!root || !overlay) return null;
+    const rootRect = root.getBoundingClientRect();
+    const overlayRect = overlay.getBoundingClientRect();
+    return {
+      rootLeft: rootRect.left,
+      rootTop: rootRect.top,
+      rootRight: rootRect.right,
+      rootBottom: rootRect.bottom,
+      overlayLeft: overlayRect.left,
+      overlayTop: overlayRect.top,
+      overlayRight: overlayRect.right,
+      overlayBottom: overlayRect.bottom,
+    };
+  });
+  if (!bounds) throw new Error('expected popover bounds to be measurable');
+
+  expect(bounds.overlayLeft).toBeGreaterThanOrEqual(bounds.rootLeft);
+  expect(bounds.overlayTop).toBeGreaterThanOrEqual(bounds.rootTop);
+  expect(bounds.overlayRight).toBeLessThanOrEqual(bounds.rootRight);
+  expect(bounds.overlayBottom).toBeLessThanOrEqual(bounds.rootBottom);
 });
 
 test('switching artifacts tears down stale review and mail handlers', async ({ page }) => {

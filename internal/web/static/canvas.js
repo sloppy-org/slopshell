@@ -330,6 +330,7 @@ function pointTargetFromClientPoint(root, clientX, clientY) {
 function closeReviewCommentPopover() {
   const e = getEls();
   if (!e.text) return;
+  const restoreFocusEl = e.text._reviewPopoverPreviousFocusEl;
   if (e.text._reviewPopoverOutsideHandler) {
     document.removeEventListener('pointerdown', e.text._reviewPopoverOutsideHandler, true);
     e.text._reviewPopoverOutsideHandler = null;
@@ -343,6 +344,18 @@ function closeReviewCommentPopover() {
   }
   e.text._reviewPopoverEl = null;
   e.text._reviewPopoverSource = null;
+  e.text._reviewPopoverPreviousFocusEl = null;
+  if (!restoreFocusEl && !e.text.hasAttribute('tabindex')) {
+    e.text.setAttribute('tabindex', '-1');
+  }
+  const focusTarget = restoreFocusEl || e.text;
+  if (focusTarget && document.contains(focusTarget) && typeof focusTarget.focus === 'function') {
+    try {
+      focusTarget.focus({ preventScroll: true });
+    } catch (_) {
+      focusTarget.focus();
+    }
+  }
 }
 
 function positionReviewCommentPopover(popover, root, x, y) {
@@ -384,6 +397,8 @@ function selectionTargetFromDraftMark(eventId) {
 function openReviewCommentPopover(eventId, options = {}) {
   const e = getEls();
   if (!e.text) return;
+  const activeEl = document.activeElement;
+  const previousFocusEl = activeEl instanceof HTMLElement && activeEl !== document.body ? activeEl : null;
   let target = null;
   if (options.source === 'selection') {
     target = selectionTargetFromDraftMark(eventId);
@@ -395,12 +410,16 @@ function openReviewCommentPopover(eventId, options = {}) {
   }
   closeReviewCommentPopover();
 
+  e.text._reviewPopoverPreviousFocusEl = previousFocusEl;
   const popover = document.createElement('form');
   popover.className = 'canvas-review-popover';
   popover.dataset.reviewPopover = 'true';
+  popover.setAttribute('role', 'dialog');
+  popover.setAttribute('aria-label', 'Add comment');
+  const inputId = `review-comment-input-${Math.random().toString(36).slice(2, 8)}`;
   popover.innerHTML = `
-    <label class="sr-only" for="review-comment-input">Comment</label>
-    <input id="review-comment-input" type="text" maxlength="500" placeholder="Add comment (optional)">
+    <label class="sr-only" for="${inputId}">Comment</label>
+    <input id="${inputId}" type="text" maxlength="500" placeholder="Add comment (optional)">
     <div class="canvas-review-popover-actions">
       <button type="submit">Add Comment</button>
       <button type="button" data-review-cancel>Cancel</button>
@@ -410,8 +429,14 @@ function openReviewCommentPopover(eventId, options = {}) {
   positionReviewCommentPopover(popover, e.text, target.pointX, target.pointY);
   requestAnimationFrame(() => {
     positionReviewCommentPopover(popover, e.text, target.pointX, target.pointY);
-    const input = popover.querySelector('#review-comment-input');
-    if (input && typeof input.focus === 'function') input.focus();
+    const input = popover.querySelector(`#${CSS.escape(inputId)}`);
+    if (input && typeof input.focus === 'function') {
+      try {
+        input.focus({ preventScroll: true });
+      } catch (_) {
+        input.focus();
+      }
+    }
   });
 
   const cancelBtn = popover.querySelector('[data-review-cancel]');
@@ -427,7 +452,7 @@ function openReviewCommentPopover(eventId, options = {}) {
 
   popover.addEventListener('submit', (ev) => {
     ev.preventDefault();
-    const input = popover.querySelector('#review-comment-input');
+    const input = popover.querySelector(`#${CSS.escape(inputId)}`);
     const comment = String(input?.value || '').trim();
     const state = window._tabulaApp?.getState?.();
     sendSelectionFeedback({
