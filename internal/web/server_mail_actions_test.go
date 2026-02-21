@@ -544,7 +544,7 @@ func TestMailSTTUsesConfiguredBaseURLAndSurfacesValidation(t *testing.T) {
 
 func newAuthedTestApp(t *testing.T) *App {
 	t.Helper()
-	app, err := New(t.TempDir(), "", "", "", false)
+	app, err := New(t.TempDir(), "", "", "", "", false)
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}

@@ -149,6 +149,7 @@ func cmdWeb(args []string) int {
 	port := fs.Int("port", web.DefaultPort, "port")
 	localMCPURL := fs.String("local-mcp-url", "", "external local MCP URL")
 	ptydURL := fs.String("ptyd-url", "", "external PTY daemon URL")
+	appServerURL := fs.String("app-server-url", web.DefaultAppServerURL, "Codex app-server websocket URL")
 	devRuntime := fs.Bool("dev-runtime", false, "dev runtime endpoint")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -158,7 +159,7 @@ func cmdWeb(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	app, err := web.New(*dataDir, res.Paths.ProjectDir, *localMCPURL, *ptydURL, *devRuntime)
+	app, err := web.New(*dataDir, res.Paths.ProjectDir, *localMCPURL, *ptydURL, *appServerURL, *devRuntime)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -201,7 +202,7 @@ func cmdCanvas(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	app, err := web.New(*dataDir, res.Paths.ProjectDir, "", "", false)
+	app, err := web.New(*dataDir, res.Paths.ProjectDir, "", "", web.DefaultAppServerURL, false)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1

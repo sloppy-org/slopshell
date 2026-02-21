@@ -1,12 +1,12 @@
 [Unit]
 Description=Watch Tabula source for dev reload
-After=tabula-mcp.service tabula-web.service
-Wants=tabula-mcp.service tabula-web.service
+After=tabula-mcp.service tabula-codex-app-server.service tabula-web.service
+Wants=tabula-mcp.service tabula-codex-app-server.service tabula-web.service
 
 [Service]
 Type=simple
-WorkingDirectory=%h/code/tabula
-ExecStart=%h/code/tabula/scripts/tabula-dev-watch.sh
+WorkingDirectory=%h/code/assi/tabula
+ExecStart=%h/code/assi/tabula/scripts/tabula-dev-watch.sh
 Restart=always
 RestartSec=1
 

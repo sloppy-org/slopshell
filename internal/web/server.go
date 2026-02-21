@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,6 +22,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/gorilla/websocket"
+	"github.com/krystophny/tabula/internal/appserver"
 	"github.com/krystophny/tabula/internal/pty"
 	"github.com/krystophny/tabula/internal/serve"
 	"github.com/krystophny/tabula/internal/store"
@@ -29,6 +31,7 @@ import (
 const (
 	DefaultHost           = "127.0.0.1"
 	DefaultPort           = 8420
+	DefaultAppServerURL   = "ws://127.0.0.1:8787"
 	SessionCookie         = "tabula_session"
 	cookieMaxAgeSec       = 60 * 60 * 24 * 365
 	DaemonPort            = 9420
@@ -48,9 +51,13 @@ type App struct {
 	localProjectDir string
 	localMCPURL     string
 	ptydURL         string
+	appServerURL    string
+	appServerModel  string
 	devRuntime      bool
 
 	store *store.Store
+
+	appServerClient *appserver.Client
 
 	upgrader websocket.Upgrader
 
@@ -67,18 +74,30 @@ type App struct {
 	startedAt string
 }
 
-func New(dataDir, localProjectDir, localMCPURL, ptydURL string, devRuntime bool) (*App, error) {
+func New(dataDir, localProjectDir, localMCPURL, ptydURL, appServerURL string, devRuntime bool) (*App, error) {
 	s, err := store.New(pathJoin(dataDir, "tabula.db"))
 	if err != nil {
 		return nil, err
+	}
+	appServerURL = strings.TrimSpace(appServerURL)
+	var appServerClient *appserver.Client
+	if appServerURL != "" {
+		appServerClient, err = appserver.NewClient(appServerURL)
+		if err != nil {
+			_ = s.Close()
+			return nil, err
+		}
 	}
 	return &App{
 		dataDir:         dataDir,
 		localProjectDir: localProjectDir,
 		localMCPURL:     localMCPURL,
 		ptydURL:         ptydURL,
+		appServerURL:    appServerURL,
+		appServerModel:  strings.TrimSpace(os.Getenv("TABULA_APP_SERVER_MODEL")),
 		devRuntime:      devRuntime,
 		store:           s,
+		appServerClient: appServerClient,
 		upgrader:        websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }},
 		terminalWS:      map[string]*websocket.Conn{},
 		canvasWS:        map[string]map[*websocket.Conn]struct{}{},
@@ -424,12 +443,14 @@ func (a *App) handleRuntime(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]interface{}{
-		"boot_id":       a.bootID,
-		"started_at":    a.startedAt,
-		"version":       "0.3.0",
-		"dev_mode":      a.devRuntime,
-		"ptyd_url":      emptyToNil(a.ptydURL),
-		"local_mcp_url": emptyToNil(a.localMCPURL),
+		"boot_id":          a.bootID,
+		"started_at":       a.startedAt,
+		"version":          "0.3.0",
+		"dev_mode":         a.devRuntime,
+		"ptyd_url":         emptyToNil(a.ptydURL),
+		"local_mcp_url":    emptyToNil(a.localMCPURL),
+		"app_server_url":   emptyToNil(a.appServerURL),
+		"app_server_model": emptyToNil(a.appServerModel),
 	})
 }
 
@@ -650,6 +671,17 @@ func (a *App) handleCanvasCommit(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
+	}
+	if a.appServerClient != nil {
+		aiSummary, aiErr := a.rewriteCommittedArtifactWithAppServer(r.Context(), sid, port, strings.TrimSpace(req.ArtifactID))
+		if aiErr != nil {
+			aiSummary = map[string]interface{}{
+				"enabled": false,
+				"applied": false,
+				"error":   aiErr.Error(),
+			}
+		}
+		resp["ai_review"] = aiSummary
 	}
 	writeJSON(w, resp)
 }
@@ -1061,6 +1093,283 @@ func firstNonEmpty(values ...string) string {
 
 func (a *App) mcpToolsCall(port int, name string, arguments map[string]interface{}) (map[string]interface{}, error) {
 	return mcpToolsCallURL(fmt.Sprintf("http://127.0.0.1:%d/mcp", port), name, arguments)
+}
+
+type reviewComment struct {
+	Comment    string
+	MarkType   string
+	TargetKind string
+	LineStart  int
+	LineEnd    int
+	Page       int
+	UpdatedAt  string
+}
+
+func (a *App) rewriteCommittedArtifactWithAppServer(ctx context.Context, sessionID string, tunnelPort int, requestedArtifactID string) (map[string]interface{}, error) {
+	status, err := a.mcpToolsCall(tunnelPort, "canvas_status", map[string]interface{}{"session_id": sessionID})
+	if err != nil {
+		return nil, err
+	}
+	active, _ := status["active_artifact"].(map[string]interface{})
+	if active == nil {
+		return map[string]interface{}{
+			"enabled": true,
+			"applied": false,
+			"reason":  "no_active_artifact",
+		}, nil
+	}
+	kind := strings.TrimSpace(fmt.Sprint(active["kind"]))
+	if kind != "text_artifact" && kind != "pdf_artifact" {
+		return map[string]interface{}{
+			"enabled": true,
+			"applied": false,
+			"reason":  "active_artifact_unsupported",
+			"kind":    kind,
+		}, nil
+	}
+
+	artifactID := strings.TrimSpace(fmt.Sprint(active["event_id"]))
+	if artifactID == "" || artifactID == "<nil>" {
+		artifactID = strings.TrimSpace(fmt.Sprint(status["active_artifact_id"]))
+	}
+	if artifactID == "" || artifactID == "<nil>" {
+		return map[string]interface{}{
+			"enabled": true,
+			"applied": false,
+			"reason":  "missing_artifact_id",
+		}, nil
+	}
+	if strings.TrimSpace(requestedArtifactID) != "" && strings.TrimSpace(requestedArtifactID) != artifactID {
+		return map[string]interface{}{
+			"enabled":              true,
+			"applied":              false,
+			"reason":               "active_artifact_changed",
+			"requested_artifact":   requestedArtifactID,
+			"active_artifact_id":   artifactID,
+			"active_artifact_kind": kind,
+		}, nil
+	}
+
+	originalText := fmt.Sprint(active["text"])
+	if kind == "text_artifact" && (strings.TrimSpace(originalText) == "" || originalText == "<nil>") {
+		return map[string]interface{}{
+			"enabled":     true,
+			"applied":     false,
+			"reason":      "active_text_missing",
+			"artifact_id": artifactID,
+		}, nil
+	}
+	if originalText == "<nil>" {
+		originalText = ""
+	}
+	artifactPath := strings.TrimSpace(fmt.Sprint(active["path"]))
+	if artifactPath == "<nil>" {
+		artifactPath = ""
+	}
+	artifactPage := intFromAny(active["page"], 0)
+	title := strings.TrimSpace(fmt.Sprint(active["title"]))
+	if title == "<nil>" {
+		title = ""
+	}
+
+	marksResp, err := a.mcpToolsCall(tunnelPort, "canvas_marks_list", map[string]interface{}{
+		"session_id":  sessionID,
+		"artifact_id": artifactID,
+		"intent":      "persistent",
+		"limit":       250,
+	})
+	if err != nil {
+		return nil, err
+	}
+	rawMarks, _ := marksResp["marks"].([]interface{})
+	comments := make([]reviewComment, 0, len(rawMarks))
+	for _, rawMark := range rawMarks {
+		mark, _ := rawMark.(map[string]interface{})
+		if mark == nil {
+			continue
+		}
+		comment := strings.TrimSpace(fmt.Sprint(mark["comment"]))
+		if comment == "" || comment == "<nil>" {
+			continue
+		}
+		target, _ := mark["target"].(map[string]interface{})
+		lineStart := intFromAny(target["line_start"], 0)
+		lineEnd := intFromAny(target["line_end"], lineStart)
+		if lineEnd < lineStart {
+			lineEnd = lineStart
+		}
+		page := intFromAny(target["page"], 0)
+		comments = append(comments, reviewComment{
+			Comment:    comment,
+			MarkType:   strings.TrimSpace(fmt.Sprint(mark["type"])),
+			TargetKind: strings.TrimSpace(fmt.Sprint(mark["target_kind"])),
+			LineStart:  lineStart,
+			LineEnd:    lineEnd,
+			Page:       page,
+			UpdatedAt:  strings.TrimSpace(fmt.Sprint(mark["updated_at"])),
+		})
+	}
+	if len(comments) == 0 {
+		return map[string]interface{}{
+			"enabled":       true,
+			"applied":       false,
+			"reason":        "no_persistent_comments",
+			"artifact_id":   artifactID,
+			"marks_total":   len(rawMarks),
+			"comments_used": 0,
+		}, nil
+	}
+	sort.Slice(comments, func(i, j int) bool {
+		if comments[i].UpdatedAt == comments[j].UpdatedAt {
+			return comments[i].Comment < comments[j].Comment
+		}
+		return comments[i].UpdatedAt < comments[j].UpdatedAt
+	})
+
+	prompt := buildArtifactRewritePrompt(kind, title, originalText, artifactPath, artifactPage, comments)
+	rewriteCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
+	defer cancel()
+	cwd := strings.TrimSpace(a.localProjectDir)
+	if cwd == "" {
+		cwd = "."
+	}
+	appResp, err := a.appServerClient.SendPrompt(rewriteCtx, appserver.PromptRequest{
+		CWD:    cwd,
+		Model:  a.appServerModel,
+		Prompt: prompt,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	rewrittenText := sanitizeAppServerTextResponse(appResp.Message)
+	if strings.TrimSpace(rewrittenText) == "" {
+		return nil, errors.New("app-server returned empty rewrite result")
+	}
+	if kind == "text_artifact" && normalizeLineEndings(strings.TrimSpace(rewrittenText)) == normalizeLineEndings(strings.TrimSpace(originalText)) {
+		return map[string]interface{}{
+			"enabled":       true,
+			"applied":       false,
+			"reason":        "unchanged",
+			"artifact_id":   artifactID,
+			"comments_used": len(comments),
+			"thread_id":     appResp.ThreadID,
+			"turn_id":       appResp.TurnID,
+		}, nil
+	}
+
+	outputTitle := title
+	if kind == "pdf_artifact" {
+		if strings.TrimSpace(outputTitle) == "" {
+			outputTitle = "PDF Review Notes"
+		} else {
+			outputTitle = outputTitle + " (AI Review Notes)"
+		}
+	}
+	showResp, err := a.mcpToolsCall(tunnelPort, "canvas_artifact_show", map[string]interface{}{
+		"session_id":       sessionID,
+		"kind":             "text",
+		"title":            outputTitle,
+		"markdown_or_text": rewrittenText,
+		"reason":           "commit_review_rewrite",
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return map[string]interface{}{
+		"enabled":            true,
+		"applied":            true,
+		"source":             "codex_app_server",
+		"artifact_kind":      kind,
+		"input_artifact_id":  artifactID,
+		"output_artifact_id": showResp["artifact_id"],
+		"comments_used":      len(comments),
+		"thread_id":          appResp.ThreadID,
+		"turn_id":            appResp.TurnID,
+	}, nil
+}
+
+func buildArtifactRewritePrompt(kind, title, text, path string, page int, comments []reviewComment) string {
+	var b strings.Builder
+	b.WriteString("You are revising a user artifact from review comments.\n")
+	b.WriteString("Apply all comments faithfully and return only the rewritten output.\n")
+	b.WriteString("No preface. No explanations. No code fences.\n")
+	switch kind {
+	case "text_artifact":
+		b.WriteString("Artifact type: text/markdown.\n")
+		b.WriteString("Preserve document structure and style unless comments request changes.\n")
+		b.WriteString("Return the full revised document text.\n")
+	case "pdf_artifact":
+		b.WriteString("Artifact type: PDF.\n")
+		b.WriteString("You cannot edit binary PDF content directly in this response.\n")
+		b.WriteString("Return a Markdown review-note document with proposed revisions covering all comments.\n")
+		b.WriteString("Use this format: title, summary, and numbered proposed edits.\n")
+	}
+	if strings.TrimSpace(title) != "" {
+		fmt.Fprintf(&b, "Artifact title: %s\n", strings.TrimSpace(title))
+	}
+	if kind == "pdf_artifact" {
+		if strings.TrimSpace(path) != "" {
+			fmt.Fprintf(&b, "PDF path: %s\n", strings.TrimSpace(path))
+		}
+		if page > 0 {
+			fmt.Fprintf(&b, "Current PDF page: %d\n", page)
+		}
+	}
+	b.WriteString("\nReview comments (chronological):\n")
+	for i, c := range comments {
+		scope := make([]string, 0, 4)
+		if strings.TrimSpace(c.MarkType) != "" && c.MarkType != "<nil>" {
+			scope = append(scope, strings.TrimSpace(c.MarkType))
+		}
+		if strings.TrimSpace(c.TargetKind) != "" && c.TargetKind != "<nil>" {
+			scope = append(scope, strings.TrimSpace(c.TargetKind))
+		}
+		if c.LineStart > 0 && c.LineEnd > 0 {
+			if c.LineStart == c.LineEnd {
+				scope = append(scope, fmt.Sprintf("line %d", c.LineStart))
+			} else {
+				scope = append(scope, fmt.Sprintf("lines %d-%d", c.LineStart, c.LineEnd))
+			}
+		}
+		if c.Page > 0 {
+			scope = append(scope, fmt.Sprintf("page %d", c.Page))
+		}
+		prefix := fmt.Sprintf("%d.", i+1)
+		if len(scope) > 0 {
+			prefix += " [" + strings.Join(scope, ", ") + "]"
+		}
+		fmt.Fprintf(&b, "%s %s\n", prefix, c.Comment)
+	}
+	if kind == "text_artifact" {
+		b.WriteString("\nOriginal document text:\n")
+		b.WriteString("<<<TEXT\n")
+		b.WriteString(text)
+		b.WriteString("\nTEXT\n")
+		b.WriteString(">>>")
+	}
+	return b.String()
+}
+
+func sanitizeAppServerTextResponse(raw string) string {
+	text := strings.TrimSpace(raw)
+	if text == "" {
+		return ""
+	}
+	if strings.HasPrefix(text, "```") {
+		lines := strings.Split(text, "\n")
+		if len(lines) >= 3 && strings.HasPrefix(strings.TrimSpace(lines[0]), "```") && strings.TrimSpace(lines[len(lines)-1]) == "```" {
+			text = strings.Join(lines[1:len(lines)-1], "\n")
+		}
+	}
+	return strings.TrimSpace(text)
+}
+
+func normalizeLineEndings(text string) string {
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+	text = strings.ReplaceAll(text, "\r", "\n")
+	return text
 }
 
 func mcpToolsCallURL(mcpURL, name string, arguments map[string]interface{}) (map[string]interface{}, error) {

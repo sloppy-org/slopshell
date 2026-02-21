@@ -10,6 +10,6 @@ cp "$UNIT_SRC"/*.service "$UNIT_DST"/
 
 systemctl --user daemon-reload
 systemctl --user disable --now tabula-dev-watch.path >/dev/null 2>&1 || true
-systemctl --user enable --now tabula-ptyd.service tabula-mcp.service tabula-web.service tabula-dev-watch.service
+systemctl --user enable --now tabula-ptyd.service tabula-mcp.service tabula-codex-app-server.service tabula-web.service tabula-dev-watch.service
 
-echo "Installed and enabled: tabula-ptyd, tabula-mcp, tabula-web, tabula-dev-watch.service"
+echo "Installed and enabled: tabula-ptyd, tabula-mcp, tabula-codex-app-server, tabula-web, tabula-dev-watch.service"

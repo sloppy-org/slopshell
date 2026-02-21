@@ -19,6 +19,7 @@ Risk notice: see [`DISCLAIMER.md`](DISCLAIMER.md)
 - **HTTP/MCP interface inventory**: [`docs/interfaces.md`](docs/interfaces.md)
 - **Integrated handoff protocol spec**: [`docs/handoff-protocol/README.md`](docs/handoff-protocol/README.md)
 - **System architecture**: [`docs/architecture.md`](docs/architecture.md)
+- **Codex app-server pivot notes**: [`docs/codex-app-server-pivot.md`](docs/codex-app-server-pivot.md)
 - **Published release (v0.0.4)**: [`docs/release-v0.0.4.md`](docs/release-v0.0.4.md)
 - **Previous release (v0.0.3)**: [`docs/release-v0.0.3.md`](docs/release-v0.0.3.md)
 - **Published baseline (v0.0.1)**: [`docs/release-v0.0.1.md`](docs/release-v0.0.1.md)
@@ -39,7 +40,7 @@ Requirements:
 tabula bootstrap --project-dir .
 tabula mcp-server --project-dir . --headless --no-canvas
 tabula serve --project-dir . --host 127.0.0.1 --port 9420
-tabula web --data-dir ~/.tabula-web --project-dir . --host 127.0.0.1 --port 8420
+tabula web --data-dir ~/.tabula-web --project-dir . --host 127.0.0.1 --port 8420 --app-server-url ws://127.0.0.1:8787
 tabula ptyd --data-dir ~/.local/share/tabula-ptyd --host 127.0.0.1 --port 9333
 tabula canvas
 ```
@@ -49,7 +50,13 @@ tabula canvas
 - Web UI: `http://localhost:8420`
 - MCP HTTP: `http://127.0.0.1:9420/mcp`
 - Canvas websocket: `ws://127.0.0.1:9420/ws/canvas`
+- Codex app-server websocket: `ws://127.0.0.1:8787`
 - Local browser session id: `local`
+
+Commit-triggered AI rewrite:
+- On `Commit`, Tabula now aggregates persistent review comments for the active artifact.
+- For text artifacts (`markdown/plain text`), it asks Codex app-server for a full rewritten document.
+- For PDF artifacts, it asks Codex app-server for structured review notes and renders them as a text artifact.
 
 ## Novel UI Focus (What To Evaluate First)
 

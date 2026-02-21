@@ -15,5 +15,6 @@ sleep 0.35
 if [[ "$INCLUDE_PTYD" == "--include-ptyd" ]]; then
   systemctl --user restart tabula-ptyd.service
 fi
+systemctl --user restart tabula-codex-app-server.service
 systemctl --user restart tabula-mcp.service
 systemctl --user restart tabula-web.service

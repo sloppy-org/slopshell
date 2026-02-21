@@ -26,18 +26,19 @@ Main units:
 - `tabula-web.service`
 - `tabula-mcp.service`
 - `tabula-ptyd.service`
+- `tabula-codex-app-server.service`
 - `helpy-mcp.service`
 
 Status:
 
 ```bash
-systemctl --user status tabula-web.service tabula-mcp.service tabula-ptyd.service helpy-mcp.service --no-pager -n 40
+systemctl --user status tabula-web.service tabula-mcp.service tabula-ptyd.service tabula-codex-app-server.service helpy-mcp.service --no-pager -n 40
 ```
 
 Restart all integration services:
 
 ```bash
-systemctl --user restart helpy-mcp.service tabula-mcp.service tabula-ptyd.service tabula-web.service
+systemctl --user restart helpy-mcp.service tabula-codex-app-server.service tabula-mcp.service tabula-ptyd.service tabula-web.service
 ```
 
 ## Handoff-First UI Testing Rule
@@ -53,6 +54,7 @@ Default local session and URLs:
 
 - Tabula MCP: `http://127.0.0.1:9420/mcp`
 - Helpy MCP: `http://127.0.0.1:8090/mcp`
+- Codex App Server: `ws://127.0.0.1:8787`
 - Tabula session id: `local`
 
 ## Handoff Example: Archive Folder (20 Headers)

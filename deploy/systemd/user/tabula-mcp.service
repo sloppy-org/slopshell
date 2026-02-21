@@ -4,11 +4,11 @@ After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=%h/code/tabula
+WorkingDirectory=%h/code/assi/tabula
 PassEnvironment=DISPLAY WAYLAND_DISPLAY XAUTHORITY XDG_RUNTIME_DIR DBUS_SESSION_BUS_ADDRESS
 Environment=HOME=%h
 Environment=SHELL=/usr/bin/bash
-ExecStart=/usr/bin/bash -lc 'source ~/.bashrc >/dev/null 2>&1 || true; cd %h/code/tabula; exec /usr/bin/env go run ./cmd/tabula serve --project-dir %h/code/tabula --host 127.0.0.1 --port 9420'
+ExecStart=/usr/bin/bash -lc 'source ~/.bashrc >/dev/null 2>&1 || true; cd %h/code/assi/tabula; exec /usr/bin/env go run ./cmd/tabula serve --project-dir %h/code/assi/tabula --host 127.0.0.1 --port 9420'
 Restart=on-failure
 RestartSec=2
 TimeoutStopSec=5
