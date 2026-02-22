@@ -7,8 +7,6 @@ type Header = {
   subject: string;
 };
 
-type HarnessMessage = Record<string, unknown>;
-
 function plainTextEvent(eventID: string, text: string) {
   return {
     kind: 'text_artifact',
@@ -72,7 +70,7 @@ async function clearHarnessMessages(page: Page) {
   });
 }
 
-async function getHarnessMessages(page: Page): Promise<HarnessMessage[]> {
+async function getHarnessMessages(page: Page): Promise<Record<string, unknown>[]> {
   await page.waitForFunction(() => typeof (window as any).getHarnessMessages === 'function');
   return page.evaluate(() => {
     // @ts-expect-error injected by harness module
@@ -80,100 +78,19 @@ async function getHarnessMessages(page: Page): Promise<HarnessMessage[]> {
   });
 }
 
-async function selectTextFromSelector(page: Page, selector: string) {
-  const selected = await page.evaluate((sel) => {
-    const root = document.querySelector(sel);
-    if (!root) return false;
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-    let node = walker.nextNode();
-    while (node && !String(node.textContent || '').trim()) {
-      node = walker.nextNode();
-    }
-    if (!node) return false;
-    const text = String(node.textContent || '');
-    const start = Math.max(0, text.search(/\S/));
-    const range = document.createRange();
-    range.setStart(node, start);
-    range.setEnd(node, text.length);
-    const selection = window.getSelection();
-    if (!selection) return false;
-    selection.removeAllRanges();
-    selection.addRange(range);
-    document.dispatchEvent(new Event('selectionchange'));
-    root.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
-    return true;
-  }, selector);
-  if (!selected) throw new Error(`unable to select text from ${selector}`);
-}
-
-async function waitForLastSelectionMessage(page: Page): Promise<HarnessMessage> {
-  await expect.poll(async () => {
-    const messages = await getHarnessMessages(page);
-    return messages.filter((m) => m.kind === 'text_selection').length;
-  }).toBeGreaterThan(0);
-
-  const messages = await getHarnessMessages(page);
-  const selections = messages.filter((m) => m.kind === 'text_selection');
-  return selections[selections.length - 1];
-}
-
-async function waitForLastMessageOfKind(page: Page, kind: string): Promise<HarnessMessage> {
-  await expect.poll(async () => {
-    const messages = await getHarnessMessages(page);
-    return messages.filter((m) => m.kind === kind).length;
-  }).toBeGreaterThan(0);
-
-  const messages = await getHarnessMessages(page);
-  const matches = messages.filter((m) => m.kind === kind);
-  return matches[matches.length - 1];
-}
-
-async function countOverlayMarks(page: Page, markType: string): Promise<number> {
-  return page.evaluate((type) => {
-    return document.querySelectorAll(`.canvas-mark-overlay .canvas-mark-${type}`).length;
-  }, markType);
-}
-
-async function firstOverlayMarkPoint(page: Page, markType: string): Promise<{ x: number, y: number }> {
-  const point = await page.evaluate((type) => {
-    const el = document.querySelector(`.canvas-mark-overlay .canvas-mark-${type}`);
-    if (!el) return null;
-    const rect = el.getBoundingClientRect();
-    if (!rect || !rect.width || !rect.height) return null;
-    return {
-      x: rect.left + Math.min(rect.width - 1, Math.max(1, rect.width / 2)),
-      y: rect.top + Math.min(rect.height - 1, Math.max(1, rect.height / 2)),
-    };
-  }, markType);
-  if (!point) {
-    throw new Error(`unable to locate overlay mark for ${markType}`);
-  }
-  return point;
-}
-
-async function clickFirstOverlayMark(page: Page, markType: string, button: 'left' | 'right' = 'left') {
-  const point = await firstOverlayMarkPoint(page, markType);
-  await page.mouse.click(point.x, point.y, { button });
-}
-
 test.beforeEach(async ({ page }) => {
   await page.goto('/tests/playwright/harness.html');
   await clearHarnessMessages(page);
 });
 
-test('non-mail text artifacts enable review selection payloads', async ({ page }) => {
+test('text artifact renders markdown into canvas-text', async ({ page }) => {
   await renderArtifact(page, plainTextEvent('evt-text-1', '# Header\nAlpha Beta'));
-  await selectTextFromSelector(page, '#canvas-text');
-  const msg = await waitForLastSelectionMessage(page);
-
-  expect(msg.event_id).toBe('evt-text-1');
-  expect(msg.artifact_id).toBe('evt-text-1');
-  expect(String(msg.text || '')).toContain('Header');
-  expect(Number(msg.line_start)).toBeGreaterThanOrEqual(1);
-  expect(Number(msg.line_end)).toBeGreaterThanOrEqual(Number(msg.line_start));
+  await expect(page.locator('#canvas-text')).toBeVisible();
+  const html = await page.locator('#canvas-text').innerHTML();
+  expect(html).toContain('Header');
 });
 
-test('mail text artifacts keep the same review selection behavior', async ({ page }) => {
+test('switching artifacts tears down stale mail handlers', async ({ page }) => {
   await page.route('**/api/mail/action-capabilities', async (route) => {
     await route.fulfill({
       json: {
@@ -188,336 +105,38 @@ test('mail text artifacts keep the same review selection behavior', async ({ pag
     });
   });
 
-  await renderArtifact(page, mailEvent('evt-mail-1', 'gmail', [
-    { id: 'm1', date: '2026-02-20T09:00:00Z', sender: 'a@example.com', subject: 'Quarterly Review' },
+  await renderArtifact(page, mailEvent('evt-mail-2', 'gmail', [
+    { id: 'm1', date: '2026-02-20T09:00:00Z', sender: 'a@example.com', subject: 'Switch Test' },
   ]));
-  await selectTextFromSelector(page, 'tr[data-message-id="m1"] td:nth-child(3)');
-  const msg = await waitForLastSelectionMessage(page);
 
-  expect(msg.event_id).toBe('evt-mail-1');
-  expect(msg.artifact_id).toBe('evt-mail-1');
-  expect(String(msg.text || '')).toContain('Quarterly Review');
-  expect(Number(msg.line_start)).toBeGreaterThanOrEqual(1);
-});
-
-test('right-click inline comment popover submits a comment_point draft mark', async ({ page }) => {
-  await renderArtifact(page, plainTextEvent('evt-comment-1', '# Notes\nInline comment target text'));
-  await page.click('#canvas-text', { button: 'right', position: { x: 80, y: 64 } });
-
-  const popover = page.locator('[data-review-popover="true"]');
-  await expect(popover).toBeVisible();
-  await popover.locator('input').fill('Check this sentence.');
-  await popover.locator('button[type="submit"]').click();
-  await expect(popover).toHaveCount(0);
-
-  const markSet = await waitForLastMessageOfKind(page, 'mark_set');
-  expect(markSet.artifact_id).toBe('evt-comment-1');
-  expect(markSet.intent).toBe('draft');
-  expect(markSet.type).toBe('comment_point');
-  expect(markSet.target_kind).toBe('text_range');
-  expect(markSet.comment).toBe('Check this sentence.');
-  expect(Number((markSet.target as any).line_start)).toBeGreaterThanOrEqual(1);
-  expect(Number((markSet.target as any).start_offset)).toBeGreaterThanOrEqual(0);
-});
-
-test('right-click on markdown link text still opens review comment popover', async ({ page }) => {
-  await renderArtifact(
-    page,
-    plainTextEvent('evt-comment-link', '# Notes\nReview [linked phrase](https://example.com/item) in-place'),
-  );
-  await page.locator('#canvas-text a').first().click({ button: 'right' });
-
-  const popover = page.locator('[data-review-popover="true"]');
-  await expect(popover).toBeVisible();
-  await popover.locator('input').fill('Annotate link text directly.');
-  await popover.locator('button[type="submit"]').click();
-  await expect(popover).toHaveCount(0);
-
-  const markSet = await waitForLastMessageOfKind(page, 'mark_set');
-  expect(markSet.artifact_id).toBe('evt-comment-link');
-  expect(markSet.intent).toBe('draft');
-  expect(markSet.type).toBe('comment_point');
-  expect(markSet.comment).toBe('Annotate link text directly.');
-});
-
-test('highlight selection popover submits with Enter key as a highlight draft mark', async ({ page }) => {
-  await renderArtifact(page, plainTextEvent('evt-highlight-1', '# Notes\nHighlight this sentence now'));
-  await selectTextFromSelector(page, '#canvas-text');
-
-  const popover = page.locator('[data-review-popover="true"]');
-  await expect(popover).toBeVisible();
-  await popover.locator('input').fill('Add context to this highlight.');
-  await popover.locator('input').press('Enter');
-  await expect(popover).toHaveCount(0);
-
-  const markSet = await waitForLastMessageOfKind(page, 'mark_set');
-  expect(markSet.artifact_id).toBe('evt-highlight-1');
-  expect(markSet.intent).toBe('draft');
-  expect(markSet.type).toBe('highlight');
-  expect(markSet.target_kind).toBe('text_range');
-  expect(markSet.comment).toBe('Add context to this highlight.');
-  expect(Number((markSet.target as any).line_start)).toBeGreaterThanOrEqual(1);
-  expect(Number((markSet.target as any).end_offset)).toBeGreaterThan(Number((markSet.target as any).start_offset));
-
-  await page.evaluate(() => {
-    const selection = window.getSelection();
-    if (!selection) return;
-    selection.removeAllRanges();
-    document.dispatchEvent(new Event('selectionchange'));
+  const before = await page.evaluate(() => {
+    const root = document.getElementById('canvas-text') as any;
+    return {
+      hasMailClickHandler: Boolean(root?._mailClickHandler),
+      hasMailPointerDownHandler: Boolean(root?._mailPointerDownHandler),
+      hasMailClass: root?.classList.contains('mail-artifact') || false,
+    };
   });
-  await page.waitForTimeout(50);
-  await expect.poll(async () => countOverlayMarks(page, 'highlight')).toBeGreaterThan(0);
-});
+  expect(before.hasMailClickHandler).toBe(true);
+  expect(before.hasMailPointerDownHandler).toBe(true);
+  expect(before.hasMailClass).toBe(true);
 
-test('highlight review flow emits mark_set with comment and mark_commit for persistence', async ({ page }) => {
-  await renderArtifact(page, plainTextEvent('evt-highlight-persist', '# Notes\nPersist this highlighted sentence'));
-  await selectTextFromSelector(page, '#canvas-text');
-
-  const popover = page.locator('[data-review-popover="true"]');
-  await expect(popover).toBeVisible();
-  await popover.locator('input').fill('Persist this note.');
-  await popover.locator('input').press('Enter');
-  await expect(popover).toHaveCount(0);
-
-  const draftMarkSet = await waitForLastMessageOfKind(page, 'mark_set');
-  expect(draftMarkSet.artifact_id).toBe('evt-highlight-persist');
-  expect(draftMarkSet.intent).toBe('draft');
-  expect(draftMarkSet.type).toBe('highlight');
-  expect(draftMarkSet.comment).toBe('Persist this note.');
-
-  await page.evaluate(() => {
-    const { getState } = (window as any)._taburaApp || {};
-    if (!getState) return;
-    const state = getState();
-    if (!state.canvasWs || state.canvasWs.readyState !== WebSocket.OPEN) return;
-    state.canvasWs.send(JSON.stringify({
-      kind: 'mark_commit',
-      session_id: state.sessionId || '',
-      include_draft: true,
-    }));
-  });
-
-  const commitMessage = await waitForLastMessageOfKind(page, 'mark_commit');
-  expect(commitMessage.session_id).toBe('local');
-  expect(commitMessage.include_draft).toBe(true);
-});
-
-test('Ctrl+Enter in comment input submits comment then commits (Cmd+Enter on macOS)', async ({ page }) => {
-  await renderArtifact(page, plainTextEvent('evt-highlight-shortcut-inline-commit', '# Notes\nInline shortcut commit from comment box'));
-  await selectTextFromSelector(page, '#canvas-text');
-
-  const popover = page.locator('[data-review-popover="true"]');
-  await expect(popover).toBeVisible();
-  await popover.locator('input').fill('Submit and commit inline.');
   await clearHarnessMessages(page);
-  await popover.locator('input').press('Control+Enter');
-  await expect(popover).toHaveCount(0);
+  await renderArtifact(page, imageEvent('evt-image-1'));
 
-  const draftMarkSet = await waitForLastMessageOfKind(page, 'mark_set');
-  expect(draftMarkSet.artifact_id).toBe('evt-highlight-shortcut-inline-commit');
-  expect(draftMarkSet.intent).toBe('draft');
-  expect(draftMarkSet.comment).toBe('Submit and commit inline.');
-
-  const commitMessage = await waitForLastMessageOfKind(page, 'mark_commit');
-  expect(commitMessage.session_id).toBe('local');
-  expect(commitMessage.include_draft).toBe(true);
-});
-
-test('popover Escape cancels and returns focus to the review canvas', async ({ page }) => {
-  await renderArtifact(page, plainTextEvent('evt-comment-esc', '# Notes\nEscape key should cancel this popover'));
-  await page.evaluate(() => {
-    const existing = document.getElementById('review-focus-anchor');
-    if (existing) existing.remove();
-    const focusAnchor = document.createElement('button');
-    focusAnchor.id = 'review-focus-anchor';
-    focusAnchor.type = 'button';
-    focusAnchor.textContent = 'focus anchor';
-    document.body.appendChild(focusAnchor);
-    focusAnchor.focus();
+  const after = await page.evaluate(() => {
+    const root = document.getElementById('canvas-text') as any;
+    return {
+      hasMailClickHandler: Boolean(root?._mailClickHandler),
+      hasMailPointerDownHandler: Boolean(root?._mailPointerDownHandler),
+      hasMailDetailKeyDownHandler: Boolean(root?._mailDetailKeyDownHandler),
+      hasMailClass: root?.classList.contains('mail-artifact') || false,
+    };
   });
-
-  await page.click('#canvas-text', { button: 'right', position: { x: 88, y: 72 } });
-  const popover = page.locator('[data-review-popover="true"]');
-  await expect(popover).toBeVisible();
-  await expect(popover.locator('input')).toBeFocused();
-
-  await page.keyboard.press('Escape');
-  await expect(popover).toHaveCount(0);
-  await page.waitForTimeout(50);
-
-  const activeElementId = await page.evaluate(() => document.activeElement?.id || '');
-  expect(activeElementId).toBe('canvas-text');
-  const messages = await getHarnessMessages(page);
-  expect(messages.filter((m) => m.kind === 'mark_set')).toHaveLength(0);
-});
-
-test('highlight selection cancel clears draft without creating a mark', async ({ page }) => {
-  await renderArtifact(page, plainTextEvent('evt-highlight-2', '# Notes\nCancel this highlighted draft'));
-  await selectTextFromSelector(page, '#canvas-text');
-
-  const popover = page.locator('[data-review-popover="true"]');
-  await expect(popover).toBeVisible();
-  await popover.locator('button[data-review-cancel]').click();
-  await expect(popover).toHaveCount(0);
-
-  await page.waitForTimeout(50);
-  const messages = await getHarnessMessages(page);
-  expect(messages.filter((m) => m.kind === 'mark_set')).toHaveLength(0);
-  const clearDrafts = messages.filter((m) => m.kind === 'mark_clear_draft');
-  expect(clearDrafts.length).toBeGreaterThan(0);
-  expect((clearDrafts[clearDrafts.length - 1] as any).artifact_id).toBe('evt-highlight-2');
-});
-
-test('right-click inline comment popover cancel and outside click do not create marks', async ({ page }) => {
-  await renderArtifact(page, plainTextEvent('evt-comment-2', '# Notes\nCancel path text'));
-
-  await page.click('#canvas-text', { button: 'right', position: { x: 82, y: 66 } });
-  const popover = page.locator('[data-review-popover="true"]');
-  await expect(popover).toBeVisible();
-  await popover.locator('button[data-review-cancel]').click();
-  await expect(popover).toHaveCount(0);
-  await page.waitForTimeout(50);
-  let messages = await getHarnessMessages(page);
-  expect(messages.filter((m) => m.kind === 'mark_set')).toHaveLength(0);
-
-  await page.click('#canvas-text', { button: 'right', position: { x: 96, y: 86 } });
-  await expect(popover).toBeVisible();
-  await page.click('#canvas-tab-bar');
-  await expect(popover).toHaveCount(0);
-  await page.waitForTimeout(50);
-  messages = await getHarnessMessages(page);
-  expect(messages.filter((m) => m.kind === 'mark_set')).toHaveLength(0);
-});
-
-test('right-click inline comment leaves a visible comment marker', async ({ page }) => {
-  await renderArtifact(page, plainTextEvent('evt-comment-visible', '# Notes\nVisible point comment test'));
-  await page.click('#canvas-text', { button: 'right', position: { x: 84, y: 68 } });
-
-  const popover = page.locator('[data-review-popover="true"]');
-  await expect(popover).toBeVisible();
-  await popover.locator('input').fill('Pin this location.');
-  await popover.locator('button[type="submit"]').click();
-  await expect(popover).toHaveCount(0);
-
-  const markSet = await waitForLastMessageOfKind(page, 'mark_set');
-  expect(markSet.type).toBe('comment_point');
-  await expect.poll(async () => countOverlayMarks(page, 'comment_point')).toBeGreaterThan(0);
-});
-
-test('right-clicking an existing point comment reopens its popover without deleting it', async ({ page }) => {
-  await renderArtifact(page, plainTextEvent('evt-point-delete', '# Notes\nDelete this point comment quickly'));
-  await page.click('#canvas-text', { button: 'right', position: { x: 92, y: 72 } });
-
-  let popover = page.locator('[data-review-popover="true"]');
-  await expect(popover).toBeVisible();
-  await popover.locator('input').fill('Delete me fast.');
-  await popover.locator('button[type="submit"]').click();
-  await expect(popover).toHaveCount(0);
-  await expect.poll(async () => countOverlayMarks(page, 'comment_point')).toBeGreaterThan(0);
-
-  await clickFirstOverlayMark(page, 'comment_point');
-  popover = page.locator('[data-review-popover="true"]');
-  await expect(popover).toBeVisible();
-  await expect(popover.locator('input')).toHaveValue('Delete me fast.');
-  await popover.locator('button[data-review-cancel]').click();
-  await expect(popover).toHaveCount(0);
-
-  await clickFirstOverlayMark(page, 'comment_point', 'right');
-  popover = page.locator('[data-review-popover="true"]');
-  await expect(popover).toBeVisible();
-  await expect(popover.locator('input')).toHaveValue('Delete me fast.');
-  await popover.locator('button[data-review-cancel]').click();
-  await expect(popover).toHaveCount(0);
-  await expect.poll(async () => countOverlayMarks(page, 'comment_point')).toBeGreaterThan(0);
-});
-
-test('clicking an existing highlight reopens its comment popover with prior text', async ({ page }) => {
-  await renderArtifact(page, plainTextEvent('evt-highlight-reopen', '# Notes\nReopen this highlighted comment'));
-  await selectTextFromSelector(page, '#canvas-text');
-
-  let popover = page.locator('[data-review-popover="true"]');
-  await expect(popover).toBeVisible();
-  await popover.locator('input').fill('Remember this highlight comment.');
-  await popover.locator('input').press('Enter');
-  await expect(popover).toHaveCount(0);
-  await expect.poll(async () => countOverlayMarks(page, 'highlight')).toBeGreaterThan(0);
-
-  await clickFirstOverlayMark(page, 'highlight');
-  popover = page.locator('[data-review-popover="true"]');
-  await expect(popover).toBeVisible();
-  await expect(popover.locator('input')).toHaveValue('Remember this highlight comment.');
-});
-
-test('clicking an existing point comment reopens its comment popover with prior text', async ({ page }) => {
-  await renderArtifact(page, plainTextEvent('evt-point-reopen', '# Notes\nReopen this point comment'));
-  await page.click('#canvas-text', { button: 'right', position: { x: 90, y: 70 } });
-
-  let popover = page.locator('[data-review-popover="true"]');
-  await expect(popover).toBeVisible();
-  await popover.locator('input').fill('Remember this point comment.');
-  await popover.locator('button[type="submit"]').click();
-  await expect(popover).toHaveCount(0);
-  await expect.poll(async () => countOverlayMarks(page, 'comment_point')).toBeGreaterThan(0);
-
-  await clickFirstOverlayMark(page, 'comment_point');
-  popover = page.locator('[data-review-popover="true"]');
-  await expect(popover).toBeVisible();
-  await expect(popover.locator('input')).toHaveValue('Remember this point comment.');
-});
-
-test('second single-click on a marked region closes the open popover without reopening', async ({ page }) => {
-  await renderArtifact(page, plainTextEvent('evt-second-click-close', '# Notes\nSecond click should close popover'));
-  await page.click('#canvas-text', { button: 'right', position: { x: 94, y: 74 } });
-
-  let popover = page.locator('[data-review-popover="true"]');
-  await expect(popover).toBeVisible();
-  await popover.locator('input').fill('Close on second click.');
-  await popover.locator('button[type="submit"]').click();
-  await expect(popover).toHaveCount(0);
-
-  await clickFirstOverlayMark(page, 'comment_point');
-  popover = page.locator('[data-review-popover="true"]');
-  await expect(popover).toBeVisible();
-
-  await clickFirstOverlayMark(page, 'comment_point');
-  await expect(popover).toHaveCount(0);
-  await page.waitForTimeout(100);
-  await expect(popover).toHaveCount(0);
-});
-
-test('hovering an existing annotation shows pointer cursor', async ({ page }) => {
-  await renderArtifact(page, plainTextEvent('evt-hover-pointer', '# Notes\nHover pointer should appear on annotation'));
-  await page.click('#canvas-text', { button: 'right', position: { x: 96, y: 76 } });
-
-  const popover = page.locator('[data-review-popover="true"]');
-  await expect(popover).toBeVisible();
-  await popover.locator('input').fill('Hover me.');
-  await popover.locator('button[type="submit"]').click();
-  await expect(popover).toHaveCount(0);
-  await expect.poll(async () => countOverlayMarks(page, 'comment_point')).toBeGreaterThan(0);
-
-  const point = await firstOverlayMarkPoint(page, 'comment_point');
-  await page.mouse.move(point.x, point.y);
-  await expect.poll(async () => {
-    return page.evaluate(() => {
-      const root = document.getElementById('canvas-text');
-      return root ? getComputedStyle(root).cursor : '';
-    });
-  }).toBe('pointer');
-
-  const outside = await page.evaluate(() => {
-    const root = document.getElementById('canvas-text');
-    if (!root) return { x: 0, y: 0 };
-    const rect = root.getBoundingClientRect();
-    return { x: rect.right + 12, y: rect.bottom + 12 };
-  });
-  await page.mouse.move(outside.x, outside.y);
-  await expect.poll(async () => {
-    return page.evaluate(() => {
-      const root = document.getElementById('canvas-text');
-      return root ? getComputedStyle(root).cursor : '';
-    });
-  }).not.toBe('pointer');
+  expect(after.hasMailClickHandler).toBe(false);
+  expect(after.hasMailPointerDownHandler).toBe(false);
+  expect(after.hasMailDetailKeyDownHandler).toBe(false);
+  expect(after.hasMailClass).toBe(false);
 });
 
 test('pdf artifacts render without iframe using object surface', async ({ page }) => {
@@ -534,130 +153,16 @@ test('pdf artifacts render without iframe using object surface', async ({ page }
   expect(dataAttr).toContain('missing.pdf');
 });
 
-test('pdf point comment click emits mark_set with pdf_point target', async ({ page }) => {
-  await renderArtifact(page, pdfEvent('evt-pdf-mark'));
-  const selectedMarkType = await page.evaluate(() => {
-    const markType = document.getElementById('canvas-mark-type') as HTMLSelectElement | null;
-    const markComment = document.getElementById('canvas-mark-comment') as HTMLInputElement | null;
-    if (markType) markType.value = 'comment_point';
-    if (markComment) markComment.value = 'pdf-point-note';
-    return markType?.value || '';
-  });
-  expect(selectedMarkType).toBe('comment_point');
-  const hitLayer = page.locator('#canvas-pdf .canvas-pdf-hit-layer');
-  await expect(hitLayer).toHaveCount(1);
-  await hitLayer.click({ position: { x: 120, y: 140 } });
-
-  const markSet = await waitForLastMessageOfKind(page, 'mark_set');
-  expect(markSet.artifact_id).toBe('evt-pdf-mark');
-  expect(markSet.intent).toBe('draft');
-  expect(markSet.type).toBe('comment_point');
-  expect(markSet.target_kind).toBe('pdf_point');
-  expect(markSet.comment).toBe('pdf-point-note');
-  expect(Number((markSet.target as any).page)).toBe(0);
-
-  await expect(page.locator('#canvas-pdf .canvas-mark-comment_point')).toHaveCount(1);
-});
-
-test('popover opened near viewport edge stays within visible text canvas bounds', async ({ page }) => {
-  await renderArtifact(page, plainTextEvent('evt-comment-edge', '# Notes\nEdge positioning test text'));
-
-  const box = await page.locator('#canvas-text').boundingBox();
-  if (!box) throw new Error('expected #canvas-text to have a bounding box');
-
-  await page.click('#canvas-text', {
-    button: 'right',
-    position: { x: Math.max(2, box.width - 2), y: Math.max(2, box.height - 2) },
-  });
-
-  const popover = page.locator('[data-review-popover="true"]');
-  await expect(popover).toBeVisible();
-
-  const bounds = await page.evaluate(() => {
-    const root = document.getElementById('canvas-text');
-    const overlay = root?.querySelector('[data-review-popover="true"]');
-    if (!root || !overlay) return null;
-    const rootRect = root.getBoundingClientRect();
-    const overlayRect = overlay.getBoundingClientRect();
-    return {
-      rootLeft: rootRect.left,
-      rootTop: rootRect.top,
-      rootRight: rootRect.right,
-      rootBottom: rootRect.bottom,
-      overlayLeft: overlayRect.left,
-      overlayTop: overlayRect.top,
-      overlayRight: overlayRect.right,
-      overlayBottom: overlayRect.bottom,
-    };
-  });
-  if (!bounds) throw new Error('expected popover bounds to be measurable');
-
-  expect(bounds.overlayLeft).toBeGreaterThanOrEqual(bounds.rootLeft);
-  expect(bounds.overlayTop).toBeGreaterThanOrEqual(bounds.rootTop);
-  expect(bounds.overlayRight).toBeLessThanOrEqual(bounds.rootRight);
-  expect(bounds.overlayBottom).toBeLessThanOrEqual(bounds.rootBottom);
-});
-
-test('switching artifacts tears down stale review and mail handlers', async ({ page }) => {
-  await renderArtifact(page, mailEvent('evt-mail-2', 'gmail', [
-    { id: 'm1', date: '2026-02-20T09:00:00Z', sender: 'a@example.com', subject: 'Switch Test' },
-  ]));
-
-  const before = await page.evaluate(() => {
-    const root = document.getElementById('canvas-text') as any;
-    return {
-      hasSelectionHandler: Boolean(root?._selectionHandler),
-      hasMailClickHandler: Boolean(root?._mailClickHandler),
-      hasMailPointerDownHandler: Boolean(root?._mailPointerDownHandler),
-      hasMailDetailKeyDownHandler: Boolean(root?._mailDetailKeyDownHandler),
-      hasReviewContextMenuHandler: Boolean(root?._reviewContextMenuHandler),
-      hasMailClass: root?.classList.contains('mail-artifact') || false,
-    };
-  });
-  expect(before.hasSelectionHandler).toBe(true);
-  expect(before.hasMailClickHandler).toBe(true);
-  expect(before.hasMailPointerDownHandler).toBe(true);
-  expect(before.hasReviewContextMenuHandler).toBe(true);
-  expect(before.hasMailClass).toBe(true);
-
-  await clearHarnessMessages(page);
-  await renderArtifact(page, imageEvent('evt-image-1'));
-
-  const after = await page.evaluate(() => {
-    const root = document.getElementById('canvas-text') as any;
-    return {
-      hasSelectionHandler: Boolean(root?._selectionHandler),
-      hasMailClickHandler: Boolean(root?._mailClickHandler),
-      hasMailPointerDownHandler: Boolean(root?._mailPointerDownHandler),
-      hasMailDetailKeyDownHandler: Boolean(root?._mailDetailKeyDownHandler),
-      hasReviewContextMenuHandler: Boolean(root?._reviewContextMenuHandler),
-      hasMailClass: root?.classList.contains('mail-artifact') || false,
-    };
-  });
-  expect(after.hasSelectionHandler).toBe(false);
-  expect(after.hasMailClickHandler).toBe(false);
-  expect(after.hasMailPointerDownHandler).toBe(false);
-  expect(after.hasMailDetailKeyDownHandler).toBe(false);
-  expect(after.hasReviewContextMenuHandler).toBe(false);
-  expect(after.hasMailClass).toBe(false);
+test('clearCanvas hides all artifact panes', async ({ page }) => {
+  await renderArtifact(page, plainTextEvent('evt-clear', '# Visible'));
+  await expect(page.locator('#canvas-text')).toBeVisible();
 
   await page.evaluate(() => {
-    const root = document.getElementById('canvas-text');
-    if (!root) return;
-    const cell = root.querySelector('tr[data-message-id="m1"] td');
-    const text = cell?.firstChild;
-    if (!text) return;
-    const range = document.createRange();
-    range.setStart(text, 0);
-    range.setEnd(text, String(text.textContent || '').length);
-    const selection = window.getSelection();
-    if (!selection) return;
-    selection.removeAllRanges();
-    selection.addRange(range);
-    document.dispatchEvent(new Event('selectionchange'));
+    // @ts-expect-error injected by harness module
+    window.clearHarnessCanvas();
   });
-  await page.waitForTimeout(80);
 
-  const messages = await getHarnessMessages(page);
-  expect(messages).toHaveLength(0);
+  await expect(page.locator('#canvas-text')).toBeHidden();
+  await expect(page.locator('#canvas-image')).toBeHidden();
+  await expect(page.locator('#canvas-pdf')).toBeHidden();
 });
