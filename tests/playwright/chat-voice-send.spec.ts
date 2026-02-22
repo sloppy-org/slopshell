@@ -77,7 +77,12 @@ test.beforeEach(async ({ page }) => {
   });
   page.on('pageerror', (err) => console.log(`PAGE ERROR: ${err.message}`));
   await page.goto('/tests/playwright/chat-harness.html');
-  await page.waitForFunction(() => typeof (window as any)._tabulaApp?.getState === 'function');
+  await page.waitForFunction(() => {
+    const app = (window as any)._tabulaApp;
+    if (typeof app?.getState !== 'function') return false;
+    const s = app.getState();
+    return s.chatWs && s.chatWs.readyState === (window as any).WebSocket.OPEN;
+  }, null, { timeout: 5_000 });
   await page.waitForTimeout(200);
 });
 
@@ -184,4 +189,87 @@ test('mouse release during mic init still completes recording (desktop)', async 
   const sttActions = log.filter(e => e.type === 'stt').map(e => e.action);
   expect(sttActions).toContain('start');
   expect(sttActions).toContain('stop');
+});
+
+test('Send button shows recording state while voice capture is active', async ({ page }) => {
+  const btn = page.locator('#btn-chat-send');
+
+  // Before recording: normal state
+  await expect(btn).toHaveText('Send');
+  await expect(btn).not.toHaveClass(/is-recording/);
+
+  await clearLog(page);
+  const box = await btn.boundingBox();
+  if (!box) throw new Error('Send button not found');
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.waitForTimeout(500);
+  await waitForSTTAction(page, 'start');
+
+  // During recording: recording state
+  await expect(btn).toHaveText('Rec');
+  await expect(btn).toHaveClass(/is-recording/);
+
+  await page.mouse.up();
+  await waitForSTTAction(page, 'stop');
+
+  // After recording: back to normal
+  await expect(btn).toHaveText('Send');
+  await expect(btn).not.toHaveClass(/is-recording/);
+});
+
+test('second tap on Send button stops recording (touch)', async ({ page }) => {
+  await clearLog(page);
+
+  // Start recording with touch hold
+  await touchStart(page, '#btn-chat-send');
+  await page.waitForTimeout(500);
+  await waitForSTTAction(page, 'start');
+  await waitForLogEntry(page, 'recorder', 'start');
+
+  // Release the first touch
+  await touchEnd(page, '#btn-chat-send');
+  await waitForSTTAction(page, 'stop');
+
+  // Clear log and start a new recording
+  await clearLog(page);
+  await touchStart(page, '#btn-chat-send');
+  await page.waitForTimeout(500);
+  await waitForSTTAction(page, 'start');
+
+  // Second tap (touchstart again) should stop the recording
+  await clearLog(page);
+  await touchStart(page, '#btn-chat-send');
+  await waitForSTTAction(page, 'stop');
+  await waitForLogEntry(page, 'recorder', 'stop');
+});
+
+test('second click on Send button stops recording (mouse)', async ({ page }) => {
+  await clearLog(page);
+  const btn = page.locator('#btn-chat-send');
+  const box = await btn.boundingBox();
+  if (!box) throw new Error('Send button not found');
+
+  // Start recording with mouse hold
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.waitForTimeout(500);
+  await waitForSTTAction(page, 'start');
+
+  // Release mouse (first hold ends normally)
+  await page.mouse.up();
+  await waitForSTTAction(page, 'stop');
+
+  // Start another recording
+  await clearLog(page);
+  await page.mouse.down();
+  await page.waitForTimeout(500);
+  await waitForSTTAction(page, 'start');
+
+  // Click (mousedown) while recording should stop it
+  await clearLog(page);
+  await page.mouse.up();
+  await page.waitForTimeout(50);
+  await page.mouse.down();
+  await waitForSTTAction(page, 'stop');
 });

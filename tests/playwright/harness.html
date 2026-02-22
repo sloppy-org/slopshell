@@ -54,10 +54,35 @@
         },
       },
     };
+
+    const sttLog = [];
+    let sttTranscript = 'hello world';
+    let sttFailStop = false;
     window._tabulaApp = {
       getState() {
         return harnessState;
       },
+      sttStart(mimeType) {
+        sttLog.push({ action: 'start', mime_type: mimeType });
+      },
+      sttSendChunk(blob) {
+        sttLog.push({ action: 'append', size: blob?.size || 0 });
+      },
+      sttStop() {
+        sttLog.push({ action: 'stop' });
+        if (sttFailStop) {
+          return Promise.reject(new Error('upstream unavailable'));
+        }
+        return Promise.resolve({ text: sttTranscript });
+      },
+      sttCancel() {
+        sttLog.push({ action: 'cancel' });
+      },
+    };
+    window.__sttLog = sttLog;
+    window.__sttConfigure = (transcript, failStop) => {
+      sttTranscript = transcript;
+      sttFailStop = failStop;
     };
 
     const { renderCanvas, clearCanvas, initCanvasControls } = await import('../../internal/web/static/canvas.js');

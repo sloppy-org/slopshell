@@ -139,49 +139,18 @@ async function mockMicrophoneCapture(page: Page, chunkText = 'voice sample') {
   }, chunkText);
 }
 
-async function mockPushToPrompt(
+async function mockSTT(
   page: Page,
   transcript: string,
-  calls: Array<Record<string, unknown>>,
   failStop = false,
 ) {
-  await page.route('**/api/stt/push-to-prompt', async (route) => {
-    const body = JSON.parse(route.request().postData() || '{}');
-    calls.push(body);
-    const action = String(body.action || '');
-    if (action === 'stop' && failStop) {
-      await route.fulfill({
-        status: 502,
-        body: 'upstream unavailable',
-      });
-      return;
-    }
-    if (action === 'stop') {
-      await route.fulfill({
-        json: {
-          ok: true,
-          text: transcript,
-          language: 'en',
-          language_probability: 0.98,
-          source: 'voxtype_mcp',
-        },
-      });
-      return;
-    }
-    await route.fulfill({
-      json: {
-        ok: true,
-        session_id: body.session_id,
-      },
-    });
-  });
+  await page.evaluate(
+    ([t, f]) => (window as any).__sttConfigure(t, f),
+    [transcript, failStop] as const,
+  );
 
   await page.route('**/api/mail/stt', async (route) => {
     const body = JSON.parse(route.request().postData() || '{}');
-    calls.push({
-      action: 'mail_stt',
-      ...body,
-    });
     if (failStop) {
       await route.fulfill({
         status: 502,
@@ -201,8 +170,13 @@ async function mockPushToPrompt(
   });
 }
 
-function countSTTFinalizeCalls(calls: Array<Record<string, unknown>>): number {
-  return calls.filter((call) => call.action === 'stop' || call.action === 'mail_stt').length;
+async function getSTTLog(page: Page): Promise<Array<Record<string, unknown>>> {
+  return page.evaluate(() => (window as any).__sttLog.slice());
+}
+
+async function countSTTFinalizeCalls(page: Page): Promise<number> {
+  const log = await getSTTLog(page);
+  return log.filter((e) => e.action === 'stop').length;
 }
 
 test.beforeEach(async ({ page }) => {
@@ -850,7 +824,6 @@ test('keyboardless flow can complete full recording cycle via global button', as
 });
 
 test('recording stop sends STT transcript into draft reply pipeline', async ({ page }) => {
-  const sttCalls: Array<Record<string, unknown>> = [];
   const intentCalls: Array<Record<string, unknown>> = [];
   const draftCalls: Array<Record<string, unknown>> = [];
   const transcript = 'Please confirm delivery by Friday.';
@@ -858,7 +831,7 @@ test('recording stop sends STT transcript into draft reply pipeline', async ({ p
   await mockCapabilities(page);
   await mockMicrophoneCapture(page, 'voice-bytes');
 
-  await mockPushToPrompt(page, transcript, sttCalls);
+  await mockSTT(page, transcript);
 
   await page.route('**/api/mail/draft-intent', async (route) => {
     const body = JSON.parse(route.request().postData() || '{}');
@@ -898,11 +871,12 @@ test('recording stop sends STT transcript into draft reply pipeline', async ({ p
   await trigger.click();
   await expect(page.locator('#canvas-text')).toHaveAttribute('data-mail-recording-state', 'idle');
 
-  await expect.poll(() => countSTTFinalizeCalls(sttCalls)).toBeGreaterThan(0);
+  await expect.poll(() => countSTTFinalizeCalls(page)).toBeGreaterThan(0);
   await expect.poll(() => intentCalls.length).toBe(1);
   await expect.poll(() => draftCalls.length).toBe(1);
-  const appendCall = sttCalls.find((call) => call.action === 'append');
-  expect(String(appendCall?.audio_base64 || '')).not.toBe('');
+  const sttLog = await getSTTLog(page);
+  const appendEntry = sttLog.find((e) => e.action === 'append');
+  expect(appendEntry).toBeTruthy();
   expect(intentCalls[0]?.transcript).toBe(transcript);
   expect(draftCalls[0]?.selection_text).toBe(transcript);
   await expect(page.locator('[data-mail-draft-panel] [data-mail-draft-text]')).toHaveValue(/Voice draft for m23/);
@@ -912,7 +886,6 @@ test('recording stop sends STT transcript into draft reply pipeline', async ({ p
 test('detail Draft Reply voice flow routes transcript through prompt branch and renders draft output', async ({ page }) => {
   const readCalls: string[] = [];
   const markReadCalls: string[] = [];
-  const sttCalls: Array<Record<string, unknown>> = [];
   const intentCalls: Array<Record<string, unknown>> = [];
   const draftCalls: Array<Record<string, unknown>> = [];
   const transcript = 'Send a quick update with timing options.';
@@ -943,7 +916,7 @@ test('detail Draft Reply voice flow routes transcript through prompt branch and 
     await route.fulfill({ json: { marked: 1 } });
   });
 
-  await mockPushToPrompt(page, transcript, sttCalls);
+  await mockSTT(page, transcript);
 
   await page.route('**/api/mail/draft-intent', async (route) => {
     const body = JSON.parse(route.request().postData() || '{}');
@@ -988,13 +961,14 @@ test('detail Draft Reply voice flow routes transcript through prompt branch and 
   await trigger.click();
   await expect(page.locator('#canvas-text')).toHaveAttribute('data-mail-recording-state', 'idle');
 
-  await expect.poll(() => countSTTFinalizeCalls(sttCalls)).toBeGreaterThan(0);
+  await expect.poll(() => countSTTFinalizeCalls(page)).toBeGreaterThan(0);
   await expect.poll(() => intentCalls.length).toBe(1);
   await expect.poll(() => draftCalls.length).toBe(1);
   expect(readCalls).toEqual(['m27']);
   expect(markReadCalls).toEqual(['m27']);
-  const appendCall = sttCalls.find((call) => call.action === 'append');
-  expect(String(appendCall?.audio_base64 || '')).not.toBe('');
+  const sttLog = await getSTTLog(page);
+  const appendEntry = sttLog.find((e) => e.action === 'append');
+  expect(appendEntry).toBeTruthy();
   expect(intentCalls[0]?.transcript).toBe(transcript);
   expect(draftCalls[0]?.selection_text).toBe(transcript);
   await expect(page.locator('[data-mail-draft-panel] [data-mail-draft-text]')).toHaveValue(/Voice detail draft for m27/);
@@ -1003,12 +977,11 @@ test('detail Draft Reply voice flow routes transcript through prompt branch and 
 
 test('voice dictation intent uses transcript as editable draft without generator call', async ({ page }) => {
   let draftCalls = 0;
-  const sttCalls: Array<Record<string, unknown>> = [];
   const transcript = 'Hi Bob,\n\nThanks for the update. I can send details tomorrow.\n\nBest,\nAlice';
 
   await mockCapabilities(page);
   await mockMicrophoneCapture(page, 'voice-bytes');
-  await mockPushToPrompt(page, transcript, sttCalls);
+  await mockSTT(page, transcript);
 
   await page.route('**/api/mail/draft-intent', async (route) => {
     await route.fulfill({
@@ -1036,7 +1009,7 @@ test('voice dictation intent uses transcript as editable draft without generator
   await trigger.click();
   await trigger.click();
 
-  await expect.poll(() => countSTTFinalizeCalls(sttCalls)).toBeGreaterThan(0);
+  await expect.poll(() => countSTTFinalizeCalls(page)).toBeGreaterThan(0);
   await expect.poll(() => draftCalls).toBe(0);
   await expect(page.locator('[data-mail-draft-panel] [data-mail-draft-text]')).toHaveValue(transcript);
   await expect(page.locator('[data-mail-draft-panel] [data-mail-draft-source]')).toContainText('Captured dictation draft');
@@ -1044,12 +1017,11 @@ test('voice dictation intent uses transcript as editable draft without generator
 
 test('ambiguous voice intent uses deterministic prompt fallback policy', async ({ page }) => {
   const draftCalls: Array<Record<string, unknown>> = [];
-  const sttCalls: Array<Record<string, unknown>> = [];
   const transcript = 'Tomorrow should work.';
 
   await mockCapabilities(page);
   await mockMicrophoneCapture(page, 'voice-bytes');
-  await mockPushToPrompt(page, transcript, sttCalls);
+  await mockSTT(page, transcript);
 
   await page.route('**/api/mail/draft-intent', async (route) => {
     await route.fulfill({
@@ -1083,7 +1055,7 @@ test('ambiguous voice intent uses deterministic prompt fallback policy', async (
   await trigger.click();
   await trigger.click();
 
-  await expect.poll(() => countSTTFinalizeCalls(sttCalls)).toBeGreaterThan(0);
+  await expect.poll(() => countSTTFinalizeCalls(page)).toBeGreaterThan(0);
   await expect.poll(() => draftCalls.length).toBe(1);
   expect(draftCalls[0]?.selection_text).toBe(transcript);
   await expect(page.locator('[data-mail-draft-panel] [data-mail-draft-source]')).toContainText('ambiguous intent fallback');
@@ -1091,11 +1063,10 @@ test('ambiguous voice intent uses deterministic prompt fallback policy', async (
 
 test('recording STT failure remains recoverable via manual prompt retry', async ({ page }) => {
   let draftCalls = 0;
-  const sttCalls: Array<Record<string, unknown>> = [];
 
   await mockCapabilities(page);
   await mockMicrophoneCapture(page, 'voice-bytes');
-  await mockPushToPrompt(page, 'ignored', sttCalls, true);
+  await mockSTT(page, 'ignored', true);
 
   await page.route('**/api/mail/draft-reply', async (route) => {
     draftCalls += 1;
@@ -1118,7 +1089,7 @@ test('recording STT failure remains recoverable via manual prompt retry', async 
   await trigger.click();
   await trigger.click();
 
-  await expect.poll(() => countSTTFinalizeCalls(sttCalls)).toBeGreaterThan(0);
+  await expect.poll(() => countSTTFinalizeCalls(page)).toBeGreaterThan(0);
   await expect(page.locator('tr[data-message-id="m24"] [data-mail-row-status]')).toContainText('Transcription failed');
   expect(draftCalls).toBe(0);
 

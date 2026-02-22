@@ -46,7 +46,7 @@
         </section>
 
         <section id="panel-canvas" class="panel" aria-label="Review canvas">
-          <div id="canvas-header"><span id="canvas-title">Canvas</span></div>
+          <div id="canvas-header"><span id="canvas-title">Canvas</span><span id="canvas-mode" class="badge">prompt</span></div>
           <div id="canvas-content">
             <div id="canvas-empty">No artifact.</div>
             <div id="canvas-text" style="display:none"></div>
@@ -74,27 +74,10 @@
     // Harness log for test assertions
     window.__harnessLog = [];
 
-    // Mock fetch for /api/stt/push-to-prompt and /api/setup etc.
+    // Mock fetch for /api/setup etc.
     const _realFetch = window.fetch;
     window.fetch = async function(url, opts) {
       const u = String(url);
-      if (u.includes('/api/stt/push-to-prompt')) {
-        let body;
-        try {
-          body = JSON.parse(opts?.body || '{}');
-        } catch (e) {
-          window.__harnessLog.push({ type: 'stt_parse_error', error: e.message, raw: String(opts?.body).slice(0, 200) });
-          return new Response('{}', { status: 200 });
-        }
-        window.__harnessLog.push({ type: 'stt', action: body.action, body });
-        if (body.action === 'stop') {
-          return new Response(JSON.stringify({ text: 'hello world' }), { status: 200 });
-        }
-        if (body.action === 'append') {
-          return new Response(JSON.stringify({ ok: true, seq: body.seq }), { status: 200 });
-        }
-        return new Response(JSON.stringify({ ok: true }), { status: 200 });
-      }
       if (u.includes('/api/projects') && u.includes('/activate')) {
         return new Response(JSON.stringify({
           project: {
@@ -122,17 +105,43 @@
       return _realFetch.apply(this, arguments);
     };
 
-    // Mock WebSocket
+    // Mock WebSocket with STT message handling
+    const _NativeWebSocket = window.WebSocket;
     class MockWebSocket {
+      static CONNECTING = 0;
+      static OPEN = 1;
+      static CLOSING = 2;
+      static CLOSED = 3;
       constructor() {
-        this.readyState = WebSocket.OPEN;
+        this.readyState = MockWebSocket.OPEN;
         this.onopen = null;
         this.onmessage = null;
         this.onclose = null;
         setTimeout(() => { if (this.onopen) this.onopen({}); }, 10);
       }
-      send() {}
-      close() { this.readyState = WebSocket.CLOSED; }
+      send(data) {
+        if (data instanceof ArrayBuffer || data instanceof Blob) {
+          window.__harnessLog.push({ type: 'stt', action: 'append' });
+          return;
+        }
+        try {
+          const msg = JSON.parse(String(data));
+          if (msg.type === 'stt_start') {
+            window.__harnessLog.push({ type: 'stt', action: 'start', mime_type: msg.mime_type });
+          } else if (msg.type === 'stt_stop') {
+            window.__harnessLog.push({ type: 'stt', action: 'stop' });
+            const ws = this;
+            setTimeout(() => {
+              if (ws.onmessage) {
+                ws.onmessage({ data: JSON.stringify({ type: 'stt_result', text: 'hello world' }) });
+              }
+            }, 5);
+          } else if (msg.type === 'stt_cancel') {
+            window.__harnessLog.push({ type: 'stt', action: 'cancel' });
+          }
+        } catch (_) {}
+      }
+      close() { this.readyState = MockWebSocket.CLOSED; }
     }
     window.WebSocket = MockWebSocket;
 

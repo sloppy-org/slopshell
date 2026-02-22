@@ -1,20 +1,18 @@
 package voxtypemcp
 
 import (
-	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/krystophny/tabula/internal/stt"
 )
 
 const (
@@ -302,7 +300,7 @@ func (s *Server) toolStop(args map[string]interface{}) (map[string]interface{}, 
 		return nil, errors.New("no buffered audio for session")
 	}
 	start := time.Now()
-	text, err := transcribeWithVoxType(state.MimeType, state.Bytes)
+	text, err := stt.TranscribeWithVoxType(state.MimeType, state.Bytes)
 	if err != nil {
 		return nil, err
 	}
@@ -357,105 +355,3 @@ func (s *Server) toolHealth() (map[string]interface{}, error) {
 	}, nil
 }
 
-func transcribeWithVoxType(mimeType string, data []byte) (string, error) {
-	tmpDir, err := os.MkdirTemp("", "tabula-voxtype-*")
-	if err != nil {
-		return "", fmt.Errorf("failed to create temp dir: %w", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	inExt := fileExtFromMime(mimeType)
-	inputPath := filepath.Join(tmpDir, "input"+inExt)
-	if err := os.WriteFile(inputPath, data, 0o600); err != nil {
-		return "", fmt.Errorf("failed to write input audio: %w", err)
-	}
-
-	wavPath := filepath.Join(tmpDir, "input.wav")
-	ffmpegCtx, ffmpegCancel := context.WithTimeout(context.Background(), 25*time.Second)
-	defer ffmpegCancel()
-	ffmpegCmd := exec.CommandContext(
-		ffmpegCtx,
-		"ffmpeg",
-		"-hide_banner",
-		"-loglevel", "error",
-		"-y",
-		"-i", inputPath,
-		"-ac", "1",
-		"-ar", "16000",
-		"-f", "wav",
-		wavPath,
-	)
-	ffmpegOut, ffmpegErr := ffmpegCmd.CombinedOutput()
-	if ffmpegErr != nil {
-		return "", fmt.Errorf("ffmpeg conversion failed: %v: %s", ffmpegErr, strings.TrimSpace(string(ffmpegOut)))
-	}
-
-	voxCtx, voxCancel := context.WithTimeout(context.Background(), 90*time.Second)
-	defer voxCancel()
-	voxCmd := exec.CommandContext(voxCtx, "voxtype", "-q", "transcribe", wavPath)
-	stdout, err := voxCmd.StdoutPipe()
-	if err != nil {
-		return "", fmt.Errorf("voxtype stdout pipe: %w", err)
-	}
-	stderr, err := voxCmd.StderrPipe()
-	if err != nil {
-		return "", fmt.Errorf("voxtype stderr pipe: %w", err)
-	}
-	if err := voxCmd.Start(); err != nil {
-		return "", fmt.Errorf("failed to start voxtype: %w", err)
-	}
-	outBytes, _ := io.ReadAll(stdout)
-	errBytes, _ := io.ReadAll(stderr)
-	waitErr := voxCmd.Wait()
-	if waitErr != nil {
-		return "", fmt.Errorf("voxtype transcribe failed: %v: %s", waitErr, strings.TrimSpace(string(errBytes)))
-	}
-	text := parseVoxTypeTranscript(string(outBytes))
-	if text == "" {
-		text = parseVoxTypeTranscript(string(errBytes))
-	}
-	if text == "" {
-		return "", errors.New("voxtype produced no transcript output")
-	}
-	return text, nil
-}
-
-func parseVoxTypeTranscript(raw string) string {
-	lines := strings.Split(strings.ReplaceAll(raw, "\r\n", "\n"), "\n")
-	parts := make([]string, 0, len(lines))
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		if strings.HasPrefix(line, "Loading audio file:") ||
-			strings.HasPrefix(line, "Audio format:") ||
-			strings.HasPrefix(line, "Resampling from") ||
-			strings.HasPrefix(line, "Processing ") ||
-			strings.HasPrefix(line, "VAD:") {
-			continue
-		}
-		parts = append(parts, line)
-	}
-	if len(parts) == 0 {
-		return ""
-	}
-	return strings.TrimSpace(parts[len(parts)-1])
-}
-
-func fileExtFromMime(mimeType string) string {
-	mt := strings.ToLower(strings.TrimSpace(mimeType))
-	if strings.Contains(mt, "wav") {
-		return ".wav"
-	}
-	if strings.Contains(mt, "ogg") {
-		return ".ogg"
-	}
-	if strings.Contains(mt, "mp4") || strings.Contains(mt, "aac") || strings.Contains(mt, "m4a") {
-		return ".m4a"
-	}
-	if strings.Contains(mt, "mpeg") {
-		return ".mp3"
-	}
-	return ".webm"
-}

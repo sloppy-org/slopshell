@@ -24,6 +24,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/krystophny/tabula/internal/appserver"
 	"github.com/krystophny/tabula/internal/serve"
+	"github.com/krystophny/tabula/internal/stt"
 	"github.com/krystophny/tabula/internal/store"
 )
 
@@ -36,7 +37,6 @@ const (
 	DaemonPort            = 9420
 	LocalSessionID        = "local"
 	defaultProducerMCPURL = "http://127.0.0.1:8090/mcp"
-	maxMailSTTAudioBytes  = 10 * 1024 * 1024
 	mcpToolsCallTimeout   = 45 * time.Second
 )
 
@@ -60,7 +60,7 @@ type App struct {
 
 	mu               sync.Mutex
 	canvasWS         map[string]map[*websocket.Conn]struct{}
-	chatWS           map[string]map[*websocket.Conn]struct{}
+	chatWS           map[string]map[*chatWSConn]struct{}
 	chatTurnCancel   map[string]map[string]context.CancelFunc
 	chatTurnQueue    map[string]int
 	chatTurnWorker   map[string]bool
@@ -106,7 +106,7 @@ func New(dataDir, localProjectDir, localMCPURL, appServerURL string, devRuntime 
 		appServerClient:  appServerClient,
 		upgrader:         websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }},
 		canvasWS:         map[string]map[*websocket.Conn]struct{}{},
-		chatWS:           map[string]map[*websocket.Conn]struct{}{},
+		chatWS:           map[string]map[*chatWSConn]struct{}{},
 		chatTurnCancel:   map[string]map[string]context.CancelFunc{},
 		chatTurnQueue:    map[string]int{},
 		chatTurnWorker:   map[string]bool{},
@@ -199,7 +199,6 @@ func (a *App) Router() http.Handler {
 	r.Post("/api/mail/draft-reply", a.handleMailDraftReply)
 	r.Post("/api/mail/draft-intent", a.handleMailDraftIntent)
 	r.Post("/api/mail/stt", a.handleMailSTT)
-	r.Post("/api/stt/push-to-prompt", a.handlePushToPromptSTT)
 
 	// ws
 	r.Get("/ws/chat/{session_id}", a.handleChatWS)
@@ -733,10 +732,8 @@ func (a *App) handleMailSTT(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		ProducerMCPURL string `json:"producer_mcp_url"`
-		VoxTypeMCPURL  string `json:"voxtype_mcp_url"`
-		MimeType       string `json:"mime_type"`
-		AudioBase64    string `json:"audio_base64"`
+		MimeType    string `json:"mime_type"`
+		AudioBase64 string `json:"audio_base64"`
 	}
 	if err := decodeJSON(r, &req); err != nil {
 		http.Error(w, "invalid JSON", http.StatusBadRequest)
@@ -757,75 +754,32 @@ func (a *App) handleMailSTT(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "audio payload is empty", http.StatusBadRequest)
 		return
 	}
-	if len(audioData) > maxMailSTTAudioBytes {
+	if len(audioData) > stt.MaxAudioBytes {
 		http.Error(w, "audio payload exceeds max size", http.StatusBadRequest)
 		return
 	}
 
-	mimeType := normalizeSTTMimeType(req.MimeType)
-	if !isAllowedSTTMimeType(mimeType) {
+	mimeType := stt.NormalizeMimeType(req.MimeType)
+	if !stt.IsAllowedMimeType(mimeType) {
 		http.Error(w, "mime_type must be audio/* or application/octet-stream", http.StatusBadRequest)
 		return
 	}
 
-	sessionID := "mail-" + randomToken()
-	startReq := pushToPromptRequest{
-		Action:         sttActionStart,
-		SessionID:      sessionID,
-		MimeType:       mimeType,
-		VoxTypeMCPURL:  req.VoxTypeMCPURL,
-		ProducerMCPURL: req.ProducerMCPURL,
-	}
-	if _, err := dispatchPushToPromptVoxTypeMCP(startReq); err != nil {
-		var he *httpErr
-		if errors.As(err, &he) {
-			http.Error(w, he.Message, he.Status)
-			return
-		}
-		http.Error(w, err.Error(), http.StatusBadGateway)
-		return
-	}
-
-	appendReq := pushToPromptRequest{
-		Action:         sttActionAppend,
-		SessionID:      sessionID,
-		Seq:            0,
-		AudioBase64:    decodedAudio,
-		VoxTypeMCPURL:  req.VoxTypeMCPURL,
-		ProducerMCPURL: req.ProducerMCPURL,
-	}
-	if _, err := dispatchPushToPromptVoxTypeMCP(appendReq); err != nil {
-		_, _ = dispatchPushToPromptVoxTypeMCP(pushToPromptRequest{
-			Action:        sttActionCancel,
-			SessionID:     sessionID,
-			VoxTypeMCPURL: req.VoxTypeMCPURL,
-		})
-		var he *httpErr
-		if errors.As(err, &he) {
-			http.Error(w, he.Message, he.Status)
-			return
-		}
-		http.Error(w, err.Error(), http.StatusBadGateway)
-		return
-	}
-
-	stopReq := pushToPromptRequest{
-		Action:         sttActionStop,
-		SessionID:      sessionID,
-		VoxTypeMCPURL:  req.VoxTypeMCPURL,
-		ProducerMCPURL: req.ProducerMCPURL,
-	}
-	result, err := dispatchPushToPromptVoxTypeMCP(stopReq)
+	text, err := stt.TranscribeWithVoxType(mimeType, audioData)
 	if err != nil {
-		var he *httpErr
-		if errors.As(err, &he) {
-			http.Error(w, he.Message, he.Status)
-			return
-		}
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
-	writeJSON(w, result)
+	text = strings.TrimSpace(text)
+	if text == "" {
+		http.Error(w, "speech recognizer returned empty text", http.StatusBadGateway)
+		return
+	}
+	writeJSON(w, map[string]interface{}{
+		"ok":     true,
+		"text":   text,
+		"source": "voxtype",
+	})
 }
 
 func tryProducerDraftReply(mcpURL, provider, messageID, subject, sender, selectionText string) (string, bool) {
@@ -1382,27 +1336,6 @@ func mcpToolsCallURL(mcpURL, name string, arguments map[string]interface{}) (map
 	return sc, nil
 }
 
-func normalizeSTTMimeType(raw string) string {
-	candidate := strings.TrimSpace(raw)
-	if candidate == "" {
-		return "audio/webm"
-	}
-	if i := strings.Index(candidate, ";"); i >= 0 {
-		candidate = strings.TrimSpace(candidate[:i])
-	}
-	if candidate == "" {
-		return "audio/webm"
-	}
-	return strings.ToLower(candidate)
-}
-
-func isAllowedSTTMimeType(mimeType string) bool {
-	if mimeType == "application/octet-stream" {
-		return true
-	}
-	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(mimeType)), "audio/")
-}
-
 func normalizeProducerMCPURL(raw string) (string, error) {
 	candidate := strings.TrimSpace(raw)
 	if candidate == "" {
@@ -1646,8 +1579,8 @@ func (a *App) Shutdown(ctx context.Context) error {
 		_ = ws.Close()
 	}
 	for _, set := range a.chatWS {
-		for ws := range set {
-			_ = ws.Close()
+		for conn := range set {
+			_ = conn.conn.Close()
 		}
 	}
 	for sid, cancel := range a.projectServeStop {

@@ -763,30 +763,38 @@ func (a *App) handleChatWS(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
+	conn := newChatWSConn(ws)
 	a.mu.Lock()
 	if a.chatWS[sessionID] == nil {
-		a.chatWS[sessionID] = map[*websocket.Conn]struct{}{}
+		a.chatWS[sessionID] = map[*chatWSConn]struct{}{}
 	}
-	a.chatWS[sessionID][ws] = struct{}{}
+	a.chatWS[sessionID][conn] = struct{}{}
 	a.mu.Unlock()
 	defer func() {
 		a.mu.Lock()
 		if set := a.chatWS[sessionID]; set != nil {
-			delete(set, ws)
+			delete(set, conn)
 		}
 		a.mu.Unlock()
 		_ = ws.Close()
 	}()
 
 	if session, err := a.store.GetChatSession(sessionID); err == nil {
-		_ = ws.WriteJSON(map[string]interface{}{
+		_ = conn.writeJSON(map[string]interface{}{
 			"type": "mode_changed",
 			"mode": session.Mode,
 		})
 	}
 	for {
-		if _, _, err := ws.ReadMessage(); err != nil {
+		mt, data, err := ws.ReadMessage()
+		if err != nil {
 			return
+		}
+		switch mt {
+		case websocket.BinaryMessage:
+			handleSTTBinaryChunk(conn, data)
+		case websocket.TextMessage:
+			handleChatWSTextMessage(a, conn, sessionID, data)
 		}
 	}
 }
@@ -802,12 +810,12 @@ func (a *App) broadcastChatEvent(sessionID string, payload map[string]interface{
 	_ = a.store.AddChatEvent(sessionID, turnID, eventType, string(encoded))
 
 	a.mu.Lock()
-	clients := make([]*websocket.Conn, 0)
-	for ws := range a.chatWS[sessionID] {
-		clients = append(clients, ws)
+	clients := make([]*chatWSConn, 0)
+	for conn := range a.chatWS[sessionID] {
+		clients = append(clients, conn)
 	}
 	a.mu.Unlock()
-	for _, ws := range clients {
-		_ = ws.WriteMessage(websocket.TextMessage, encoded)
+	for _, conn := range clients {
+		_ = conn.writeText(encoded)
 	}
 }

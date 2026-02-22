@@ -34,7 +34,7 @@ export function getState() {
   return state;
 }
 
-window._tabulaApp = { getState, acquireMicStream };
+window._tabulaApp = { getState, acquireMicStream, sttStart, sttSendChunk, sttStop, sttCancel };
 
 const MATH_SEGMENT_TOKEN_PREFIX = '@@TABULA_CHAT_MATH_SEGMENT_';
 const DEV_UI_RELOAD_POLL_MS = 1500;
@@ -43,10 +43,6 @@ const ACTIVE_PROJECT_STORAGE_KEY = 'tabula.activeProjectId';
 let localMessageSeq = 0;
 const CHAT_CTRL_LONG_PRESS_MS = 180;
 const CHAT_SEND_HOLD_MS = 300;
-const sttActionStart = 'start';
-const sttActionAppend = 'append';
-const sttActionStop = 'stop';
-const sttActionCancel = 'cancel';
 let devReloadBootID = '';
 let devReloadTimer = null;
 let devReloadInFlight = false;
@@ -274,21 +270,6 @@ function setActiveProjectID(projectID) {
   renderProjectCards();
 }
 
-function createPushToPromptSessionID() {
-  const rand = Math.random().toString(36).slice(2, 10);
-  return `ptp-chat-${Date.now().toString(36)}-${rand}`;
-}
-
-function base64FromBytes(bytes) {
-  if (!bytes || !bytes.length) return '';
-  const chunkSize = 0x8000;
-  let out = '';
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    const chunk = bytes.subarray(i, i + chunkSize);
-    out += String.fromCharCode(...chunk);
-  }
-  return btoa(out);
-}
 
 function newMediaRecorder(stream) {
   let recorder = null;
@@ -306,41 +287,6 @@ function newMediaRecorder(stream) {
   return recorder;
 }
 
-async function callPushToPromptAction(action, actionPayload = {}) {
-  const req = {
-    action,
-    ...actionPayload,
-  };
-  const customMCPURL = String(window.__TABULA_VOXTYPE_MCP_URL || '').trim();
-  if (customMCPURL) {
-    req.voxtype_mcp_url = customMCPURL;
-  }
-  const resp = await fetch('/api/stt/push-to-prompt', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(req),
-  });
-  let responsePayload = {};
-  const raw = await resp.text();
-  if (raw) {
-    try {
-      responsePayload = JSON.parse(raw);
-    } catch (_) {
-      if (!resp.ok) {
-        throw new Error(raw);
-      }
-    }
-  }
-  if (!resp.ok) {
-    throw new Error(typeof responsePayload === 'object' && responsePayload !== null && responsePayload.error
-      ? responsePayload.error
-      : raw || 'push-to-prompt request failed');
-  }
-  if (typeof responsePayload !== 'object' || responsePayload === null) {
-    throw new Error('push-to-prompt request returned invalid response');
-  }
-  return responsePayload;
-}
 
 function canUseMicrophoneCapture() {
   return Boolean(window.MediaRecorder)
@@ -377,24 +323,92 @@ function releaseMicStream() {
   _cachedMicStream = null;
 }
 
-function appendChatVoiceChunk(capture, chunkBlob) {
-  if (!capture?.sttSessionID) return;
-  if (!chunkBlob || typeof chunkBlob.arrayBuffer !== 'function' || chunkBlob.size <= 0) return;
-  const seq = Number(capture.appendSeq || 0);
-  capture.appendSeq = seq + 1;
-  const prev = capture.appendChain || Promise.resolve();
-  capture.appendChain = prev.then(async () => {
-    const bytes = new Uint8Array(await chunkBlob.arrayBuffer());
-    if (!bytes.length) return;
-    const payload = {
-      session_id: capture.sttSessionID,
-      seq,
-      audio_base64: base64FromBytes(bytes),
-    };
-    await callPushToPromptAction(sttActionAppend, payload);
-  }).catch((err) => {
-    capture.appendError = String(err?.message || err || 'audio chunk append failed');
+let _sttResolve = null;
+let _sttReject = null;
+let _sttActive = false;
+
+function sttStart(mimeType) {
+  const ws = state.chatWs;
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    return Promise.reject(new Error('chat WebSocket not connected'));
+  }
+  _sttActive = true;
+  ws.send(JSON.stringify({ type: 'stt_start', mime_type: mimeType || 'audio/webm' }));
+}
+
+function sttSendChunk(blob) {
+  if (!_sttActive) return;
+  const ws = state.chatWs;
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  if (!blob || typeof blob.arrayBuffer !== 'function' || blob.size <= 0) return;
+  blob.arrayBuffer().then((buf) => {
+    if (!_sttActive) return;
+    if (!state.chatWs || state.chatWs.readyState !== WebSocket.OPEN) return;
+    state.chatWs.send(buf);
   });
+}
+
+function sttStop() {
+  const ws = state.chatWs;
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    _sttActive = false;
+    return Promise.reject(new Error('chat WebSocket not connected'));
+  }
+  _sttActive = false;
+  return new Promise((resolve, reject) => {
+    _sttResolve = resolve;
+    _sttReject = reject;
+    ws.send(JSON.stringify({ type: 'stt_stop' }));
+  });
+}
+
+function sttCancel() {
+  _sttActive = false;
+  if (_sttReject) {
+    _sttReject(new Error('STT cancelled'));
+    _sttResolve = null;
+    _sttReject = null;
+  }
+  const ws = state.chatWs;
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: 'stt_cancel' }));
+  }
+}
+
+function handleSTTWSMessage(payload) {
+  const type = String(payload?.type || '');
+  if (type === 'stt_result') {
+    if (_sttResolve) {
+      _sttResolve({ text: payload.text || '' });
+      _sttResolve = null;
+      _sttReject = null;
+    }
+    return true;
+  }
+  if (type === 'stt_error') {
+    if (_sttReject) {
+      _sttReject(new Error(payload.error || 'STT failed'));
+      _sttResolve = null;
+      _sttReject = null;
+    }
+    return true;
+  }
+  if (type === 'stt_started' || type === 'stt_cancelled') {
+    return true;
+  }
+  return false;
+}
+
+function setSendButtonRecording(active) {
+  const btn = document.getElementById('btn-chat-send');
+  if (!btn) return;
+  if (active) {
+    btn.classList.add('is-recording');
+    btn.textContent = 'Rec';
+  } else {
+    btn.classList.remove('is-recording');
+    btn.textContent = 'Send';
+  }
 }
 
 function stopChatVoiceMedia(capture) {
@@ -455,10 +469,6 @@ async function beginChatVoiceCapture(opts) {
     stopping: false,
     stopRequested: false,
     autoSend: Boolean(opts?.autoSend),
-    sttSessionID: createPushToPromptSessionID(),
-    appendSeq: 0,
-    appendChain: Promise.resolve(),
-    appendError: '',
     mediaStream: null,
     mediaRecorder: null,
   };
@@ -467,29 +477,26 @@ async function beginChatVoiceCapture(opts) {
   try {
     const stream = await acquireMicStream();
     if (state.chatVoiceCapture !== capture) return;
-    await callPushToPromptAction(sttActionStart, {
-      session_id: capture.sttSessionID,
-      mime_type: 'audio/webm',
-    });
+    sttStart('audio/webm');
     if (state.chatVoiceCapture !== capture) return;
     const recorder = newMediaRecorder(stream);
     capture.mediaStream = stream;
     capture.mediaRecorder = recorder;
     capture.active = true;
+    setSendButtonRecording(true);
     recorder.addEventListener('dataavailable', (ev) => {
       if (!ev?.data || ev.data.size <= 0) return;
-      appendChatVoiceChunk(capture, ev.data);
+      sttSendChunk(ev.data);
     });
     recorder.start(300);
     if (capture.stopRequested) {
       void stopChatVoiceCaptureAndApply();
     }
   } catch (err) {
+    setSendButtonRecording(false);
     const message = String(err?.message || err || 'push-to-prompt failed');
     showStatus(`push-to-prompt failed: ${message}`);
-    if (capture.sttSessionID) {
-      void callPushToPromptAction(sttActionCancel, { session_id: capture.sttSessionID }).catch(() => {});
-    }
+    sttCancel();
     stopChatVoiceMedia(capture);
     if (state.chatVoiceCapture === capture) {
       state.chatVoiceCapture = null;
@@ -506,13 +513,9 @@ async function stopChatVoiceCaptureAndApply() {
   let remoteStopped = false;
   try {
     await stopChatVoiceMediaAndFlush(capture);
-    await (capture.appendChain || Promise.resolve());
-    if (capture.appendError) {
-      throw new Error(capture.appendError);
-    }
-    const stt = await callPushToPromptAction(sttActionStop, { session_id: capture.sttSessionID });
+    const result = await sttStop();
     remoteStopped = true;
-    const transcript = String(stt?.text || '').trim();
+    const transcript = String(result?.text || '').trim();
     if (!transcript) {
       throw new Error('speech recognizer returned empty text');
     }
@@ -522,6 +525,7 @@ async function stopChatVoiceCaptureAndApply() {
     input.value = `${input.value}${needsSpace ? ' ' : ''}${transcript}`;
     input.dispatchEvent(new Event('input', { bubbles: true }));
     if (capture.autoSend) {
+      showStatus('sending...');
       void sendChatMessage();
       return;
     }
@@ -531,8 +535,9 @@ async function stopChatVoiceCaptureAndApply() {
     const message = String(err?.message || err || 'push-to-prompt failed');
     showStatus(`push-to-prompt failed: ${message}`);
   } finally {
-    if (!remoteStopped && capture?.sttSessionID) {
-      void callPushToPromptAction(sttActionCancel, { session_id: capture.sttSessionID }).catch(() => {});
+    setSendButtonRecording(false);
+    if (!remoteStopped) {
+      sttCancel();
     }
     stopChatVoiceMedia(capture);
     if (state.chatVoiceCapture === capture) {
@@ -544,9 +549,8 @@ async function stopChatVoiceCaptureAndApply() {
 function cancelChatVoiceCapture() {
   const capture = state.chatVoiceCapture;
   if (!capture) return;
-  if (capture.sttSessionID) {
-    void callPushToPromptAction(sttActionCancel, { session_id: capture.sttSessionID }).catch(() => {});
-  }
+  setSendButtonRecording(false);
+  sttCancel();
   stopChatVoiceMedia(capture);
   state.chatVoiceCapture = null;
 }
@@ -1043,12 +1047,14 @@ function openChatWs() {
 
   ws.onmessage = (event) => {
     if (turnToken !== state.chatWsToken || targetSessionID !== state.chatSessionId) return;
+    if (typeof event.data !== 'string') return;
     let payload = null;
     try {
       payload = JSON.parse(event.data);
     } catch (_) {
       return;
     }
+    if (handleSTTWSMessage(payload)) return;
     handleChatEvent(payload);
   };
 
@@ -1438,7 +1444,11 @@ function bindUi() {
     let sendHoldActive = false;
     let sendHoldIsTouch = false;
     const startHold = (ev, isTouch) => {
-      if (state.chatVoiceCapture) return;
+      if (state.chatVoiceCapture) {
+        if (isTouch) ev.preventDefault();
+        void stopChatVoiceCaptureAndApply();
+        return;
+      }
       if (isTouch) ev.preventDefault();
       sendHoldActive = false;
       sendHoldIsTouch = isTouch;

@@ -147,10 +147,6 @@ const MAIL_DRAFT_INTENT = Object.freeze({
 const MAIL_DRAFT_INTENT_FALLBACK_POLICY = MAIL_DRAFT_INTENT.PROMPT;
 const REVIEW_LONG_PRESS_MS = 450;
 const REVIEW_LONG_PRESS_MOVE_TOLERANCE_PX = 10;
-const sttActionStart = 'start';
-const sttActionAppend = 'append';
-const sttActionStop = 'stop';
-const sttActionCancel = 'cancel';
 const mailAssistActionRegistry = new Map();
 const DRAFT_PROMPT_CANCELLED_CODE = 'draft_prompt_cancelled';
 let pendingDraftPromptCapture = null;
@@ -1199,11 +1195,7 @@ function clearSelectionInteractionHandlers() {
       clearTimeout(reviewVoiceCapture.longPressTimer);
       reviewVoiceCapture.longPressTimer = null;
     }
-    if (reviewVoiceCapture.sttSessionID) {
-      void callPushToPromptAction(null, sttActionCancel, {
-        session_id: reviewVoiceCapture.sttSessionID,
-      }).catch(() => {});
-    }
+    void window._tabulaApp.sttCancel();
     if (reviewVoiceCapture.mediaRecorder) {
       try {
         if (reviewVoiceCapture.mediaRecorder.state !== 'inactive') {
@@ -1560,11 +1552,6 @@ async function callDraftReply(context, message) {
   return payload;
 }
 
-function createPushToPromptSessionID() {
-  const rand = Math.random().toString(36).slice(2, 10);
-  return `ptp-${Date.now().toString(36)}-${rand}`;
-}
-
 function base64FromBytes(bytes) {
   if (!bytes || !bytes.length) return '';
   const chunkSize = 0x8000;
@@ -1574,46 +1561,6 @@ function base64FromBytes(bytes) {
     out += String.fromCharCode(...chunk);
   }
   return btoa(out);
-}
-
-async function callPushToPromptAction(context, action, actionPayload = {}) {
-  const req = {
-    action,
-    ...actionPayload,
-  };
-  const producerMCPURL = String(context?.producerMcpUrl || '').trim();
-  if (producerMCPURL) {
-    req.producer_mcp_url = producerMCPURL;
-  }
-  const customMCPURL = String(window.__TABULA_VOXTYPE_MCP_URL || '').trim();
-  if (customMCPURL) {
-    req.voxtype_mcp_url = customMCPURL;
-  }
-  const resp = await fetch('/api/stt/push-to-prompt', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(req),
-  });
-  let responsePayload = {};
-  const raw = await resp.text();
-  if (raw) {
-    try {
-      responsePayload = JSON.parse(raw);
-    } catch (_) {
-      if (!resp.ok) {
-        throw new Error(raw);
-      }
-    }
-  }
-  if (!resp.ok) {
-    throw new Error(typeof responsePayload === 'object' && responsePayload !== null && responsePayload.error
-      ? responsePayload.error
-      : raw || 'push-to-prompt request failed');
-  }
-  if (typeof responsePayload !== 'object' || responsePayload === null) {
-    throw new Error('push-to-prompt request returned invalid response');
-  }
-  return responsePayload;
 }
 
 async function callMailSTT(context, audioBlob) {
@@ -1718,11 +1665,7 @@ function createDefaultMailRecordingState() {
     mediaStream: null,
     chunks: [],
     mimeType: 'audio/webm',
-    sttSessionID: '',
-    appendSeq: 0,
-    appendChain: Promise.resolve(),
     startPromise: Promise.resolve(),
-    appendError: '',
     transcribing: false,
     stopRequested: false,
     error: '',
@@ -1903,32 +1846,8 @@ function stopMailRecordingMedia(recording) {
   recording.mediaRecorder = null;
   recording.mediaStream = null;
   recording.chunks = [];
-  recording.sttSessionID = '';
-  recording.appendSeq = 0;
-  recording.appendChain = Promise.resolve();
   recording.startPromise = Promise.resolve();
-  recording.appendError = '';
   recording.stopRequested = false;
-}
-
-function pushToPromptAppendChunk(context, recording, chunkBlob) {
-  if (!recording?.sttSessionID) return;
-  if (!chunkBlob || typeof chunkBlob.arrayBuffer !== 'function' || chunkBlob.size <= 0) return;
-  const seq = Number(recording.appendSeq || 0);
-  recording.appendSeq = seq + 1;
-  const prev = recording.appendChain || Promise.resolve();
-  recording.appendChain = prev.then(async () => {
-    const bytes = new Uint8Array(await chunkBlob.arrayBuffer());
-    if (!bytes.length) return;
-    const payload = {
-      session_id: recording.sttSessionID,
-      seq,
-      audio_base64: base64FromBytes(bytes),
-    };
-    await callPushToPromptAction(context, sttActionAppend, payload);
-  }).catch((err) => {
-    recording.appendError = String(err?.message || err || 'chunk append failed');
-  });
 }
 
 async function startMailRecordingMediaCapture(context, token) {
@@ -1940,14 +1859,7 @@ async function startMailRecordingMediaCapture(context, token) {
   recording.mediaRecorder = null;
   recording.chunks = [];
   recording.mimeType = 'audio/webm';
-  recording.sttSessionID = createPushToPromptSessionID();
-  recording.appendSeq = 0;
-  recording.appendChain = Promise.resolve();
-  recording.appendError = '';
-  await callPushToPromptAction(context, sttActionStart, {
-    session_id: recording.sttSessionID,
-    mime_type: recording.mimeType,
-  });
+  window._tabulaApp.sttStart(recording.mimeType);
   if (!window.MediaRecorder || !navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
     throw new Error('Microphone capture is unavailable in this browser.');
   }
@@ -1969,7 +1881,7 @@ async function startMailRecordingMediaCapture(context, token) {
   recorder.addEventListener('dataavailable', (ev) => {
     if (ev?.data && ev.data.size > 0) {
       recording.chunks.push(ev.data);
-      pushToPromptAppendChunk(context, recording, ev.data);
+      window._tabulaApp.sttSendChunk(ev.data);
     }
   });
   recorder.start(300);
@@ -2037,7 +1949,7 @@ async function transcribePendingDraftPrompt(context, token) {
   recording.error = '';
   setMailRecordingDomState(context);
   if (isSamePending()) {
-    setMailAssistStatus(pending.context, pending.row, pending.inDetail, 'Transcribing Push To Prompt input...', 'info');
+    setMailAssistStatus(pending.context, pending.row, pending.inDetail, 'Transcribing voice input...', 'info');
   }
   try {
     await (recording.startPromise || Promise.resolve());
@@ -2047,18 +1959,8 @@ async function transcribePendingDraftPrompt(context, token) {
       throw new Error('No audio captured. Hold to record and try again.');
     }
     try {
-      if (recording.sttSessionID) {
-        await (recording.appendChain || Promise.resolve());
-        if (recording.appendError) {
-          throw new Error(recording.appendError);
-        }
-        stt = await callPushToPromptAction(context, sttActionStop, {
-          session_id: recording.sttSessionID,
-        });
-      } else {
-        stt = await callMailSTT(context, audioBlob);
-      }
-    } catch (stopErr) {
+      stt = await window._tabulaApp.sttStop();
+    } catch (_) {
       stt = await callMailSTT(context, audioBlob);
     }
     const transcript = String(stt?.text || '').trim();
@@ -2147,10 +2049,7 @@ function startMailRecording(context, origin) {
       recording.error = `Recording failed: ${String(err?.message || err || 'capture failed')}`;
       pushMailRecordingTransition(recording, 'stop:capture_error');
       pushMailRecordingTransition(recording, 'state:idle');
-      const sessionID = String(recording.sttSessionID || '').trim();
-      if (sessionID) {
-        void callPushToPromptAction(context, sttActionCancel, { session_id: sessionID }).catch(() => {});
-      }
+      window._tabulaApp.sttCancel();
       stopMailRecordingMedia(recording);
       setMailRecordingDomState(context);
       if (pending) {
@@ -2183,10 +2082,7 @@ function stopMailRecording(context, reason) {
   if (pendingDraftPromptCapture) {
     void transcribePendingDraftPrompt(context, recording.captureToken);
   } else {
-    const sessionID = String(recording.sttSessionID || '').trim();
-    if (sessionID) {
-      void callPushToPromptAction(context, sttActionCancel, { session_id: sessionID }).catch(() => {});
-    }
+    window._tabulaApp.sttCancel();
     stopMailRecordingMedia(recording);
   }
   return true;
@@ -3719,10 +3615,6 @@ function setupTextSelection(eventId) {
     stopRequested: false,
     mediaStream: null,
     mediaRecorder: null,
-    sttSessionID: '',
-    appendSeq: 0,
-    appendChain: Promise.resolve(),
-    appendError: '',
   });
 
   const stopReviewVoiceMedia = (capture) => {
@@ -3787,35 +3679,13 @@ function setupTextSelection(eventId) {
       clearTimeout(capture.longPressTimer);
       capture.longPressTimer = null;
     }
-    if (cancelRemote && capture.sttSessionID) {
-      void callPushToPromptAction(null, sttActionCancel, {
-        session_id: capture.sttSessionID,
-      }).catch(() => {});
+    if (cancelRemote) {
+      window._tabulaApp.sttCancel();
     }
     stopReviewVoiceMedia(capture);
     if (e.text._reviewVoiceCapture === capture) {
       e.text._reviewVoiceCapture = null;
     }
-  };
-
-  const appendReviewVoiceChunk = (capture, chunkBlob) => {
-    if (!capture?.sttSessionID) return;
-    if (!chunkBlob || typeof chunkBlob.arrayBuffer !== 'function' || chunkBlob.size <= 0) return;
-    const seq = Number(capture.appendSeq || 0);
-    capture.appendSeq = seq + 1;
-    const prev = capture.appendChain || Promise.resolve();
-    capture.appendChain = prev.then(async () => {
-      const bytes = new Uint8Array(await chunkBlob.arrayBuffer());
-      if (!bytes.length) return;
-      const payload = {
-        session_id: capture.sttSessionID,
-        seq,
-        audio_base64: base64FromBytes(bytes),
-      };
-      await callPushToPromptAction(null, sttActionAppend, payload);
-    }).catch((err) => {
-      capture.appendError = String(err?.message || err || 'audio chunk append failed');
-    });
   };
 
   const beginReviewVoiceCapture = async (capture) => {
@@ -3830,14 +3700,7 @@ function setupTextSelection(eventId) {
       : 'Recording voice note... release to submit.';
     showReviewVoiceHint(recordingHint, 'recording');
 
-    capture.sttSessionID = createPushToPromptSessionID();
-    capture.appendSeq = 0;
-    capture.appendChain = Promise.resolve();
-    capture.appendError = '';
-    await callPushToPromptAction(null, sttActionStart, {
-      session_id: capture.sttSessionID,
-      mime_type: 'audio/webm',
-    });
+    window._tabulaApp.sttStart('audio/webm');
     if (!canUseReviewVoiceCapture()) {
       throw new Error('Microphone capture is unavailable in this browser.');
     }
@@ -3857,7 +3720,7 @@ function setupTextSelection(eventId) {
     capture.mediaRecorder = recorder;
     recorder.addEventListener('dataavailable', (ev) => {
       if (!ev?.data || ev.data.size <= 0) return;
-      appendReviewVoiceChunk(capture, ev.data);
+      window._tabulaApp.sttSendChunk(ev.data);
     });
     recorder.start(300);
     if (capture.stopRequested) {
@@ -3870,20 +3733,11 @@ function setupTextSelection(eventId) {
     capture.stopRequested = true;
     if (!capture.active) return;
     capture.stopping = true;
-    let stoppedRemotely = false;
+    let sttCompleted = false;
     try {
       await stopReviewVoiceMediaAndFlush(capture);
-      await (capture.appendChain || Promise.resolve());
-      if (capture.appendError) {
-        throw new Error(capture.appendError);
-      }
-      if (!capture.sttSessionID) {
-        throw new Error('missing transcription session');
-      }
-      const stt = await callPushToPromptAction(null, sttActionStop, {
-        session_id: capture.sttSessionID,
-      });
-      stoppedRemotely = true;
+      const stt = await window._tabulaApp.sttStop();
+      sttCompleted = true;
       const transcript = String(stt?.text || '').trim();
       if (!transcript) {
         throw new Error('speech recognizer returned empty text');
@@ -3903,7 +3757,7 @@ function setupTextSelection(eventId) {
         contextmenuEvent: { clientX: capture.clientX, clientY: capture.clientY },
       });
     } finally {
-      cleanupReviewVoiceCapture(capture, !stoppedRemotely);
+      cleanupReviewVoiceCapture(capture, !sttCompleted);
     }
   };
 
