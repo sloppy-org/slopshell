@@ -418,7 +418,7 @@ test('right-click inline comment leaves a visible comment marker', async ({ page
   await expect.poll(async () => countOverlayMarks(page, 'comment_point')).toBeGreaterThan(0);
 });
 
-test('right-clicking an existing point comment deletes it without dialog', async ({ page }) => {
+test('right-clicking an existing point comment reopens its popover without deleting it', async ({ page }) => {
   await renderArtifact(page, plainTextEvent('evt-point-delete', '# Notes\nDelete this point comment quickly'));
   await page.click('#canvas-text', { button: 'right', position: { x: 92, y: 72 } });
 
@@ -437,9 +437,12 @@ test('right-clicking an existing point comment deletes it without dialog', async
   await expect(popover).toHaveCount(0);
 
   await clickFirstOverlayMark(page, 'comment_point', 'right');
-  const deleteMessage = await waitForLastMessageOfKind(page, 'mark_delete');
-  expect(deleteMessage.mark_id).toBeTruthy();
-  await expect.poll(async () => countOverlayMarks(page, 'comment_point')).toBe(0);
+  popover = page.locator('[data-review-popover="true"]');
+  await expect(popover).toBeVisible();
+  await expect(popover.locator('input')).toHaveValue('Delete me fast.');
+  await popover.locator('button[data-review-cancel]').click();
+  await expect(popover).toHaveCount(0);
+  await expect.poll(async () => countOverlayMarks(page, 'comment_point')).toBeGreaterThan(0);
 });
 
 test('clicking an existing highlight reopens its comment popover with prior text', async ({ page }) => {

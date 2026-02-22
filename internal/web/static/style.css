@@ -914,6 +914,37 @@ button[data-mail-record-action="stop"] {
   display: flex;
   align-items: center;
   gap: 0.6rem;
+  min-width: 0;
+}
+
+#project-tab-strip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: min(48vw, 720px);
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scrollbar-width: thin;
+}
+
+#project-tab-strip:empty {
+  display: none;
+}
+
+.project-tab-btn {
+  padding: 0.3rem 0.72rem;
+  border: 1px solid #111827;
+  border-radius: 999px;
+  background: #f3f4f6;
+  color: #111827;
+  font-size: 0.78rem;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.project-tab-btn.is-active {
+  background: #111827;
+  color: #f9fafb;
 }
 
 #main-tabs {
@@ -934,12 +965,132 @@ button[data-mail-record-action="stop"] {
   color: var(--text-on-accent);
 }
 
+.tab-btn.tab-btn-subtle {
+  background: #f3f4f6;
+  color: #111827;
+  border-color: #9ca3af;
+}
+
 .tab-indicator {
   width: 7px;
   height: 7px;
   border-radius: 50%;
   background: #16a34a;
   margin-left: 0.35rem;
+}
+
+#view-main.projects-open #workspace {
+  display: none;
+}
+
+.project-overview {
+  display: flex;
+  flex-direction: column;
+  gap: 0.95rem;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background: #f8fafc;
+  padding: 1rem;
+}
+
+.project-overview.is-hidden {
+  display: none;
+}
+
+.project-overview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.project-overview-head h2 {
+  font-size: 1.02rem;
+}
+
+.project-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 0.8rem;
+}
+
+.project-card {
+  border: 1px solid #cbd5e1;
+  border-radius: 16px;
+  background: #ffffff;
+  padding: 0.8rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.project-card.is-active {
+  border-color: #111827;
+  box-shadow: 0 0 0 1px #111827 inset;
+}
+
+.project-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.project-card-name {
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.project-kind-pill {
+  font-size: 0.68rem;
+  border-radius: 999px;
+  background: #e2e8f0;
+  padding: 0.12rem 0.42rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.project-card-path {
+  font-size: 0.76rem;
+  color: #475569;
+  word-break: break-word;
+}
+
+.project-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.4rem;
+}
+
+#project-create-form {
+  border: 1px solid #cbd5e1;
+  border-radius: 14px;
+  background: #ffffff;
+  padding: 0.8rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 0.65rem 0.8rem;
+}
+
+#project-create-form h3 {
+  grid-column: 1 / -1;
+  font-size: 0.92rem;
+}
+
+#project-create-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
+  font-size: 0.76rem;
+  color: #475569;
+}
+
+.project-create-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
 }
 
 #workspace {
@@ -1063,9 +1214,10 @@ button[data-mail-record-action="stop"] {
 #chat-input {
   width: 100%;
   resize: none;
-  min-height: 44px;
+  min-height: calc(2.8em + 1.1rem + 2px);
   max-height: 240px;
-  line-height: 1.45;
+  line-height: 1.4;
+  padding: 0.55rem 0.75rem;
   border-radius: 10px;
   border: 1px solid #111827;
   background: #ffffff;
@@ -1084,14 +1236,70 @@ button[data-mail-record-action="stop"] {
   gap: 0.75rem;
 }
 
+.chat-compose-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
 #chat-hint {
   font-size: 0.78rem;
   color: #6b7280;
 }
 
+.chat-assistant-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.76rem;
+  color: #4b5563;
+}
+
+.chat-assistant-state::before {
+  content: '';
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: #9ca3af;
+}
+
+.chat-assistant-state.is-working {
+  color: #111827;
+}
+
+.chat-assistant-state.is-working::before {
+  background: #111827;
+}
+
+.chat-assistant-state.is-stopping {
+  color: #92400e;
+}
+
+.chat-assistant-state.is-stopping::before {
+  background: #d97706;
+}
+
+.chat-assistant-state.is-error {
+  color: #991b1b;
+}
+
+.chat-assistant-state.is-error::before {
+  background: #dc2626;
+}
+
 @media (max-width: 768px) {
   #toolbar {
     flex-wrap: wrap;
+  }
+
+  #project-tab-strip {
+    order: 4;
+    max-width: 100%;
+    width: 100%;
+  }
+
+  #main-tabs {
+    margin-left: auto;
   }
 
   .chat-message {

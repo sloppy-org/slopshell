@@ -920,12 +920,6 @@ function openReviewCommentPopover(eventId, options = {}) {
     } else {
       popover.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
     }
-    window.setTimeout(() => {
-      const commitBtn = document.getElementById('btn-canvas-commit');
-      if (commitBtn) {
-        commitBtn.click();
-      }
-    }, 0);
   };
   document.addEventListener('keydown', keyDownHandler, true);
   e.text._reviewPopoverKeyDownHandler = keyDownHandler;
@@ -984,14 +978,28 @@ async function commitCanvasDraft() {
 
   const ws = state.canvasWs;
   const commitHTTP = async () => {
-    const response = await fetch(`/api/canvas/${encodeURIComponent(sessionID)}/commit`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        artifact_id: artifactID || '',
-        include_draft: true,
-      }),
-    });
+    const commitRequestTimeoutMs = 45000;
+    const controller = new AbortController();
+    const timeoutID = window.setTimeout(() => controller.abort(), commitRequestTimeoutMs);
+    let response;
+    try {
+      response = await fetch(`/api/canvas/${encodeURIComponent(sessionID)}/commit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          artifact_id: artifactID || '',
+          include_draft: true,
+        }),
+        signal: controller.signal,
+      });
+    } catch (err) {
+      if (err && err.name === 'AbortError') {
+        throw new Error(`commit timed out after ${Math.round(commitRequestTimeoutMs / 1000)}s`);
+      }
+      throw err;
+    } finally {
+      window.clearTimeout(timeoutID);
+    }
     if (!response.ok) {
       const detail = (await response.text()).trim();
       throw new Error(detail || `commit failed: HTTP ${response.status}`);
@@ -4348,11 +4356,23 @@ export function initCanvasControls() {
 	        const isCommitShortcut = ev.key === 'Enter' && !ev.ctrlKey && !ev.metaKey && !ev.shiftKey && !ev.altKey;
 	        if (!isCommitShortcut) return;
 
+	        const appState = window._tabulaApp?.getState?.();
+	        if (appState?.activeTab && appState.activeTab !== 'canvas') {
+	          return;
+	        }
+
 	        if (document.querySelector('[data-review-popover="true"]')) {
+	          return;
+	        }
+	        const eventTarget = ev.target instanceof Element ? ev.target : null;
+	        if (eventTarget && eventTarget.closest('form, [role="dialog"], #project-overview')) {
 	          return;
 	        }
 	        const activeEl = document.activeElement;
 	        if (activeEl && activeEl.matches('input,textarea,select,[contenteditable="true"]')) {
+	          return;
+	        }
+	        if (activeEl instanceof Element && activeEl.closest('form, [role="dialog"], #project-overview')) {
 	          return;
 	        }
 	        if (activeEl && document.getElementById('terminal-container')?.contains(activeEl)) {

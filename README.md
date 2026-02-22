@@ -113,6 +113,7 @@ curl -sS -X POST "$CONSUMER" -H 'content-type: application/json' \
 ## Tests
 
 ```bash
+./scripts/sync-surface.sh --check
 go test ./...
 npm run test:reports
 ```

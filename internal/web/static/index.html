@@ -11,6 +11,8 @@
     <div id="view-main" class="view">
       <header id="toolbar">
         <span class="brand">Tabula</span>
+        <div id="project-tab-strip" role="tablist" aria-label="Projects"></div>
+        <button id="btn-projects" class="tab-btn tab-btn-subtle" type="button">Projects</button>
         <span id="status-text">starting...</span>
         <span id="chat-mode-pill" class="badge">chat</span>
         <div class="toolbar-spacer"></div>
@@ -23,6 +25,35 @@
         </div>
       </header>
 
+      <section id="project-overview" class="project-overview is-hidden" aria-label="Project overview">
+        <div class="project-overview-head">
+          <h2>Projects</h2>
+          <button id="btn-projects-close" type="button">Close</button>
+        </div>
+        <div id="project-cards" class="project-cards" aria-live="polite"></div>
+        <form id="project-create-form" autocomplete="off">
+          <h3>Add Project</h3>
+          <label>
+            Name
+            <input id="project-create-name" type="text" placeholder="Acme Website">
+          </label>
+          <label>
+            Kind
+            <select id="project-create-kind">
+              <option value="managed">Managed</option>
+              <option value="linked">Linked Path</option>
+            </select>
+          </label>
+          <label id="project-create-path-wrap">
+            Path (for linked, optional for managed)
+            <input id="project-create-path" type="text" placeholder="/home/you/code/repo">
+          </label>
+          <div class="project-create-actions">
+            <button id="btn-project-create" type="submit">Create Project</button>
+          </div>
+        </form>
+      </section>
+
       <div id="workspace" class="workspace-chat">
         <section id="panel-chat" class="panel" aria-label="Chat canvas">
           <div id="chat-history" aria-live="polite"></div>
@@ -32,9 +63,12 @@
               <button type="button" id="btn-open-canvas">Open Canvas</button>
               <button type="button" id="btn-commit-from-chat">Commit Draft</button>
             </div>
-            <textarea id="chat-input" rows="1" placeholder="Ask Tabula anything. Use /plan for planning mode."></textarea>
+            <textarea id="chat-input" rows="2" placeholder="Ask Tabula anything. Use /plan for planning mode."></textarea>
             <div class="chat-compose-row">
-              <span id="chat-hint">Enter sends. Shift+Enter inserts newline.</span>
+              <div class="chat-compose-meta">
+                <span id="chat-hint">Enter sends. Shift+Enter inserts newline. Press Esc to stop.</span>
+                <span id="chat-assistant-state" class="chat-assistant-state is-idle" aria-live="polite">Assistant idle</span>
+              </div>
               <button id="btn-chat-send" type="submit">Send</button>
             </div>
           </form>

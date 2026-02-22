@@ -19,6 +19,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/krystophny/tabula/internal/canvas"
+	"github.com/krystophny/tabula/internal/surface"
 )
 
 const (
@@ -592,17 +593,19 @@ func boolArg(args map[string]interface{}, key string, def bool) bool {
 }
 
 func toolDefinitions() []map[string]interface{} {
-	return []map[string]interface{}{
-		{"name": "canvas_session_open", "description": "Open canvas session and initialize runtime status.", "inputSchema": map[string]interface{}{"type": "object", "required": []string{"session_id"}}},
-		{"name": "canvas_artifact_show", "description": "Show one artifact kind in canvas: text, image, pdf, or clear.", "inputSchema": map[string]interface{}{"type": "object", "required": []string{"session_id", "kind"}}},
-		{"name": "canvas_mark_set", "description": "Create or update a mark (selection/annotation) on the active artifact.", "inputSchema": map[string]interface{}{"type": "object", "required": []string{"session_id", "intent", "type", "target_kind", "target"}}},
-		{"name": "canvas_mark_delete", "description": "Delete a mark by id.", "inputSchema": map[string]interface{}{"type": "object", "required": []string{"session_id", "mark_id"}}},
-		{"name": "canvas_marks_list", "description": "List marks for a session, optionally filtered by artifact/intent.", "inputSchema": map[string]interface{}{"type": "object", "required": []string{"session_id"}}},
-		{"name": "canvas_mark_focus", "description": "Set or clear currently focused mark.", "inputSchema": map[string]interface{}{"type": "object", "required": []string{"session_id"}}},
-		{"name": "canvas_commit", "description": "Commit draft marks to persistent annotations and write sidecar/PDF annotations.", "inputSchema": map[string]interface{}{"type": "object", "required": []string{"session_id"}}},
-		{"name": "canvas_status", "description": "Get current session status and active artifact metadata.", "inputSchema": map[string]interface{}{"type": "object", "required": []string{"session_id"}}},
-		{"name": "canvas_import_handoff", "description": "Consume a generic producer handoff and render it in canvas.", "inputSchema": map[string]interface{}{"type": "object", "required": []string{"session_id", "handoff_id"}}},
+	out := make([]map[string]interface{}, 0, len(surface.MCPTools))
+	for _, tool := range surface.MCPTools {
+		schema := map[string]interface{}{"type": "object"}
+		if len(tool.Required) > 0 {
+			schema["required"] = append([]string(nil), tool.Required...)
+		}
+		out = append(out, map[string]interface{}{
+			"name":        tool.Name,
+			"description": tool.Description,
+			"inputSchema": schema,
+		})
 	}
+	return out
 }
 
 func resourceTemplates() []map[string]interface{} {

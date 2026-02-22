@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -14,6 +15,8 @@ import (
 	"github.com/krystophny/tabula/internal/appserver"
 	"github.com/krystophny/tabula/internal/store"
 )
+
+const assistantTurnTimeout = 20 * time.Minute
 
 type chatMessageRequest struct {
 	Text string `json:"text"`
@@ -29,6 +32,7 @@ func (a *App) handleChatSessionCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	var req struct {
 		ProjectKey string `json:"project_key"`
+		ProjectID  string `json:"project_id"`
 	}
 	if r.ContentLength > 0 {
 		if err := decodeJSON(r, &req); err != nil {
@@ -36,21 +40,56 @@ func (a *App) handleChatSessionCreate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	projectKey := strings.TrimSpace(req.ProjectKey)
-	if projectKey == "" {
-		projectKey = strings.TrimSpace(a.localProjectDir)
+	projectKey, err := a.resolveProjectKey(req.ProjectID, req.ProjectKey)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	var resolvedProject store.Project
+	projectResolved := false
+	if strings.TrimSpace(req.ProjectID) != "" {
+		if resolvedProject, err = a.store.GetProject(strings.TrimSpace(req.ProjectID)); err == nil {
+			projectResolved = true
+		} else if !isNoRows(err) {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	if !projectResolved {
+		if resolvedProject, err = a.store.GetProjectByProjectKey(projectKey); err == nil {
+			projectResolved = true
+		} else if !isNoRows(err) {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 	}
 	session, err := a.store.GetOrCreateChatSession(projectKey)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	canvasSessionID := LocalSessionID
+	projectID := ""
+	if projectResolved {
+		projectID = resolvedProject.ID
+		canvasSessionID = a.canvasSessionIDForProject(resolvedProject)
+		if err := a.store.SetActiveProjectID(resolvedProject.ID); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		_ = a.store.TouchProject(resolvedProject.ID)
+		if err := a.ensureProjectCanvasReady(resolvedProject); err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+	}
 	writeJSON(w, map[string]interface{}{
 		"ok":                true,
 		"session_id":        session.ID,
 		"project_key":       session.ProjectKey,
+		"project_id":        projectID,
 		"mode":              session.Mode,
-		"canvas_session_id": LocalSessionID,
+		"canvas_session_id": canvasSessionID,
 	})
 }
 
@@ -80,6 +119,29 @@ func (a *App) handleChatSessionHistory(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (a *App) handleChatSessionActivity(w http.ResponseWriter, r *http.Request) {
+	if !a.requireAuth(w, r) {
+		return
+	}
+	sessionID := strings.TrimSpace(chi.URLParam(r, "session_id"))
+	if sessionID == "" {
+		http.Error(w, "missing session_id", http.StatusBadRequest)
+		return
+	}
+	if _, err := a.store.GetChatSession(sessionID); err != nil {
+		http.Error(w, "session not found", http.StatusNotFound)
+		return
+	}
+	activeTurns := a.activeChatTurnCount(sessionID)
+	queuedTurns := a.queuedChatTurnCount(sessionID)
+	writeJSON(w, map[string]interface{}{
+		"ok":           true,
+		"active_turns": activeTurns,
+		"queued_turns": queuedTurns,
+		"is_working":   activeTurns > 0 || queuedTurns > 0,
+	})
+}
+
 func (a *App) handleChatSessionCommand(w http.ResponseWriter, r *http.Request) {
 	if !a.requireAuth(w, r) {
 		return
@@ -103,6 +165,28 @@ func (a *App) handleChatSessionCommand(w http.ResponseWriter, r *http.Request) {
 		"ok":     true,
 		"kind":   "command",
 		"result": result,
+	})
+}
+
+func (a *App) handleChatSessionCancel(w http.ResponseWriter, r *http.Request) {
+	if !a.requireAuth(w, r) {
+		return
+	}
+	sessionID := strings.TrimSpace(chi.URLParam(r, "session_id"))
+	if sessionID == "" {
+		http.Error(w, "missing session_id", http.StatusBadRequest)
+		return
+	}
+	if _, err := a.store.GetChatSession(sessionID); err != nil {
+		http.Error(w, "session not found", http.StatusNotFound)
+		return
+	}
+	activeCanceled, queuedCanceled := a.cancelChatWork(sessionID)
+	writeJSON(w, map[string]interface{}{
+		"ok":              true,
+		"canceled":        activeCanceled + queuedCanceled,
+		"active_canceled": activeCanceled,
+		"queued_canceled": queuedCanceled,
 	})
 }
 
@@ -153,11 +237,12 @@ func (a *App) handleChatSessionMessage(w http.ResponseWriter, r *http.Request) {
 		"content": text,
 		"id":      storedUser.ID,
 	})
-	go a.runAssistantTurn(sessionID)
+	queuedTurns := a.enqueueAssistantTurn(sessionID)
 	writeJSON(w, map[string]interface{}{
 		"ok":         true,
 		"kind":       "turn_queued",
 		"message_id": storedUser.ID,
+		"queued":     queuedTurns,
 	})
 }
 
@@ -253,8 +338,148 @@ func (a *App) executeChatCommand(sessionID, raw string) (map[string]interface{},
 			"action":  "commit_canvas",
 			"message": message,
 		}, nil
+	case "stop", "cancel":
+		activeCanceled, queuedCanceled := a.cancelChatWork(sessionID)
+		canceled := activeCanceled + queuedCanceled
+		message := "No assistant turn is currently running."
+		if canceled > 0 {
+			message = "Stopping assistant work and clearing queued prompts."
+		}
+		return map[string]interface{}{
+			"name":            name,
+			"canceled":        canceled,
+			"active_canceled": activeCanceled,
+			"queued_canceled": queuedCanceled,
+			"message":         message,
+		}, nil
 	default:
 		return nil, fmt.Errorf("unknown command: /%s", name)
+	}
+}
+
+func (a *App) registerActiveChatTurn(sessionID, runID string, cancel context.CancelFunc) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.chatTurnCancel[sessionID] == nil {
+		a.chatTurnCancel[sessionID] = map[string]context.CancelFunc{}
+	}
+	a.chatTurnCancel[sessionID][runID] = cancel
+}
+
+func (a *App) unregisterActiveChatTurn(sessionID, runID string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	runs := a.chatTurnCancel[sessionID]
+	if runs == nil {
+		return
+	}
+	delete(runs, runID)
+	if len(runs) == 0 {
+		delete(a.chatTurnCancel, sessionID)
+	}
+}
+
+func (a *App) cancelActiveChatTurns(sessionID string) int {
+	a.mu.Lock()
+	runs := a.chatTurnCancel[sessionID]
+	if len(runs) == 0 {
+		a.mu.Unlock()
+		return 0
+	}
+	cancels := make([]context.CancelFunc, 0, len(runs))
+	for _, cancel := range runs {
+		cancels = append(cancels, cancel)
+	}
+	delete(a.chatTurnCancel, sessionID)
+	a.mu.Unlock()
+	for _, cancel := range cancels {
+		cancel()
+	}
+	return len(cancels)
+}
+
+func (a *App) clearQueuedChatTurns(sessionID string) int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	queued := a.chatTurnQueue[sessionID]
+	delete(a.chatTurnQueue, sessionID)
+	return queued
+}
+
+func (a *App) cancelChatWork(sessionID string) (int, int) {
+	activeCanceled := a.cancelActiveChatTurns(sessionID)
+	queuedCanceled := a.clearQueuedChatTurns(sessionID)
+	if queuedCanceled > 0 {
+		a.broadcastChatEvent(sessionID, map[string]interface{}{
+			"type":  "turn_queue_cleared",
+			"count": queuedCanceled,
+		})
+	}
+	return activeCanceled, queuedCanceled
+}
+
+func (a *App) activeChatTurnCount(sessionID string) int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return len(a.chatTurnCancel[sessionID])
+}
+
+func (a *App) queuedChatTurnCount(sessionID string) int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.chatTurnQueue[sessionID]
+}
+
+func (a *App) enqueueAssistantTurn(sessionID string) int {
+	a.mu.Lock()
+	a.chatTurnQueue[sessionID] = a.chatTurnQueue[sessionID] + 1
+	queued := a.chatTurnQueue[sessionID]
+	workerRunning := a.chatTurnWorker[sessionID]
+	if !workerRunning {
+		a.chatTurnWorker[sessionID] = true
+	}
+	a.mu.Unlock()
+	if !workerRunning {
+		go a.runAssistantTurnQueue(sessionID)
+	}
+	return queued
+}
+
+func (a *App) dequeueAssistantTurn(sessionID string) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	queued := a.chatTurnQueue[sessionID]
+	if queued <= 0 {
+		return false
+	}
+	queued--
+	if queued <= 0 {
+		delete(a.chatTurnQueue, sessionID)
+		return true
+	}
+	a.chatTurnQueue[sessionID] = queued
+	return true
+}
+
+func (a *App) markAssistantWorkerIdleIfQueueEmpty(sessionID string) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.chatTurnQueue[sessionID] > 0 {
+		return false
+	}
+	delete(a.chatTurnWorker, sessionID)
+	return true
+}
+
+func (a *App) runAssistantTurnQueue(sessionID string) {
+	for {
+		if !a.dequeueAssistantTurn(sessionID) {
+			if a.markAssistantWorkerIdleIfQueueEmpty(sessionID) {
+				return
+			}
+			continue
+		}
+		a.runAssistantTurn(sessionID)
 	}
 }
 
@@ -281,8 +506,13 @@ func (a *App) runAssistantTurn(sessionID string) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-	defer cancel()
+	ctx, cancel := context.WithTimeout(context.Background(), assistantTurnTimeout)
+	runID := randomToken()
+	a.registerActiveChatTurn(sessionID, runID, cancel)
+	defer func() {
+		cancel()
+		a.unregisterActiveChatTurn(sessionID, runID)
+	}()
 
 	latestMessage := ""
 	latestTurnID := ""
@@ -327,20 +557,25 @@ func (a *App) runAssistantTurn(sessionID string) {
 	}
 
 	appResp, err := a.appServerClient.SendPromptStream(ctx, appserver.PromptRequest{
-		CWD:     a.localProjectDir,
+		CWD:     a.cwdForProjectKey(session.ProjectKey),
 		Prompt:  prompt,
 		Model:   a.appServerModel,
-		Timeout: 3 * time.Minute,
+		Timeout: assistantTurnTimeout,
 	}, func(ev appserver.StreamEvent) {
 		payload := map[string]interface{}{
 			"type":      ev.Type,
 			"thread_id": ev.ThreadID,
 			"turn_id":   ev.TurnID,
 		}
+		shouldBroadcast := true
 		switch ev.Type {
 		case "thread_started":
 			if strings.TrimSpace(ev.ThreadID) != "" {
 				_ = a.store.UpdateChatSessionThread(sessionID, ev.ThreadID)
+			}
+		case "turn_started":
+			if strings.TrimSpace(ev.TurnID) != "" {
+				latestTurnID = ev.TurnID
 			}
 		case "assistant_message":
 			latestMessage = ev.Message
@@ -356,20 +591,48 @@ func (a *App) runAssistantTurn(sessionID string) {
 			persistAssistantSnapshot(latestMessage)
 			payload["message"] = latestMessage
 		case "error":
-			payload["error"] = ev.Error
+			if strings.TrimSpace(ev.TurnID) != "" {
+				latestTurnID = ev.TurnID
+			}
+			// Stream-level errors are normalized and emitted by the final error path
+			// below so the UI receives one clean terminal error event.
+			shouldBroadcast = false
 		}
-		a.broadcastChatEvent(sessionID, payload)
+		if shouldBroadcast {
+			a.broadcastChatEvent(sessionID, payload)
+		}
 	})
 	if err != nil {
-		errText := strings.TrimSpace(err.Error())
-		if errText == "" {
-			errText = "assistant request failed"
+		if errors.Is(err, context.Canceled) {
+			a.broadcastChatEvent(sessionID, map[string]interface{}{
+				"type":    "turn_cancelled",
+				"turn_id": latestTurnID,
+			})
+			return
 		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			errText := "assistant request timed out"
+			_, _ = a.store.AddChatMessage(sessionID, "system", errText, errText, "text")
+			payload := map[string]interface{}{
+				"type":  "error",
+				"error": errText,
+			}
+			if strings.TrimSpace(latestTurnID) != "" {
+				payload["turn_id"] = latestTurnID
+			}
+			a.broadcastChatEvent(sessionID, payload)
+			return
+		}
+		errText := normalizeAssistantError(err)
 		_, _ = a.store.AddChatMessage(sessionID, "system", errText, errText, "text")
-		a.broadcastChatEvent(sessionID, map[string]interface{}{
+		payload := map[string]interface{}{
 			"type":  "error",
 			"error": errText,
-		})
+		}
+		if strings.TrimSpace(latestTurnID) != "" {
+			payload["turn_id"] = latestTurnID
+		}
+		a.broadcastChatEvent(sessionID, payload)
 		return
 	}
 
@@ -412,6 +675,44 @@ func (a *App) runAssistantTurn(sessionID string) {
 		"thread_id": appResp.ThreadID,
 		"message":   assistantText,
 	})
+}
+
+func (a *App) cwdForProjectKey(projectKey string) string {
+	key := strings.TrimSpace(projectKey)
+	if key != "" {
+		if project, err := a.store.GetProjectByProjectKey(key); err == nil {
+			root := strings.TrimSpace(project.RootPath)
+			if root != "" {
+				return root
+			}
+		}
+		return key
+	}
+	if strings.TrimSpace(a.localProjectDir) != "" {
+		return strings.TrimSpace(a.localProjectDir)
+	}
+	return "."
+}
+
+func normalizeAssistantError(err error) string {
+	if err == nil {
+		return "assistant request failed"
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "assistant request timed out"
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return "assistant request timed out"
+	}
+	errText := strings.TrimSpace(err.Error())
+	if errText == "" {
+		return "assistant request failed"
+	}
+	if strings.Contains(strings.ToLower(errText), "i/o timeout") {
+		return "assistant request timed out"
+	}
+	return errText
 }
 
 func buildPromptFromHistory(mode string, messages []store.ChatMessage) string {

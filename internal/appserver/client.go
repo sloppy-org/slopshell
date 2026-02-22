@@ -130,6 +130,15 @@ func (c *Client) SendPromptStream(ctx context.Context, req PromptRequest, onEven
 		return nil, err
 	}
 	defer conn.Close()
+	ctxWatcherDone := make(chan struct{})
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = conn.Close()
+		case <-ctxWatcherDone:
+		}
+	}()
+	defer close(ctxWatcherDone)
 
 	if err := c.writeJSON(ctx, conn, map[string]interface{}{
 		"jsonrpc": "2.0",
@@ -146,17 +155,17 @@ func (c *Client) SendPromptStream(ctx context.Context, req PromptRequest, onEven
 			},
 		},
 	}); err != nil {
-		return nil, err
+		return nil, contextErr(ctx, err)
 	}
 	if _, err := c.waitForResponse(ctx, conn, 1); err != nil {
-		return nil, fmt.Errorf("initialize failed: %w", err)
+		return nil, contextErr(ctx, fmt.Errorf("initialize failed: %w", err))
 	}
 
 	if err := c.writeJSON(ctx, conn, map[string]interface{}{
 		"jsonrpc": "2.0",
 		"method":  "initialized",
 	}); err != nil {
-		return nil, err
+		return nil, contextErr(ctx, err)
 	}
 
 	threadParams := map[string]interface{}{
@@ -176,11 +185,11 @@ func (c *Client) SendPromptStream(ctx context.Context, req PromptRequest, onEven
 		"method":  "thread/start",
 		"params":  threadParams,
 	}); err != nil {
-		return nil, err
+		return nil, contextErr(ctx, err)
 	}
 	threadResp, err := c.waitForResponse(ctx, conn, 2)
 	if err != nil {
-		return nil, fmt.Errorf("thread/start failed: %w", err)
+		return nil, contextErr(ctx, fmt.Errorf("thread/start failed: %w", err))
 	}
 	threadID := parseThreadID(threadResp)
 	if threadID == "" {
@@ -203,18 +212,34 @@ func (c *Client) SendPromptStream(ctx context.Context, req PromptRequest, onEven
 			}},
 		},
 	}); err != nil {
-		return nil, err
+		return nil, contextErr(ctx, err)
 	}
 
 	turnID, message, err := c.readTurnUntilComplete(ctx, conn, threadID, onEvent)
 	if err != nil {
-		return nil, err
+		return nil, contextErr(ctx, err)
 	}
 	return &PromptResponse{
 		ThreadID: threadID,
 		TurnID:   turnID,
 		Message:  message,
 	}, nil
+}
+
+func contextErr(ctx context.Context, err error) error {
+	if err == nil || ctx == nil {
+		return err
+	}
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return ctxErr
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		if deadline, ok := ctx.Deadline(); ok && time.Until(deadline) <= 200*time.Millisecond {
+			return context.DeadlineExceeded
+		}
+	}
+	return err
 }
 
 func (c *Client) writeJSON(ctx context.Context, conn *websocket.Conn, payload interface{}) error {

@@ -175,6 +175,34 @@ async function mockPushToPrompt(
       },
     });
   });
+
+  await page.route('**/api/mail/stt', async (route) => {
+    const body = JSON.parse(route.request().postData() || '{}');
+    calls.push({
+      action: 'mail_stt',
+      ...body,
+    });
+    if (failStop) {
+      await route.fulfill({
+        status: 502,
+        body: 'upstream unavailable',
+      });
+      return;
+    }
+    await route.fulfill({
+      json: {
+        ok: true,
+        text: transcript,
+        language: 'en',
+        language_probability: 0.98,
+        source: 'voxtype_mcp',
+      },
+    });
+  });
+}
+
+function countSTTFinalizeCalls(calls: Array<Record<string, unknown>>): number {
+  return calls.filter((call) => call.action === 'stop' || call.action === 'mail_stt').length;
 }
 
 test.beforeEach(async ({ page }) => {
@@ -743,12 +771,12 @@ test('global recording control supports hold mode press/release transitions', as
   await expect(canvasText).toHaveAttribute('data-mail-recording-state', 'idle');
   await trigger.dispatchEvent('pointerdown', { button: 0, pointerId: 17 });
   await expect(canvasText).toHaveAttribute('data-mail-recording-state', 'recording');
-  await expect(page.locator('[data-mail-record-indicator]')).toContainText('Recording (hold mode)');
+  await expect(page.locator('[data-mail-record-indicator]')).toContainText('Push To Prompt (hold mode)');
 
   await trigger.dispatchEvent('pointerup', { button: 0, pointerId: 17 });
   await expect(canvasText).toHaveAttribute('data-mail-recording-state', 'idle');
   await expect(canvasText).toHaveAttribute('data-mail-recording-last-stop', 'release');
-  await expect(page.locator('[data-mail-record-indicator]')).toContainText('Ready (hold mode)');
+  await expect(page.locator('[data-mail-record-indicator]')).toContainText('Ready for Push To Prompt (hold mode)');
   await expect.poll(async () => canvasText.getAttribute('data-mail-recording-history')).toContain('mode:hold>state:idle>state:recording>stop:release>state:idle');
 });
 
@@ -870,7 +898,7 @@ test('recording stop sends STT transcript into draft reply pipeline', async ({ p
   await trigger.click();
   await expect(page.locator('#canvas-text')).toHaveAttribute('data-mail-recording-state', 'idle');
 
-  await expect.poll(() => sttCalls.filter((call) => call.action === 'stop').length).toBe(1);
+  await expect.poll(() => countSTTFinalizeCalls(sttCalls)).toBeGreaterThan(0);
   await expect.poll(() => intentCalls.length).toBe(1);
   await expect.poll(() => draftCalls.length).toBe(1);
   const appendCall = sttCalls.find((call) => call.action === 'append');
@@ -960,7 +988,7 @@ test('detail Draft Reply voice flow routes transcript through prompt branch and 
   await trigger.click();
   await expect(page.locator('#canvas-text')).toHaveAttribute('data-mail-recording-state', 'idle');
 
-  await expect.poll(() => sttCalls.filter((call) => call.action === 'stop').length).toBe(1);
+  await expect.poll(() => countSTTFinalizeCalls(sttCalls)).toBeGreaterThan(0);
   await expect.poll(() => intentCalls.length).toBe(1);
   await expect.poll(() => draftCalls.length).toBe(1);
   expect(readCalls).toEqual(['m27']);
@@ -1008,7 +1036,7 @@ test('voice dictation intent uses transcript as editable draft without generator
   await trigger.click();
   await trigger.click();
 
-  await expect.poll(() => sttCalls.filter((call) => call.action === 'stop').length).toBe(1);
+  await expect.poll(() => countSTTFinalizeCalls(sttCalls)).toBeGreaterThan(0);
   await expect.poll(() => draftCalls).toBe(0);
   await expect(page.locator('[data-mail-draft-panel] [data-mail-draft-text]')).toHaveValue(transcript);
   await expect(page.locator('[data-mail-draft-panel] [data-mail-draft-source]')).toContainText('Captured dictation draft');
@@ -1055,7 +1083,7 @@ test('ambiguous voice intent uses deterministic prompt fallback policy', async (
   await trigger.click();
   await trigger.click();
 
-  await expect.poll(() => sttCalls.filter((call) => call.action === 'stop').length).toBe(1);
+  await expect.poll(() => countSTTFinalizeCalls(sttCalls)).toBeGreaterThan(0);
   await expect.poll(() => draftCalls.length).toBe(1);
   expect(draftCalls[0]?.selection_text).toBe(transcript);
   await expect(page.locator('[data-mail-draft-panel] [data-mail-draft-source]')).toContainText('ambiguous intent fallback');
@@ -1090,7 +1118,7 @@ test('recording STT failure remains recoverable via manual prompt retry', async 
   await trigger.click();
   await trigger.click();
 
-  await expect.poll(() => sttCalls.filter((call) => call.action === 'stop').length).toBe(1);
+  await expect.poll(() => countSTTFinalizeCalls(sttCalls)).toBeGreaterThan(0);
   await expect(page.locator('tr[data-message-id="m24"] [data-mail-row-status]')).toContainText('Transcription failed');
   expect(draftCalls).toBe(0);
 

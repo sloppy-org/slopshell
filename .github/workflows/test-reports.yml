@@ -29,6 +29,9 @@ jobs:
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
 
+      - name: Verify generated surface files
+        run: ./scripts/sync-surface.sh --check
+
       - name: Generate coverage + E2E reports
         run: ./scripts/test-reports.sh
 

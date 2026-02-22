@@ -50,6 +50,20 @@ type ChatMessage struct {
 	CreatedAt       int64  `json:"created_at"`
 }
 
+type Project struct {
+	ID              string `json:"id"`
+	Name            string `json:"name"`
+	ProjectKey      string `json:"project_key"`
+	RootPath        string `json:"root_path"`
+	Kind            string `json:"kind"`
+	MCPURL          string `json:"mcp_url,omitempty"`
+	CanvasSessionID string `json:"canvas_session_id"`
+	IsDefault       bool   `json:"is_default"`
+	CreatedAt       int64  `json:"created_at"`
+	UpdatedAt       int64  `json:"updated_at"`
+	LastOpenedAt    int64  `json:"last_opened_at"`
+}
+
 const pbkdfIter = 600000
 
 func New(path string) (*Store, error) {
@@ -125,9 +139,30 @@ CREATE TABLE IF NOT EXISTS chat_events (
 );
 CREATE INDEX IF NOT EXISTS idx_chat_events_session_created
   ON chat_events(session_id, created_at, id);
+CREATE TABLE IF NOT EXISTS projects (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  project_key TEXT NOT NULL UNIQUE,
+  root_path TEXT NOT NULL UNIQUE,
+  kind TEXT NOT NULL DEFAULT 'managed',
+  mcp_url TEXT NOT NULL DEFAULT '',
+  canvas_session_id TEXT NOT NULL DEFAULT '',
+  is_default INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  last_opened_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_name_lower
+  ON projects(lower(name));
+CREATE TABLE IF NOT EXISTS app_state (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
 `
-	_, err := s.db.Exec(schema)
-	return err
+	if _, err := s.db.Exec(schema); err != nil {
+		return err
+	}
+	return s.migrateProjectColumns()
 }
 
 func hashPassword(password, salt string) string {
@@ -139,6 +174,49 @@ func hashPassword(password, salt string) string {
 		sum = next
 	}
 	return hex.EncodeToString(sum[:])
+}
+
+func (s *Store) migrateProjectColumns() error {
+	type colDef struct {
+		Name string
+		SQL  string
+	}
+	columns := []colDef{
+		{Name: "mcp_url", SQL: `ALTER TABLE projects ADD COLUMN mcp_url TEXT NOT NULL DEFAULT ''`},
+		{Name: "canvas_session_id", SQL: `ALTER TABLE projects ADD COLUMN canvas_session_id TEXT NOT NULL DEFAULT ''`},
+		{Name: "last_opened_at", SQL: `ALTER TABLE projects ADD COLUMN last_opened_at INTEGER NOT NULL DEFAULT 0`},
+	}
+
+	existing := map[string]bool{}
+	rows, err := s.db.Query(`PRAGMA table_info(projects)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notNull int
+		var dflt sql.NullString
+		var pk int
+		if err := rows.Scan(&cid, &name, &ctype, &notNull, &dflt, &pk); err != nil {
+			return err
+		}
+		existing[strings.ToLower(strings.TrimSpace(name))] = true
+	}
+	for _, col := range columns {
+		if existing[col.Name] {
+			continue
+		}
+		if _, err := s.db.Exec(col.SQL); err != nil {
+			return err
+		}
+	}
+
+	_, _ = s.db.Exec(`UPDATE projects SET canvas_session_id = 'local' WHERE is_default <> 0 AND trim(canvas_session_id) = ''`)
+	_, _ = s.db.Exec(`UPDATE projects SET canvas_session_id = id WHERE trim(canvas_session_id) = ''`)
+	_, _ = s.db.Exec(`UPDATE projects SET last_opened_at = updated_at WHERE last_opened_at = 0`)
+	return nil
 }
 
 func randomHex(n int) string {
@@ -322,6 +400,216 @@ func (s *Store) ListRemoteSessions() ([][2]interface{}, error) {
 		out = append(out, [2]interface{}{sid, hid})
 	}
 	return out, nil
+}
+
+func normalizeProjectKind(kind string) string {
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "linked":
+		return "linked"
+	default:
+		return "managed"
+	}
+}
+
+func normalizeProjectPath(path string) string {
+	p := strings.TrimSpace(path)
+	if p == "" {
+		return ""
+	}
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		return filepath.Clean(p)
+	}
+	return filepath.Clean(abs)
+}
+
+func normalizeProjectName(name string) string {
+	return strings.TrimSpace(name)
+}
+
+func scanProject(
+	row interface {
+		Scan(dest ...any) error
+	},
+) (Project, error) {
+	var out Project
+	var isDefault int
+	err := row.Scan(
+		&out.ID,
+		&out.Name,
+		&out.ProjectKey,
+		&out.RootPath,
+		&out.Kind,
+		&out.MCPURL,
+		&out.CanvasSessionID,
+		&isDefault,
+		&out.CreatedAt,
+		&out.UpdatedAt,
+		&out.LastOpenedAt,
+	)
+	if err != nil {
+		return Project{}, err
+	}
+	out.Kind = normalizeProjectKind(out.Kind)
+	out.Name = normalizeProjectName(out.Name)
+	out.RootPath = normalizeProjectPath(out.RootPath)
+	out.ProjectKey = strings.TrimSpace(out.ProjectKey)
+	out.IsDefault = isDefault != 0
+	return out, nil
+}
+
+func (s *Store) ListProjects() ([]Project, error) {
+	rows, err := s.db.Query(
+		`SELECT id, name, project_key, root_path, kind, mcp_url, canvas_session_id, is_default, created_at, updated_at, last_opened_at
+		 FROM projects
+		 ORDER BY is_default DESC, last_opened_at DESC, lower(name) ASC, created_at ASC`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Project{}
+	for rows.Next() {
+		project, err := scanProject(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, project)
+	}
+	return out, nil
+}
+
+func (s *Store) GetProject(id string) (Project, error) {
+	return scanProject(s.db.QueryRow(
+		`SELECT id, name, project_key, root_path, kind, mcp_url, canvas_session_id, is_default, created_at, updated_at, last_opened_at
+		 FROM projects WHERE id = ?`,
+		strings.TrimSpace(id),
+	))
+}
+
+func (s *Store) GetProjectByProjectKey(projectKey string) (Project, error) {
+	return scanProject(s.db.QueryRow(
+		`SELECT id, name, project_key, root_path, kind, mcp_url, canvas_session_id, is_default, created_at, updated_at, last_opened_at
+		 FROM projects WHERE project_key = ?`,
+		strings.TrimSpace(projectKey),
+	))
+}
+
+func (s *Store) GetProjectByRootPath(rootPath string) (Project, error) {
+	return scanProject(s.db.QueryRow(
+		`SELECT id, name, project_key, root_path, kind, mcp_url, canvas_session_id, is_default, created_at, updated_at, last_opened_at
+		 FROM projects WHERE root_path = ?`,
+		normalizeProjectPath(rootPath),
+	))
+}
+
+func (s *Store) GetProjectByCanvasSession(canvasSessionID string) (Project, error) {
+	return scanProject(s.db.QueryRow(
+		`SELECT id, name, project_key, root_path, kind, mcp_url, canvas_session_id, is_default, created_at, updated_at, last_opened_at
+		 FROM projects WHERE canvas_session_id = ?`,
+		strings.TrimSpace(canvasSessionID),
+	))
+}
+
+func (s *Store) CreateProject(name, projectKey, rootPath, kind, mcpURL, canvasSessionID string, isDefault bool) (Project, error) {
+	cleanName := normalizeProjectName(name)
+	cleanKey := strings.TrimSpace(projectKey)
+	cleanPath := normalizeProjectPath(rootPath)
+	cleanKind := normalizeProjectKind(kind)
+	cleanCanvasID := strings.TrimSpace(canvasSessionID)
+	if cleanCanvasID == "" {
+		cleanCanvasID = fmt.Sprintf("canvas-%s", randomHex(5))
+	}
+	if cleanName == "" {
+		return Project{}, errors.New("project name is required")
+	}
+	if cleanKey == "" {
+		return Project{}, errors.New("project key is required")
+	}
+	if cleanPath == "" {
+		return Project{}, errors.New("project path is required")
+	}
+	now := time.Now().Unix()
+	id := fmt.Sprintf("proj-%s", randomHex(6))
+	tx, err := s.db.Begin()
+	if err != nil {
+		return Project{}, err
+	}
+	defer tx.Rollback()
+	if isDefault {
+		if _, err := tx.Exec(`UPDATE projects SET is_default = 0 WHERE is_default <> 0`); err != nil {
+			return Project{}, err
+		}
+	}
+	if _, err := tx.Exec(
+		`INSERT INTO projects (id, name, project_key, root_path, kind, mcp_url, canvas_session_id, is_default, created_at, updated_at, last_opened_at)
+		 VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+		id, cleanName, cleanKey, cleanPath, cleanKind, strings.TrimSpace(mcpURL), cleanCanvasID, boolToInt(isDefault), now, now, now,
+	); err != nil {
+		return Project{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return Project{}, err
+	}
+	return s.GetProject(id)
+}
+
+func boolToInt(v bool) int {
+	if v {
+		return 1
+	}
+	return 0
+}
+
+func (s *Store) SetActiveProjectID(projectID string) error {
+	id := strings.TrimSpace(projectID)
+	if id == "" {
+		return errors.New("project id is required")
+	}
+	_, err := s.db.Exec(`INSERT INTO app_state (key, value) VALUES ('active_project_id', ?)
+		ON CONFLICT(key) DO UPDATE SET value=excluded.value`, id)
+	return err
+}
+
+func (s *Store) ActiveProjectID() (string, error) {
+	var id string
+	err := s.db.QueryRow(`SELECT value FROM app_state WHERE key = 'active_project_id'`).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(id), nil
+}
+
+func (s *Store) TouchProject(projectID string) error {
+	id := strings.TrimSpace(projectID)
+	if id == "" {
+		return errors.New("project id is required")
+	}
+	now := time.Now().Unix()
+	_, err := s.db.Exec(`UPDATE projects SET last_opened_at = ?, updated_at = ? WHERE id = ?`, now, now, id)
+	return err
+}
+
+func (s *Store) UpdateProjectRuntime(id, mcpURL, canvasSessionID string) error {
+	projectID := strings.TrimSpace(id)
+	if projectID == "" {
+		return errors.New("project id is required")
+	}
+	canvasID := strings.TrimSpace(canvasSessionID)
+	if canvasID == "" {
+		return errors.New("canvas session id is required")
+	}
+	_, err := s.db.Exec(
+		`UPDATE projects SET mcp_url = ?, canvas_session_id = ?, updated_at = ? WHERE id = ?`,
+		strings.TrimSpace(mcpURL),
+		canvasID,
+		time.Now().Unix(),
+		projectID,
+	)
+	return err
 }
 
 func normalizeChatMode(mode string) string {

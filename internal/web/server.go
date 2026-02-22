@@ -37,6 +37,7 @@ const (
 	LocalSessionID        = "local"
 	defaultProducerMCPURL = "http://127.0.0.1:8090/mcp"
 	maxMailSTTAudioBytes  = 10 * 1024 * 1024
+	mcpToolsCallTimeout   = 45 * time.Second
 )
 
 //go:embed static/* static/vendor/*
@@ -60,11 +61,16 @@ type App struct {
 	mu               sync.Mutex
 	canvasWS         map[string]map[*websocket.Conn]struct{}
 	chatWS           map[string]map[*websocket.Conn]struct{}
+	chatTurnCancel   map[string]map[string]context.CancelFunc
+	chatTurnQueue    map[string]int
+	chatTurnWorker   map[string]bool
 	remoteCanvasWS   map[string]*websocket.Conn
 	tunnelPorts      map[string]int
 	relayCancel      map[string]context.CancelFunc
 	localServe       *serve.App
 	localServeCancel context.CancelFunc
+	projectServes    map[string]*serve.App
+	projectServeStop map[string]context.CancelFunc
 
 	bootID    string
 	startedAt string
@@ -88,25 +94,35 @@ func New(dataDir, localProjectDir, localMCPURL, appServerURL string, devRuntime 
 	if envTruthy("TABULA_NO_AUTH") {
 		noAuth = true
 	}
-	return &App{
-		dataDir:         dataDir,
-		localProjectDir: localProjectDir,
-		localMCPURL:     localMCPURL,
-		appServerURL:    appServerURL,
-		appServerModel:  strings.TrimSpace(os.Getenv("TABULA_APP_SERVER_MODEL")),
-		devRuntime:      devRuntime,
-		noAuth:          noAuth,
-		store:           s,
-		appServerClient: appServerClient,
-		upgrader:        websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }},
-		canvasWS:        map[string]map[*websocket.Conn]struct{}{},
-		chatWS:          map[string]map[*websocket.Conn]struct{}{},
-		remoteCanvasWS:  map[string]*websocket.Conn{},
-		tunnelPorts:     map[string]int{},
-		relayCancel:     map[string]context.CancelFunc{},
-		bootID:          strconv.FormatInt(time.Now().UnixNano(), 16),
-		startedAt:       time.Now().UTC().Format(time.RFC3339Nano),
-	}, nil
+	app := &App{
+		dataDir:          dataDir,
+		localProjectDir:  localProjectDir,
+		localMCPURL:      localMCPURL,
+		appServerURL:     appServerURL,
+		appServerModel:   strings.TrimSpace(os.Getenv("TABULA_APP_SERVER_MODEL")),
+		devRuntime:       devRuntime,
+		noAuth:           noAuth,
+		store:            s,
+		appServerClient:  appServerClient,
+		upgrader:         websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }},
+		canvasWS:         map[string]map[*websocket.Conn]struct{}{},
+		chatWS:           map[string]map[*websocket.Conn]struct{}{},
+		chatTurnCancel:   map[string]map[string]context.CancelFunc{},
+		chatTurnQueue:    map[string]int{},
+		chatTurnWorker:   map[string]bool{},
+		remoteCanvasWS:   map[string]*websocket.Conn{},
+		tunnelPorts:      map[string]int{},
+		relayCancel:      map[string]context.CancelFunc{},
+		projectServes:    map[string]*serve.App{},
+		projectServeStop: map[string]context.CancelFunc{},
+		bootID:           strconv.FormatInt(time.Now().UnixNano(), 16),
+		startedAt:        time.Now().UTC().Format(time.RFC3339Nano),
+	}
+	if _, err := app.ensureDefaultProjectRecord(); err != nil {
+		_ = s.Close()
+		return nil, err
+	}
+	return app, nil
 }
 
 func pathJoin(parts ...string) string {
@@ -161,10 +177,16 @@ func (a *App) Router() http.Handler {
 
 	// runtime
 	r.Get("/api/runtime", a.handleRuntime)
+	r.Get("/api/projects", a.handleProjectsList)
+	r.Post("/api/projects", a.handleProjectCreate)
+	r.Post("/api/projects/{project_id}/activate", a.handleProjectActivate)
+	r.Get("/api/projects/{project_id}/context", a.handleProjectContext)
 	r.Post("/api/chat/sessions", a.handleChatSessionCreate)
 	r.Get("/api/chat/sessions/{session_id}/history", a.handleChatSessionHistory)
+	r.Get("/api/chat/sessions/{session_id}/activity", a.handleChatSessionActivity)
 	r.Post("/api/chat/sessions/{session_id}/messages", a.handleChatSessionMessage)
 	r.Post("/api/chat/sessions/{session_id}/commands", a.handleChatSessionCommand)
+	r.Post("/api/chat/sessions/{session_id}/cancel", a.handleChatSessionCancel)
 
 	// canvas/file proxy
 	r.Get("/api/canvas/{session_id}/snapshot", a.handleCanvasSnapshot)
@@ -888,13 +910,17 @@ func (a *App) mcpToolsCall(port int, name string, arguments map[string]interface
 }
 
 type reviewComment struct {
-	Comment    string
-	MarkType   string
-	TargetKind string
-	LineStart  int
-	LineEnd    int
-	Page       int
-	UpdatedAt  string
+	Comment       string
+	MarkType      string
+	TargetKind    string
+	LineStart     int
+	LineEnd       int
+	StartOffset   int
+	EndOffset     int
+	Page          int
+	UpdatedAt     string
+	TargetExcerpt string
+	DeleteIntent  bool
 }
 
 func (a *App) rewriteCommittedArtifactWithAppServer(ctx context.Context, sessionID string, tunnelPort int, requestedArtifactID string) (map[string]interface{}, error) {
@@ -990,15 +1016,28 @@ func (a *App) rewriteCommittedArtifactWithAppServer(ctx context.Context, session
 		if lineEnd < lineStart {
 			lineEnd = lineStart
 		}
+		startOffset := intFromAny(target["start_offset"], 0)
+		endOffset := intFromAny(target["end_offset"], startOffset)
+		if endOffset < startOffset {
+			endOffset = startOffset
+		}
 		page := intFromAny(target["page"], 0)
+		targetExcerpt := ""
+		if kind == "text_artifact" {
+			targetExcerpt = extractTargetExcerpt(originalText, lineStart, lineEnd, startOffset, endOffset)
+		}
 		comments = append(comments, reviewComment{
-			Comment:    comment,
-			MarkType:   strings.TrimSpace(fmt.Sprint(mark["type"])),
-			TargetKind: strings.TrimSpace(fmt.Sprint(mark["target_kind"])),
-			LineStart:  lineStart,
-			LineEnd:    lineEnd,
-			Page:       page,
-			UpdatedAt:  strings.TrimSpace(fmt.Sprint(mark["updated_at"])),
+			Comment:       comment,
+			MarkType:      strings.TrimSpace(fmt.Sprint(mark["type"])),
+			TargetKind:    strings.TrimSpace(fmt.Sprint(mark["target_kind"])),
+			LineStart:     lineStart,
+			LineEnd:       lineEnd,
+			StartOffset:   startOffset,
+			EndOffset:     endOffset,
+			Page:          page,
+			UpdatedAt:     strings.TrimSpace(fmt.Sprint(mark["updated_at"])),
+			TargetExcerpt: targetExcerpt,
+			DeleteIntent:  isDeleteInstruction(comment),
 		})
 	}
 	if len(comments) == 0 {
@@ -1021,9 +1060,13 @@ func (a *App) rewriteCommittedArtifactWithAppServer(ctx context.Context, session
 	prompt := buildArtifactRewritePrompt(kind, title, originalText, artifactPath, artifactPage, comments)
 	rewriteCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
-	cwd := strings.TrimSpace(a.localProjectDir)
-	if cwd == "" {
-		cwd = "."
+	cwd := "."
+	if project, projectErr := a.findProjectByCanvasSession(sessionID); projectErr == nil {
+		if root := strings.TrimSpace(project.RootPath); root != "" {
+			cwd = root
+		}
+	} else if fallback := strings.TrimSpace(a.localProjectDir); fallback != "" {
+		cwd = fallback
 	}
 	appResp, err := a.appServerClient.SendPrompt(rewriteCtx, appserver.PromptRequest{
 		CWD:    cwd,
@@ -1034,20 +1077,43 @@ func (a *App) rewriteCommittedArtifactWithAppServer(ctx context.Context, session
 		return nil, err
 	}
 
+	threadID := appResp.ThreadID
+	turnID := appResp.TurnID
 	rewrittenText := sanitizeAppServerTextResponse(appResp.Message)
 	if strings.TrimSpace(rewrittenText) == "" {
 		return nil, errors.New("app-server returned empty rewrite result")
 	}
-	if kind == "text_artifact" && normalizeLineEndings(strings.TrimSpace(rewrittenText)) == normalizeLineEndings(strings.TrimSpace(originalText)) {
-		return map[string]interface{}{
-			"enabled":       true,
-			"applied":       false,
-			"reason":        "unchanged",
-			"artifact_id":   artifactID,
-			"comments_used": len(comments),
-			"thread_id":     appResp.ThreadID,
-			"turn_id":       appResp.TurnID,
-		}, nil
+
+	if kind == "text_artifact" {
+		if unappliedDeletes := collectUnappliedDeleteComments(comments, rewrittenText); len(unappliedDeletes) > 0 {
+			retryPrompt := buildArtifactDeleteRetryPrompt(title, rewrittenText, unappliedDeletes)
+			retryCtx, retryCancel := context.WithTimeout(ctx, 90*time.Second)
+			retryResp, retryErr := a.appServerClient.SendPrompt(retryCtx, appserver.PromptRequest{
+				CWD:    cwd,
+				Model:  a.appServerModel,
+				Prompt: retryPrompt,
+			})
+			retryCancel()
+			if retryErr == nil {
+				retryText := sanitizeAppServerTextResponse(retryResp.Message)
+				if strings.TrimSpace(retryText) != "" {
+					rewrittenText = retryText
+					threadID = retryResp.ThreadID
+					turnID = retryResp.TurnID
+				}
+			}
+		}
+		if normalizeLineEndings(strings.TrimSpace(rewrittenText)) == normalizeLineEndings(strings.TrimSpace(originalText)) {
+			return map[string]interface{}{
+				"enabled":       true,
+				"applied":       false,
+				"reason":        "unchanged",
+				"artifact_id":   artifactID,
+				"comments_used": len(comments),
+				"thread_id":     threadID,
+				"turn_id":       turnID,
+			}, nil
+		}
 	}
 
 	outputTitle := title
@@ -1077,9 +1143,115 @@ func (a *App) rewriteCommittedArtifactWithAppServer(ctx context.Context, session
 		"input_artifact_id":  artifactID,
 		"output_artifact_id": showResp["artifact_id"],
 		"comments_used":      len(comments),
-		"thread_id":          appResp.ThreadID,
-		"turn_id":            appResp.TurnID,
+		"thread_id":          threadID,
+		"turn_id":            turnID,
 	}, nil
+}
+
+func isDeleteInstruction(comment string) bool {
+	s := strings.ToLower(strings.TrimSpace(comment))
+	if s == "" {
+		return false
+	}
+	return strings.Contains(s, "delete") ||
+		strings.Contains(s, "remove") ||
+		strings.Contains(s, "omit") ||
+		strings.Contains(s, "cut") ||
+		strings.Contains(s, "drop") ||
+		strings.Contains(s, "erase")
+}
+
+func extractTargetExcerpt(text string, lineStart, lineEnd, startOffset, endOffset int) string {
+	text = normalizeLineEndings(text)
+	runes := []rune(text)
+	if startOffset < 0 {
+		startOffset = 0
+	}
+	if endOffset < startOffset {
+		endOffset = startOffset
+	}
+	if startOffset < len(runes) && endOffset > startOffset {
+		if endOffset > len(runes) {
+			endOffset = len(runes)
+		}
+		return strings.TrimSpace(string(runes[startOffset:endOffset]))
+	}
+	if lineStart <= 0 {
+		return ""
+	}
+	if lineEnd < lineStart {
+		lineEnd = lineStart
+	}
+	lines := strings.Split(text, "\n")
+	if lineStart > len(lines) {
+		return ""
+	}
+	if lineEnd > len(lines) {
+		lineEnd = len(lines)
+	}
+	return strings.TrimSpace(strings.Join(lines[lineStart-1:lineEnd], "\n"))
+}
+
+func collectUnappliedDeleteComments(comments []reviewComment, rewrittenText string) []reviewComment {
+	rewritten := normalizeContainsText(rewrittenText)
+	if rewritten == "" {
+		return nil
+	}
+	missing := make([]reviewComment, 0, len(comments))
+	for _, c := range comments {
+		if !c.DeleteIntent {
+			continue
+		}
+		excerpt := normalizeContainsText(c.TargetExcerpt)
+		if len(excerpt) < 3 {
+			continue
+		}
+		if strings.Contains(rewritten, excerpt) {
+			missing = append(missing, c)
+		}
+	}
+	return missing
+}
+
+func normalizeContainsText(s string) string {
+	s = strings.ToLower(normalizeLineEndings(strings.TrimSpace(s)))
+	return strings.Join(strings.Fields(s), " ")
+}
+
+func truncatePromptSnippet(s string, maxRunes int) string {
+	s = strings.TrimSpace(s)
+	if maxRunes <= 0 {
+		return s
+	}
+	runes := []rune(s)
+	if len(runes) <= maxRunes {
+		return s
+	}
+	return strings.TrimSpace(string(runes[:maxRunes])) + "..."
+}
+
+func buildArtifactDeleteRetryPrompt(title, currentText string, missing []reviewComment) string {
+	var b strings.Builder
+	b.WriteString("You are correcting a revised document.\n")
+	b.WriteString("Required deletions were missed in the previous output.\n")
+	b.WriteString("Delete each target excerpt from the draft and return only the full corrected document.\n")
+	b.WriteString("No preface. No explanations. No code fences.\n")
+	if strings.TrimSpace(title) != "" {
+		fmt.Fprintf(&b, "Artifact title: %s\n", strings.TrimSpace(title))
+	}
+	b.WriteString("\nRequired deletions:\n")
+	for i, c := range missing {
+		fmt.Fprintf(&b, "%d. %s\n", i+1, strings.TrimSpace(c.Comment))
+		if excerpt := strings.TrimSpace(c.TargetExcerpt); excerpt != "" {
+			fmt.Fprintf(&b, "   target excerpt: %q\n", truncatePromptSnippet(excerpt, 240))
+		}
+	}
+	b.WriteString("\nCurrent draft text:\n")
+	b.WriteString("<<<TEXT\n")
+	b.WriteString(currentText)
+	b.WriteString("\nTEXT\n")
+	b.WriteString(">>>")
+	return b.String()
 }
 
 func buildArtifactRewritePrompt(kind, title, text, path string, page int, comments []reviewComment) string {
@@ -1091,6 +1263,8 @@ func buildArtifactRewritePrompt(kind, title, text, path string, page int, commen
 	case "text_artifact":
 		b.WriteString("Artifact type: text/markdown.\n")
 		b.WriteString("Preserve document structure and style unless comments request changes.\n")
+		b.WriteString("If a comment requests delete/remove/cut/omit, remove the targeted text from the final document.\n")
+		b.WriteString("A short comment like \"delete\" means delete the selected target span.\n")
 		b.WriteString("Return the full revised document text.\n")
 	case "pdf_artifact":
 		b.WriteString("Artifact type: PDF.\n")
@@ -1128,11 +1302,17 @@ func buildArtifactRewritePrompt(kind, title, text, path string, page int, commen
 		if c.Page > 0 {
 			scope = append(scope, fmt.Sprintf("page %d", c.Page))
 		}
+		if c.DeleteIntent && kind == "text_artifact" {
+			scope = append(scope, "delete request")
+		}
 		prefix := fmt.Sprintf("%d.", i+1)
 		if len(scope) > 0 {
 			prefix += " [" + strings.Join(scope, ", ") + "]"
 		}
 		fmt.Fprintf(&b, "%s %s\n", prefix, c.Comment)
+		if kind == "text_artifact" && strings.TrimSpace(c.TargetExcerpt) != "" {
+			fmt.Fprintf(&b, "   target excerpt: %q\n", truncatePromptSnippet(c.TargetExcerpt, 240))
+		}
 	}
 	if kind == "text_artifact" {
 		b.WriteString("\nOriginal document text:\n")
@@ -1167,8 +1347,19 @@ func normalizeLineEndings(text string) string {
 func mcpToolsCallURL(mcpURL, name string, arguments map[string]interface{}) (map[string]interface{}, error) {
 	payload := map[string]interface{}{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": map[string]interface{}{"name": name, "arguments": arguments}}
 	b, _ := json.Marshal(payload)
-	resp, err := http.Post(mcpURL, "application/json", strings.NewReader(string(b)))
+	ctx, cancel := context.WithTimeout(context.Background(), mcpToolsCallTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, mcpURL, bytes.NewReader(b))
 	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		var netErr net.Error
+		if errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &netErr) && netErr.Timeout()) {
+			return nil, fmt.Errorf("MCP call timed out after %s", mcpToolsCallTimeout)
+		}
 		return nil, err
 	}
 	defer resp.Body.Close()
@@ -1362,6 +1553,12 @@ func (a *App) startCanvasRelay(sessionID string, port int) {
 }
 
 func (a *App) startLocalServe() error {
+	a.mu.Lock()
+	_, alreadyReady := a.tunnelPorts[LocalSessionID]
+	a.mu.Unlock()
+	if alreadyReady {
+		return nil
+	}
 	if a.localProjectDir == "" {
 		return nil
 	}
@@ -1378,9 +1575,11 @@ func (a *App) startLocalServe() error {
 	}
 
 	app := serve.NewApp(a.localProjectDir, true)
-	a.localServe = app
 	ctx, cancel := context.WithCancel(context.Background())
+	a.mu.Lock()
+	a.localServe = app
 	a.localServeCancel = cancel
+	a.mu.Unlock()
 	go func() {
 		_ = app.Start("127.0.0.1", DaemonPort)
 	}()
@@ -1432,9 +1631,16 @@ func (a *App) Start(host string, port int) error {
 }
 
 func (a *App) Shutdown(ctx context.Context) error {
+	projectStops := map[string]context.CancelFunc{}
+	projectApps := map[string]*serve.App{}
 	a.mu.Lock()
 	for _, cancel := range a.relayCancel {
 		cancel()
+	}
+	for _, runs := range a.chatTurnCancel {
+		for _, cancel := range runs {
+			cancel()
+		}
 	}
 	for _, ws := range a.remoteCanvasWS {
 		_ = ws.Close()
@@ -1444,7 +1650,22 @@ func (a *App) Shutdown(ctx context.Context) error {
 			_ = ws.Close()
 		}
 	}
+	for sid, cancel := range a.projectServeStop {
+		projectStops[sid] = cancel
+	}
+	for sid, app := range a.projectServes {
+		projectApps[sid] = app
+	}
 	a.mu.Unlock()
+
+	for _, cancel := range projectStops {
+		cancel()
+	}
+	for _, app := range projectApps {
+		if app != nil {
+			_ = app.Stop(ctx)
+		}
+	}
 	if a.localServe != nil {
 		_ = a.localServe.Stop(ctx)
 	}
