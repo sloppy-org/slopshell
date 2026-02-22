@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/krystophny/tabula/internal/stt"
+	"github.com/krystophny/tabura/internal/stt"
 )
 
 type sttMessage struct {

@@ -18,7 +18,7 @@ const MaxAudioBytes = 10 * 1024 * 1024
 // TranscribeWithVoxType converts audio to WAV via ffmpeg, then transcribes
 // it with the voxtype CLI. It returns the transcript text or an error.
 func TranscribeWithVoxType(mimeType string, data []byte) (string, error) {
-	tmpDir, err := os.MkdirTemp("", "tabula-voxtype-*")
+	tmpDir, err := os.MkdirTemp("", "tabura-voxtype-*")
 	if err != nil {
 		return "", fmt.Errorf("failed to create temp dir: %w", err)
 	}

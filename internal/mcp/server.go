@@ -18,12 +18,12 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/krystophny/tabula/internal/canvas"
-	"github.com/krystophny/tabula/internal/surface"
+	"github.com/krystophny/tabura/internal/canvas"
+	"github.com/krystophny/tabura/internal/surface"
 )
 
 const (
-	ServerName            = "tabula"
+	ServerName            = "tabura"
 	ServerVersion         = "0.0.6-dev"
 	LatestProtocolVersion = "2025-03-26"
 	defaultProducerMCPURL = "http://127.0.0.1:8090/mcp"
@@ -462,7 +462,7 @@ func (s *Server) writeImportedFile(handoffID, filename string, content []byte) (
 	if strings.TrimSpace(projectDir) == "" {
 		return "", errors.New("project directory not configured")
 	}
-	importDir := filepath.Join(projectDir, ".tabula", "artifacts", "imports")
+	importDir := filepath.Join(projectDir, ".tabura", "artifacts", "imports")
 	if err := os.MkdirAll(importDir, 0o755); err != nil {
 		return "", err
 	}
@@ -610,16 +610,16 @@ func toolDefinitions() []map[string]interface{} {
 
 func resourceTemplates() []map[string]interface{} {
 	return []map[string]interface{}{
-		{"uriTemplate": "tabula://session/{session_id}", "name": "Canvas Session Status", "mimeType": "application/json", "description": "Current status for a canvas session."},
-		{"uriTemplate": "tabula://session/{session_id}/marks", "name": "Canvas Session Marks", "mimeType": "application/json", "description": "Current marks for a canvas session."},
-		{"uriTemplate": "tabula://session/{session_id}/history", "name": "Canvas Session History", "mimeType": "application/json", "description": "Recent event history for a canvas session."},
+		{"uriTemplate": "tabura://session/{session_id}", "name": "Canvas Session Status", "mimeType": "application/json", "description": "Current status for a canvas session."},
+		{"uriTemplate": "tabura://session/{session_id}/marks", "name": "Canvas Session Marks", "mimeType": "application/json", "description": "Current marks for a canvas session."},
+		{"uriTemplate": "tabura://session/{session_id}/history", "name": "Canvas Session History", "mimeType": "application/json", "description": "Recent event history for a canvas session."},
 	}
 }
 
 func resourcesList(adapter *canvas.Adapter) []map[string]interface{} {
 	out := []map[string]interface{}{}
 	for _, sid := range adapter.ListSessions() {
-		for _, uri := range []string{"tabula://session/" + sid, "tabula://session/" + sid + "/marks", "tabula://session/" + sid + "/history"} {
+		for _, uri := range []string{"tabura://session/" + sid, "tabura://session/" + sid + "/marks", "tabura://session/" + sid + "/history"} {
 			out = append(out, map[string]interface{}{"uri": uri, "name": uri, "mimeType": "application/json"})
 		}
 	}
@@ -627,10 +627,10 @@ func resourcesList(adapter *canvas.Adapter) []map[string]interface{} {
 }
 
 func readResource(adapter *canvas.Adapter, uri string) (map[string]interface{}, error) {
-	if !strings.HasPrefix(uri, "tabula://session/") {
+	if !strings.HasPrefix(uri, "tabura://session/") {
 		return nil, fmt.Errorf("unsupported uri: %s", uri)
 	}
-	path := strings.TrimPrefix(uri, "tabula://session/")
+	path := strings.TrimPrefix(uri, "tabura://session/")
 	if path == "" {
 		return nil, fmt.Errorf("missing session id")
 	}

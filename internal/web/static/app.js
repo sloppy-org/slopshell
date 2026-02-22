@@ -427,6 +427,7 @@ function stopChatVoiceMedia(capture) {
   }
   capture.mediaRecorder = null;
   capture.mediaStream = null;
+  releaseMicStream();
 }
 
 function stopChatVoiceMediaAndFlush(capture) {
@@ -1710,7 +1711,9 @@ function bindUi() {
 
 function warmMicStream() {
   if (!canUseMicrophoneCapture()) return;
-  acquireMicStream().catch(() => {});
+  // Acquire mic to trigger permission prompt, then immediately release
+  // so the hardware is not kept active between recordings.
+  acquireMicStream().then(() => releaseMicStream()).catch(() => {});
 }
 
 async function init() {

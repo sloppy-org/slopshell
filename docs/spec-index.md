@@ -1,4 +1,4 @@
-# Tabula Spec Index
+# Tabura Spec Index
 
 Canonical documentation.
 
@@ -25,7 +25,7 @@ Release notes:
 
 ### CLI and Runtime Entrypoints
 
-- `cmd/tabula/main.go`
+- `cmd/tabura/main.go`
 - `internal/serve/app.go`
 - `internal/web/server.go`
 
@@ -44,6 +44,6 @@ Release notes:
 
 ## Scope Boundaries
 
-- Tabula defines the interaction/runtime layer for object-scoped intent workflows.
+- Tabura defines the interaction/runtime layer for object-scoped intent workflows.
 - Producer-side source access (mail/files/calendar/etc.) is external and pluggable.
 - Handoff transport contracts are documented in this repo under `docs/handoff-protocol/`.

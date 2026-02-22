@@ -14,8 +14,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/gorilla/websocket"
-	"github.com/krystophny/tabula/internal/canvas"
-	"github.com/krystophny/tabula/internal/mcp"
+	"github.com/krystophny/tabura/internal/canvas"
+	"github.com/krystophny/tabura/internal/mcp"
 )
 
 const (
@@ -196,7 +196,7 @@ func (a *App) Start(host string, port int) error {
 		WriteTimeout:      60 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
-	fmt.Println("tabula serve listening on:")
+	fmt.Println("tabura serve listening on:")
 	for _, u := range ListenURLs(host, port) {
 		fmt.Printf("  %s\n", u)
 	}

@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/krystophny/tabula/internal/surface"
+	"github.com/krystophny/tabura/internal/surface"
 )
 
 func main() {

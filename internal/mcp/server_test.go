@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/krystophny/tabula/internal/canvas"
+	"github.com/krystophny/tabura/internal/canvas"
 )
 
 func TestCanvasImportHandoffFileText(t *testing.T) {
@@ -77,7 +77,7 @@ func TestCanvasImportHandoffFileText(t *testing.T) {
 		t.Fatalf("missing artifact_id: %#v", got)
 	}
 
-	matches, err := filepath.Glob(filepath.Join(projectDir, ".tabula", "artifacts", "imports", "h1-*.txt"))
+	matches, err := filepath.Glob(filepath.Join(projectDir, ".tabura", "artifacts", "imports", "h1-*.txt"))
 	if err != nil {
 		t.Fatalf("glob failed: %v", err)
 	}

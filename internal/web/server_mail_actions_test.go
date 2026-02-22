@@ -368,7 +368,7 @@ func TestMailDraftReplyUsesProducerDraftTool(t *testing.T) {
 }
 
 func TestMailDraftReplyDisabled(t *testing.T) {
-	t.Setenv("TABULA_DRAFT_REPLY_DISABLED", "1")
+	t.Setenv("TABURA_DRAFT_REPLY_DISABLED", "1")
 	app := newAuthedTestApp(t)
 	rr := doAuthedJSONRequest(t, app.Router(), "POST", "/api/mail/draft-reply", map[string]any{
 		"provider":         "gmail",
@@ -457,7 +457,7 @@ func TestMailSTTRejectsMalformedAudio(t *testing.T) {
 
 func newAuthedTestApp(t *testing.T) *App {
 	t.Helper()
-	app, err := New(t.TempDir(), "", "", "", false)
+	app, err := New(t.TempDir(), "", "", "", "", false)
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}

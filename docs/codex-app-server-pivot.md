@@ -1,10 +1,10 @@
 # Codex App Server Pivot (v0.0.5-dev)
 
-This document captures the 2026 integration direction for Tabula’s AI path.
+This document captures the 2026 integration direction for Tabura’s AI path.
 
 ## Why App Server-Centered
 
-Tabula now treats Codex app-server as the primary AI backend for both chat turns and commit-time review flows:
+Tabura now treats Codex app-server as the primary AI backend for both chat turns and commit-time review flows:
 
 1. Browser starts in a persistent project chat canvas.
 2. Backend streams assistant turn events to the chat UI.
@@ -14,8 +14,8 @@ Tabula now treats Codex app-server as the primary AI backend for both chat turns
 ## Transport and Runtime Choices
 
 1. A persistent user service runs `codex app-server --listen ws://127.0.0.1:8787`.
-2. Tabula Web backend connects to app-server via WebSocket JSON-RPC for chat/commit turns.
-3. For each turn trigger, Tabula opens an app-server session:
+2. Tabura Web backend connects to app-server via WebSocket JSON-RPC for chat/commit turns.
+3. For each turn trigger, Tabura opens an app-server session:
    - `initialize`
    - `thread/start`
    - `turn/start`
@@ -36,8 +36,8 @@ Tabula now treats Codex app-server as the primary AI backend for both chat turns
 
 Systemd units now include:
 
-1. `tabula-codex-app-server.service`
-2. `tabula-web.service` with dependency on app-server
+1. `tabura-codex-app-server.service`
+2. `tabura-web.service` with dependency on app-server
 
 Install/restart scripts were updated so app-server is started and restarted with the local stack.
 
@@ -58,7 +58,7 @@ Install/restart scripts were updated so app-server is started and restarted with
 
 1. A single `threadId` can be reused across many turns to retain context.
 2. `thread/start` supports ephemeral and non-ephemeral behavior; choose based on product UX.
-3. In Tabula’s current commit-trigger flow we use short-lived commit sessions by default.
+3. In Tabura’s current commit-trigger flow we use short-lived commit sessions by default.
 4. `cwd` on thread/turn controls filesystem working directory.
 
 ## Tool Access and Policy
@@ -74,7 +74,7 @@ Install/restart scripts were updated so app-server is started and restarted with
 2. App-server supports streaming notifications for better perceived responsiveness.
 3. Localhost transport overhead is usually small versus model/tool time.
 
-## Current Tabula Behavior
+## Current Tabura Behavior
 
 1. Chat tab is the default shell and persists per-project message history.
 2. Assistant responses stream to browser chat and render Markdown + LaTeX.

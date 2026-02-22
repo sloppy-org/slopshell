@@ -635,7 +635,7 @@ func (a *Adapter) ListSessions() []string {
 func (a *Adapter) annotationsPath(sessionID string) string {
 	h := sha256.Sum256([]byte(sessionID))
 	name := hex8(h[:]) + ".annotations.json"
-	return filepath.Join(a.projectDir, ".tabula", "artifacts", "annotations", name)
+	return filepath.Join(a.projectDir, ".tabura", "artifacts", "annotations", name)
 }
 
 func (a *Adapter) loadPersistedAnnotationsLocked(sessionID string, r *SessionRecord) {

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Tabula Mail Harness</title>
+  <title>Tabura Mail Harness</title>
   <link rel="stylesheet" href="../../internal/web/static/style.css">
   <style>
     body { margin: 0; padding: 0; }
@@ -39,7 +39,7 @@
   <button id="btn-canvas-clear-draft" type="button" style="display:none">Clear Draft</button>
 
   <script type="module">
-    window.__TABULA_UNDO_TIMEOUT_MS = 80;
+    window.__TABURA_UNDO_TIMEOUT_MS = 80;
     const harnessMessages = [];
     const harnessState = {
       sessionId: 'local',
@@ -58,7 +58,7 @@
     const sttLog = [];
     let sttTranscript = 'hello world';
     let sttFailStop = false;
-    window._tabulaApp = {
+    window._taburaApp = {
       getState() {
         return harnessState;
       },

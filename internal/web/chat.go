@@ -494,7 +494,8 @@ func (a *App) runAssistantTurn(sessionID string) {
 		a.broadcastChatEvent(sessionID, map[string]interface{}{"type": "error", "error": err.Error()})
 		return
 	}
-	prompt := buildPromptFromHistory(session.Mode, messages)
+	canvasCtx := a.resolveCanvasContext(session.ProjectKey)
+	prompt := buildPromptFromHistory(session.Mode, messages, canvasCtx)
 	if strings.TrimSpace(prompt) == "" {
 		a.broadcastChatEvent(sessionID, map[string]interface{}{"type": "error", "error": "empty prompt"})
 		return
@@ -643,6 +644,16 @@ func (a *App) runAssistantTurn(sessionID string) {
 	if assistantText == "" {
 		assistantText = "(assistant returned no content)"
 	}
+
+	// Process canvas action markers: push content to canvas and strip markers from chat text.
+	if actions, cleaned := parseCanvasActions(assistantText); len(actions) > 0 {
+		canvasSessionID := a.resolveCanvasSessionID(session.ProjectKey)
+		if canvasSessionID != "" {
+			a.executeCanvasActions(canvasSessionID, actions)
+		}
+		assistantText = cleaned
+	}
+
 	if persistedAssistantID == 0 {
 		storedAssistant, storeErr := a.store.AddChatMessage(sessionID, "assistant", assistantText, assistantText, "markdown")
 		if storeErr != nil {
@@ -715,15 +726,86 @@ func normalizeAssistantError(err error) string {
 	return errText
 }
 
-func buildPromptFromHistory(mode string, messages []store.ChatMessage) string {
+func (a *App) resolveCanvasSessionID(projectKey string) string {
+	key := strings.TrimSpace(projectKey)
+	if key == "" {
+		return ""
+	}
+	project, err := a.store.GetProjectByProjectKey(key)
+	if err != nil {
+		return ""
+	}
+	return a.canvasSessionIDForProject(project)
+}
+
+func (a *App) resolveCanvasContext(projectKey string) *canvasContext {
+	key := strings.TrimSpace(projectKey)
+	if key == "" {
+		return nil
+	}
+	project, err := a.store.GetProjectByProjectKey(key)
+	if err != nil {
+		return nil
+	}
+	sid := a.canvasSessionIDForProject(project)
+	a.mu.Lock()
+	port, ok := a.tunnelPorts[sid]
+	a.mu.Unlock()
+	if !ok {
+		return nil
+	}
+	status, err := a.mcpToolsCall(port, "canvas_status", map[string]interface{}{"session_id": sid})
+	if err != nil {
+		return nil
+	}
+	active, _ := status["active_artifact"].(map[string]interface{})
+	if active == nil {
+		return nil
+	}
+	title := strings.TrimSpace(fmt.Sprint(active["title"]))
+	if title == "<nil>" {
+		title = ""
+	}
+	kind := strings.TrimSpace(fmt.Sprint(active["kind"]))
+	if kind == "<nil>" {
+		kind = ""
+	}
+	return &canvasContext{HasArtifact: true, ArtifactTitle: title, ArtifactKind: kind}
+}
+
+type canvasContext struct {
+	HasArtifact   bool
+	ArtifactTitle string
+	ArtifactKind  string
+}
+
+func buildPromptFromHistory(mode string, messages []store.ChatMessage, canvas *canvasContext) string {
 	const maxHistory = 80
 	if len(messages) > maxHistory {
 		messages = messages[len(messages)-maxHistory:]
 	}
 	var b strings.Builder
-	if strings.EqualFold(strings.TrimSpace(mode), "plan") {
-		b.WriteString("You are in plan mode. Focus on analysis, design, and specification before implementation.\\n\\n")
+
+	b.WriteString("You are Tabura, an AI assistant with access to a canvas for showing artifacts.\n\n")
+	b.WriteString("## Available Actions\n")
+	b.WriteString("When appropriate, include these action markers in your response:\n\n")
+	b.WriteString("- To show text/markdown on canvas: wrap content in :::canvas_show{title=\"Title\"}...:::\n")
+	b.WriteString("- To show code on canvas: wrap in :::canvas_show{title=\"file.go\" kind=\"code\"}...:::\n")
+	b.WriteString("- When asked to apply review comments, output the full revised document wrapped in canvas_show markers.\n\n")
+	b.WriteString("## Guidelines\n")
+	b.WriteString("- Use canvas_show for any substantial content (documents, code, analysis) so the user can review it visually.\n")
+	b.WriteString("- For short answers or conversational replies, respond normally without canvas markers.\n")
+	b.WriteString("- When applying review comments from a commit, output the complete revised artifact.\n\n")
+
+	if canvas != nil && canvas.HasArtifact {
+		b.WriteString("## Current Canvas State\n")
+		fmt.Fprintf(&b, "- Active artifact: %q (kind: %s)\n\n", canvas.ArtifactTitle, canvas.ArtifactKind)
 	}
+
+	if strings.EqualFold(strings.TrimSpace(mode), "plan") {
+		b.WriteString("You are in plan mode. Focus on analysis, design, and specification before implementation.\n\n")
+	}
+
 	b.WriteString("Conversation transcript:\n")
 	for _, msg := range messages {
 		content := strings.TrimSpace(msg.ContentPlain)

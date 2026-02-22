@@ -2,7 +2,7 @@
 
 ## Version Scope
 
-`v0.0.1` defines the first public baseline of Tabula documentation and release metadata.
+`v0.0.1` defines the first public baseline of Tabura documentation and release metadata.
 
 ## Included in v0.0.1
 
@@ -30,4 +30,4 @@
 For archival publication records, pair this version with:
 - release label: `v0.0.1`
 - source revision: exact git commit hash in release metadata
-- repository URL: `https://github.com/krystophny/tabula`
+- repository URL: `https://github.com/krystophny/tabura`

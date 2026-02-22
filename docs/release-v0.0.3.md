@@ -2,7 +2,7 @@
 
 ## Scope
 
-`v0.0.3` consolidates protocol publication into Tabula while keeping the object-scoped UI paradigm as the primary project framing.
+`v0.0.3` consolidates protocol publication into Tabura while keeping the object-scoped UI paradigm as the primary project framing.
 
 ## Highlights
 
@@ -28,5 +28,5 @@
 
 For publication metadata, associate this release with:
 - release label: `v0.0.3`
-- repository: `https://github.com/krystophny/tabula`
+- repository: `https://github.com/krystophny/tabura`
 - exact source revision: tag target commit hash

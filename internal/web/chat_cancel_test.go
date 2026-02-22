@@ -8,7 +8,7 @@ import (
 )
 
 func TestHandleChatSessionCancelStopsActiveTurn(t *testing.T) {
-	app, err := New(t.TempDir(), "", "", "", false)
+	app, err := New(t.TempDir(), "", "", "", "", false)
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}
@@ -56,7 +56,7 @@ func TestHandleChatSessionCancelStopsActiveTurn(t *testing.T) {
 }
 
 func TestHandleChatSessionActivityReportsActiveTurns(t *testing.T) {
-	app, err := New(t.TempDir(), "", "", "", false)
+	app, err := New(t.TempDir(), "", "", "", "", false)
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}
@@ -94,7 +94,7 @@ func TestHandleChatSessionActivityReportsActiveTurns(t *testing.T) {
 }
 
 func TestHandleChatSessionCancelClearsQueuedTurns(t *testing.T) {
-	app, err := New(t.TempDir(), "", "", "", false)
+	app, err := New(t.TempDir(), "", "", "", "", false)
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}

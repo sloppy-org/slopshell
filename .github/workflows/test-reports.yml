@@ -39,6 +39,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: tabula-test-reports
-          path: .tabula/artifacts/test-reports
+          name: tabura-test-reports
+          path: .tabura/artifacts/test-reports
           if-no-files-found: error

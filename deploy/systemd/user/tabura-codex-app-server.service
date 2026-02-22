@@ -1,10 +1,10 @@
 [Unit]
-Description=Codex App Server (Tabula)
+Description=Codex App Server (Tabura)
 After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=%h/code/assi/tabula
+WorkingDirectory=%h/code/assi/tabura
 Environment=HOME=%h
 Environment=SHELL=/usr/bin/bash
 ExecStart=/usr/bin/bash -lc 'source ~/.bashrc >/dev/null 2>&1 || true; exec /usr/bin/env codex app-server --listen ws://127.0.0.1:8787'

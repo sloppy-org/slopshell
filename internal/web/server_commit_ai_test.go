@@ -68,7 +68,7 @@ func TestCanvasCommitRoutesToChatWithReviewComments(t *testing.T) {
 	}))
 	defer mcp.Close()
 
-	app, err := New(t.TempDir(), t.TempDir(), mcp.URL, "ws://127.0.0.1:8787", false)
+	app, err := New(t.TempDir(), t.TempDir(), mcp.URL, "ws://127.0.0.1:8787", "", false)
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}
@@ -145,7 +145,7 @@ func TestCanvasCommitWithoutAppServerDoesNotRouteToChat(t *testing.T) {
 	}))
 	defer mcp.Close()
 
-	app, err := New(t.TempDir(), t.TempDir(), mcp.URL, "", false)
+	app, err := New(t.TempDir(), t.TempDir(), mcp.URL, "", "", false)
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}
@@ -215,7 +215,7 @@ func TestCanvasCommitNoCommentsDoesNotRouteToChat(t *testing.T) {
 	}))
 	defer mcp.Close()
 
-	app, err := New(t.TempDir(), t.TempDir(), mcp.URL, "ws://127.0.0.1:8787", false)
+	app, err := New(t.TempDir(), t.TempDir(), mcp.URL, "ws://127.0.0.1:8787", "", false)
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}
@@ -295,7 +295,7 @@ func TestCanvasCommitUsesExplicitChatSessionID(t *testing.T) {
 	}))
 	defer mcp.Close()
 
-	app, err := New(t.TempDir(), t.TempDir(), mcp.URL, "ws://127.0.0.1:8787", false)
+	app, err := New(t.TempDir(), t.TempDir(), mcp.URL, "ws://127.0.0.1:8787", "", false)
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}

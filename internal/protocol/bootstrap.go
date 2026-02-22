@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/krystophny/tabula/internal/surface"
+	"github.com/krystophny/tabura/internal/surface"
 )
 
 type Paths struct {
@@ -29,23 +29,23 @@ func BootstrapProject(projectDir string) (Result, error) {
 	if err := os.MkdirAll(abs, 0o755); err != nil {
 		return Result{}, err
 	}
-	tabulaDir := filepath.Join(abs, ".tabula")
-	if err := os.MkdirAll(tabulaDir, 0o755); err != nil {
+	taburaDir := filepath.Join(abs, ".tabura")
+	if err := os.MkdirAll(taburaDir, 0o755); err != nil {
 		return Result{}, err
 	}
 	paths := Paths{
 		ProjectDir:    abs,
 		AgentsPath:    filepath.Join(abs, "AGENTS.md"),
-		MCPConfigPath: filepath.Join(tabulaDir, "codex-mcp.toml"),
+		MCPConfigPath: filepath.Join(taburaDir, "codex-mcp.toml"),
 	}
 	agentsPreserved := true
 	if _, err := os.Stat(paths.AgentsPath); os.IsNotExist(err) {
 		agentsPreserved = false
 		_ = os.WriteFile(paths.AgentsPath, []byte(defaultAgents()), 0o644)
 	}
-	_ = os.WriteFile(filepath.Join(tabulaDir, "AGENTS.tabula.md"), []byte(defaultAgents()), 0o644)
-	_ = os.WriteFile(filepath.Join(tabulaDir, "prompt-injection.txt"), []byte("Apply these extra instructions in all Tabula Codex prompts for this project.\n"), 0o644)
-	_ = os.WriteFile(paths.MCPConfigPath, []byte(fmt.Sprintf("[mcp_servers.tabula]\ncommand = \"tabula\"\nargs = [\"mcp-server\", \"--project-dir\", \"%s\"]\n", strings.ReplaceAll(abs, "\\", "\\\\"))), 0o644)
+	_ = os.WriteFile(filepath.Join(taburaDir, "AGENTS.tabura.md"), []byte(defaultAgents()), 0o644)
+	_ = os.WriteFile(filepath.Join(taburaDir, "prompt-injection.txt"), []byte("Apply these extra instructions in all Tabura Codex prompts for this project.\n"), 0o644)
+	_ = os.WriteFile(paths.MCPConfigPath, []byte(fmt.Sprintf("[mcp_servers.tabura]\ncommand = \"tabura\"\nargs = [\"mcp-server\", \"--project-dir\", \"%s\"]\n", strings.ReplaceAll(abs, "\\", "\\\\"))), 0o644)
 	_ = ensureGitignore(abs)
 	gitInit := false
 	if _, err := os.Stat(filepath.Join(abs, ".git")); err == nil {
@@ -64,8 +64,8 @@ func ensureGitignore(projectDir string) error {
 	if b, err := os.ReadFile(gitignore); err == nil {
 		data = string(b)
 	}
-	want := ".tabula/artifacts/\n"
-	if strings.Contains(data, ".tabula/artifacts/") {
+	want := ".tabura/artifacts/\n"
+	if strings.Contains(data, ".tabura/artifacts/") {
 		return nil
 	}
 	if data != "" && !strings.HasSuffix(data, "\n") {

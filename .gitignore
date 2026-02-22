@@ -1,4 +1,4 @@
-.tabula/
+.tabura/
 node_modules/
 dist/
 build/
@@ -7,7 +7,7 @@ __pycache__/
 *.egg-info/
 .coverage
 
-.tabula/artifacts/
+.tabura/artifacts/
 playwright-report/
 test-results/
 tests/manual/

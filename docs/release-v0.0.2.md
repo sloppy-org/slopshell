@@ -27,5 +27,5 @@
 
 For publication metadata, associate this release with:
 - release label: `v0.0.2`
-- repository: `https://github.com/krystophny/tabula`
+- repository: `https://github.com/krystophny/tabura`
 - exact source revision: tag target commit hash

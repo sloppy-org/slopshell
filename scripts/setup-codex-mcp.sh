@@ -3,8 +3,8 @@ set -euo pipefail
 
 MCP_URL="${1:-http://127.0.0.1:9420/mcp}"
 CONFIG_PATH="${CODEX_CONFIG_PATH:-$HOME/.codex/config.toml}"
-MARKER_BEGIN="# BEGIN TABULA MCP"
-MARKER_END="# END TABULA MCP"
+MARKER_BEGIN="# BEGIN TABURA MCP"
+MARKER_END="# END TABURA MCP"
 
 mkdir -p "$(dirname "$CONFIG_PATH")"
 if [[ -f "$CONFIG_PATH" ]]; then
@@ -34,7 +34,7 @@ fi
     echo
   fi
   echo "$MARKER_BEGIN"
-  echo "[mcp_servers.tabula]"
+  echo "[mcp_servers.tabura]"
   printf 'url = "%s"\n' "$MCP_URL"
   echo "$MARKER_END"
   echo
@@ -42,4 +42,4 @@ fi
 
 mv "$TMP_OUT" "$CONFIG_PATH"
 echo "updated $CONFIG_PATH"
-echo "server key: mcp_servers.tabula"
+echo "server key: mcp_servers.tabura"

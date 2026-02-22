@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-REPORT_ROOT="${ROOT_DIR}/.tabula/artifacts/test-reports"
+REPORT_ROOT="${ROOT_DIR}/.tabura/artifacts/test-reports"
 COVERAGE_DIR="${REPORT_ROOT}/coverage/unit"
 E2E_DIR="${REPORT_ROOT}/e2e"
 
@@ -15,18 +15,18 @@ for cmd in go node npx; do
   fi
 done
 
-TABULA_PROFILE="${COVERAGE_DIR}/tabula.cover.out"
-TABULA_HTML="${COVERAGE_DIR}/tabula.html"
+TABURA_PROFILE="${COVERAGE_DIR}/tabura.cover.out"
+TABURA_HTML="${COVERAGE_DIR}/tabura.html"
 UNIT_INDEX="${COVERAGE_DIR}/index.html"
 UNIT_SUMMARY="${COVERAGE_DIR}/summary.txt"
 
-printf '\n[reports] Generating Tabula Go coverage...\n'
+printf '\n[reports] Generating Tabura Go coverage...\n'
 (
   cd "${ROOT_DIR}"
-  go test ./... -covermode=atomic -coverprofile="${TABULA_PROFILE}"
+  go test ./... -covermode=atomic -coverprofile="${TABURA_PROFILE}"
 )
-TABULA_TOTAL="$(go tool cover -func="${TABULA_PROFILE}" | awk '/^total:/ {print $3}')"
-go tool cover -html="${TABULA_PROFILE}" -o "${TABULA_HTML}"
+TABURA_TOTAL="$(go tool cover -func="${TABURA_PROFILE}" | awk '/^total:/ {print $3}')"
+go tool cover -html="${TABURA_PROFILE}" -o "${TABURA_HTML}"
 
 HELPY_DIR_DEFAULT="${ROOT_DIR}/../helpy"
 HELPY_DIR="${HELPY_DIR:-${HELPY_DIR_DEFAULT}}"
@@ -99,7 +99,7 @@ cat > "${UNIT_INDEX}" <<EOF_HTML
   <h1>Unit Coverage Reports</h1>
   <p>Generated at <code>$(date -u +"%Y-%m-%dT%H:%M:%SZ")</code></p>
   <ul>
-    <li>Tabula total coverage: <strong>${TABULA_TOTAL}</strong> - <a href="tabula.html">tabula.html</a></li>
+    <li>Tabura total coverage: <strong>${TABURA_TOTAL}</strong> - <a href="tabura.html">tabura.html</a></li>
     <li>Helpy total coverage: <strong>${HELPY_TOTAL}</strong> - ${HELPY_NOTE}</li>
   </ul>
   <p>See <a href="summary.txt">summary.txt</a> for text summary.</p>
@@ -111,9 +111,9 @@ cat > "${UNIT_SUMMARY}" <<EOF_SUMMARY
 Unit Coverage Summary
 Generated at: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
-Tabula total: ${TABULA_TOTAL}
-Tabula profile: ${TABULA_PROFILE}
-Tabula html: ${TABULA_HTML}
+Tabura total: ${TABURA_TOTAL}
+Tabura profile: ${TABURA_PROFILE}
+Tabura html: ${TABURA_HTML}
 
 Helpy total: ${HELPY_TOTAL}
 Helpy note: ${HELPY_NOTE}

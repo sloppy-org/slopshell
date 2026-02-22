@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/krystophny/tabula/internal/stt"
+	"github.com/krystophny/tabura/internal/stt"
 )
 
 const (
@@ -88,7 +88,7 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 		writeRPCResult(w, id, map[string]interface{}{
 			"protocolVersion": "2024-11-05",
 			"serverInfo": map[string]interface{}{
-				"name":    "tabula-voxtype-mcp",
+				"name":    "tabura-voxtype-mcp",
 				"version": "0.0.6-dev",
 			},
 			"capabilities": map[string]interface{}{

@@ -4,16 +4,16 @@ import "strings"
 
 func ProtocolBodyMarkdown() string {
 	var b strings.Builder
-	b.WriteString("## Tabula Codex Protocol\n\n")
-	b.WriteString("Use this protocol for Tabula interactive sessions in this project.\n\n")
-	b.WriteString("1. Read extra instructions from `.tabula/prompt-injection.txt` and apply them.\n")
-	b.WriteString("2. Keep generated render/output artifacts under `.tabula/artifacts`; keep editable source files in the project workspace (not under `.tabula/artifacts`).\n")
-	b.WriteString("3. Use MCP server `tabula` for all canvas operations; do not rely on filesystem event logs.\n")
+	b.WriteString("## Tabura Codex Protocol\n\n")
+	b.WriteString("Use this protocol for Tabura interactive sessions in this project.\n\n")
+	b.WriteString("1. Read extra instructions from `.tabura/prompt-injection.txt` and apply them.\n")
+	b.WriteString("2. Keep generated render/output artifacts under `.tabura/artifacts`; keep editable source files in the project workspace (not under `.tabura/artifacts`).\n")
+	b.WriteString("3. Use MCP server `tabura` for all canvas operations; do not rely on filesystem event logs.\n")
 	b.WriteString("4. MCP tools: ")
 	b.WriteString(MCPToolNamesCSV())
 	b.WriteString(".\n")
 	b.WriteString("5. Keep interaction chat-canvas-first in the web UI; do not depend on a terminal REPL.\n")
-	b.WriteString("6. Keep `.tabula/artifacts/` gitignored; do not commit files from it unless explicitly requested.\n")
+	b.WriteString("6. Keep `.tabura/artifacts/` gitignored; do not commit files from it unless explicitly requested.\n")
 	return b.String()
 }
 

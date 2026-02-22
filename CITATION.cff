@@ -1,5 +1,5 @@
 cff-version: 1.2.0
-title: tabula
+title: tabura
 message: If you use this software, please cite it using this metadata.
 type: software
 authors:
@@ -8,10 +8,10 @@ authors:
 license: MIT
 version: v0.0.6-dev
 date-released: 2026-02-22
-repository-code: https://github.com/krystophny/tabula
-url: https://github.com/krystophny/tabula
+repository-code: https://github.com/krystophny/tabura
+url: https://github.com/krystophny/tabura
 abstract: >-
-  Tabula is a local-first MCP canvas and review runtime that defines an
+  Tabura is a local-first MCP canvas and review runtime that defines an
   object-scoped intent interface with local invocation, mode-aware intent
   capture, explicit Accept/Edit/Reject controls, and commit-based review
   workflows, with integrated handoff protocol specs and schemas in-repo.

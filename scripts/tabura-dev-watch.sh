@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-INTERVAL="${TABULA_DEV_WATCH_INTERVAL:-0.7}"
+INTERVAL="${TABURA_DEV_WATCH_INTERVAL:-0.7}"
 
 snapshot_all() {
   (
@@ -24,7 +24,7 @@ needs_ptyd_restart() {
   local changed_file
   while IFS= read -r changed_file; do
     [[ -z "$changed_file" ]] && continue
-    if [[ "$changed_file" == internal/pty/* ]] || [[ "$changed_file" == internal/ptyd/* ]] || [[ "$changed_file" == deploy/systemd/user/tabula-ptyd.service ]]; then
+    if [[ "$changed_file" == internal/pty/* ]] || [[ "$changed_file" == internal/ptyd/* ]] || [[ "$changed_file" == deploy/systemd/user/tabura-ptyd.service ]]; then
       return 0
     fi
   done
@@ -50,9 +50,9 @@ while true; do
         | sort -u
     )"
     if needs_ptyd_restart <<<"$CHANGED_PATHS"; then
-      "$REPO_ROOT/scripts/tabula-dev-restart.sh" --include-ptyd
+      "$REPO_ROOT/scripts/tabura-dev-restart.sh" --include-ptyd
     else
-      "$REPO_ROOT/scripts/tabula-dev-restart.sh"
+      "$REPO_ROOT/scripts/tabura-dev-restart.sh"
     fi
     cp "$NEXT" "$PREV"
   fi

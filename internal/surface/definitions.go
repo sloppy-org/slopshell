@@ -3,8 +3,8 @@ package surface
 import "strings"
 
 const (
-	ProtocolBlockBeginMarker = "<!-- TABULA_PROTOCOL:BEGIN -->"
-	ProtocolBlockEndMarker   = "<!-- TABULA_PROTOCOL:END -->"
+	ProtocolBlockBeginMarker = "<!-- TABURA_PROTOCOL:BEGIN -->"
+	ProtocolBlockEndMarker   = "<!-- TABURA_PROTOCOL:END -->"
 )
 
 type Tool struct {

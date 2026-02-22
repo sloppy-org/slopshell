@@ -6,14 +6,18 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
-	"github.com/krystophny/tabula/internal/canvas"
-	"github.com/krystophny/tabula/internal/mcp"
-	"github.com/krystophny/tabula/internal/protocol"
-	"github.com/krystophny/tabula/internal/serve"
-	"github.com/krystophny/tabula/internal/voxtypemcp"
-	"github.com/krystophny/tabula/internal/web"
+	"golang.org/x/term"
+
+	"github.com/krystophny/tabura/internal/canvas"
+	"github.com/krystophny/tabura/internal/mcp"
+	"github.com/krystophny/tabura/internal/store"
+	"github.com/krystophny/tabura/internal/protocol"
+	"github.com/krystophny/tabura/internal/serve"
+	"github.com/krystophny/tabura/internal/voxtypemcp"
+	"github.com/krystophny/tabura/internal/web"
 	"github.com/pkg/browser"
 )
 
@@ -41,6 +45,8 @@ func run(args []string) int {
 		return cmdVoxTypeMCP(args[1:])
 	case "canvas":
 		return cmdCanvas(args[1:])
+	case "set-password":
+		return cmdSetPassword(args[1:])
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", args[0])
 		printHelp()
@@ -49,13 +55,13 @@ func run(args []string) int {
 }
 
 func printHelp() {
-	fmt.Println("tabula <command> [flags]")
-	fmt.Println("commands: canvas schema bootstrap mcp-server serve web voxtype-mcp")
+	fmt.Println("tabura <command> [flags]")
+	fmt.Println("commands: canvas schema bootstrap mcp-server serve web voxtype-mcp set-password")
 }
 
 func cmdSchema() int {
 	schema := map[string]interface{}{
-		"title": "TabulaCanvasEvent",
+		"title": "TaburaCanvasEvent",
 		"oneOf": []map[string]interface{}{
 			{"type": "object", "properties": map[string]interface{}{"kind": map[string]interface{}{"const": "text_artifact"}}},
 			{"type": "object", "properties": map[string]interface{}{"kind": map[string]interface{}{"const": "image_artifact"}}},
@@ -81,10 +87,10 @@ func cmdBootstrap(args []string) int {
 	}
 	fmt.Printf("project prepared: %s\n", res.Paths.ProjectDir)
 	fmt.Printf("agents protocol: %s\n", res.Paths.AgentsPath)
-	fmt.Printf("tabula sidecar protocol: %s\n", filepath.Join(res.Paths.ProjectDir, ".tabula", "AGENTS.tabula.md"))
+	fmt.Printf("tabura sidecar protocol: %s\n", filepath.Join(res.Paths.ProjectDir, ".tabura", "AGENTS.tabura.md"))
 	fmt.Printf("mcp config snippet: %s\n", res.Paths.MCPConfigPath)
 	if res.AgentsPreserved {
-		fmt.Println("existing AGENTS.md is preserved; tabula protocol is in sidecar")
+		fmt.Println("existing AGENTS.md is preserved; tabura protocol is in sidecar")
 	}
 	if res.GitInitialized {
 		fmt.Println("git initialized")
@@ -126,7 +132,7 @@ func cmdServe(args []string) int {
 	}
 	if !*headless && !*noCanvas {
 		if os.Getenv("DISPLAY") == "" && os.Getenv("WAYLAND_DISPLAY") == "" {
-			fmt.Fprintln(os.Stderr, "warning: no DISPLAY/WAYLAND_DISPLAY detected; tabula serve will run headless")
+			fmt.Fprintln(os.Stderr, "warning: no DISPLAY/WAYLAND_DISPLAY detected; tabura serve will run headless")
 		}
 	}
 	app := serve.NewApp(res.Paths.ProjectDir, *headless || *noCanvas)
@@ -139,12 +145,13 @@ func cmdServe(args []string) int {
 
 func cmdWeb(args []string) int {
 	fs := flag.NewFlagSet("web", flag.ContinueOnError)
-	dataDir := fs.String("data-dir", filepath.Join(os.Getenv("HOME"), ".tabula-web"), "data dir")
-	projectDir := fs.String("project-dir", ".", "local project dir for tabula serve")
+	dataDir := fs.String("data-dir", filepath.Join(os.Getenv("HOME"), ".tabura-web"), "data dir")
+	projectDir := fs.String("project-dir", ".", "local project dir for tabura serve")
 	host := fs.String("host", web.DefaultHost, "host")
 	port := fs.Int("port", web.DefaultPort, "port")
 	localMCPURL := fs.String("local-mcp-url", "", "external local MCP URL")
 	appServerURL := fs.String("app-server-url", web.DefaultAppServerURL, "Codex app-server websocket URL")
+	model := fs.String("model", "", "LLM model for chat (default: env TABURA_APP_SERVER_MODEL or "+web.DefaultModel+")")
 	devRuntime := fs.Bool("dev-runtime", false, "dev runtime endpoint")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -154,7 +161,7 @@ func cmdWeb(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	app, err := web.New(*dataDir, res.Paths.ProjectDir, *localMCPURL, *appServerURL, *devRuntime)
+	app, err := web.New(*dataDir, res.Paths.ProjectDir, *localMCPURL, *appServerURL, *model, *devRuntime)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -185,7 +192,7 @@ func cmdCanvas(args []string) int {
 	fs := flag.NewFlagSet("canvas", flag.ContinueOnError)
 	host := fs.String("host", "127.0.0.1", "host")
 	port := fs.Int("port", 8420, "port")
-	dataDir := fs.String("data-dir", filepath.Join(os.Getenv("HOME"), ".tabula-web"), "data dir")
+	dataDir := fs.String("data-dir", filepath.Join(os.Getenv("HOME"), ".tabura-web"), "data dir")
 	projectDir := fs.String("project-dir", ".", "project dir")
 	noOpen := fs.Bool("no-open", false, "do not open browser")
 	if err := fs.Parse(args); err != nil {
@@ -196,7 +203,7 @@ func cmdCanvas(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	app, err := web.New(*dataDir, res.Paths.ProjectDir, "", web.DefaultAppServerURL, false)
+	app, err := web.New(*dataDir, res.Paths.ProjectDir, "", web.DefaultAppServerURL, "", false)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -211,5 +218,39 @@ func cmdCanvas(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
+	return 0
+}
+
+func cmdSetPassword(args []string) int {
+	fs := flag.NewFlagSet("set-password", flag.ContinueOnError)
+	dataDir := fs.String("data-dir", filepath.Join(os.Getenv("HOME"), ".local/share/tabura-web"), "data dir")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	dbPath := filepath.Join(*dataDir, "tabura.db")
+	s, err := store.New(dbPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "open store %s: %v\n", dbPath, err)
+		return 1
+	}
+	defer s.Close()
+	var pw []byte
+	if term.IsTerminal(int(os.Stdin.Fd())) {
+		fmt.Fprint(os.Stderr, "Enter password: ")
+		pw, err = term.ReadPassword(int(os.Stdin.Fd()))
+		fmt.Fprintln(os.Stderr)
+	} else {
+		pw, err = os.ReadFile("/dev/stdin")
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "read password: %v\n", err)
+		return 1
+	}
+	pw = []byte(strings.TrimRight(string(pw), "\n\r"))
+	if err := s.SetAdminPassword(string(pw)); err != nil {
+		fmt.Fprintf(os.Stderr, "set password: %v\n", err)
+		return 1
+	}
+	fmt.Println("Password set.")
 	return 0
 }

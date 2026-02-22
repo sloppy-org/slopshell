@@ -1,6 +1,6 @@
 # Integrated Handoff Protocol Spec
 
-This directory carries the handoff protocol specification and conformance assets as part of the Tabula publication set.
+This directory carries the handoff protocol specification and conformance assets as part of the Tabura publication set.
 
 Primary goals:
 - keep the object-scoped UI paradigm as the top-level product framing

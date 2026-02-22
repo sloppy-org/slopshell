@@ -9,11 +9,11 @@ Do not scan source/docs unless the command fails.
 
 Use one of:
 
-- Browser URL when `tabula web` is already running: `http://localhost:8420/canvas`
+- Browser URL when `tabura web` is already running: `http://localhost:8420/canvas`
 - Equivalent URL: `http://localhost:8420/?desktop=1`
-- CLI launcher: `tabula canvas`
+- CLI launcher: `tabura canvas`
 
-`tabula canvas` starts web UI and opens desktop canvas route.
+`tabura canvas` starts web UI and opens desktop canvas route.
 
 ## Post-Adjustment Artifact Rule
 
@@ -23,22 +23,22 @@ After making a UI/interaction adjustment, always render a new test artifact in t
 
 Main units:
 
-- `tabula-web.service`
-- `tabula-mcp.service`
-- `tabula-codex-app-server.service`
-- `tabula-voxtype-mcp.service`
+- `tabura-web.service`
+- `tabura-mcp.service`
+- `tabura-codex-app-server.service`
+- `tabura-voxtype-mcp.service`
 - `helpy-mcp.service`
 
 Status:
 
 ```bash
-systemctl --user status tabula-web.service tabula-mcp.service tabula-codex-app-server.service tabula-voxtype-mcp.service helpy-mcp.service --no-pager -n 40
+systemctl --user status tabura-web.service tabura-mcp.service tabura-codex-app-server.service tabura-voxtype-mcp.service helpy-mcp.service --no-pager -n 40
 ```
 
 Restart all integration services:
 
 ```bash
-systemctl --user restart helpy-mcp.service tabula-codex-app-server.service tabula-mcp.service tabula-voxtype-mcp.service tabula-web.service
+systemctl --user restart helpy-mcp.service tabura-codex-app-server.service tabura-mcp.service tabura-voxtype-mcp.service tabura-web.service
 ```
 
 ## Handoff-First UI Testing Rule
@@ -47,15 +47,15 @@ When testing mail/file workflows intended for canvas UI:
 
 - Do not dump artifact payloads into terminal/chat.
 - Create a producer handoff in Helpy (`handoff.create`).
-- Import handoff into Tabula (`canvas_import_handoff`).
+- Import handoff into Tabura (`canvas_import_handoff`).
 - Test archive/delete/defer actions in the browser UI.
 
 Default local session and URLs:
 
-- Tabula MCP: `http://127.0.0.1:9420/mcp`
+- Tabura MCP: `http://127.0.0.1:9420/mcp`
 - Helpy MCP: `http://127.0.0.1:8090/mcp`
 - Codex App Server: `ws://127.0.0.1:8787`
-- Tabula session id: `local`
+- Tabura session id: `local`
 
 ## Handoff Example: Archive Folder (20 Headers)
 
@@ -86,11 +86,11 @@ curl -sS -X POST "$TAB" -H 'content-type: application/json' \
 Use this exact sequence:
 
 ```bash
-TMP_ROOT="$(mktemp -d -t tabula-web-XXXXXX)"
+TMP_ROOT="$(mktemp -d -t tabura-web-XXXXXX)"
 PROJECT_DIR="$TMP_ROOT/project"
 DATA_DIR="$TMP_ROOT/data"
 LOG_FILE="$TMP_ROOT/web.log"
-nohup go run ./cmd/tabula web \
+nohup go run ./cmd/tabura web \
   --project-dir "$PROJECT_DIR" \
   --data-dir "$DATA_DIR" \
   --host 127.0.0.1 \

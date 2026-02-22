@@ -21,10 +21,11 @@ type Client struct {
 }
 
 type PromptRequest struct {
-	CWD     string
-	Prompt  string
-	Model   string
-	Timeout time.Duration
+	CWD       string
+	Prompt    string
+	Model     string        // thread-level default model
+	TurnModel string        // per-turn model override (sent in turn/start if set)
+	Timeout   time.Duration
 }
 
 type PromptResponse struct {
@@ -146,8 +147,8 @@ func (c *Client) SendPromptStream(ctx context.Context, req PromptRequest, onEven
 		"method":  "initialize",
 		"params": map[string]interface{}{
 			"clientInfo": map[string]interface{}{
-				"name":    "tabula-web",
-				"title":   "Tabula Web",
+				"name":    "tabura-web",
+				"title":   "Tabura Web",
 				"version": "0.0.6-dev",
 			},
 			"capabilities": map[string]interface{}{
@@ -199,18 +200,22 @@ func (c *Client) SendPromptStream(ctx context.Context, req PromptRequest, onEven
 		onEvent(StreamEvent{Type: "thread_started", ThreadID: threadID})
 	}
 
+	turnParams := map[string]interface{}{
+		"threadId": threadID,
+		"input": []map[string]interface{}{{
+			"type":          "text",
+			"text":          prompt,
+			"text_elements": []interface{}{},
+		}},
+	}
+	if strings.TrimSpace(req.TurnModel) != "" {
+		turnParams["model"] = strings.TrimSpace(req.TurnModel)
+	}
 	if err := c.writeJSON(ctx, conn, map[string]interface{}{
 		"jsonrpc": "2.0",
 		"id":      3,
 		"method":  "turn/start",
-		"params": map[string]interface{}{
-			"threadId": threadID,
-			"input": []map[string]interface{}{{
-				"type":          "text",
-				"text":          prompt,
-				"text_elements": []interface{}{},
-			}},
-		},
+		"params":  turnParams,
 	}); err != nil {
 		return nil, contextErr(ctx, err)
 	}
