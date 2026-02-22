@@ -20,18 +20,14 @@ import (
 const (
 	maxSessionAudioBytes   = 10 * 1024 * 1024
 	defaultRequestID       = 1
-	defaultCaptureMode     = "daemon"
 	defaultSessionMimeType = "audio/webm"
 )
 
 type sessionState struct {
-	MimeType        string
-	CaptureBackend  string
-	TranscriptPath  string
-	StartedAt       time.Time
-	LastSeq         int
-	Bytes           []byte
-	IgnoredChunkSum int
+	MimeType  string
+	StartedAt time.Time
+	LastSeq   int
+	Bytes     []byte
 }
 
 type Server struct {
@@ -95,7 +91,7 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 			"protocolVersion": "2024-11-05",
 			"serverInfo": map[string]interface{}{
 				"name":    "tabula-voxtype-mcp",
-				"version": "0.0.5",
+				"version": "0.0.6-dev",
 			},
 			"capabilities": map[string]interface{}{
 				"tools": map[string]interface{}{},
@@ -212,17 +208,6 @@ func intArg(args map[string]interface{}, key string, def int) int {
 	return def
 }
 
-func resolveCaptureMode(raw string) string {
-	mode := strings.ToLower(strings.TrimSpace(raw))
-	if mode == "" {
-		mode = strings.ToLower(strings.TrimSpace(os.Getenv("TABULA_VOXTYPE_MCP_CAPTURE_MODE")))
-	}
-	if mode == "daemon" || mode == "buffered" {
-		return mode
-	}
-	return defaultCaptureMode
-}
-
 func (s *Server) toolStart(args map[string]interface{}) (map[string]interface{}, error) {
 	sid := strArg(args, "session_id")
 	if sid == "" {
@@ -232,45 +217,25 @@ func (s *Server) toolStart(args map[string]interface{}) (map[string]interface{},
 	if mimeType == "" {
 		mimeType = defaultSessionMimeType
 	}
-	requestedModeRaw := strArg(args, "capture_mode")
-	captureMode := resolveCaptureMode(requestedModeRaw)
 
 	state := &sessionState{
-		MimeType:       mimeType,
-		CaptureBackend: "buffered",
-		StartedAt:      time.Now().UTC(),
-		LastSeq:        -1,
-		Bytes:          make([]byte, 0, 4096),
-	}
-
-	if captureMode == "daemon" {
-		transcriptPath := makeSessionTranscriptPath(sid)
-		startErr := voxtypeRecordStart(transcriptPath)
-		if startErr == nil {
-			state.CaptureBackend = "daemon"
-			state.TranscriptPath = transcriptPath
-			state.Bytes = nil
-		} else if strings.EqualFold(strings.TrimSpace(requestedModeRaw), "daemon") {
-			return nil, fmt.Errorf("failed to start voxtype daemon capture: %w", startErr)
-		}
+		MimeType:  mimeType,
+		StartedAt: time.Now().UTC(),
+		LastSeq:   -1,
+		Bytes:     make([]byte, 0, 4096),
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, exists := s.sessions[sid]; exists {
-		if state.CaptureBackend == "daemon" {
-			_ = voxtypeRecordCancel()
-			_ = os.Remove(state.TranscriptPath)
-		}
 		return nil, fmt.Errorf("session %q already exists", sid)
 	}
 	s.sessions[sid] = state
 
 	return map[string]interface{}{
-		"ok":              true,
-		"session_id":      sid,
-		"started_at":      state.StartedAt.Format(time.RFC3339Nano),
-		"capture_backend": state.CaptureBackend,
+		"ok":         true,
+		"session_id": sid,
+		"started_at": state.StartedAt.Format(time.RFC3339Nano),
 	}, nil
 }
 
@@ -306,27 +271,15 @@ func (s *Server) toolAppend(args map[string]interface{}) (map[string]interface{}
 	}
 	state.LastSeq = seq
 
-	if state.CaptureBackend == "daemon" {
-		state.IgnoredChunkSum += len(chunk)
-		return map[string]interface{}{
-			"ok":              true,
-			"session_id":      sid,
-			"received_seq":    seq,
-			"capture_backend": state.CaptureBackend,
-			"ignored_bytes":   state.IgnoredChunkSum,
-		}, nil
-	}
-
 	if len(state.Bytes)+len(chunk) > maxSessionAudioBytes {
 		return nil, errors.New("audio payload exceeds max size")
 	}
 	state.Bytes = append(state.Bytes, chunk...)
 	return map[string]interface{}{
-		"ok":              true,
-		"session_id":      sid,
-		"received_seq":    seq,
-		"capture_backend": state.CaptureBackend,
-		"buffered_bytes":  len(state.Bytes),
+		"ok":             true,
+		"session_id":     sid,
+		"received_seq":   seq,
+		"buffered_bytes": len(state.Bytes),
 	}, nil
 }
 
@@ -345,31 +298,10 @@ func (s *Server) toolStop(args map[string]interface{}) (map[string]interface{}, 
 		return nil, fmt.Errorf("session %q not found", sid)
 	}
 
-	start := time.Now()
-	if state.CaptureBackend == "daemon" {
-		text, err := voxtypeRecordStopAndRead(state.TranscriptPath)
-		if err != nil {
-			return nil, err
-		}
-		text = strings.TrimSpace(text)
-		if text == "" {
-			return nil, errors.New("voxtype returned empty transcript")
-		}
-		return map[string]interface{}{
-			"ok":                   true,
-			"session_id":           sid,
-			"text":                 text,
-			"language":             "",
-			"language_probability": 0.0,
-			"source":               "voxtype_mcp",
-			"capture_backend":      state.CaptureBackend,
-			"duration_ms":          time.Since(start).Milliseconds(),
-		}, nil
-	}
-
 	if len(state.Bytes) == 0 {
 		return nil, errors.New("no buffered audio for session")
 	}
+	start := time.Now()
 	text, err := transcribeWithVoxType(state.MimeType, state.Bytes)
 	if err != nil {
 		return nil, err
@@ -385,7 +317,6 @@ func (s *Server) toolStop(args map[string]interface{}) (map[string]interface{}, 
 		"language":             "",
 		"language_probability": 0.0,
 		"source":               "voxtype_mcp",
-		"capture_backend":      state.CaptureBackend,
 		"duration_ms":          time.Since(start).Milliseconds(),
 	}, nil
 }
@@ -396,47 +327,23 @@ func (s *Server) toolCancel(args map[string]interface{}) (map[string]interface{}
 		return nil, errors.New("session_id is required")
 	}
 	s.mu.Lock()
-	state := s.sessions[sid]
 	_, existed := s.sessions[sid]
 	delete(s.sessions, sid)
 	s.mu.Unlock()
 
-	backend := ""
-	if state != nil {
-		backend = state.CaptureBackend
-		if state.CaptureBackend == "daemon" {
-			_ = voxtypeRecordCancel()
-			if state.TranscriptPath != "" {
-				_ = os.Remove(state.TranscriptPath)
-			}
-		}
-	}
 	return map[string]interface{}{
-		"ok":              true,
-		"session_id":      sid,
-		"canceled":        existed,
-		"capture_backend": backend,
+		"ok":         true,
+		"session_id": sid,
+		"canceled":   existed,
 	}, nil
 }
 
 func (s *Server) toolHealth() (map[string]interface{}, error) {
-	captureMode := resolveCaptureMode("")
 	ffmpegPath, ffmpegErr := exec.LookPath("ffmpeg")
 	voxtypePath, voxtypeErr := exec.LookPath("voxtype")
-	daemonOK, daemonRaw, daemonErr := voxtypeDaemonHealth()
-
-	ok := false
-	switch captureMode {
-	case "daemon":
-		ok = voxtypeErr == nil && daemonOK
-	default:
-		ok = ffmpegErr == nil && voxtypeErr == nil
-	}
 
 	return map[string]interface{}{
-		"ok":           ok,
-		"capture_mode": captureMode,
-		"default_mode": defaultCaptureMode,
+		"ok": ffmpegErr == nil && voxtypeErr == nil,
 		"dependencies": map[string]interface{}{
 			"ffmpeg": map[string]interface{}{
 				"ok":   ffmpegErr == nil,
@@ -446,151 +353,8 @@ func (s *Server) toolHealth() (map[string]interface{}, error) {
 				"ok":   voxtypeErr == nil,
 				"path": voxtypePath,
 			},
-			"voxtype_daemon": map[string]interface{}{
-				"ok":     daemonOK,
-				"detail": strings.TrimSpace(daemonRaw),
-				"error":  errString(daemonErr),
-			},
 		},
 	}, nil
-}
-
-func errString(err error) string {
-	if err == nil {
-		return ""
-	}
-	return err.Error()
-}
-
-func voxtypeDaemonHealth() (bool, string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "voxtype", "status", "--format", "json")
-	out, err := cmd.CombinedOutput()
-	raw := strings.TrimSpace(string(out))
-	if err != nil {
-		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return false, raw, errors.New("voxtype status timed out")
-		}
-		return false, raw, err
-	}
-	if raw == "" {
-		return false, raw, errors.New("empty voxtype status response")
-	}
-	var payload map[string]interface{}
-	if json.Unmarshal(out, &payload) == nil {
-		alt := strings.ToLower(strings.TrimSpace(fmt.Sprint(payload["alt"])))
-		if alt == "" || alt == "<nil>" {
-			return true, raw, nil
-		}
-		return alt != "offline" && alt != "stopped" && alt != "error", raw, nil
-	}
-	return true, raw, nil
-}
-
-func voxtypeRecordStart(transcriptPath string) error {
-	if strings.TrimSpace(transcriptPath) == "" {
-		return errors.New("transcript path is required")
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "voxtype", "record", "start", "--file="+transcriptPath)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return errors.New("voxtype record start timed out")
-		}
-		return fmt.Errorf("voxtype record start failed: %v: %s", err, strings.TrimSpace(string(out)))
-	}
-	return nil
-}
-
-func voxtypeRecordStopAndRead(transcriptPath string) (string, error) {
-	if strings.TrimSpace(transcriptPath) == "" {
-		return "", errors.New("missing transcript path")
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "voxtype", "record", "stop")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return "", errors.New("voxtype record stop timed out")
-		}
-		return "", fmt.Errorf("voxtype record stop failed: %v: %s", err, strings.TrimSpace(string(out)))
-	}
-	text, readErr := readTranscriptWithRetry(transcriptPath, 4*time.Second)
-	_ = os.Remove(transcriptPath)
-	if readErr != nil {
-		return "", fmt.Errorf("failed to read voxtype transcript file: %w", readErr)
-	}
-	return text, nil
-}
-
-func voxtypeRecordCancel() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "voxtype", "record", "cancel")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return errors.New("voxtype record cancel timed out")
-		}
-		return fmt.Errorf("voxtype record cancel failed: %v: %s", err, strings.TrimSpace(string(out)))
-	}
-	return nil
-}
-
-func readTranscriptWithRetry(path string, timeout time.Duration) (string, error) {
-	deadline := time.Now().Add(timeout)
-	for {
-		data, err := os.ReadFile(path)
-		if err == nil {
-			text := strings.TrimSpace(string(data))
-			if text != "" {
-				return text, nil
-			}
-		}
-		if time.Now().After(deadline) {
-			if err != nil {
-				return "", err
-			}
-			return "", errors.New("transcript file was empty")
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-}
-
-func makeSessionTranscriptPath(sessionID string) string {
-	safe := sanitizeSessionID(sessionID)
-	if safe == "" {
-		safe = "session"
-	}
-	name := fmt.Sprintf("tabula-voxtype-%s-%d.txt", safe, time.Now().UnixNano())
-	return filepath.Join(os.TempDir(), name)
-}
-
-func sanitizeSessionID(raw string) string {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return ""
-	}
-	var b strings.Builder
-	for _, r := range raw {
-		switch {
-		case r >= 'a' && r <= 'z':
-			b.WriteRune(r)
-		case r >= 'A' && r <= 'Z':
-			b.WriteRune(r + ('a' - 'A'))
-		case r >= '0' && r <= '9':
-			b.WriteRune(r)
-		case r == '-' || r == '_':
-			b.WriteRune(r)
-		default:
-			b.WriteRune('-')
-		}
-	}
-	return strings.Trim(strings.TrimSpace(b.String()), "-")
 }
 
 func transcribeWithVoxType(mimeType string, data []byte) (string, error) {

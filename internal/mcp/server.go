@@ -24,7 +24,7 @@ import (
 
 const (
 	ServerName            = "tabula"
-	ServerVersion         = "0.0.5"
+	ServerVersion         = "0.0.6-dev"
 	LatestProtocolVersion = "2025-03-26"
 	defaultProducerMCPURL = "http://127.0.0.1:8090/mcp"
 	handoffKindFile       = "file"

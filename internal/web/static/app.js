@@ -431,7 +431,6 @@ async function beginChatVoiceCapture() {
     appendSeq: 0,
     appendChain: Promise.resolve(),
     appendError: '',
-    captureBackend: '',
     mediaStream: null,
     mediaRecorder: null,
   };
@@ -443,10 +442,6 @@ async function beginChatVoiceCapture() {
       mime_type: 'audio/webm',
     });
     capture.active = true;
-    capture.captureBackend = String(startResp?.capture_backend || '').trim().toLowerCase() || 'buffered';
-    if (capture.captureBackend === 'daemon') {
-      return;
-    }
     if (!canUseMicrophoneCapture()) {
       throw new Error('Microphone capture is unavailable in this browser.');
     }

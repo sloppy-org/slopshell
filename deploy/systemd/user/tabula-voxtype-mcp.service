@@ -1,7 +1,6 @@
 [Unit]
 Description=Tabula VoxType MCP Bridge
-After=network.target voxtype.service
-Wants=voxtype.service
+After=network.target
 
 [Service]
 Type=simple
@@ -9,7 +8,6 @@ WorkingDirectory=%h/code/assi/tabula
 PassEnvironment=DISPLAY WAYLAND_DISPLAY XAUTHORITY XDG_RUNTIME_DIR DBUS_SESSION_BUS_ADDRESS
 Environment=HOME=%h
 Environment=SHELL=/usr/bin/bash
-Environment=TABULA_VOXTYPE_MCP_CAPTURE_MODE=daemon
 ExecStart=/usr/bin/bash -lc 'source ~/.bashrc >/dev/null 2>&1 || true; cd %h/code/assi/tabula; exec /usr/bin/env go run ./cmd/tabula voxtype-mcp --bind 127.0.0.1 --port 8091'
 Restart=on-failure
 RestartSec=2

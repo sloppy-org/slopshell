@@ -1695,7 +1695,6 @@ function createDefaultMailRecordingState() {
     mediaStream: null,
     chunks: [],
     mimeType: 'audio/webm',
-    captureBackend: '',
     sttSessionID: '',
     appendSeq: 0,
     appendChain: Promise.resolve(),
@@ -1881,7 +1880,6 @@ function stopMailRecordingMedia(recording) {
   recording.mediaRecorder = null;
   recording.mediaStream = null;
   recording.chunks = [];
-  recording.captureBackend = '';
   recording.sttSessionID = '';
   recording.appendSeq = 0;
   recording.appendChain = Promise.resolve();
@@ -1921,20 +1919,14 @@ async function startMailRecordingMediaCapture(context, token) {
   recording.mediaRecorder = null;
   recording.chunks = [];
   recording.mimeType = 'audio/webm';
-  recording.captureBackend = '';
   recording.sttSessionID = createPushToPromptSessionID();
   recording.appendSeq = 0;
   recording.appendChain = Promise.resolve();
   recording.appendError = '';
-  const startResp = await callPushToPromptAction(context, sttActionStart, {
+  await callPushToPromptAction(context, sttActionStart, {
     session_id: recording.sttSessionID,
     mime_type: recording.mimeType,
   });
-  const captureBackend = String(startResp?.capture_backend || '').trim().toLowerCase();
-  recording.captureBackend = captureBackend || 'buffered';
-  if (recording.captureBackend === 'daemon') {
-    return;
-  }
   if (!window.MediaRecorder || !navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
     throw new Error('Microphone capture is unavailable in this browser.');
   }
@@ -2031,34 +2023,24 @@ async function transcribePendingDraftPrompt(context, token) {
   try {
     await (recording.startPromise || Promise.resolve());
     let stt = null;
-    if (recording.captureBackend === 'daemon') {
-      if (!recording.sttSessionID) {
-        throw new Error('No active Push To Prompt session.');
-      }
-      stt = await callPushToPromptAction(context, sttActionStop, {
-        session_id: recording.sttSessionID,
-      });
-      stopMailRecordingMedia(recording);
-    } else {
-      const audioBlob = await stopMailRecordingMediaAndCollectBlob(context, token);
-      if (!audioBlob || audioBlob.size <= 0) {
-        throw new Error('No audio captured. Hold to record and try again.');
-      }
-      try {
-        if (recording.sttSessionID) {
-          await (recording.appendChain || Promise.resolve());
-          if (recording.appendError) {
-            throw new Error(recording.appendError);
-          }
-          stt = await callPushToPromptAction(context, sttActionStop, {
-            session_id: recording.sttSessionID,
-          });
-        } else {
-          stt = await callMailSTT(context, audioBlob);
+    const audioBlob = await stopMailRecordingMediaAndCollectBlob(context, token);
+    if (!audioBlob || audioBlob.size <= 0) {
+      throw new Error('No audio captured. Hold to record and try again.');
+    }
+    try {
+      if (recording.sttSessionID) {
+        await (recording.appendChain || Promise.resolve());
+        if (recording.appendError) {
+          throw new Error(recording.appendError);
         }
-      } catch (stopErr) {
+        stt = await callPushToPromptAction(context, sttActionStop, {
+          session_id: recording.sttSessionID,
+        });
+      } else {
         stt = await callMailSTT(context, audioBlob);
       }
+    } catch (stopErr) {
+      stt = await callMailSTT(context, audioBlob);
     }
     const transcript = String(stt?.text || '').trim();
     if (!transcript) {
@@ -3693,7 +3675,6 @@ function setupTextSelection(eventId) {
     appendSeq: 0,
     appendChain: Promise.resolve(),
     appendError: '',
-    captureBackend: '',
   });
 
   const stopReviewVoiceMedia = (capture) => {
@@ -3802,16 +3783,10 @@ function setupTextSelection(eventId) {
     capture.appendSeq = 0;
     capture.appendChain = Promise.resolve();
     capture.appendError = '';
-    capture.captureBackend = '';
-    const startResp = await callPushToPromptAction(null, sttActionStart, {
+    await callPushToPromptAction(null, sttActionStart, {
       session_id: capture.sttSessionID,
       mime_type: 'audio/webm',
     });
-    const captureBackend = String(startResp?.capture_backend || '').trim().toLowerCase();
-    capture.captureBackend = captureBackend || 'buffered';
-    if (capture.captureBackend === 'daemon') {
-      return;
-    }
     if (!canUseReviewVoiceCapture()) {
       throw new Error('Microphone capture is unavailable in this browser.');
     }

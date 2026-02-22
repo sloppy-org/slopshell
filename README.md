@@ -71,7 +71,7 @@ Tabula uses the term **Push To Prompt** (coined in this project) for voice-drive
 In `v0.0.5`, STT is routed through VoxType MCP (`/api/stt/push-to-prompt`) and no Helpy STT provider is used by Tabula.
 
 For always-on local usage, run the user `systemd` bridge service `tabula-voxtype-mcp.service`.
-It is configured to prefer daemon-backed capture mode and talks to the already-running `voxtype.service` daemon.
+It bridges browser audio capture to the `voxtype` transcription CLI.
 
 ## Markdown LaTeX Rendering
 

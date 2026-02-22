@@ -110,6 +110,24 @@ Stop command:
 kill "$PID"
 ```
 
+## Version Bump Policy
+
+Development uses `-dev` suffix: after releasing `v0.0.5`, immediately bump to `v0.0.6-dev`. On release, strip the suffix.
+
+Workflow:
+1. After release: `scripts/bump-version.sh v0.0.X-dev` (next version with -dev)
+2. Develop on `-dev` version (all commits during development carry this)
+3. To release: `scripts/bump-version.sh v0.0.X` (strip -dev suffix)
+4. Create `docs/release-v0.0.X.md`, update README.md and docs/spec-index.md release links
+5. Tag and push: `git tag v0.0.X && git push origin v0.0.X`
+6. Immediately after: `scripts/bump-version.sh v0.0.Y-dev` (next cycle)
+
+The bump script updates: `.zenodo.json`, `CITATION.cff`, `internal/mcp/server.go`, `internal/web/server.go`, `internal/appserver/client.go`, `internal/voxtypemcp/server.go`.
+
+A pre-commit hook (`scripts/check-version-consistency.sh`) blocks commits when version strings are inconsistent.
+
+Never edit historical release notes. They document what happened in that release. Document new changes in a new release file.
+
 ## Cross-Repo Protocol
 
 The generic handoff protocol is maintained in:

@@ -6,8 +6,8 @@ authors:
   - family-names: Albert
     given-names: Christopher
 license: MIT
-version: v0.0.3
-date-released: 2026-02-21
+version: v0.0.6-dev
+date-released: 2026-02-22
 repository-code: https://github.com/krystophny/tabula
 url: https://github.com/krystophny/tabula
 abstract: >-
