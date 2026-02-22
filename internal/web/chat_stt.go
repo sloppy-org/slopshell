@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"strings"
-	"time"
 
 	"github.com/krystophny/tabura/internal/stt"
 )
@@ -30,7 +29,6 @@ func handleSTTStart(conn *chatWSConn, mimeType string) {
 	conn.sttActive = true
 	conn.sttMimeType = mimeType
 	conn.sttBuf = make([]byte, 0, 4096)
-	conn.sttStarted = time.Now()
 
 	_ = conn.writeJSON(sttMessage{Type: "stt_started"})
 }
@@ -61,13 +59,10 @@ func handleSTTStop(conn *chatWSConn) {
 	conn.sttActive = false
 	buf := conn.sttBuf
 	mimeType := conn.sttMimeType
-	started := conn.sttStarted
 	conn.sttBuf = nil
 	conn.sttMimeType = ""
 	conn.sttMu.Unlock()
-
-	elapsed := time.Since(started)
-	if len(buf) < 1024 || elapsed < 500*time.Millisecond {
+	if len(buf) < 1024 {
 		_ = conn.writeJSON(sttMessage{Type: "stt_error", Error: "recording too short"})
 		return
 	}

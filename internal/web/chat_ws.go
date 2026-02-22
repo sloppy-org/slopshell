@@ -2,7 +2,6 @@ package web
 
 import (
 	"sync"
-	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -14,7 +13,6 @@ type chatWSConn struct {
 	sttActive   bool
 	sttMimeType string
 	sttBuf      []byte
-	sttStarted  time.Time
 }
 
 func newChatWSConn(conn *websocket.Conn) *chatWSConn {
