@@ -3766,7 +3766,6 @@ function setupTextSelection(eventId) {
     if (activeTextEventId !== eventId) return;
     if (e.text.classList.contains('mail-artifact')) return;
     if (!isTouch && ev.button !== 0) return;
-    if (isTouch) ev.preventDefault();
     const target = ev.target;
     if (isInteractiveTarget(target)) return;
     const selection = window.getSelection();
@@ -3826,6 +3825,7 @@ function setupTextSelection(eventId) {
   const onReviewLPTouchStart = (ev) => onReviewLongPressStart(ev, true);
   const onReviewLPTouchEnd = (ev) => {
     if (reviewLongPressIsTouch) onReviewLongPressEnd(ev);
+    reviewLongPressIsTouch = false;
   };
   const onReviewLPTouchMove = (ev) => {
     if (reviewLongPressIsTouch) onReviewLongPressMove(ev);
