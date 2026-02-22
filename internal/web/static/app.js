@@ -1318,7 +1318,6 @@ async function switchProject(projectID) {
   clearChatHistory();
   clearCanvas();
   state.artifactTabs = [];
-  state.dismissedArtifactIds.clear();
   renderTabBar();
   switchPane('chat');
   resetAssistantTurnTracking({ clearError: true });
