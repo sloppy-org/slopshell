@@ -3939,6 +3939,11 @@ function setupTextSelection(eventId) {
     ev.preventDefault();
     ev.stopPropagation();
     const activeCapture = e.text._reviewVoiceCapture;
+    // On touch devices, a native contextmenu can fire as part of the long-press
+    // gesture; keep the custom long-press annotation capture alive in that case.
+    if (activeCapture && activeCapture.source === 'long_press') {
+      return;
+    }
     if (activeCapture) {
       activeCapture.cancelled = true;
       cleanupReviewVoiceCapture(activeCapture, true);
