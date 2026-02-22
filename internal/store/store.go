@@ -802,10 +802,6 @@ func (s *Store) ResetChatSessionThread(sessionID string) error {
 	return err
 }
 
-func (s *Store) DeleteChatMessagesBefore(sessionID string, beforeID int64) error {
-	_, err := s.db.Exec("DELETE FROM chat_messages WHERE session_id = ? AND id < ?", sessionID, beforeID)
-	return err
-}
 
 func (s *Store) AddChatEvent(sessionID, turnID, eventType, payloadJSON string) error {
 	_, err := s.db.Exec(
