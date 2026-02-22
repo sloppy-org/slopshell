@@ -3125,12 +3125,18 @@ function setupMailRecordingHandlers(eventId, context) {
   if (e.text._mailRecordingClickHandler) {
     e.text.removeEventListener('click', e.text._mailRecordingClickHandler);
   }
-  if (e.text._mailRecordingPointerDownHandler) {
-    e.text.removeEventListener('pointerdown', e.text._mailRecordingPointerDownHandler);
+  if (e.text._mailRecordingTouchStartHandler) {
+    e.text.removeEventListener('touchstart', e.text._mailRecordingTouchStartHandler);
   }
-  if (e.text._mailRecordingPointerUpHandler) {
-    window.removeEventListener('pointerup', e.text._mailRecordingPointerUpHandler);
-    window.removeEventListener('pointercancel', e.text._mailRecordingPointerUpHandler);
+  if (e.text._mailRecordingTouchEndHandler) {
+    window.removeEventListener('touchend', e.text._mailRecordingTouchEndHandler);
+    window.removeEventListener('touchcancel', e.text._mailRecordingTouchEndHandler);
+  }
+  if (e.text._mailRecordingMouseDownHandler) {
+    e.text.removeEventListener('mousedown', e.text._mailRecordingMouseDownHandler);
+  }
+  if (e.text._mailRecordingMouseUpHandler) {
+    window.removeEventListener('mouseup', e.text._mailRecordingMouseUpHandler);
   }
   if (e.text._mailRecordingKeyDownHandler) {
     document.removeEventListener('keydown', e.text._mailRecordingKeyDownHandler);
@@ -3177,27 +3183,41 @@ function setupMailRecordingHandlers(eventId, context) {
     }
   };
 
-  const onPointerDown = (ev) => {
+  let mailRecordIsTouch = false;
+  const mailRecordHoldStart = (ev, isTouch) => {
     if (activeTextEventId !== eventId) return;
-    if (ev.button !== 0) return;
-    const trigger = ev.target.closest('button[data-mail-record-action="trigger"]');
+    const trigger = (isTouch ? document.elementFromPoint(ev.changedTouches[0].clientX, ev.changedTouches[0].clientY) : ev.target)
+      ?.closest('button[data-mail-record-action="trigger"]');
     if (!trigger) return;
     const recording = getMailRecordingState(context);
     if (recording.mode !== MAIL_RECORDING_MODE.HOLD) return;
     if (recording.state === MAIL_RECORDING_STATE.RECORDING) return;
-    ev.preventDefault();
-    recording.holdPointerId = ev.pointerId;
+    if (isTouch) ev.preventDefault();
+    mailRecordIsTouch = isTouch;
     startMailRecording(context, MAIL_RECORDING_ORIGIN.HOLD_POINTER);
   };
-
-  const onPointerUp = (ev) => {
+  const mailRecordHoldEnd = () => {
     if (activeTextEventId !== eventId) return;
     const recording = getMailRecordingState(context);
     if (recording.mode !== MAIL_RECORDING_MODE.HOLD) return;
     if (recording.state !== MAIL_RECORDING_STATE.RECORDING) return;
     if (recording.origin !== MAIL_RECORDING_ORIGIN.HOLD_POINTER) return;
-    if (recording.holdPointerId !== null && ev.pointerId !== recording.holdPointerId) return;
     stopMailRecording(context, 'release');
+  };
+  const onTouchStart = (ev) => mailRecordHoldStart(ev, true);
+  const onTouchEnd = (ev) => {
+    if (mailRecordIsTouch) {
+      ev.preventDefault();
+      mailRecordHoldEnd();
+    }
+  };
+  const onMouseDown = (ev) => {
+    if (ev.button !== 0 || mailRecordIsTouch) return;
+    mailRecordHoldStart(ev, false);
+  };
+  const onMouseUp = () => {
+    if (mailRecordIsTouch) return;
+    mailRecordHoldEnd();
   };
 
   const onKeyDown = (ev) => {
@@ -3228,15 +3248,19 @@ function setupMailRecordingHandlers(eventId, context) {
   };
 
   e.text._mailRecordingClickHandler = onClick;
-  e.text._mailRecordingPointerDownHandler = onPointerDown;
-  e.text._mailRecordingPointerUpHandler = onPointerUp;
+  e.text._mailRecordingTouchStartHandler = onTouchStart;
+  e.text._mailRecordingTouchEndHandler = onTouchEnd;
+  e.text._mailRecordingMouseDownHandler = onMouseDown;
+  e.text._mailRecordingMouseUpHandler = onMouseUp;
   e.text._mailRecordingKeyDownHandler = onKeyDown;
   e.text._mailRecordingKeyUpHandler = onKeyUp;
 
   e.text.addEventListener('click', onClick);
-  e.text.addEventListener('pointerdown', onPointerDown);
-  window.addEventListener('pointerup', onPointerUp);
-  window.addEventListener('pointercancel', onPointerUp);
+  e.text.addEventListener('touchstart', onTouchStart, { passive: false });
+  window.addEventListener('touchend', onTouchEnd, { passive: false });
+  window.addEventListener('touchcancel', onTouchEnd);
+  e.text.addEventListener('mousedown', onMouseDown);
+  window.addEventListener('mouseup', onMouseUp);
   document.addEventListener('keydown', onKeyDown);
   document.addEventListener('keyup', onKeyUp);
 }

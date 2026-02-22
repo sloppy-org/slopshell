@@ -499,6 +499,10 @@ button[data-mail-record-action="trigger"],
 button[data-mail-record-action="stop"] {
   padding: 0.22rem 0.5rem;
   font-size: 0.74rem;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: none;
 }
 
 .mail-record-indicator {
@@ -1234,6 +1238,12 @@ button[data-mail-record-action="stop"] {
   justify-content: space-between;
   align-items: center;
   gap: 0.75rem;
+}
+#btn-chat-send {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: none;
 }
 
 .chat-compose-meta {

@@ -42,6 +42,7 @@ const ASSISTANT_ACTIVITY_POLL_MS = 1200;
 const ACTIVE_PROJECT_STORAGE_KEY = 'tabula.activeProjectId';
 let localMessageSeq = 0;
 const CHAT_CTRL_LONG_PRESS_MS = 180;
+const CHAT_SEND_HOLD_MS = 300;
 const sttActionStart = 'start';
 const sttActionAppend = 'append';
 const sttActionStop = 'stop';
@@ -420,13 +421,14 @@ function stopChatVoiceMediaAndFlush(capture) {
   });
 }
 
-async function beginChatVoiceCapture() {
+async function beginChatVoiceCapture(opts) {
   if (state.activeTab !== 'chat') return;
   if (state.chatVoiceCapture) return;
   const capture = {
     active: false,
     stopping: false,
     stopRequested: false,
+    autoSend: Boolean(opts?.autoSend),
     sttSessionID: createPushToPromptSessionID(),
     appendSeq: 0,
     appendChain: Promise.resolve(),
@@ -509,6 +511,10 @@ async function stopChatVoiceCaptureAndApply() {
     const needsSpace = input.value.trim() && !/[ \n]$/.test(input.value);
     input.value = `${input.value}${needsSpace ? ' ' : ''}${transcript}`;
     input.dispatchEvent(new Event('input', { bubbles: true }));
+    if (capture.autoSend) {
+      void sendChatMessage();
+      return;
+    }
     focusChatInput({ placeCursorAtEnd: true });
     showStatus('dictation ready (press Enter to send)');
   } catch (err) {
@@ -1415,6 +1421,56 @@ function bindUi() {
     ev.preventDefault();
     void sendChatMessage();
   });
+
+  const sendBtn = document.getElementById('btn-chat-send');
+  if (sendBtn) {
+    let sendHoldTimer = null;
+    let sendHoldActive = false;
+    let sendHoldIsTouch = false;
+    const startHold = (ev, isTouch) => {
+      if (state.chatVoiceCapture) return;
+      if (isTouch) ev.preventDefault();
+      sendHoldActive = false;
+      sendHoldIsTouch = isTouch;
+      sendHoldTimer = window.setTimeout(() => {
+        sendHoldTimer = null;
+        sendHoldActive = true;
+        void beginChatVoiceCapture({ autoSend: true });
+      }, CHAT_SEND_HOLD_MS);
+    };
+    const endHold = () => {
+      if (sendHoldTimer) {
+        clearTimeout(sendHoldTimer);
+        sendHoldTimer = null;
+        return;
+      }
+      if (sendHoldActive) {
+        sendHoldActive = false;
+        void stopChatVoiceCaptureAndApply();
+      }
+    };
+    sendBtn.addEventListener('touchstart', (ev) => startHold(ev, true), { passive: false });
+    sendBtn.addEventListener('touchend', (ev) => {
+      if (sendHoldTimer || sendHoldActive) ev.preventDefault();
+      endHold();
+    }, { passive: false });
+    sendBtn.addEventListener('touchcancel', () => endHold());
+    sendBtn.addEventListener('mousedown', (ev) => {
+      if (ev.button !== 0) return;
+      if (sendHoldIsTouch) return;
+      startHold(ev, false);
+    });
+    window.addEventListener('mouseup', () => {
+      if (sendHoldIsTouch) return;
+      endHold();
+    });
+    sendBtn.addEventListener('click', (ev) => {
+      if (sendHoldActive || state.chatVoiceCapture) {
+        ev.preventDefault();
+        ev.stopImmediatePropagation();
+      }
+    }, true);
+  }
 
   const projectCreateForm = document.getElementById('project-create-form');
   projectCreateForm?.addEventListener('submit', (ev) => {
