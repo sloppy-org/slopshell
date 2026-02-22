@@ -792,6 +792,21 @@ func (s *Store) ListChatMessages(sessionID string, limit int) ([]ChatMessage, er
 	return out, nil
 }
 
+func (s *Store) ClearChatMessages(sessionID string) error {
+	_, err := s.db.Exec("DELETE FROM chat_messages WHERE session_id = ?", sessionID)
+	return err
+}
+
+func (s *Store) ResetChatSessionThread(sessionID string) error {
+	_, err := s.db.Exec("UPDATE chat_sessions SET app_thread_id = '' WHERE id = ?", sessionID)
+	return err
+}
+
+func (s *Store) DeleteChatMessagesBefore(sessionID string, beforeID int64) error {
+	_, err := s.db.Exec("DELETE FROM chat_messages WHERE session_id = ? AND id < ?", sessionID, beforeID)
+	return err
+}
+
 func (s *Store) AddChatEvent(sessionID, turnID, eventType, payloadJSON string) error {
 	_, err := s.db.Exec(
 		`INSERT INTO chat_events (session_id, turn_id, event_type, payload_json, created_at) VALUES (?,?,?,?,?)`,

@@ -101,8 +101,6 @@ func cmdBootstrap(args []string) int {
 func cmdMCPServer(args []string) int {
 	fs := flag.NewFlagSet("mcp-server", flag.ContinueOnError)
 	projectDir := fs.String("project-dir", ".", "project dir")
-	headless := fs.Bool("headless", false, "headless")
-	noCanvas := fs.Bool("no-canvas", false, "no canvas")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -111,7 +109,7 @@ func cmdMCPServer(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	adapter := canvas.NewAdapter(res.Paths.ProjectDir, nil, *headless || *noCanvas)
+	adapter := canvas.NewAdapter(res.Paths.ProjectDir, nil)
 	return mcp.RunStdio(adapter)
 }
 
@@ -120,8 +118,6 @@ func cmdServe(args []string) int {
 	projectDir := fs.String("project-dir", ".", "project dir")
 	host := fs.String("host", serve.DefaultHost, "host")
 	port := fs.Int("port", serve.DefaultPort, "port")
-	headless := fs.Bool("headless", false, "headless")
-	noCanvas := fs.Bool("no-canvas", false, "no canvas")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -130,12 +126,7 @@ func cmdServe(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	if !*headless && !*noCanvas {
-		if os.Getenv("DISPLAY") == "" && os.Getenv("WAYLAND_DISPLAY") == "" {
-			fmt.Fprintln(os.Stderr, "warning: no DISPLAY/WAYLAND_DISPLAY detected; tabura serve will run headless")
-		}
-	}
-	app := serve.NewApp(res.Paths.ProjectDir, *headless || *noCanvas)
+	app := serve.NewApp(res.Paths.ProjectDir)
 	if err := app.Start(*host, *port); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1

@@ -16,13 +16,10 @@ type SessionRecord struct {
 }
 
 type Adapter struct {
-	mu                sync.RWMutex
-	projectDir        string
-	onEvent           func(Event)
-	sessions          map[string]*SessionRecord
-	headless          bool
-	canvasProcessLive bool
-	launchErr         string
+	mu         sync.RWMutex
+	projectDir string
+	onEvent    func(Event)
+	sessions   map[string]*SessionRecord
 }
 
 func newSessionRecord(opened bool) *SessionRecord {
@@ -33,12 +30,11 @@ func newSessionRecord(opened bool) *SessionRecord {
 	}
 }
 
-func NewAdapter(projectDir string, onEvent func(Event), headless bool) *Adapter {
+func NewAdapter(projectDir string, onEvent func(Event)) *Adapter {
 	return &Adapter{
 		projectDir: projectDir,
 		onEvent:    onEvent,
 		sessions:   map[string]*SessionRecord{},
-		headless:   headless,
 	}
 }
 
@@ -92,9 +88,6 @@ func (a *Adapter) CanvasSessionOpen(sessionID, modeHint string) map[string]inter
 		"mode_hint":            modeHint,
 		"active_artifact_id":   activeArtifactID(r),
 		"active_artifact_kind": activeArtifactKind(r),
-		"headless":             a.headless,
-		"canvas_process_alive": a.canvasProcessLive,
-		"canvas_launch_error":  a.launchErrOrNil(),
 	}
 }
 
@@ -110,13 +103,6 @@ func activeArtifactKind(r *SessionRecord) interface{} {
 		return nil
 	}
 	return r.ActiveArtifact.Kind
-}
-
-func (a *Adapter) launchErrOrNil() interface{} {
-	if a.launchErr == "" {
-		return nil
-	}
-	return a.launchErr
 }
 
 func (a *Adapter) CanvasArtifactShow(sessionID, kind, title, markdownOrText, path string, page int, reason string, meta map[string]interface{}) (map[string]interface{}, error) {
@@ -192,9 +178,6 @@ func (a *Adapter) CanvasStatus(sessionID string) map[string]interface{} {
 		"active_artifact_kind": activeArtifactKind(r),
 		"active_artifact":      active,
 		"history_size":         len(r.History),
-		"headless":             a.headless,
-		"canvas_process_alive": a.canvasProcessLive,
-		"canvas_launch_error":  a.launchErrOrNil(),
 	}
 }
 
@@ -219,14 +202,6 @@ func (a *Adapter) HandleFeedback(line string) {
 		return
 	}
 	// No mark/annotation feedback to handle; method retained for WS compatibility.
-}
-
-func (a *Adapter) SetProcessState(headless, live bool, launchErr string) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.headless = headless
-	a.canvasProcessLive = live
-	a.launchErr = launchErr
 }
 
 func (a *Adapter) ListSessions() []string {

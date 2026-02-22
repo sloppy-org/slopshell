@@ -7,9 +7,8 @@ Canonical documentation.
 Read in this order:
 
 1. `object-scoped-intent-ui.md`
-2. `review-mode-workflow.md`
-3. `interfaces.md`
-4. `architecture.md`
+2. `interfaces.md`
+3. `architecture.md`
 
 Integrated protocol reference:
 
@@ -17,8 +16,8 @@ Integrated protocol reference:
 
 Release notes:
 
-- Published release: `release-v0.0.5.md`
-- Previous release: `release-v0.0.4.md`
+- Published release: `release-v0.0.6.md`
+- Previous release: `release-v0.0.5.md`
 - Published baseline: `release-v0.0.1.md`
 
 ## Source Code Anchors

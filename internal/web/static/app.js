@@ -1304,6 +1304,23 @@ function handleChatEvent(payload) {
     return;
   }
 
+  if (type === 'chat_cleared') {
+    clearChatHistory();
+    resetAssistantTurnTracking({ clearError: true });
+    appendPlainMessage('system', 'Chat cleared.');
+    state.contextUsed = 0;
+    state.contextMax = 0;
+    updateContextIndicator();
+    return;
+  }
+
+  if (type === 'chat_compacted') {
+    void loadChatHistory().catch(() => {});
+    const message = String(payload.message || 'Chat compacted.').trim();
+    appendPlainMessage('system', message);
+    return;
+  }
+
   if (type === 'error') {
     const turnID = String(payload.turn_id || '').trim();
     const row = takePendingRow(turnID);

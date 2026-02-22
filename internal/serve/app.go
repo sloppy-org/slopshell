@@ -36,14 +36,14 @@ type App struct {
 	shutdownDone chan struct{}
 }
 
-func NewApp(projectDir string, headless bool) *App {
+func NewApp(projectDir string) *App {
 	a := &App{
 		ProjectDir:   projectDir,
 		wsClients:    map[*websocket.Conn]struct{}{},
 		wsUpgrader:   websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }},
 		shutdownDone: make(chan struct{}),
 	}
-	a.Adapter = canvas.NewAdapter(projectDir, a.queueEvent, headless)
+	a.Adapter = canvas.NewAdapter(projectDir, a.queueEvent)
 	a.Server = mcp.NewServer(a.Adapter)
 	return a
 }

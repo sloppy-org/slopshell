@@ -1,12 +1,12 @@
 # タブラ tabura
 
-Tabura is a human-in-the-loop UI paradigm for turning intent into reviewed actions: discuss in chat, annotate artifacts in context, and execute only what is explicitly approved across domains.
+Tabura is a human-in-the-loop UI paradigm for turning intent into reviewed actions: discuss in chat, reference artifacts in context, and execute only what is explicitly approved across domains.
 
 Core paradigm:
 - Start in a persistent project chat canvas (browser-first).
-- Switch to review canvas when needed, without forced auto-navigation.
-- Capture intent in context (voice, prompt, or comment mode).
-- Commit changes through review workflows instead of hidden auto-apply.
+- Artifacts appear as closeable tabs in the canvas viewport.
+- Capture intent in context via tap-to-reference (tap for silent, long-press for voice).
+- Location-scoped requests route through AI backend.
 
 License: MIT (`LICENSE`)
 Risk notice: see [`DISCLAIMER.md`](DISCLAIMER.md)
@@ -15,13 +15,12 @@ Risk notice: see [`DISCLAIMER.md`](DISCLAIMER.md)
 
 - **Spec hub**: [`docs/spec-index.md`](docs/spec-index.md)
 - **UI paradigm**: [`docs/object-scoped-intent-ui.md`](docs/object-scoped-intent-ui.md)
-- **Review state and commit flow**: [`docs/review-mode-workflow.md`](docs/review-mode-workflow.md)
 - **HTTP/MCP interface inventory**: [`docs/interfaces.md`](docs/interfaces.md)
 - **Integrated handoff protocol spec**: [`docs/handoff-protocol/README.md`](docs/handoff-protocol/README.md)
 - **System architecture**: [`docs/architecture.md`](docs/architecture.md)
 - **Codex app-server pivot notes**: [`docs/codex-app-server-pivot.md`](docs/codex-app-server-pivot.md)
-- **Published release (v0.0.5)**: [`docs/release-v0.0.5.md`](docs/release-v0.0.5.md)
-- **Previous release (v0.0.4)**: [`docs/release-v0.0.4.md`](docs/release-v0.0.4.md)
+- **Published release (v0.0.6)**: [`docs/release-v0.0.6.md`](docs/release-v0.0.6.md)
+- **Previous release (v0.0.5)**: [`docs/release-v0.0.5.md`](docs/release-v0.0.5.md)
 - **Published baseline (v0.0.1)**: [`docs/release-v0.0.1.md`](docs/release-v0.0.1.md)
 
 ## Install
@@ -38,7 +37,7 @@ Requirements:
 
 ```bash
 tabura bootstrap --project-dir .
-tabura mcp-server --project-dir . --headless --no-canvas
+tabura mcp-server --project-dir .
 tabura serve --project-dir . --host 127.0.0.1 --port 9420
 tabura web --data-dir ~/.tabura-web --project-dir . --host 127.0.0.1 --port 8420 --app-server-url ws://127.0.0.1:8787
 tabura voxtype-mcp --bind 127.0.0.1 --port 8091
@@ -57,13 +56,8 @@ tabura canvas
 Chat-first behavior:
 - Browser opens in `Chat` tab by default.
 - `Canvas` tab is manual switch only (no auto-switch on artifact updates).
-- Slash commands are supported, including `/plan`, `/plan on`, `/plan off`.
+- Slash commands are supported, including `/plan`, `/plan on`, `/plan off`, `/clear`, `/compact`.
 - Assistant responses render Markdown + LaTeX.
-
-Commit-triggered AI rewrite:
-- On `Commit`, Tabura now aggregates persistent review comments for the active artifact.
-- For text artifacts (`markdown/plain text`), it asks Codex app-server for a full rewritten document.
-- For PDF artifacts, it asks Codex app-server for structured review notes and renders them as a text artifact.
 
 ## Push To Prompt
 
@@ -83,12 +77,11 @@ Markdown text artifacts support TeX math rendering via MathJax.
 
 1. Object-scoped invocation behavior (`long press` and local prompt/capture paths).
 2. Explicit proposal lifecycle (`Accept`, `Edit`, `Reject`) with no hidden mutation.
-3. Annotation-first review semantics with commit-controlled persistence.
+3. Tap-to-reference artifact interaction with transient markers and location context.
 4. Low-refresh and e-ink-friendly interaction constraints.
 
 See:
 - [`docs/object-scoped-intent-ui.md`](docs/object-scoped-intent-ui.md)
-- [`docs/review-mode-workflow.md`](docs/review-mode-workflow.md)
 - [`docs/interfaces.md`](docs/interfaces.md)
 
 ## Integration Example (Optional)

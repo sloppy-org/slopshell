@@ -4,7 +4,7 @@ This document captures the 2026 integration direction for Tabura’s AI path.
 
 ## Why App Server-Centered
 
-Tabura now treats Codex app-server as the primary AI backend for both chat turns and commit-time review flows:
+Tabura now treats Codex app-server as the primary AI backend for chat turns and location-scoped artifact requests:
 
 1. Browser starts in a persistent project chat canvas.
 2. Backend streams assistant turn events to the chat UI.
@@ -14,7 +14,7 @@ Tabura now treats Codex app-server as the primary AI backend for both chat turns
 ## Transport and Runtime Choices
 
 1. A persistent user service runs `codex app-server --listen ws://127.0.0.1:8787`.
-2. Tabura Web backend connects to app-server via WebSocket JSON-RPC for chat/commit turns.
+2. Tabura Web backend connects to app-server via WebSocket JSON-RPC for chat turns.
 3. For each turn trigger, Tabura opens an app-server session:
    - `initialize`
    - `thread/start`
@@ -29,7 +29,7 @@ Tabura now treats Codex app-server as the primary AI backend for both chat turns
    - Output replaces/refreshes the canvas with revised text.
 2. `pdf_artifact`:
    - Binary PDF is not rewritten directly.
-   - AI returns structured markdown review notes covering all comments.
+   - AI returns structured markdown review notes based on chat interaction with location context.
    - Notes are rendered as a text artifact for fast iteration.
 
 ## Operational Integration
@@ -58,7 +58,7 @@ Install/restart scripts were updated so app-server is started and restarted with
 
 1. A single `threadId` can be reused across many turns to retain context.
 2. `thread/start` supports ephemeral and non-ephemeral behavior; choose based on product UX.
-3. In Tabura’s current commit-trigger flow we use short-lived commit sessions by default.
+3. In Tabura’s current design, location-scoped requests use short-lived sessions by default.
 4. `cwd` on thread/turn controls filesystem working directory.
 
 ## Tool Access and Policy

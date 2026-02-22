@@ -140,7 +140,7 @@ Every UI interaction flow must have a Playwright test. Never skip tests.
 - Async flows (mic capture, STT, WebSocket) must use mock harnesses (see `tests/playwright/chat-harness.html` and `tests/playwright/harness.html`).
 - Key selectors: `#prompt-input` (textarea), `#prompt-send` (send button), `#prompt-bar` (form), `#canvas-tab-bar` (tab bar), `.canvas-pane` (panes).
 - Run `npx playwright test` locally and verify 100% pass before push.
-- Existing tests: `tests/playwright/review-mode.spec.ts`, `tests/playwright/mail-actions.spec.ts`, `tests/playwright/chat-voice-send.spec.ts`.
+- Existing tests: `tests/playwright/artifact-context.spec.ts`, `tests/playwright/mail-actions.spec.ts`, `tests/playwright/chat-voice-send.spec.ts`.
 
 ## Cross-Repo Protocol
 

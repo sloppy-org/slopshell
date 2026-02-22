@@ -315,6 +315,53 @@ func (a *App) executeChatCommand(sessionID, raw string) (map[string]interface{},
 			"queued_canceled": queuedCanceled,
 			"message":         message,
 		}, nil
+	case "clear":
+		if err := a.store.ClearChatMessages(sessionID); err != nil {
+			return nil, err
+		}
+		if err := a.store.ResetChatSessionThread(sessionID); err != nil {
+			return nil, err
+		}
+		a.closeAppSession(sessionID)
+		a.broadcastChatEvent(sessionID, map[string]interface{}{
+			"type": "chat_cleared",
+		})
+		return map[string]interface{}{
+			"name":    "clear",
+			"message": "Chat history cleared.",
+		}, nil
+	case "compact":
+		messages, listErr := a.store.ListChatMessages(sessionID, 200)
+		if listErr != nil {
+			return nil, listErr
+		}
+		if len(messages) < 5 {
+			return map[string]interface{}{
+				"name":    "compact",
+				"message": "Not enough messages to compact.",
+			}, nil
+		}
+		keep := 10
+		if len(messages) <= keep {
+			return map[string]interface{}{
+				"name":    "compact",
+				"message": "Chat is already compact.",
+			}, nil
+		}
+		cutoff := messages[len(messages)-keep]
+		if err := a.store.DeleteChatMessagesBefore(sessionID, cutoff.ID); err != nil {
+			return nil, err
+		}
+		deleted := len(messages) - keep
+		message := fmt.Sprintf("Compacted chat: removed %d older messages, kept %d.", deleted, keep)
+		a.broadcastChatEvent(sessionID, map[string]interface{}{
+			"type":    "chat_compacted",
+			"message": message,
+		})
+		return map[string]interface{}{
+			"name":    "compact",
+			"message": message,
+		}, nil
 	default:
 		return nil, fmt.Errorf("unknown command: /%s", name)
 	}

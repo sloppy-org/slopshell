@@ -59,7 +59,7 @@ func TestCanvasImportHandoffFileText(t *testing.T) {
 	defer producer.Close()
 
 	projectDir := t.TempDir()
-	adapter := canvas.NewAdapter(projectDir, nil, true)
+	adapter := canvas.NewAdapter(projectDir, nil)
 	s := NewServer(adapter)
 	got, err := s.callTool("canvas_import_handoff", map[string]interface{}{
 		"session_id":       "s1",
@@ -116,7 +116,7 @@ func TestCanvasImportHandoffUnsupportedKind(t *testing.T) {
 	}))
 	defer producer.Close()
 
-	adapter := canvas.NewAdapter(t.TempDir(), nil, true)
+	adapter := canvas.NewAdapter(t.TempDir(), nil)
 	s := NewServer(adapter)
 	_, err := s.callTool("canvas_import_handoff", map[string]interface{}{
 		"session_id":       "s1",
@@ -174,7 +174,7 @@ func TestCanvasImportHandoffMailHeadersCarriesMessageTriageMeta(t *testing.T) {
 	}))
 	defer producer.Close()
 
-	adapter := canvas.NewAdapter(t.TempDir(), nil, true)
+	adapter := canvas.NewAdapter(t.TempDir(), nil)
 	s := NewServer(adapter)
 	if _, err := s.callTool("canvas_import_handoff", map[string]interface{}{
 		"session_id":       "s1",
