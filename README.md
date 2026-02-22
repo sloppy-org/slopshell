@@ -1,6 +1,6 @@
-# tabula
+# タブラ tabura
 
-Tabula is a local-first chat-and-canvas MCP runtime built around Codex App Server.
+Tabura is a human-in-the-loop UI paradigm for turning intent into reviewed actions: discuss in chat, annotate artifacts in context, and execute only what is explicitly approved across domains.
 
 Core paradigm:
 - Start in a persistent project chat canvas (browser-first).
@@ -27,8 +27,8 @@ Risk notice: see [`DISCLAIMER.md`](DISCLAIMER.md)
 ## Install
 
 ```bash
-go build ./cmd/tabula
-go install ./cmd/tabula
+go build ./cmd/tabura
+go install ./cmd/tabura
 ```
 
 Requirements:
@@ -37,12 +37,12 @@ Requirements:
 ## Core Commands
 
 ```bash
-tabula bootstrap --project-dir .
-tabula mcp-server --project-dir . --headless --no-canvas
-tabula serve --project-dir . --host 127.0.0.1 --port 9420
-tabula web --data-dir ~/.tabula-web --project-dir . --host 127.0.0.1 --port 8420 --app-server-url ws://127.0.0.1:8787
-tabula voxtype-mcp --bind 127.0.0.1 --port 8091
-tabula canvas
+tabura bootstrap --project-dir .
+tabura mcp-server --project-dir . --headless --no-canvas
+tabura serve --project-dir . --host 127.0.0.1 --port 9420
+tabura web --data-dir ~/.tabura-web --project-dir . --host 127.0.0.1 --port 8420 --app-server-url ws://127.0.0.1:8787
+tabura voxtype-mcp --bind 127.0.0.1 --port 8091
+tabura canvas
 ```
 
 ## Local Integration Defaults
@@ -61,16 +61,16 @@ Chat-first behavior:
 - Assistant responses render Markdown + LaTeX.
 
 Commit-triggered AI rewrite:
-- On `Commit`, Tabula now aggregates persistent review comments for the active artifact.
+- On `Commit`, Tabura now aggregates persistent review comments for the active artifact.
 - For text artifacts (`markdown/plain text`), it asks Codex app-server for a full rewritten document.
 - For PDF artifacts, it asks Codex app-server for structured review notes and renders them as a text artifact.
 
 ## Push To Prompt
 
-Tabula uses the term **Push To Prompt** (coined in this project) for voice-driven intent capture, analogous to Push To Talk.  
-In `v0.0.5`, STT is routed through VoxType MCP (`/api/stt/push-to-prompt`) and no Helpy STT provider is used by Tabula.
+Tabura uses the term **Push To Prompt** (coined in this project) for voice-driven intent capture, analogous to Push To Talk.  
+In `v0.0.5`, STT is routed through VoxType MCP (`/api/stt/push-to-prompt`) and no Helpy STT provider is used by Tabura.
 
-For always-on local usage, run the user `systemd` bridge service `tabula-voxtype-mcp.service`.
+For always-on local usage, run the user `systemd` bridge service `tabura-voxtype-mcp.service`.
 It bridges browser audio capture to the `voxtype` transcription CLI.
 
 ## Markdown LaTeX Rendering
@@ -118,7 +118,7 @@ go test ./...
 npm run test:reports
 ```
 
-Test report artifacts are written under `.tabula/artifacts/test-reports/`.
+Test report artifacts are written under `.tabura/artifacts/test-reports/`.
 
 ## Citation and Archival Metadata
 
