@@ -37,7 +37,6 @@ Runtime and chat session management:
 
 Canvas/files:
 - `GET /api/canvas/{session_id}/snapshot`
-- `POST /api/canvas/{session_id}/commit`
 - `GET /api/files/{session_id}/*`
 
 Mail interaction endpoints:
@@ -58,11 +57,6 @@ Websocket routes:
 Defined in `internal/surface/definitions.go` and used by `internal/mcp/server.go`:
 - `canvas_session_open`
 - `canvas_artifact_show`
-- `canvas_mark_set`
-- `canvas_mark_delete`
-- `canvas_marks_list`
-- `canvas_mark_focus`
-- `canvas_commit`
 - `canvas_status`
 - `canvas_import_handoff`
 

@@ -8,8 +8,8 @@ Tabura now treats Codex app-server as the primary AI backend for both chat turns
 
 1. Browser starts in a persistent project chat canvas.
 2. Backend streams assistant turn events to the chat UI.
-3. Canvas `commit` remains the explicit human control point for annotation persistence.
-4. Commit-time rewrite/review still routes through Codex app-server.
+3. Users reference artifact locations via tap-to-reference (transient marker + prompt context).
+4. AI requests with location context route through Codex app-server.
 
 ## Transport and Runtime Choices
 
@@ -79,4 +79,4 @@ Install/restart scripts were updated so app-server is started and restarted with
 1. Chat is the default pane and persists per-project message history.
 2. Assistant responses stream to browser chat and render Markdown + LaTeX.
 3. Artifacts open as new tabs in the canvas tab bar.
-4. Commit triggers backend aggregation of persistent comments and app-server rewrite/review output.
+4. Location-scoped requests from tap-to-reference trigger app-server rewrite/review output.

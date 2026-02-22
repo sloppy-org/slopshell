@@ -430,8 +430,3 @@ export function clearCanvas() {
   activeTextEventId = null;
   activePdfEvent = null;
 }
-
-export function initCanvasControls() {
-  // No-op: mark type selector removed.
-  // Artifact interaction is wired in app.js bindUi().
-}

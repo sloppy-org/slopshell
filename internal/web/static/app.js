@@ -1,5 +1,5 @@
 import { marked } from './vendor/marked.esm.js';
-import { renderCanvas, clearCanvas, initCanvasControls, getLocationFromPoint, getLocationFromSelection, showTransientMarker, clearTransientMarker } from './canvas.js';
+import { renderCanvas, clearCanvas, getLocationFromPoint, getLocationFromSelection, showTransientMarker, clearTransientMarker, escapeHtml, sanitizeHtml } from './canvas.js';
 
 const state = {
   sessionId: 'local',
@@ -60,34 +60,6 @@ renderer.code = ({ text, lang }) => {
   return `<pre><code class="language-${safeLang}">${escapeHtml(text || '')}</code></pre>\n`;
 };
 marked.setOptions({ breaks: true, renderer });
-
-function escapeHtml(text) {
-  return String(text || '')
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;');
-}
-
-function sanitizeHtml(html) {
-  const doc = new DOMParser().parseFromString(String(html || ''), 'text/html');
-  const dangerous = doc.querySelectorAll('script,iframe,object,embed,link[rel="import"],form,svg,base,style');
-  dangerous.forEach((el) => el.remove());
-  doc.querySelectorAll('*').forEach((el) => {
-    for (const attr of [...el.attributes]) {
-      const val = attr.value.trim().toLowerCase();
-      const isDangerous = attr.name.startsWith('on')
-        || val.startsWith('javascript:')
-        || val.startsWith('vbscript:')
-        || (val.startsWith('data:') && !val.startsWith('data:image/'));
-      if (isDangerous) {
-        el.removeAttribute(attr.name);
-      }
-    }
-  });
-  return doc.body.innerHTML;
-}
 
 function extractMathSegments(markdownSource) {
   const source = String(markdownSource || '');
@@ -1957,7 +1929,6 @@ async function init() {
   updateAssistantActivityIndicator();
   startDevReloadWatcher();
   startAssistantActivityWatcher();
-  initCanvasControls();
   setProjectOverviewVisible(false);
   clearCanvas();
   switchPane('chat');

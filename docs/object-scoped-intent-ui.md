@@ -17,9 +17,8 @@ Desktop equivalents: long left-click hold at a target point, or hold `Ctrl` at t
 Right-click opens the text comment box mode.
 
 Mode-dependent behavior:
-- Voice mode (Push To Prompt): capture spoken intent.
-- Silent mode: open compact inline prompt.
-- Comment mode: capture annotation text/speech as draft mark.
+- Voice mode (Push To Prompt): capture spoken intent with location context.
+- Silent mode: set location context in prompt bar, type request.
 
 No global assistant console is required for object-level operations.
 
@@ -50,10 +49,10 @@ Selection types:
 - Structural target (section/page level)
 
 Capture sequence:
-1. User selects target object.
-2. System captures intent/comment in current mode.
-3. System creates draft mark attached to target.
-4. Mark remains editable until commit/reject.
+1. User taps/selects target location on artifact.
+2. System sets transient marker and location context in prompt bar.
+3. User types or speaks intent.
+4. Message sent with location context prefix; marker cleared after send.
 
 ## Intent Classification for Reply Drafting
 

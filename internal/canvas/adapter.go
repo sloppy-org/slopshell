@@ -176,13 +176,6 @@ func cloneMeta(meta map[string]interface{}) map[string]interface{} {
 	return cloned
 }
 
-func emptyToNil(v string) interface{} {
-	if v == "" {
-		return nil
-	}
-	return v
-}
-
 func (a *Adapter) CanvasStatus(sessionID string) map[string]interface{} {
 	a.mu.RLock()
 	defer a.mu.RUnlock()

@@ -561,14 +561,6 @@ func intArg(args map[string]interface{}, key string, def int) int {
 	}
 }
 
-func boolArg(args map[string]interface{}, key string, def bool) bool {
-	v, ok := args[key].(bool)
-	if !ok {
-		return def
-	}
-	return v
-}
-
 func toolDefinitions() []map[string]interface{} {
 	out := make([]map[string]interface{}, 0, len(surface.MCPTools))
 	for _, tool := range surface.MCPTools {

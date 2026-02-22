@@ -70,8 +70,7 @@
       sttFailStop = failStop;
     };
 
-    const { renderCanvas, clearCanvas, initCanvasControls } = await import('../../internal/web/static/canvas.js');
-    initCanvasControls();
+    const { renderCanvas, clearCanvas } = await import('../../internal/web/static/canvas.js');
     window.renderHarnessArtifact = (event) => renderCanvas(event);
     window.clearHarnessCanvas = () => clearCanvas();
     window.getHarnessMessages = () => harnessMessages.slice();
