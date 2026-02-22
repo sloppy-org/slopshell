@@ -149,18 +149,26 @@ func (s *Server) callTool(name string, args map[string]interface{}) (map[string]
 	case "canvas_session_open", "canvas_activate":
 		return s.adapter.CanvasSessionOpen(sid, strArg(args, "mode_hint")), nil
 	case "canvas_artifact_show":
+		text := strArg(args, "markdown_or_text")
+		if text == "" {
+			text = strArg(args, "text")
+		}
 		return s.adapter.CanvasArtifactShow(
 			sid,
 			strArg(args, "kind"),
 			strArg(args, "title"),
-			strArg(args, "markdown_or_text"),
+			text,
 			strArg(args, "path"),
 			intArg(args, "page", 0),
 			strArg(args, "reason"),
 			nil,
 		)
 	case "canvas_render_text":
-		return s.adapter.CanvasArtifactShow(sid, "text", strArg(args, "title"), strArg(args, "markdown_or_text"), "", 0, "", nil)
+		text := strArg(args, "markdown_or_text")
+		if text == "" {
+			text = strArg(args, "text")
+		}
+		return s.adapter.CanvasArtifactShow(sid, "text", strArg(args, "title"), text, "", 0, "", nil)
 	case "canvas_render_image":
 		return s.adapter.CanvasArtifactShow(sid, "image", strArg(args, "title"), "", strArg(args, "path"), 0, "", nil)
 	case "canvas_render_pdf":
