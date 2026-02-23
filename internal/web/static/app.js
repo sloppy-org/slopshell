@@ -175,6 +175,8 @@ class TTSPlayer {
     showSpeakingIndicator(pos.x, pos.y);
     try {
       const ctx = this._ensureCtx();
+      // Safari iOS: ensure context is running before decoding
+      if (ctx.state === 'suspended') await ctx.resume();
       const audioBuffer = await ctx.decodeAudioData(wavData.slice(0));
       if (this._stopped) return;
       const source = ctx.createBufferSource();
@@ -574,6 +576,8 @@ function stopChatVoiceMediaAndFlush(capture) {
 async function beginZenVoiceCapture(x, y, anchor) {
   if (state.chatVoiceCapture) return;
   if (!canUseMicrophoneCapture()) return;
+  // Safari iOS: resume AudioContext while still in user gesture call stack
+  if (ttsEnabled) ensureSharedAudioCtx();
   // Interrupt TTS playback when starting recording
   if (ttsPlayer) { ttsPlayer.stop(); ttsPlayer = null; }
   if (ttsSentenceChunker) { ttsSentenceChunker.reset(); ttsSentenceChunker = null; }
@@ -1388,6 +1392,8 @@ async function switchProject(projectID) {
 async function zenSubmitMessage(text) {
   const trimmed = String(text || '').trim();
   if (!trimmed || !state.chatSessionId) return;
+  // Safari iOS: resume AudioContext while still in user gesture call stack
+  if (ttsEnabled) ensureSharedAudioCtx();
   // Interrupt TTS playback when sending a new message
   if (ttsPlayer) { ttsPlayer.stop(); ttsPlayer = null; }
   if (ttsSentenceChunker) { ttsSentenceChunker.reset(); ttsSentenceChunker = null; }
