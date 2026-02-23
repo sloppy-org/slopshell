@@ -25,6 +25,8 @@ var canvasBlockRe = regexp.MustCompile(`(?s):::canvas\{([^}]*)\}\n?(.*?):::`)
 var fileBlockRe = regexp.MustCompile(`(?s):::file\{([^}]*)\}\n?(.*?):::`)
 var langTagRe = regexp.MustCompile(`\[lang:[a-z]{2}\]`)
 var canvasFileMarkerRe = regexp.MustCompile(`\[(?:canvas|file):[^\]]*\]`)
+var canvasFileDirectiveOpenRe = regexp.MustCompile(`(?m)^\\s*:::(?:canvas|file)\{[^}]*\}\s*$`)
+var canvasFileDirectiveCloseRe = regexp.MustCompile(`(?m)^\\s*:::\s*$`)
 
 var attrRe = regexp.MustCompile(`(\w+)="([^"]*)"`)
 
@@ -86,7 +88,11 @@ func stripLangTags(text string) string {
 }
 
 func stripCanvasFileMarkers(text string) string {
-	return strings.TrimSpace(canvasFileMarkerRe.ReplaceAllString(text, ""))
+	text = strings.TrimSpace(text)
+	text = canvasFileMarkerRe.ReplaceAllString(text, " ")
+	text = canvasFileDirectiveOpenRe.ReplaceAllString(text, " ")
+	text = canvasFileDirectiveCloseRe.ReplaceAllString(text, " ")
+	return strings.TrimSpace(text)
 }
 
 func (a *App) executeCanvasBlocks(canvasSessionID string, blocks []canvasBlock) {

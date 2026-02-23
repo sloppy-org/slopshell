@@ -3,6 +3,7 @@ import { renderCanvas, clearCanvas, getLocationFromPoint, getLocationFromSelecti
 import {
   getZenState, setZenMode,
   showIndicator, hideIndicator, showThinkingIndicator,
+  showDelegateIndicator, hideDelegateIndicator,
   showTextInput, hideTextInput,
   showOverlay, hideOverlay, updateOverlay,
   isOverlayVisible, isTextInputVisible, isRecording, setRecording,
@@ -33,7 +34,9 @@ const state = {
   assistantUnknownTurns: 0,
   assistantRemoteActiveCount: 0,
   assistantRemoteQueuedCount: 0,
+  assistantRemoteDelegateActiveCount: 0,
   assistantCancelInFlight: false,
+  assistantDelegateCancelInFlight: false,
   assistantLastError: '',
   chatCtrlHoldTimer: null,
   chatVoiceCapture: null,
@@ -77,6 +80,9 @@ const LAST_VIEW_STORAGE_KEY = 'tabura.lastView';
 
 const _canvasFileBlockRe = /:::(?:canvas|file)\{[^}]*\}\n?[\s\S]*?:::/g;
 const _partialBlockRe = /:::(?:canvas|file)\{[^}]*\}[\s\S]*$/g;
+const _canvasFileMarkerRefRe = /\[(?:canvas|file):[^\]]*\]/g;
+const _canvasDirectiveOpenRe = /^\\s*:::(?:canvas|file)\{[^}]*\}\\s*$/gm;
+const _canvasDirectiveCloseRe = /^\\s*:::\\s*$/gm;
 const _langTagRe = /\[lang:([a-z]{2})\]/gi;
 const _codeFenceRe = /```[\s\S]*?```/g;
 const _inlineCodeRe = /`([^`]+)`/g;
@@ -97,6 +103,9 @@ const _listLineDetectRe = /^\s*(?:[-*+]\s+|\d+[.)]\s+)/;
 function stripBlocks(text) {
   text = text.replace(_canvasFileBlockRe, ' ');
   text = text.replace(_partialBlockRe, ' ');
+  text = text.replace(_canvasFileMarkerRefRe, ' ');
+  text = text.replace(_canvasDirectiveOpenRe, ' ');
+  text = text.replace(_canvasDirectiveCloseRe, ' ');
   return text;
 }
 
@@ -794,17 +803,47 @@ function hasLocalAssistantWork() {
     || state.assistantUnknownTurns > 0;
 }
 
-function isAssistantWorking() {
+function isDirectAssistantWorking() {
   return hasLocalAssistantWork()
     || state.assistantRemoteActiveCount > 0
     || state.assistantRemoteQueuedCount > 0
     || state.assistantCancelInFlight;
 }
 
+function isDelegateAssistantWorking() {
+  return state.assistantRemoteDelegateActiveCount > 0
+    || state.assistantDelegateCancelInFlight;
+}
+
+function isAssistantWorking() {
+  return isDirectAssistantWorking() || isDelegateAssistantWorking();
+}
+
 function updateAssistantActivityIndicator() {
   if (!hasLocalAssistantWork() && state.assistantRemoteActiveCount <= 0 && state.assistantRemoteQueuedCount <= 0) {
     state.assistantUnknownTurns = 0;
     state.assistantActiveTurns.clear();
+  }
+  const pos = getLastInputPosition();
+  const px = Number.isFinite(pos?.x) && pos.x > 0 ? pos.x : Math.floor(window.innerWidth / 2);
+  const py = Number.isFinite(pos?.y) && pos.y > 0 ? pos.y : Math.floor(window.innerHeight / 2);
+  if (isRecording()) {
+    if (isDelegateAssistantWorking()) {
+      showDelegateIndicator(px + 22, py);
+    } else {
+      hideDelegateIndicator();
+    }
+    return;
+  }
+  if (isDirectAssistantWorking()) {
+    showThinkingIndicator(px, py);
+  } else {
+    hideIndicator();
+  }
+  if (isDelegateAssistantWorking()) {
+    showDelegateIndicator(px + 22, py);
+  } else {
+    hideDelegateIndicator();
   }
 }
 
@@ -939,7 +978,9 @@ function resetAssistantTurnTracking({ clearError = false } = {}) {
   state.assistantUnknownTurns = 0;
   state.assistantRemoteActiveCount = 0;
   state.assistantRemoteQueuedCount = 0;
+  state.assistantRemoteDelegateActiveCount = 0;
   state.assistantCancelInFlight = false;
+  state.assistantDelegateCancelInFlight = false;
   if (clearError) {
     state.assistantLastError = '';
   }
@@ -1064,10 +1105,13 @@ async function refreshAssistantActivity() {
     const payload = await resp.json();
     const activeTurns = Number(payload?.active_turns || 0);
     const queuedTurns = Number(payload?.queued_turns || 0);
+    const delegateActive = Number(payload?.delegate_active || 0);
     if (!Number.isFinite(activeTurns) || activeTurns < 0) return;
     if (!Number.isFinite(queuedTurns) || queuedTurns < 0) return;
+    if (!Number.isFinite(delegateActive) || delegateActive < 0) return;
     state.assistantRemoteActiveCount = activeTurns;
     state.assistantRemoteQueuedCount = queuedTurns;
+    state.assistantRemoteDelegateActiveCount = delegateActive;
     updateAssistantActivityIndicator();
   } catch (_) {
   } finally {
@@ -1512,6 +1556,37 @@ async function cancelActiveAssistantTurn() {
   }
 }
 
+async function cancelActiveDelegatedJobs() {
+  if (!state.chatSessionId || state.assistantDelegateCancelInFlight) return;
+  await refreshAssistantActivity();
+  if (!isDelegateAssistantWorking()) {
+    updateAssistantActivityIndicator();
+    return;
+  }
+  state.assistantDelegateCancelInFlight = true;
+  updateAssistantActivityIndicator();
+  showStatus('stopping delegated jobs...');
+  try {
+    const resp = await fetch(`/api/chat/sessions/${encodeURIComponent(state.chatSessionId)}/cancel-delegates`, { method: 'POST' });
+    if (!resp.ok) {
+      const detail = (await resp.text()).trim() || `HTTP ${resp.status}`;
+      showStatus(`delegate stop failed: ${detail}`);
+      return;
+    }
+    const payload = await resp.json();
+    const canceled = Number(payload?.canceled || 0);
+    if (canceled <= 0) {
+      await refreshAssistantActivity();
+    }
+  } catch (err) {
+    showStatus(`delegate stop failed: ${String(err?.message || err)}`);
+  } finally {
+    state.assistantDelegateCancelInFlight = false;
+    updateAssistantActivityIndicator();
+    window.setTimeout(() => { void refreshAssistantActivity(); }, 120);
+  }
+}
+
 function openCanvasWs() {
   const turnToken = state.canvasWsToken + 1;
   state.canvasWsToken = turnToken;
@@ -1690,6 +1765,25 @@ function closeEdgePanels() {
 function bindUi() {
   const canvasText = document.getElementById('canvas-text');
   const canvasViewport = document.getElementById('canvas-viewport');
+  const zenIndicator = document.getElementById('zen-indicator');
+  const zenDelegateIndicator = document.getElementById('zen-delegate-indicator');
+
+  if (zenIndicator) {
+    zenIndicator.addEventListener('pointerdown', (ev) => {
+      if (!(ev.currentTarget instanceof HTMLElement)) return;
+      if (!ev.currentTarget.classList.contains('is-thinking')) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      void cancelActiveAssistantTurn();
+    });
+  }
+  if (zenDelegateIndicator) {
+    zenDelegateIndicator.addEventListener('pointerdown', (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      void cancelActiveDelegatedJobs();
+    });
+  }
 
   // Zen: Left-click/tap on canvas -> toggle voice recording
   const zenClickTarget = canvasViewport || document.getElementById('workspace');
