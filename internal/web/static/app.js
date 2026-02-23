@@ -739,6 +739,24 @@ function startVADMonitor(capture) {
     ttsAudioCtx.resume().catch(() => {});
   }
 
+  const handleNoSpeechTimeout = () => {
+    stopVADMonitor(capture);
+    state.indicatorSuppressedByCanvasUpdate = false;
+    showStatus('no speech detected');
+    setRecording(false);
+    sttCancel();
+    stopChatVoiceMedia(capture);
+    if (state.chatVoiceCapture === capture) {
+      state.chatVoiceCapture = null;
+    }
+    updateAssistantActivityIndicator();
+    window.setTimeout(() => {
+      if (!state.chatVoiceCapture && !isAssistantWorking() && !isTTSSpeaking()) {
+        showStatus('ready');
+      }
+    }, 800);
+  };
+
   const options = {
     startAtMs: performance.now(),
     speechMs: 0,
@@ -787,21 +805,7 @@ function startVADMonitor(capture) {
 
       if (options.noiseFloorDb == null) {
         if (elapsed >= VOICE_EOU_NO_SPEECH_MS) {
-          stopVADMonitor(capture);
-          state.indicatorSuppressedByCanvasUpdate = false;
-          showStatus('no speech detected');
-          setRecording(false);
-          sttCancel();
-          stopChatVoiceMedia(capture);
-          if (state.chatVoiceCapture === capture) {
-            state.chatVoiceCapture = null;
-          }
-          updateAssistantActivityIndicator();
-          window.setTimeout(() => {
-            if (!state.chatVoiceCapture && !isAssistantWorking() && !isTTSSpeaking()) {
-              showStatus('ready');
-            }
-          }, 800);
+          handleNoSpeechTimeout();
           return;
         }
         return;
@@ -850,21 +854,7 @@ function startVADMonitor(capture) {
 
       if (!options.hasSpeech) {
         if (elapsed >= VOICE_EOU_NO_SPEECH_MS) {
-          stopVADMonitor(capture);
-          state.indicatorSuppressedByCanvasUpdate = false;
-          showStatus('no speech detected');
-          setRecording(false);
-          sttCancel();
-          stopChatVoiceMedia(capture);
-          if (state.chatVoiceCapture === capture) {
-            state.chatVoiceCapture = null;
-          }
-          updateAssistantActivityIndicator();
-          window.setTimeout(() => {
-            if (!state.chatVoiceCapture && !isAssistantWorking() && !isTTSSpeaking()) {
-              showStatus('ready');
-            }
-          }, 800);
+          handleNoSpeechTimeout();
           return;
         }
         return;
@@ -1153,6 +1143,10 @@ function currentIndicatorMode() {
   if (state.voiceAwaitingTurn) return 'stop';
   if (isAssistantWorking() || isTTSSpeaking()) return 'stop';
   return '';
+}
+
+function shouldStopInUiClick() {
+  return state.voiceAwaitingTurn || isAssistantWorking() || isTTSSpeaking();
 }
 
 function updateAssistantActivityIndicator() {
@@ -2117,6 +2111,12 @@ function bindUi() {
 
   if (zenClickTarget) {
     zenClickTarget.addEventListener('click', (ev) => {
+      if (shouldStopInUiClick()) {
+        ev.preventDefault();
+        void handleZenStopAction();
+        return;
+      }
+
       // Ignore clicks on interactive elements
       if (ev.target instanceof Element && ev.target.closest('button,a,input,textarea,select,[contenteditable="true"],.zen-overlay,.zen-input,.edge-panel')) return;
       // Ignore if right-click
