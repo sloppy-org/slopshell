@@ -336,7 +336,7 @@ func (a *App) handleRuntime(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]interface{}{
 		"boot_id":          a.bootID,
 		"started_at":       a.startedAt,
-		"version":          "0.0.8-dev",
+		"version":          "0.0.8",
 		"dev_mode":         a.devRuntime,
 		"local_mcp_url":    emptyToNil(a.localMCPURL),
 		"app_server_url":   emptyToNil(a.appServerURL),
