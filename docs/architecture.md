@@ -26,32 +26,32 @@ Tabura is a Go-first MCP canvas/runtime stack with a browser UI.
 - `tabura web`: browser-facing runtime
 - `tabura canvas`: convenience browser launcher
 
-## UI Layout
+## UI Layout (Zen Canvas)
 
-The browser UI uses a unified canvas surface:
+The browser UI is a full-viewport canvas with no visible chrome:
 
-- **Chat** is the default pane in the canvas viewport.
-- **Artifacts** (text, image, PDF) appear as closeable tabs in the canvas tab bar.
-- A single **prompt bar** (`#prompt-input` + `#prompt-send`) serves all modes.
-- No dual-mode switching between chat and canvas panels.
+- **Tabula rasa**: blank white screen when no artifact is loaded.
+- **Artifact mode**: document (text, image, PDF, mail) fills the viewport.
+- No toolbar, no prompt bar, no chat column. All interaction is invisible.
+- **Edge panels** (hidden): top edge = project switcher, right edge = chat log / diagnostics. Revealed by hovering near screen edge (desktop) or swiping inward (mobile).
 
 ## Primary Data Flows
 
 1. MCP client calls tool on `tabura mcp-server` or `tabura serve`.
 2. Tool dispatch in `internal/mcp/server.go` resolves into adapter operations.
 3. Adapter updates session/artifact state in memory and emits events.
-4. Browser consumes websocket events: chat messages render in the chat pane, artifacts open as new tabs.
+4. Browser consumes websocket events: responses stream into ephemeral overlay, artifacts update the canvas in place.
 
-## Artifact Interaction (Tap-to-Reference)
+## Interaction Model
 
-Users interact with artifacts via tap-to-reference rather than persistent annotations:
-
-- **Tap/click** on artifact text places a transient marker and captures the line location as context in the prompt bar.
-- **Long-press** on artifact text places a marker and starts push-to-talk voice recording; release sends the transcription with location context.
-- **Text selection** captures the selected text and line as context.
-- Location context is prepended to the chat message as `[Line N of "title"]` and cleared after send.
-
-No persistent marks, overlays, or commit lifecycle.
+- **Tap/left-click** toggles voice recording. A red dot appears at the tap position.
+- **Right-click** opens a floating text input at the cursor position.
+- **Keyboard typing** (when nothing is focused) auto-activates text input.
+- **Enter** sends the message; input is cleared.
+- **Ctrl long-press** (300ms) starts push-to-talk; release stops and sends.
+- **Escape** dismisses overlay/input. If nothing is open and an artifact is showing, clears to tabula rasa.
+- On artifact: tap/right-click captures line context (`[Line N of "title"]`) prepended to the message.
+- Responses stream as ephemeral overlays; click outside to dismiss. Document edits update the canvas in place with diff highlighting.
 
 ## Handoff Import Flow
 

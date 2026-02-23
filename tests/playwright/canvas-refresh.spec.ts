@@ -1,8 +1,13 @@
 import { expect, test, type Page } from '@playwright/test';
 
 async function waitReady(page: Page) {
-  await page.goto('/tests/playwright/chat-harness.html');
-  await page.waitForSelector('#prompt-input', { state: 'visible', timeout: 5_000 });
+  await page.goto('/tests/playwright/zen-harness.html');
+  await page.waitForFunction(() => {
+    const app = (window as any)._taburaApp;
+    if (typeof app?.getState !== 'function') return false;
+    const s = app.getState();
+    return s.chatWs && s.chatWs.readyState === (window as any).WebSocket.OPEN;
+  }, null, { timeout: 5_000 });
   await page.waitForTimeout(200);
 }
 
@@ -22,13 +27,13 @@ async function renderTestArtifact(page: Page, text: string) {
       title: 'main.go',
       text: content,
     });
-    const col = document.getElementById('canvas-column');
-    if (col) col.style.display = '';
     const ct = document.getElementById('canvas-text');
     if (ct) {
       ct.style.display = '';
       ct.classList.add('is-active');
     }
+    const app = (window as any)._taburaApp;
+    if (app?.getState) app.getState().hasArtifact = true;
   }, text);
 }
 
@@ -48,7 +53,6 @@ test.describe('canvas auto-refresh', () => {
     const beforeText = await canvasText.textContent();
     expect(beforeText).toContain('hello');
 
-    // Simulate updated artifact event (as would arrive via canvas WS relay)
     const updated = 'package main\n\nfunc main() {\n\tprintln("updated")\n}';
     await page.evaluate((content) => {
       const mod = (window as any).__canvasModule;
@@ -66,7 +70,7 @@ test.describe('canvas auto-refresh', () => {
     expect(afterText).not.toContain('"hello"');
   });
 
-  test('mobile: canvas overlay shows updated content', async ({ page }) => {
+  test('mobile: canvas shows updated content', async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 667 });
     const original = 'Line 1\nLine 2\nLine 3';
     await renderTestArtifact(page, original);
@@ -74,7 +78,6 @@ test.describe('canvas auto-refresh', () => {
     const canvasText = page.locator('#canvas-text');
     await expect(canvasText).toBeVisible();
 
-    // Send updated artifact
     const updated = 'Line 1\nLine 2 MODIFIED\nLine 3';
     await page.evaluate((content) => {
       const mod = (window as any).__canvasModule;
@@ -91,11 +94,10 @@ test.describe('canvas auto-refresh', () => {
     expect(afterText).toContain('MODIFIED');
   });
 
-  test('chat column stays visible on desktop after canvas refresh', async ({ page }) => {
+  test('canvas viewport visible after canvas refresh', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 720 });
     await renderTestArtifact(page, 'initial content');
 
-    // Refresh the canvas content
     await page.evaluate(() => {
       const mod = (window as any).__canvasModule;
       mod.renderCanvas({
@@ -107,10 +109,7 @@ test.describe('canvas auto-refresh', () => {
     });
 
     await page.waitForTimeout(100);
-    const chatColumn = page.locator('#chat-column');
-    await expect(chatColumn).toBeVisible();
     const canvasColumn = page.locator('#canvas-column');
-    const display = await canvasColumn.evaluate(el => el.style.display);
-    expect(display).not.toBe('none');
+    await expect(canvasColumn).toBeVisible();
   });
 });

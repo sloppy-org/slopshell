@@ -5,19 +5,33 @@
 For direct runtime requests, run the obvious command first, then verify.
 Do not scan source/docs unless the command fails.
 
-## Canvas Layout
+## Canvas Layout (Zen Mode)
 
-Two-column layout: document (artifact) on the left, chat on the right. No tabs. One document at a time. When no artifact is open, chat takes full width. On mobile (<768px), canvas is a full-screen overlay with close button.
+Full-viewport canvas with no visible chrome. Two modes: **tabula rasa** (blank white screen) and **artifact** (document fills viewport). Chat happens invisibly; responses appear as ephemeral overlays. Edge panels replace toolbar and chat column.
 
-Key structural selectors: `#workspace` (flex row), `#canvas-column` (left, flex:1), `#chat-column` (right, 380px), `#canvas-viewport`, `.canvas-pane`.
+Key structural selectors: `#workspace` (flex column, full viewport), `#canvas-column` (fills viewport), `.canvas-pane` (artifact panes), `#zen-input` (floating text input), `#zen-overlay` (response overlay), `#zen-indicator` (recording dot + label), `#edge-top` (project panel), `#edge-right` (diagnostics/chat log panel).
 
-## Artifact Interaction (Tap-to-Reference)
+Removed selectors (no longer exist): `#prompt-bar`, `#prompt-input`, `#prompt-send`, `#chat-column`, `.prompt-context`.
 
-Right-click on artifact text sets a location context badge in the prompt bar (`Line N of "title"`). Long-press starts PTT voice recording with location context. Text selection captures the selected text as context. Context is prepended to the chat message on send and cleared after. All messages go through main chat. No bubbles, no tabs, no thread keys.
+## Interaction Model
 
-Key selectors: `.prompt-context` (badge chip), `.prompt-context-dismiss` (X button).
+- **Tap/left-click** anywhere on canvas toggles voice recording. Recording symbol appears at tap position.
+- **Right-click** opens floating text input (`#zen-input`) at cursor position.
+- **Keyboard typing** (no input focused, rasa mode) auto-activates text input centered.
+- **Enter** in text input sends message and clears input.
+- **Ctrl long-press** (300ms) starts push-to-talk recording; release stops and sends.
+- **Escape** dismisses overlay/input. If nothing open and artifact showing, clears to tabula rasa.
+- On artifact: tap/right-click sets line context (`[Line N of "title"]`) prepended to message.
 
-JS modules: `canvas.js` (core rendering + location capture), `canvas-mail.js` (mail triage UI), `app.js` (prompt context state + two-column layout + artifact interaction listeners).
+Response routing: `turn_started` shows overlay, `assistant_message` streams into overlay, canvas actions update in place with diff highlight, short text stays in overlay, errors auto-dismiss after 2s.
+
+## Edge Panels
+
+- **Desktop**: Mouse within 20px of edge reveals panel (300ms transition). Click to pin. Esc closes.
+- **Top edge** (`#edge-top`): Project list with "Tabula Rasa" button.
+- **Right edge** (`#edge-right`): Chat history / diagnostics log (`#chat-history`).
+
+JS modules: `zen.js` (interaction state, indicator, text input, overlay), `canvas.js` (rendering + diff highlighting), `canvas-mail.js` (mail triage UI), `app.js` (orchestration, WS routing, edge panels).
 
 ## Post-Adjustment Artifact Rule
 
@@ -140,10 +154,10 @@ Every UI interaction flow must have a Playwright test. Never skip tests.
 
 - New UI features require corresponding Playwright tests before merge.
 - Touch event flows (touchstart/touchend) must be tested alongside mouse flows (mousedown/mouseup).
-- Async flows (mic capture, STT, WebSocket) must use mock harnesses (see `tests/playwright/chat-harness.html` and `tests/playwright/harness.html`).
-- Key selectors: `#prompt-input` (textarea), `#prompt-send` (send button), `#prompt-bar` (form), `#canvas-column` (document column), `#chat-column` (chat column), `.canvas-pane` (panes).
+- Async flows (mic capture, STT, WebSocket) must use mock harnesses (see `tests/playwright/zen-harness.html` and `tests/playwright/harness.html`).
+- Key selectors: `#zen-input` (floating textarea), `#zen-overlay` (response overlay), `#zen-indicator` (recording indicator), `#canvas-column` (viewport), `.canvas-pane` (panes), `#edge-top`, `#edge-right` (edge panels).
 - Run `npx playwright test` locally and verify 100% pass before push.
-- Existing tests: `tests/playwright/artifact-context.spec.ts`, `tests/playwright/mail-actions.spec.ts`, `tests/playwright/chat-voice-send.spec.ts`.
+- Test files: `zen-canvas.spec.ts` (zen interactions, overlay, edge panels, diff highlight), `chat-voice-send.spec.ts` (voice recording), `artifact-context.spec.ts` (line context), `review-mode.spec.ts` (artifact rendering, mail teardown), `mail-actions.spec.ts` (mail triage), `canvas-refresh.spec.ts` (fsnotify refresh).
 
 ## Cross-Repo Protocol
 

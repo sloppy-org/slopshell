@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>タブラ tabura</title>
+  <title>tabura</title>
   <link rel="stylesheet" href="/static/style.css">
   <script>if(!Array.prototype.at){Array.prototype.at=function(i){return i<0?this[this.length+i]:this[i]};String.prototype.at=function(i){return i<0?this[this.length+i]:this[i]}}</script>
 </head>
@@ -11,7 +11,7 @@
   <div id="app">
     <div id="view-login" class="view" style="display:none">
       <div class="auth-card">
-        <h1>タブラ</h1>
+        <h1>tabura</h1>
         <p id="login-prompt"></p>
         <form id="login-form" autocomplete="off">
           <input id="login-password" type="password" placeholder="Password" autofocus>
@@ -21,61 +21,57 @@
       </div>
     </div>
     <div id="view-main" class="view" style="display:none">
-      <header id="toolbar">
-        <span class="brand">タブラ</span>
-        <div id="project-tab-strip" role="tablist" aria-label="Projects"></div>
-        <button id="btn-projects" class="tab-btn tab-btn-subtle" type="button">Projects</button>
-        <span id="status-text">starting...</span>
-        <span id="chat-mode-pill" class="badge">chat</span>
-        <div class="toolbar-spacer"></div>
-      </header>
-
-      <section id="project-overview" class="project-overview is-hidden" aria-label="Project overview">
-        <div class="project-overview-head">
-          <h2>Projects</h2>
-          <button id="btn-projects-close" type="button">Close</button>
-        </div>
-        <div id="project-cards" class="project-cards" aria-live="polite"></div>
-        <form id="project-create-form" autocomplete="off">
-          <h3>Add Project</h3>
-          <label>
-            Name
-            <input id="project-create-name" type="text" placeholder="Acme Website">
-          </label>
-          <label>
-            Kind
-            <select id="project-create-kind">
-              <option value="managed">Managed</option>
-              <option value="linked">Linked Path</option>
-            </select>
-          </label>
-          <label id="project-create-path-wrap">
-            Path (for linked, optional for managed)
-            <input id="project-create-path" type="text" placeholder="/home/you/code/repo">
-          </label>
-          <div class="project-create-actions">
-            <button id="btn-project-create" type="submit">Create Project</button>
-          </div>
-        </form>
-      </section>
 
       <div id="workspace">
-        <div id="canvas-column" style="display:none">
+        <div id="canvas-column">
           <div id="canvas-viewport">
             <section id="canvas-text" class="canvas-pane" aria-label="Text artifact"></section>
             <section id="canvas-image" class="canvas-pane" aria-label="Image artifact"><img id="canvas-img" alt="artifact"></section>
             <section id="canvas-pdf" class="canvas-pane" aria-label="PDF artifact"></section>
           </div>
         </div>
-        <div id="chat-column">
-          <div id="chat-history" aria-live="polite"></div>
-          <form id="prompt-bar" autocomplete="off">
-            <span id="prompt-status" class="prompt-status is-idle" aria-live="polite"></span>
-            <textarea id="prompt-input" rows="1" placeholder="Message, or hold to speak"></textarea>
-            <button id="prompt-send" type="submit">Send</button>
-          </form>
+      </div>
+
+      <div id="zen-indicator" class="zen-indicator" style="display:none">
+        <span class="zen-indicator-dot"></span>
+      </div>
+
+      <textarea id="zen-input" class="zen-input" style="display:none" rows="1" placeholder=""></textarea>
+
+      <div id="zen-overlay" class="zen-overlay" style="display:none">
+        <div class="zen-overlay-content"></div>
+      </div>
+
+      <div id="edge-top" class="edge-panel edge-top">
+        <div class="edge-panel-inner">
+          <div class="edge-panel-head">
+            <span class="edge-panel-title">Projects</span>
+            <button id="btn-edge-rasa" type="button" class="edge-btn">Tabula Rasa</button>
+          </div>
+          <div id="edge-top-projects"></div>
         </div>
       </div>
+
+      <div id="edge-right" class="edge-panel edge-right">
+        <div class="edge-panel-inner">
+          <div class="edge-panel-head">
+            <span class="edge-panel-title">Log</span>
+            <span id="zen-status" class="zen-status"></span>
+          </div>
+          <div id="chat-history" aria-live="polite"></div>
+        </div>
+      </div>
+
+      <!-- Hidden elements for data/state (not visible) -->
+      <div id="toolbar" style="display:none">
+        <div id="project-tab-strip" role="tablist" aria-label="Projects"></div>
+        <span id="status-text">starting...</span>
+        <span id="chat-mode-pill" class="badge">chat</span>
+      </div>
+      <section id="project-overview" class="project-overview is-hidden" style="display:none">
+        <div id="project-cards" class="project-cards"></div>
+        <form id="project-create-form" autocomplete="off" style="display:none"></form>
+      </section>
 
     </div>
   </div>

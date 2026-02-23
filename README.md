@@ -1,10 +1,10 @@
 # タブラ tabura
 
 Core paradigm:
-- Start in a persistent project chat canvas (browser-first).
-- Artifacts appear as closeable tabs in the canvas viewport.
-## Available Actions
-- Location-scoped requests route through AI backend.
+- Full-viewport zen canvas: blank screen (tabula rasa) or artifact fills the view.
+- Tap to talk, right-click to type, keyboard auto-activates. No visible chrome.
+- Responses stream as ephemeral overlays; document edits update in place with diff highlighting.
+- Edge panels (hover/swipe to reveal) for project switching and diagnostics.
 
 License: MIT (`LICENSE`)
 Risk notice: see [`DISCLAIMER.md`](DISCLAIMER.md)
@@ -17,8 +17,8 @@ Risk notice: see [`DISCLAIMER.md`](DISCLAIMER.md)
 - **Integrated handoff protocol spec**: [`docs/handoff-protocol/README.md`](docs/handoff-protocol/README.md)
 - **System architecture**: [`docs/architecture.md`](docs/architecture.md)
 - **Codex app-server pivot notes**: [`docs/codex-app-server-pivot.md`](docs/codex-app-server-pivot.md)
-- **Published release (v0.0.7)**: [`docs/release-v0.0.7.md`](docs/release-v0.0.7.md)
-- **Previous release (v0.0.6)**: [`docs/release-v0.0.6.md`](docs/release-v0.0.6.md)
+- **Published release (v0.0.8)**: [`docs/release-v0.0.8.md`](docs/release-v0.0.8.md)
+- **Previous release (v0.0.7)**: [`docs/release-v0.0.7.md`](docs/release-v0.0.7.md)
 - **Published baseline (v0.0.1)**: [`docs/release-v0.0.1.md`](docs/release-v0.0.1.md)
 
 ## Install
@@ -51,11 +51,13 @@ tabura canvas
 - VoxType MCP bridge: `http://127.0.0.1:8091/mcp`
 - Local canvas session id: `local`
 
-Chat-first behavior:
-- Browser opens in `Chat` tab by default.
-- `Canvas` tab is manual switch only (no auto-switch on artifact updates).
-- Slash commands are supported, including `/plan`, `/plan on`, `/plan off`, `/clear`, `/compact`.
-- Assistant responses render Markdown + LaTeX.
+Zen canvas behavior:
+- Browser opens to tabula rasa (blank white screen) or last artifact.
+- Tap anywhere to start/stop voice recording. Right-click to type. Keyboard auto-activates.
+- Responses stream as ephemeral overlays. Click outside to dismiss.
+- Edge panels: hover near top edge for projects, right edge for chat log.
+- Slash commands: `/plan`, `/plan on`, `/plan off`, `/clear`, `/compact`.
+- Artifacts render Markdown + LaTeX.
 
 ## Push To Prompt
 
@@ -73,10 +75,11 @@ Markdown text artifacts support TeX math rendering via MathJax.
 
 ## Novel UI Focus (What To Evaluate First)
 
-1. Object-scoped invocation behavior (`long press` and local prompt/capture paths).
-2. Explicit proposal lifecycle (`Accept`, `Edit`, `Reject`) with no hidden mutation.
-3. Tap-to-reference artifact interaction with transient markers and location context.
-4. Low-refresh and e-ink-friendly interaction constraints.
+1. Zen canvas: invisible chrome, full-viewport document surface.
+2. Tap-to-talk voice capture with recording dot indicator.
+3. Ephemeral response overlays (no persistent chat panel).
+4. Edge-reveal panels for hidden project/diagnostics chrome.
+5. E-ink-friendly: no animations for functional elements, static indicators.
 
 See:
 - [`docs/object-scoped-intent-ui.md`](docs/object-scoped-intent-ui.md)

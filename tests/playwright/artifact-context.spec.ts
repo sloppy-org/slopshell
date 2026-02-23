@@ -1,8 +1,13 @@
 import { expect, test, type Page } from '@playwright/test';
 
 async function waitReady(page: Page) {
-  await page.goto('/tests/playwright/chat-harness.html');
-  await page.waitForSelector('#prompt-input', { state: 'visible', timeout: 5_000 });
+  await page.goto('/tests/playwright/zen-harness.html');
+  await page.waitForFunction(() => {
+    const app = (window as any)._taburaApp;
+    if (typeof app?.getState !== 'function') return false;
+    const s = app.getState();
+    return s.chatWs && s.chatWs.readyState === (window as any).WebSocket.OPEN;
+  }, null, { timeout: 5_000 });
   await page.waitForTimeout(200);
 }
 
@@ -23,15 +28,15 @@ async function renderTestArtifact(page: Page) {
       text: 'Line one\nLine two\nLine three\nLine four\nLine five',
     });
   });
-  // Simulate what app.js does: show canvas column with the right pane
+  // Show canvas pane
   await page.evaluate(() => {
-    const col = document.getElementById('canvas-column');
-    if (col) col.style.display = '';
     const ct = document.getElementById('canvas-text');
     if (ct) {
       ct.style.display = '';
       ct.classList.add('is-active');
     }
+    const app = (window as any)._taburaApp;
+    if (app?.getState) app.getState().hasArtifact = true;
   });
 }
 
@@ -56,37 +61,28 @@ async function getSentBodies(page: Page): Promise<any[]> {
   return page.evaluate(() => (window as any).__sentBodies.slice());
 }
 
-test.describe('two-column layout', () => {
+test.describe('zen canvas layout', () => {
   test.beforeEach(async ({ page }) => {
     await waitReady(page);
     await injectCanvasModuleRef(page);
     await installMessageSpy(page);
   });
 
-  test('desktop: chat column visible, canvas column hidden when no artifact', async ({ page }) => {
+  test('canvas column visible, fills viewport when no artifact', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 720 });
-    const chatColumn = page.locator('#chat-column');
-    await expect(chatColumn).toBeVisible();
     const canvasColumn = page.locator('#canvas-column');
-    const display = await canvasColumn.evaluate(el => el.style.display);
-    expect(display).toBe('none');
+    await expect(canvasColumn).toBeVisible();
   });
 
-  test('desktop: artifact renders in left column, chat visible on right', async ({ page }) => {
+  test('artifact renders in canvas, fills viewport', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 720 });
     await renderTestArtifact(page);
-    const canvasColumn = page.locator('#canvas-column');
-    const canvasDisplay = await canvasColumn.evaluate(el => el.style.display);
-    expect(canvasDisplay).not.toBe('none');
-
-    const chatColumn = page.locator('#chat-column');
-    await expect(chatColumn).toBeVisible();
 
     const canvasText = page.locator('#canvas-text');
     await expect(canvasText).toBeVisible();
   });
 
-  test('right-click on artifact sets prompt context badge', async ({ page }) => {
+  test('right-click on artifact opens text input', async ({ page }) => {
     await renderTestArtifact(page);
     const canvasText = page.locator('#canvas-text');
     await expect(canvasText).toBeVisible();
@@ -96,13 +92,12 @@ test.describe('two-column layout', () => {
     await page.mouse.click(box.x + 20, box.y + 20, { button: 'right' });
     await page.waitForTimeout(200);
 
-    // In headless, caretRangeFromPoint may not resolve, so badge may or may not appear.
-    // Verify no crash and no annotation bubble.
-    const bubbleCount = await page.locator('.annotation-bubble').count();
-    expect(bubbleCount).toBe(0);
+    // In zen mode, right-click opens text input
+    const zenInput = page.locator('#zen-input');
+    await expect(zenInput).toBeVisible();
   });
 
-  test('left-click on artifact does not set prompt context', async ({ page }) => {
+  test('left-click on artifact starts recording, not text input', async ({ page }) => {
     await renderTestArtifact(page);
     const canvasText = page.locator('#canvas-text');
     await expect(canvasText).toBeVisible();
@@ -110,68 +105,31 @@ test.describe('two-column layout', () => {
     const box = await canvasText.boundingBox();
     if (!box) throw new Error('canvas-text not visible');
     await page.mouse.click(box.x + 20, box.y + 20);
-    await page.waitForTimeout(200);
+    await page.waitForTimeout(500);
 
-    // No prompt context badge from left-click
-    const badgeCount = await page.locator('.prompt-context').count();
-    expect(badgeCount).toBe(0);
+    // Should show recording indicator, not text input
+    const zenInput = page.locator('#zen-input');
+    const inputVisible = await zenInput.evaluate(el => el.style.display !== 'none');
+    expect(inputVisible).toBe(false);
   });
 
-  test('prompt context badge can be dismissed', async ({ page }) => {
-    // Programmatically set a prompt context to test dismissal
-    await page.evaluate(() => {
-      const app = (window as any)._taburaApp;
-      if (app?.getState) {
-        const state = app.getState();
-        state.promptContext = { line: 5, title: 'test.txt' };
-      }
-      // Manually render badge
-      const bar = document.getElementById('prompt-bar');
-      if (!bar) return;
-      const badge = document.createElement('span');
-      badge.className = 'prompt-context';
-      badge.textContent = 'Line 5 of "test.txt"';
-      const dismiss = document.createElement('button');
-      dismiss.type = 'button';
-      dismiss.className = 'prompt-context-dismiss';
-      dismiss.textContent = '\u00d7';
-      dismiss.addEventListener('click', () => {
-        const s = (window as any)._taburaApp?.getState?.();
-        if (s) s.promptContext = null;
-        badge.remove();
-      });
-      badge.appendChild(dismiss);
-      const status = bar.querySelector('.prompt-status');
-      if (status) status.after(badge);
-      else bar.prepend(badge);
-    });
-
-    await expect(page.locator('.prompt-context')).toBeVisible();
-    await page.locator('.prompt-context-dismiss').click();
-    await page.waitForTimeout(100);
-    await expect(page.locator('.prompt-context')).toHaveCount(0);
-  });
-
-  test('canvas clear hides canvas column', async ({ page }) => {
+  test('canvas clear hides artifact panes', async ({ page }) => {
     await renderTestArtifact(page);
-    const canvasColumn = page.locator('#canvas-column');
-    let display = await canvasColumn.evaluate(el => el.style.display);
-    expect(display).not.toBe('none');
+    const canvasText = page.locator('#canvas-text');
+    await expect(canvasText).toBeVisible();
 
-    // Trigger clear_canvas
     await page.evaluate(() => {
       const mod = (window as any).__canvasModule;
       mod.renderCanvas({ kind: 'clear_canvas' });
-      // app.js would call hideCanvasColumn, simulate it
-      const col = document.getElementById('canvas-column');
-      if (col) col.style.display = 'none';
     });
+    await page.waitForTimeout(100);
 
-    display = await canvasColumn.evaluate(el => el.style.display);
-    expect(display).toBe('none');
+    // All panes hidden
+    const activePanes = page.locator('.canvas-pane.is-active');
+    await expect(activePanes).toHaveCount(0);
   });
 
-  test('text selection works normally without opening bubble', async ({ page }) => {
+  test('text selection works without opening bubble', async ({ page }) => {
     await renderTestArtifact(page);
     const canvasText = page.locator('#canvas-text');
     await expect(canvasText).toBeVisible();
@@ -189,20 +147,6 @@ test.describe('two-column layout', () => {
     expect(bubbleCount).toBe(0);
   });
 
-  test('line highlight absent after left-click', async ({ page }) => {
-    await renderTestArtifact(page);
-
-    const canvasText = page.locator('#canvas-text');
-    const box = await canvasText.boundingBox();
-    if (box) {
-      await page.mouse.click(box.x + 20, box.y + 20);
-      await page.waitForTimeout(100);
-    }
-
-    const highlightCount = await page.locator('.review-line-highlight').count();
-    expect(highlightCount).toBe(0);
-  });
-
   test('no tab bar in DOM', async ({ page }) => {
     const tabBar = await page.locator('#canvas-tab-bar').count();
     expect(tabBar).toBe(0);
@@ -213,16 +157,20 @@ test.describe('two-column layout', () => {
     expect(chatPane).toBe(0);
   });
 
-  test('send message without context has no location prefix', async ({ page }) => {
-    const input = page.locator('#prompt-input');
-    await input.fill('hello');
-    await page.locator('#prompt-send').click();
+  test('send message via text input', async ({ page }) => {
+    // Right-click to open text input
+    await page.mouse.click(300, 300, { button: 'right' });
+    await page.waitForTimeout(100);
+
+    const zenInput = page.locator('#zen-input');
+    await expect(zenInput).toBeVisible();
+    await zenInput.fill('hello');
+    await page.keyboard.press('Enter');
     await page.waitForTimeout(300);
 
     const bodies = await getSentBodies(page);
     expect(bodies.length).toBeGreaterThanOrEqual(1);
     const sent = bodies[bodies.length - 1];
     expect(sent.text).toBe('hello');
-    expect(sent.thread_key).toBeUndefined();
   });
 });

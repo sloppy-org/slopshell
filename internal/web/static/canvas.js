@@ -112,6 +112,8 @@ const els = {};
 let activeTextEventId = null;
 let activeArtifactTitle = '';
 let activePdfEvent = null;
+let previousArtifactText = '';
+let previousBlockTexts = [];
 
 const MATH_SEGMENT_TOKEN_PREFIX = '@@TABURA_MATH_SEGMENT_';
 
@@ -391,16 +393,22 @@ export function renderCanvas(event) {
     activeTextEventId = event.event_id;
     activeArtifactTitle = event.title || '';
     activePdfEvent = null;
+    const oldBlockTexts = previousBlockTexts.slice();
     const mailContext = normalizeMailHeadersContext(event);
     if (mailContext) {
       setActiveMailContext(mailContext);
       renderMailArtifact(event.event_id, mailContext);
+      previousArtifactText = event.text || '';
+      previousBlockTexts = [];
       return;
     }
     const { text: markdownText, stash: mathSegments } = extractMathSegments(event.text || '');
     const renderedMarkdownHtml = marked.parse(markdownText);
     e.text.innerHTML = restoreMathSegments(sanitizeHtml(renderedMarkdownHtml), mathSegments);
     typesetMarkdownMath(e.text);
+    previousArtifactText = event.text || '';
+    previousBlockTexts = captureBlockTexts(e.text);
+    applyDiffHighlight(e.text, oldBlockTexts);
   } else if (event.kind === 'image_artifact') {
     clearTextInteractionHandlers();
     hideAll();
@@ -434,4 +442,64 @@ export function clearCanvas() {
   activeTextEventId = null;
   activeArtifactTitle = '';
   activePdfEvent = null;
+  previousArtifactText = '';
+  previousBlockTexts = [];
+}
+
+function getBlockSelector() {
+  return 'p, h1, h2, h3, h4, h5, h6, pre, ul, ol, table, blockquote, hr, div:not(.review-line-highlight):not(.diff-highlight)';
+}
+
+function captureBlockTexts(root) {
+  const blocks = root.querySelectorAll(getBlockSelector());
+  const texts = [];
+  for (let i = 0; i < blocks.length; i++) {
+    texts.push(blocks[i].textContent || '');
+  }
+  return texts;
+}
+
+function applyDiffHighlight(root, oldBlockTexts) {
+  if (!oldBlockTexts || oldBlockTexts.length === 0 || !root) return;
+  const blocks = root.querySelectorAll(getBlockSelector());
+  const changedBlocks = [];
+  const maxLen = Math.max(oldBlockTexts.length, blocks.length);
+  for (let i = 0; i < maxLen; i++) {
+    if (i >= blocks.length) break;
+    const oldContent = i < oldBlockTexts.length ? oldBlockTexts[i] : '';
+    const newContent = blocks[i].textContent || '';
+    if (oldContent !== newContent) {
+      blocks[i].classList.add('diff-highlight');
+      changedBlocks.push(blocks[i]);
+    }
+  }
+  // New blocks beyond old length
+  for (let i = oldBlockTexts.length; i < blocks.length; i++) {
+    blocks[i].classList.add('diff-highlight');
+    changedBlocks.push(blocks[i]);
+  }
+  if (changedBlocks.length === 0) return;
+  setTimeout(() => {
+    if (changedBlocks[0] && changedBlocks[0].isConnected) {
+      changedBlocks[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, 50);
+  setTimeout(() => {
+    for (const block of changedBlocks) {
+      if (block.isConnected) {
+        block.classList.add('diff-highlight-fade');
+      }
+    }
+    setTimeout(() => {
+      for (const block of changedBlocks) {
+        if (block.isConnected) {
+          block.classList.remove('diff-highlight', 'diff-highlight-fade');
+        }
+      }
+    }, 2100);
+  }, 2000);
+}
+
+export function getPreviousArtifactText() {
+  return previousArtifactText;
 }

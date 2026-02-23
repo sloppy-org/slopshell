@@ -12,15 +12,14 @@ Core constraints:
 
 ## Invocation Primitive
 
-Long press is the primary invoke action on an object.
-Desktop equivalents: long left-click hold at a target point, or hold `Ctrl` at the current cursor/anchor point for Push To Prompt.  
-Right-click opens the text comment box mode.
+Tap (left-click) anywhere on the canvas toggles voice recording. A recording dot appears at the tap position.
+Desktop equivalents: tap to toggle voice capture, or hold `Ctrl` (300ms) for push-to-talk.
+Right-click opens a floating text input at the cursor position.
+Keyboard typing (when nothing is focused) auto-activates text input.
 
-Mode-dependent behavior:
-- Voice mode (Push To Prompt): capture spoken intent with location context.
-- Silent mode: set location context in prompt bar, type request.
+On artifact: tap or right-click captures line context prepended to the message.
 
-No global assistant console is required for object-level operations.
+No prompt bar, no chat panel, no visible chrome. Responses stream as ephemeral overlays.
 
 ## Email Reply Interaction
 
@@ -50,9 +49,9 @@ Selection types:
 
 Capture sequence:
 1. User taps/selects target location on artifact.
-2. System sets transient marker and location context in prompt bar.
-3. User types or speaks intent.
-4. Message sent with location context prefix; marker cleared after send.
+2. System captures line context from tap point.
+3. User speaks (via tap-to-record) or types (via right-click text input).
+4. Message sent with location context prefix; context cleared after send.
 
 ## Intent Classification for Reply Drafting
 

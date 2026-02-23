@@ -16,8 +16,8 @@ Integrated protocol reference:
 
 Release notes:
 
-- Published release: `release-v0.0.7.md`
-- Previous release: `release-v0.0.6.md`
+- Published release: `release-v0.0.8.md`
+- Previous release: `release-v0.0.7.md`
 - Published baseline: `release-v0.0.1.md`
 
 ## Source Code Anchors
@@ -38,6 +38,7 @@ Release notes:
 
 - `internal/web/static/index.html`
 - `internal/web/static/app.js`
+- `internal/web/static/zen.js`
 - `internal/web/static/canvas.js`
 - `internal/web/static/style.css`
 

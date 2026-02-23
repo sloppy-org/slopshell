@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Tabura Chat Harness</title>
+  <title>Tabura Zen Harness</title>
   <link rel="stylesheet" href="../../internal/web/static/style.css">
   <style>
     body { margin: 0; padding: 0; }
@@ -118,7 +118,7 @@
       return _realFetch.apply(this, arguments);
     };
 
-    // Mock WebSocket with STT message handling
+    // Mock WebSocket with STT message handling and chat events
     const _NativeWebSocket = window.WebSocket;
     class MockWebSocket {
       static CONNECTING = 0;
@@ -131,6 +131,9 @@
         this.onopen = null;
         this.onmessage = null;
         this.onclose = null;
+        // Track all WS instances for test injection
+        if (!window.__mockWsSessions) window.__mockWsSessions = [];
+        window.__mockWsSessions.push(this);
         setTimeout(() => { if (this.onopen) this.onopen({}); }, 10);
       }
       send(data) {
@@ -156,10 +159,16 @@
         } catch (_) {}
       }
       close() { this.readyState = MockWebSocket.CLOSED; }
+      // Helper: inject a chat event from tests
+      injectEvent(payload) {
+        if (this.onmessage) {
+          this.onmessage({ data: JSON.stringify(payload) });
+        }
+      }
     }
     window.WebSocket = MockWebSocket;
 
-    // Mock getUserMedia - resolve instantly with a fake stream
+    // Mock getUserMedia
     const fakeTrack = {
       stop() {},
       kind: 'audio',
@@ -204,20 +213,9 @@
         this.state = 'recording';
         this._timeslice = timeslice;
         window.__harnessLog.push({ type: 'recorder', action: 'start', timeslice });
-        if (timeslice && timeslice > 0) {
-          this._chunkInterval = setInterval(() => {
-            if (this.state !== 'recording') {
-              clearInterval(this._chunkInterval);
-              return;
-            }
-            const blob = new Blob([new Uint8Array([1, 2, 3])], { type: this.mimeType });
-            this._emit('dataavailable', { data: blob });
-          }, 50);
-        }
       }
       stop() {
         this.state = 'inactive';
-        if (this._chunkInterval) clearInterval(this._chunkInterval);
         window.__harnessLog.push({ type: 'recorder', action: 'stop' });
         const blob = new Blob([new Uint8Array([1, 2, 3, 4, 5])], { type: this.mimeType });
         setTimeout(() => {
@@ -229,7 +227,6 @@
   </script>
   <script type="module" src="../../internal/web/static/app.js"></script>
   <script>
-    // Spy on unhandled promise rejections
     window.addEventListener('unhandledrejection', (ev) => {
       window.__harnessLog.push({ type: 'unhandled_rejection', message: String(ev.reason?.message || ev.reason) });
     });
