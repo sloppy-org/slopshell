@@ -23,7 +23,7 @@ Removed selectors (no longer exist): `#prompt-bar`, `#prompt-input`, `#prompt-se
 - **Escape** dismisses overlay/input. If nothing open and artifact showing, clears to tabula rasa.
 - On artifact: tap/right-click sets line context (`[Line N of "title"]`) prepended to message.
 
-Response routing: LLM responses use three channels — `<speak>` tags are spoken via TTS (Piper default, F5-TTS/Chatterbox optional), `:::canvas{title="..."}` shows ephemeral visual content, `:::file{path="..."}` shows file-bound artifacts. Overlay is shown only when visual content exists; speak-only responses produce audio without overlay. `turn_started` shows overlay, `assistant_message` streams into overlay and feeds TTS chunker, canvas/file actions update in place with diff highlight, errors auto-dismiss after 2s. User tap/message interrupts TTS playback.
+Response routing: All LLM response text is spoken via TTS (Piper default, F5-TTS/Chatterbox optional) except content inside `:::canvas{title="..."}` and `:::file{path="..."}` blocks. Language is set via `[lang:xx]` marker (default English). `:::canvas{title="..."}` shows ephemeral visual content, `:::file{path="..."}` shows file-bound artifacts. Overlay is shown only when visual content exists; speak-only responses produce audio without overlay. `turn_started` shows overlay, `assistant_message` streams into overlay and feeds TTS chunker, canvas/file actions update in place with diff highlight, errors auto-dismiss after 2s. User tap/message interrupts TTS playback.
 
 ## Edge Panels
 
@@ -91,7 +91,7 @@ Piper voices: `en_GB-alan-medium` (English), `de_DE-karlsson-low` (German). Inst
 F5-TTS: voice-cloned synthesis with 7 NFE steps (EPSS Fast mode). English uses base F5-TTS model, German uses aihpi/F5-TTS-German. ~150ms/sentence on GPU. Reference WAV at `~/.local/share/tabura-tts/reference.wav`. Setup: `scripts/setup-tabura-f5-tts.sh`, then swap `tabura-piper-tts` for `tabura-f5-tts` in service deps.
 Chatterbox: voice-cloned TTS with reference audio. High quality but ~5s/sentence latency.
 
-Frontend detects language from German word heuristic. Sentences are chunked via `SentenceChunker` and played sequentially via `TTSPlayer`.
+Frontend language is set by `[lang:xx]` marker in LLM response (default English). All response text is spoken except `:::canvas{}`/`:::file{}` blocks. Sentences are chunked via `SentenceChunker` and played sequentially via `TTSPlayer`.
 
 ## Canvas Action Syntax
 
@@ -100,7 +100,7 @@ Two explicit actions replace the old `:::canvas_show{...}`:
 - `:::canvas{title="Title"}...:::` — ephemeral visual display (analysis, reports)
 - `:::file{path="filename.go"}...:::` — file-bound artifact (code, config)
 
-Backend parses both, executes via MCP `canvas_artifact_show`, strips `<speak>` tags before persisting.
+Backend parses both, executes via MCP `canvas_artifact_show`, strips `[lang:xx]` markers before persisting.
 
 ## Handoff Example: Archive Folder (20 Headers)
 

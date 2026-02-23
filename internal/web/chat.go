@@ -703,7 +703,7 @@ func (a *App) runAssistantTurn(sessionID string) {
 		}
 		assistantText = cleaned
 	}
-	assistantText = stripSpeakTags(assistantText)
+	assistantText = stripLangTags(assistantText)
 	if !hasCanvasOutput {
 		a.executeAssistantTextBlock(canvasSessionID, assistantText)
 	}
@@ -897,7 +897,7 @@ func (a *App) runAssistantTurnLegacy(sessionID string, session store.ChatSession
 		}
 		assistantText = cleaned
 	}
-	assistantText = stripSpeakTags(assistantText)
+	assistantText = stripLangTags(assistantText)
 	if !hasCanvasOutput {
 		a.executeAssistantTextBlock(canvasSessionID, assistantText)
 	}
@@ -1029,45 +1029,21 @@ func buildPromptFromHistory(mode string, messages []store.ChatMessage, canvas *c
 	}
 	var b strings.Builder
 
-	b.WriteString("You are Tabura, an AI assistant. Your responses are spoken aloud via text-to-speech.\n\n")
+	b.WriteString("You are Tabura, an AI assistant. Everything you write is spoken aloud via TTS except content inside :::canvas{} and :::file{} blocks.\n\n")
 	b.WriteString("## Response Format\n\n")
-	b.WriteString("1. Wrap ALL text intended to be spoken in <speak lang=\"xx\">...</speak> tags.\n")
-	b.WriteString("   - ALWAYS include the lang attribute: lang=\"en\" for English, lang=\"de\" for German.\n")
-	b.WriteString("   - Match the user's language. If they write in German, respond with lang=\"de\". If English, lang=\"en\".\n")
-	b.WriteString("2. Inside <speak>, write naturally as if talking to someone:\n")
-	b.WriteString("   - NO file paths, URLs, code, or markdown formatting\n")
-	b.WriteString("   - Convert technical references to natural speech: \"the main function in the server file\" not \"func main() in server.go\"\n")
-	b.WriteString("   - Use conversational connectors: \"so\", \"basically\", \"here's the thing\"\n")
-	b.WriteString("   - Keep it concise: 1-3 sentences for simple answers\n")
-	b.WriteString("3. For visual content, use TWO distinct action types:\n")
-	b.WriteString("   - :::canvas{title=\"Title\"}...:::  for ephemeral display (analysis, formatted output, explanations)\n")
-	b.WriteString("   - :::file{path=\"filename.go\"}...:::  for file-bound artifacts (code, config, anything on disk)\n")
-	b.WriteString("4. You may combine speech and visual content. Example:\n")
-	b.WriteString("   <speak lang=\"en\">I have updated the function to handle the error case. Take a look at the changes.</speak>\n")
-	b.WriteString("   :::file{path=\"server.go\"}\n")
-	b.WriteString("   func handleError(w http.ResponseWriter, err error) { ... }\n")
-	b.WriteString("   :::\n")
-	b.WriteString("5. For simple conversational answers, use <speak> only, no artifact needed.\n")
-	b.WriteString("6. NEVER put <speak> content inside :::canvas{} or :::file{}, or vice versa.\n")
-	b.WriteString("7. CRITICAL: The lang attribute on <speak> controls which TTS voice is used. Wrong lang = wrong voice.\n\n")
-	b.WriteString("## Available Actions\n")
-	b.WriteString("When appropriate, include these action markers in your response:\n\n")
-	b.WriteString("- :::canvas{title=\"Title\"}...:::  ephemeral visual display (analysis, reports, explanations)\n")
-	b.WriteString("- :::file{path=\"filename.go\"}...:::  file-bound artifact (code, config files)\n")
-	b.WriteString("- When the user references a location in an artifact (e.g. [Line 42 of \"file.go\"]), apply the request at that location.\n\n")
-	b.WriteString("## Guidelines\n")
-	b.WriteString("- Use :::canvas{} for analysis, formatted output, and explanations the user should see.\n")
-	b.WriteString("- Use :::file{} for code and config files (path is cwd-relative or absolute).\n")
-	b.WriteString("- For short answers or conversational replies, use <speak> only without visual markers.\n\n")
+	b.WriteString("Write naturally. Your text is read aloud, so avoid raw paths, URLs, or code in prose.\n")
+	b.WriteString("Use [lang:de] at the start of your answer when responding in German. Default is English.\n\n")
+	b.WriteString("Visual content (not spoken):\n")
+	b.WriteString("- :::canvas{title=\"Title\"}...:::  ephemeral display (analysis, reports)\n")
+	b.WriteString("- :::file{path=\"filename.go\"}...:::  file-bound artifact (code, config)\n")
+	b.WriteString("- Line references: when the user mentions [Line N of \"file\"], apply at that location.\n\n")
 
 	b.WriteString("## Delegation\n")
-	b.WriteString("You have a `delegate_to_model` tool to route tasks to other models.\n")
-	b.WriteString("- If the user says 'let codex do this', 'ask codex', 'use codex' -> delegate with model='codex'.\n")
-	b.WriteString("- If the user says 'ask gpt', 'use the big model' -> delegate with model='gpt'.\n")
-	b.WriteString("- Auto-delegate complex multi-file coding, deep code analysis, or architecture tasks to 'codex'.\n")
-	b.WriteString("- Always provide 'context' (conversation summary) and 'system_prompt' (task instructions) when delegating.\n")
-	b.WriteString("- After receiving the delegate response, summarize it via <speak> and show details via :::canvas{} or :::file{} as appropriate.\n")
-	b.WriteString("- Do NOT delegate simple conversational replies, short factual answers, or greetings.\n\n")
+	b.WriteString("Use `delegate_to_model` for tasks that benefit from another model.\n")
+	b.WriteString("- 'let codex do this' / 'ask codex' -> model='codex'. 'ask gpt' / 'use the big model' -> model='gpt'.\n")
+	b.WriteString("- Auto-delegate complex multi-file coding or deep analysis to 'codex'.\n")
+	b.WriteString("- Provide 'context' and 'system_prompt' when delegating.\n")
+	b.WriteString("- Do NOT delegate simple conversational replies.\n\n")
 
 	if canvas != nil && canvas.HasArtifact {
 		b.WriteString("## Current Artifact\n")

@@ -72,18 +72,16 @@ const LAST_VIEW_STORAGE_KEY = 'tabura.lastView';
 
 // --- TTS infrastructure ---
 
-function parseSpeakTags(markdown) {
-  const speakParts = [];
-  let speakLang = '';
-  let visualMarkdown = markdown;
-  const speakRegex = /<speak(?:\s+lang="([^"]*)")?\s*>([\s\S]*?)<\/speak>/g;
-  let match;
-  while ((match = speakRegex.exec(markdown)) !== null) {
-    if (match[1] && !speakLang) speakLang = match[1].trim().toLowerCase();
-    speakParts.push(match[2].trim());
-  }
-  visualMarkdown = markdown.replace(speakRegex, '').trim();
-  return { speakText: speakParts.join(' '), speakLang, visualMarkdown };
+// Extract text for TTS: everything except :::canvas{}/:::file{} blocks.
+// Language from [lang:xx] markers, defaults to "en".
+const _canvasFileBlockRe = /:::(?:canvas|file)\{[^}]*\}\n?[\s\S]*?:::/g;
+const _langTagRe = /\[lang:([a-z]{2})\]/gi;
+function extractTTSText(markdown) {
+  let text = markdown.replace(_canvasFileBlockRe, ' ');
+  let lang = '';
+  text = text.replace(_langTagRe, (_, l) => { if (!lang) lang = l.toLowerCase(); return ''; });
+  text = text.trim();
+  return { ttsText: text, ttsLang: lang };
 }
 
 
@@ -1210,11 +1208,11 @@ function handleChatEvent(payload) {
     }
 
     if (ttsEnabled) {
-      const { speakText, speakLang } = parseSpeakTags(md);
-      if (speakLang) ttsSpeakLang = speakLang;
-      if (speakText && speakText !== ttsLastSpeakText) {
-        const newText = speakText.slice(ttsLastSpeakText.length);
-        ttsLastSpeakText = speakText;
+      const { ttsText, ttsLang } = extractTTSText(md);
+      if (ttsLang) ttsSpeakLang = ttsLang;
+      if (ttsText && ttsText !== ttsLastSpeakText) {
+        const newText = ttsText.slice(ttsLastSpeakText.length);
+        ttsLastSpeakText = ttsText;
         if (newText.trim()) {
           if (!ttsSentenceChunker) {
             ttsPlayer = new TTSPlayer();
@@ -1239,8 +1237,7 @@ function handleChatEvent(payload) {
     if (String(payload.role || '') !== 'assistant') return;
     const turnID = String(payload.turn_id || '').trim();
     const md = String(payload.message || '');
-    // Backend strips <speak> tags before persisting, so voice-only responses
-    // arrive with empty md. Use the accumulated speak text for the chat log.
+    // Persisted text may be empty for voice-only responses; fall back to TTS text.
     const displayMd = md || (ttsLastSpeakText ? `_${ttsLastSpeakText}_` : '');
     if (isVoiceTurn()) {
       const row = takePendingRow(turnID);

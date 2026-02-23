@@ -349,7 +349,7 @@ test.describe('zen canvas - TTS voice output', () => {
     await expect(indicator).toBeHidden();
   });
 
-  test('speak-only voice response triggers TTS, no overlay', async ({ page }) => {
+  test('voice response triggers TTS, no overlay', async ({ page }) => {
     await clearLog(page);
     await setVoiceOrigin(page);
 
@@ -359,7 +359,7 @@ test.describe('zen canvas - TTS voice output', () => {
     await injectChatEvent(page, {
       type: 'assistant_message',
       turn_id: 'tts-1',
-      message: '<speak>Hello, how can I help you today?</speak>',
+      message: 'Hello, how can I help you today?',
     });
     await page.waitForTimeout(500);
 
@@ -382,7 +382,7 @@ test.describe('zen canvas - TTS voice output', () => {
     await expect(overlay).toBeHidden();
   });
 
-  test('text turn with speak tags does NOT trigger TTS, shows overlay', async ({ page }) => {
+  test('text turn also triggers TTS and shows overlay', async ({ page }) => {
     await clearLog(page);
     // Text origin (default)
     await page.keyboard.type('analyze');
@@ -395,11 +395,11 @@ test.describe('zen canvas - TTS voice output', () => {
     await injectChatEvent(page, {
       type: 'assistant_message',
       turn_id: 'tts-text',
-      message: '<speak>Here is the analysis.</speak>\n\nSome visual content.',
+      message: 'Here is the analysis with some visual content.',
     });
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(500);
 
-    // Overlay shows markdown (speak tags included since no speak extraction for text mode)
+    // Overlay shows markdown
     const overlay = page.locator('#zen-overlay');
     await expect(overlay).toBeVisible();
 
@@ -407,17 +407,17 @@ test.describe('zen canvas - TTS voice output', () => {
       type: 'message_persisted',
       role: 'assistant',
       turn_id: 'tts-text',
-      message: 'Some visual content.',
+      message: 'Here is the analysis with some visual content.',
     });
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(500);
 
-    // No TTS calls for text-mode turns
+    // TTS fires on all turns now
     const log = await getLog(page);
     const ttsCalls = log.filter(e => e.type === 'tts');
-    expect(ttsCalls.length).toBe(0);
+    expect(ttsCalls.length).toBeGreaterThan(0);
   });
 
-  test('language detection sends lang=de for German text', async ({ page }) => {
+  test('lang tag sends lang=de for German text', async ({ page }) => {
     await clearLog(page);
     await setVoiceOrigin(page);
 
@@ -427,7 +427,7 @@ test.describe('zen canvas - TTS voice output', () => {
     await injectChatEvent(page, {
       type: 'assistant_message',
       turn_id: 'tts-de',
-      message: '<speak>Hallo, ich bin Tabura und kann dir helfen.</speak>',
+      message: '[lang:de] Hallo, ich bin Tabura und kann dir helfen.',
     });
     await page.waitForTimeout(300);
 

@@ -23,7 +23,7 @@ type fileBlock struct {
 
 var canvasBlockRe = regexp.MustCompile(`(?s):::canvas\{([^}]*)\}\n?(.*?):::`)
 var fileBlockRe = regexp.MustCompile(`(?s):::file\{([^}]*)\}\n?(.*?):::`)
-var speakTagRe = regexp.MustCompile(`(?s)<speak(?:\s[^>]*)?>.*?</speak>`)
+var langTagRe = regexp.MustCompile(`\[lang:[a-z]{2}\]`)
 
 var attrRe = regexp.MustCompile(`(\w+)="([^"]*)"`)
 
@@ -80,8 +80,8 @@ func parseFileBlocks(text string) ([]fileBlock, string) {
 	return blocks, strings.TrimSpace(cleaned.String())
 }
 
-func stripSpeakTags(text string) string {
-	return strings.TrimSpace(speakTagRe.ReplaceAllString(text, ""))
+func stripLangTags(text string) string {
+	return strings.TrimSpace(langTagRe.ReplaceAllString(text, ""))
 }
 
 func (a *App) executeAssistantTextBlock(canvasSessionID, text string) {

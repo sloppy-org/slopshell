@@ -182,48 +182,27 @@ func TestParseFileBlocks_ContentWithCodeFences(t *testing.T) {
 	}
 }
 
-func TestStripSpeakTags_WithTags(t *testing.T) {
-	input := `<speak>Hello, I have updated the file.</speak>
-
-[file: server.go]`
-	got := stripSpeakTags(input)
-	if strings.Contains(got, "<speak>") {
-		t.Errorf("speak tags should be stripped, got %q", got)
+func TestStripLangTags(t *testing.T) {
+	input := "[lang:de] Hallo, ich habe die Datei aktualisiert."
+	got := stripLangTags(input)
+	if strings.Contains(got, "[lang:") {
+		t.Errorf("lang tags should be stripped, got %q", got)
 	}
-	if !strings.Contains(got, "[file: server.go]") {
-		t.Errorf("non-speak content should be preserved, got %q", got)
+	if !strings.Contains(got, "Hallo") {
+		t.Errorf("content should be preserved, got %q", got)
 	}
 }
 
-func TestStripSpeakTags_NoTags(t *testing.T) {
-	input := "No speak tags here."
-	got := stripSpeakTags(input)
+func TestStripLangTags_NoTags(t *testing.T) {
+	input := "No lang tags here."
+	got := stripLangTags(input)
 	if got != input {
 		t.Errorf("expected %q, got %q", input, got)
 	}
 }
 
-func TestStripSpeakTags_MultipleTags(t *testing.T) {
-	input := "<speak>First sentence.</speak> Some visual. <speak>Second sentence.</speak>"
-	got := stripSpeakTags(input)
-	if strings.Contains(got, "<speak>") {
-		t.Errorf("all speak tags should be stripped, got %q", got)
-	}
-	if !strings.Contains(got, "Some visual.") {
-		t.Errorf("non-speak content should be preserved, got %q", got)
-	}
-}
-
-func TestStripSpeakTags_SpeakOnly(t *testing.T) {
-	input := "<speak>Just speech, nothing else.</speak>"
-	got := stripSpeakTags(input)
-	if got != "" {
-		t.Errorf("expected empty string for speak-only, got %q", got)
-	}
-}
-
 func TestMixedCanvasAndFileBlocks(t *testing.T) {
-	input := `<speak>Here is the summary and the code.</speak>
+	input := `[lang:en] Here is the summary and the code.
 
 :::canvas{title="Summary"}
 Everything looks good.
@@ -235,7 +214,7 @@ package main
 
 	cBlocks, afterCanvas := parseCanvasBlocks(input)
 	fBlocks, afterFile := parseFileBlocks(afterCanvas)
-	final := stripSpeakTags(afterFile)
+	final := stripLangTags(afterFile)
 
 	if len(cBlocks) != 1 {
 		t.Fatalf("expected 1 canvas block, got %d", len(cBlocks))
@@ -243,27 +222,14 @@ package main
 	if len(fBlocks) != 1 {
 		t.Fatalf("expected 1 file block, got %d", len(fBlocks))
 	}
-	if strings.Contains(final, "<speak>") {
-		t.Errorf("speak tags should be stripped from final, got %q", final)
+	if strings.Contains(final, "[lang:") {
+		t.Errorf("lang tags should be stripped from final, got %q", final)
 	}
 	if !strings.Contains(final, "[canvas: Summary]") {
 		t.Errorf("canvas reference missing, got %q", final)
 	}
 	if !strings.Contains(final, "[file: main.go]") {
 		t.Errorf("file reference missing, got %q", final)
-	}
-}
-
-func TestStripSpeakTags_WithLangAttribute(t *testing.T) {
-	input := `<speak lang="de">Hallo, ich habe die Datei aktualisiert.</speak>
-
-[file: server.go]`
-	got := stripSpeakTags(input)
-	if strings.Contains(got, "<speak") {
-		t.Errorf("speak tags with lang attr should be stripped, got %q", got)
-	}
-	if !strings.Contains(got, "[file: server.go]") {
-		t.Errorf("non-speak content should be preserved, got %q", got)
 	}
 }
 
@@ -281,8 +247,8 @@ func TestBuildPromptFromHistory_IncludesSystemPrompt(t *testing.T) {
 	if !strings.Contains(prompt, ":::file{") {
 		t.Error("prompt should mention :::file{ markers")
 	}
-	if !strings.Contains(prompt, "<speak") {
-		t.Error("prompt should mention <speak tags")
+	if !strings.Contains(prompt, "[lang:") {
+		t.Error("prompt should mention [lang:] markers")
 	}
 	if !strings.Contains(prompt, "Reply as ASSISTANT.") {
 		t.Error("prompt should end with Reply as ASSISTANT")
