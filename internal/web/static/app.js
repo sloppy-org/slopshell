@@ -935,15 +935,17 @@ function stopChatVoiceMediaAndFlush(capture) {
   });
 }
 
-async function beginZenVoiceCapture(x, y, anchor) {
+async function beginZenVoiceCapture(x, y, anchor, options = null) {
   if (state.chatVoiceCapture) return;
   if (!canUseMicrophoneCapture()) return;
+  const manualStopOnly = Boolean(options && options.manualStopOnly);
   // Interrupt TTS playback when starting recording
   stopTTSPlayback();
   const capture = {
     active: false,
     stopping: false,
     stopRequested: false,
+    manualStopOnly,
     autoSend: true,
     mediaStream: null,
     mediaRecorder: null,
@@ -972,7 +974,7 @@ async function beginZenVoiceCapture(x, y, anchor) {
       capture.chunks.push(ev.data);
     });
     recorder.start();
-    if (!capture.stopRequested) {
+    if (!capture.stopRequested && !capture.manualStopOnly) {
       startVADMonitor(capture);
     }
     if (capture.stopRequested) {
@@ -2088,6 +2090,10 @@ function bindUi() {
   const canvasText = document.getElementById('canvas-text');
   const canvasViewport = document.getElementById('canvas-viewport');
   const zenIndicator = document.getElementById('zen-indicator');
+  const isVoiceInteractionTarget = (target) => (
+    target instanceof Element
+    && target.closest('button,a,input,textarea,select,[contenteditable="true"],.zen-overlay,.zen-input,.edge-panel')
+  );
 
   if (zenIndicator) {
     zenIndicator.addEventListener('pointerdown', (ev) => {
@@ -2111,7 +2117,95 @@ function bindUi() {
   window.addEventListener('resize', syncIndicatorOnViewportChange);
 
   if (zenClickTarget) {
+    let mouseHoldTimer = null;
+    let mouseHoldActive = false;
+    let mouseHoldSuppressClick = false;
+    let mouseHoldPointerId = null;
+    let mouseHoldX = 0;
+    let mouseHoldY = 0;
+    const MOUSE_HOLD_MOVE_THRESHOLD = 5;
+    const clearMouseHoldTimer = () => {
+      if (!mouseHoldTimer) return;
+      clearTimeout(mouseHoldTimer);
+      mouseHoldTimer = null;
+    };
+    const clearMouseHoldState = () => {
+      clearMouseHoldTimer();
+      mouseHoldActive = false;
+      mouseHoldPointerId = null;
+    };
+
+    // Mouse hold behaves as push-to-talk: press to start, release to stop.
+    // A short click still uses tap-to-talk via the click handler below.
+    zenClickTarget.addEventListener('pointerdown', (ev) => {
+      if (ev.pointerType !== 'mouse' || !ev.isPrimary || ev.button !== 0) return;
+      if (isVoiceInteractionTarget(ev.target)) return;
+      if (isRecording() || shouldStopInUiClick()) return;
+      const sel = window.getSelection();
+      if (sel && !sel.isCollapsed) return;
+      clearMouseHoldTimer();
+      mouseHoldActive = false;
+      mouseHoldPointerId = ev.pointerId;
+      mouseHoldX = ev.clientX;
+      mouseHoldY = ev.clientY;
+      if (typeof zenClickTarget.setPointerCapture === 'function') {
+        try { zenClickTarget.setPointerCapture(ev.pointerId); } catch (_) {}
+      }
+      mouseHoldTimer = window.setTimeout(() => {
+        mouseHoldTimer = null;
+        if (mouseHoldPointerId !== ev.pointerId || state.chatVoiceCapture) return;
+        mouseHoldActive = true;
+        // Releasing a successful hold emits a click; ignore that click so we
+        // do not immediately toggle/cancel after manual stop.
+        mouseHoldSuppressClick = true;
+        let anchor = null;
+        if (state.hasArtifact && canvasText) {
+          anchor = getAnchorFromPoint(mouseHoldX, mouseHoldY);
+        }
+        void beginZenVoiceCapture(mouseHoldX, mouseHoldY, anchor, { manualStopOnly: true });
+      }, CHAT_SEND_HOLD_MS);
+    }, true);
+
+    zenClickTarget.addEventListener('pointermove', (ev) => {
+      if (!mouseHoldTimer || mouseHoldPointerId !== ev.pointerId) return;
+      const dx = ev.clientX - mouseHoldX;
+      const dy = ev.clientY - mouseHoldY;
+      if (Math.sqrt(dx * dx + dy * dy) > MOUSE_HOLD_MOVE_THRESHOLD) {
+        clearMouseHoldTimer();
+        mouseHoldPointerId = null;
+      }
+    }, true);
+
+    const stopMousePushToTalk = () => {
+      if (!mouseHoldActive) return;
+      mouseHoldActive = false;
+      if (isRecording()) {
+        void stopZenVoiceCaptureAndSend();
+      }
+    };
+    const handleMousePointerRelease = (ev) => {
+      if (mouseHoldPointerId !== null && mouseHoldPointerId !== ev.pointerId) return;
+      if (typeof zenClickTarget.releasePointerCapture === 'function') {
+        try { zenClickTarget.releasePointerCapture(ev.pointerId); } catch (_) {}
+      }
+      if (mouseHoldTimer) {
+        clearMouseHoldTimer();
+        mouseHoldPointerId = null;
+        return;
+      }
+      stopMousePushToTalk();
+      mouseHoldPointerId = null;
+    };
+    window.addEventListener('pointerup', handleMousePointerRelease, true);
+    window.addEventListener('pointercancel', handleMousePointerRelease, true);
+    window.addEventListener('blur', clearMouseHoldState);
+
     zenClickTarget.addEventListener('click', (ev) => {
+      if (mouseHoldSuppressClick) {
+        mouseHoldSuppressClick = false;
+        ev.preventDefault();
+        return;
+      }
       if (shouldStopInUiClick()) {
         ev.preventDefault();
         void handleZenStopAction();
@@ -2119,7 +2213,7 @@ function bindUi() {
       }
 
       // Ignore clicks on interactive elements
-      if (ev.target instanceof Element && ev.target.closest('button,a,input,textarea,select,[contenteditable="true"],.zen-overlay,.zen-input,.edge-panel')) return;
+      if (isVoiceInteractionTarget(ev.target)) return;
       // Ignore if right-click
       if (ev.button !== 0) return;
       // Ignore text selection

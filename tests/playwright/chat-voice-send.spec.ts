@@ -60,6 +60,36 @@ test('click on canvas starts voice recording', async ({ page }) => {
   expect(sttActions).toContain('stop');
 });
 
+test('mouse hold push-to-talk starts on hold and stops on release', async ({ page }) => {
+  await clearLog(page);
+  await page.evaluate(() => {
+    // This pattern would normally trigger VAD auto-stop if VAD were active.
+    (window as any).__setVadDbFrames([
+      -80, -80, -80, -80, -80, -80, -80, -80,
+      -12, -12, -12, -12, -12, -12, -12, -12, -12, -12,
+      -80, -80, -80, -80, -80, -80, -80, -80, -80, -80,
+      -80, -80, -80, -80, -80, -80, -80, -80, -80, -80,
+    ]);
+  });
+
+  await page.mouse.move(400, 400);
+  await page.mouse.down();
+  await waitForLogEntry(page, 'recorder', 'start');
+  await page.waitForTimeout(1200);
+
+  const beforeRelease = await getLog(page);
+  expect(beforeRelease.some(e => e.type === 'stt' && (e.action === 'stop' || e.action === 'cancel'))).toBe(false);
+
+  await page.mouse.up();
+  await waitForSTTAction(page, 'stop');
+  await page.waitForTimeout(200);
+
+  const log = await getLog(page);
+  expect(log.filter(e => e.type === 'recorder' && e.action === 'start')).toHaveLength(1);
+  expect(log.filter(e => e.type === 'recorder' && e.action === 'stop')).toHaveLength(1);
+  expect(log.some(e => e.type === 'stt' && e.action === 'cancel')).toBe(false);
+});
+
 test('silence auto-stop sends transcript without manual stop click', async ({ page }) => {
   await clearLog(page);
   await page.evaluate(() => {
