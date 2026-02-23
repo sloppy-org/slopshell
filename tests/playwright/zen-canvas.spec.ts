@@ -405,7 +405,7 @@ test.describe('zen canvas - TTS voice output', () => {
       type: 'message_persisted',
       role: 'assistant',
       turn_id: 'tts-1',
-      message: '',
+      message: 'Hello, how can I help you today?',
     });
     await page.waitForTimeout(500);
 
@@ -420,7 +420,7 @@ test.describe('zen canvas - TTS voice output', () => {
     await expect(overlay).toBeHidden();
   });
 
-  test('auto canvas event does not interrupt queued TTS speech', async ({ page }) => {
+  test('auto canvas stream events do not trigger TTS before final output', async ({ page }) => {
     await clearLog(page);
     await setVoiceOrigin(page);
 
@@ -443,14 +443,26 @@ test.describe('zen canvas - TTS voice output', () => {
       delta: '',
     });
     await expect(page.locator('#zen-indicator')).toBeHidden();
+    await page.waitForTimeout(250);
+
+    let log = await getLog(page);
+    let spoken = log.filter((e) => e.type === 'tts').map((e) => String(e.text || '').toLowerCase());
+    expect(spoken.length).toBe(0);
+
+    await injectChatEvent(page, {
+      type: 'message_persisted',
+      role: 'assistant',
+      turn_id: 'tts-canvas-keep',
+      message: 'I will open readme and place it there',
+    });
     await page.waitForTimeout(450);
 
-    const log = await getLog(page);
-    const spoken = log.filter((e) => e.type === 'tts').map((e) => String(e.text || '').toLowerCase());
+    log = await getLog(page);
+    spoken = log.filter((e) => e.type === 'tts').map((e) => String(e.text || '').toLowerCase());
     expect(spoken.some((t) => t.includes('open readme') || t.includes('place it there'))).toBe(true);
   });
 
-  test('voice TTS queues rewritten streaming snapshots', async ({ page }) => {
+  test('voice TTS speaks only the finalized snapshot', async ({ page }) => {
     await clearLog(page);
     await setVoiceOrigin(page);
 
@@ -485,7 +497,7 @@ test.describe('zen canvas - TTS voice output', () => {
     const spoken = log
       .filter((e) => e.type === 'tts')
       .map((e) => String(e.text || ''));
-    expect(spoken.some((t) => t.includes('cleaned tree snapshot'))).toBe(true);
+    expect(spoken.some((t) => t.includes('cleaned tree snapshot'))).toBe(false);
     expect(spoken.some((t) => t.includes('current repository snapshot'))).toBe(true);
   });
 
@@ -542,7 +554,7 @@ test.describe('zen canvas - TTS voice output', () => {
       type: 'message_persisted',
       role: 'assistant',
       turn_id: 'tts-de',
-      message: '',
+      message: '[lang:de] Hallo, ich bin Tabura und kann dir helfen.',
     });
     await page.waitForTimeout(500);
 

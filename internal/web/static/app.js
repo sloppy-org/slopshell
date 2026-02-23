@@ -1583,7 +1583,6 @@ function handleChatEvent(payload) {
     const turnID = String(payload.turn_id || '').trim();
     trackAssistantTurnStarted(turnID);
     const md = String(payload.message || '');
-    const streamDelta = String(payload.delta || '');
     const autoCanvas = Boolean(payload.auto_canvas);
     const renderOnCanvas = Boolean(payload.render_on_canvas) || autoCanvas || assistantMessageUsesCanvasBlocks(md);
     if (isVoiceTurn()) {
@@ -1604,13 +1603,6 @@ function handleChatEvent(payload) {
       return;
     }
 
-    if (ttsEnabled) {
-      const { ttsText, ttsLang } = extractTTSText(md);
-      const { ttsText: deltaText } = extractTTSText(streamDelta);
-      if (ttsLang) ttsSpeakLang = ttsLang;
-      const diff = computeTTSDiff(ttsText, deltaText);
-      queueTTSDiff(diff);
-    }
     if (!isVoiceTurn() && !state.hasArtifact) {
       const cleaned = cleanForOverlay(md);
       if (cleaned) updateOverlay(cleaned);
@@ -1648,9 +1640,8 @@ function handleChatEvent(payload) {
 
     if (!autoCanvas && ttsEnabled && md.trim()) {
       const { ttsText, ttsLang } = extractTTSText(md);
-      const { ttsText: deltaText } = extractTTSText(String(payload.delta || ''));
       if (ttsLang) ttsSpeakLang = ttsLang;
-      const diff = computeTTSDiff(ttsText, deltaText);
+      const diff = computeTTSDiff(ttsText);
       queueTTSDiff(diff);
     } else if (autoCanvas) {
       state.indicatorSuppressedByCanvasUpdate = true;
