@@ -45,7 +45,7 @@ else
         pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
     fi
 
-    pip install 'f5-tts[eval]' fastapi 'uvicorn[standard]'
+    pip install f5-tts fastapi 'uvicorn[standard]'
 
     deactivate
     echo "Dependencies installed."
