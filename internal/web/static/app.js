@@ -126,7 +126,7 @@ class SentenceChunker {
       this._timer = setTimeout(() => {
         this._timer = null;
         this.flush();
-      }, 800);
+      }, 300);
     }
   }
   flush() {
@@ -1278,6 +1278,7 @@ function handleChatEvent(payload) {
       } else {
         const cleaned = cleanForOverlay(md);
         if (cleaned) { updateOverlay(cleaned); } else { hideOverlay(); }
+      }
     }
     state.zenCanvasActionThisTurn = false;
     return;
