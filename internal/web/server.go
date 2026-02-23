@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"embed"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,7 +24,6 @@ import (
 	"github.com/krystophny/tabura/internal/appserver"
 	"github.com/krystophny/tabura/internal/serve"
 	"github.com/krystophny/tabura/internal/store"
-	"github.com/krystophny/tabura/internal/stt"
 )
 
 const (
@@ -36,7 +34,6 @@ const (
 	cookieMaxAgeSec             = 60 * 60 * 24 * 365
 	DaemonPort                  = 9420
 	LocalSessionID              = "local"
-	defaultProducerMCPURL       = "http://127.0.0.1:8090/mcp"
 	DefaultSparkReasoningEffort = "low"
 	SparkModel                  = "gpt-5.3-codex-spark"
 	mcpToolsCallTimeout         = 45 * time.Second
@@ -214,13 +211,6 @@ func (a *App) Router() http.Handler {
 	// canvas/file proxy
 	r.Get("/api/canvas/{session_id}/snapshot", a.handleCanvasSnapshot)
 	r.Get("/api/files/{session_id}/*", a.handleFilesProxy)
-	r.Post("/api/mail/action-capabilities", a.handleMailActionCapabilities)
-	r.Post("/api/mail/read", a.handleMailRead)
-	r.Post("/api/mail/mark-read", a.handleMailMarkRead)
-	r.Post("/api/mail/action", a.handleMailAction)
-	r.Post("/api/mail/draft-reply", a.handleMailDraftReply)
-	r.Post("/api/mail/draft-intent", a.handleMailDraftIntent)
-	r.Post("/api/mail/stt", a.handleMailSTT)
 
 	// ws
 	r.Get("/ws/chat/{session_id}", a.handleChatWS)
@@ -462,364 +452,6 @@ func (a *App) handleCanvasSnapshot(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]interface{}{"status": status, "event": event})
 }
 
-func (a *App) handleMailActionCapabilities(w http.ResponseWriter, r *http.Request) {
-	if !a.requireAuth(w, r) {
-		return
-	}
-	var req struct {
-		Provider       string `json:"provider"`
-		ProducerMCPURL string `json:"producer_mcp_url"`
-	}
-	if err := decodeJSON(r, &req); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
-		return
-	}
-	mcpURL, err := normalizeProducerMCPURL(req.ProducerMCPURL)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	resp, err := mcpToolsCallURL(mcpURL, "email_action_capabilities", map[string]interface{}{"provider": req.Provider})
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
-		return
-	}
-	writeJSON(w, resp)
-}
-
-func (a *App) handleMailRead(w http.ResponseWriter, r *http.Request) {
-	if !a.requireAuth(w, r) {
-		return
-	}
-	var req struct {
-		Provider       string `json:"provider"`
-		MessageID      string `json:"message_id"`
-		Format         string `json:"format"`
-		ProducerMCPURL string `json:"producer_mcp_url"`
-	}
-	if err := decodeJSON(r, &req); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
-		return
-	}
-	if strings.TrimSpace(req.MessageID) == "" {
-		http.Error(w, "message_id is required", http.StatusBadRequest)
-		return
-	}
-	mcpURL, err := normalizeProducerMCPURL(req.ProducerMCPURL)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	format := strings.TrimSpace(req.Format)
-	if format == "" {
-		format = "full"
-	}
-	resp, err := mcpToolsCallURL(mcpURL, "email_read", map[string]interface{}{
-		"provider":   req.Provider,
-		"message_id": req.MessageID,
-		"format":     format,
-	})
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
-		return
-	}
-	writeJSON(w, resp)
-}
-
-func (a *App) handleMailMarkRead(w http.ResponseWriter, r *http.Request) {
-	if !a.requireAuth(w, r) {
-		return
-	}
-	var req struct {
-		Provider       string `json:"provider"`
-		MessageID      string `json:"message_id"`
-		ProducerMCPURL string `json:"producer_mcp_url"`
-	}
-	if err := decodeJSON(r, &req); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
-		return
-	}
-	if strings.TrimSpace(req.MessageID) == "" {
-		http.Error(w, "message_id is required", http.StatusBadRequest)
-		return
-	}
-	mcpURL, err := normalizeProducerMCPURL(req.ProducerMCPURL)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	resp, err := mcpToolsCallURL(mcpURL, "email_mark_read", map[string]interface{}{
-		"provider":    req.Provider,
-		"message_ids": []string{req.MessageID},
-	})
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
-		return
-	}
-	writeJSON(w, resp)
-}
-
-func (a *App) handleMailAction(w http.ResponseWriter, r *http.Request) {
-	if !a.requireAuth(w, r) {
-		return
-	}
-	var req struct {
-		Provider       string `json:"provider"`
-		Action         string `json:"action"`
-		MessageID      string `json:"message_id"`
-		UntilAt        string `json:"until_at"`
-		ProducerMCPURL string `json:"producer_mcp_url"`
-	}
-	if err := decodeJSON(r, &req); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
-		return
-	}
-	if strings.TrimSpace(req.Action) == "" || strings.TrimSpace(req.MessageID) == "" {
-		http.Error(w, "action and message_id are required", http.StatusBadRequest)
-		return
-	}
-	if strings.TrimSpace(req.UntilAt) != "" {
-		if _, err := time.Parse(time.RFC3339, req.UntilAt); err != nil {
-			http.Error(w, "until_at must be RFC3339", http.StatusBadRequest)
-			return
-		}
-	}
-	mcpURL, err := normalizeProducerMCPURL(req.ProducerMCPURL)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	args := map[string]interface{}{
-		"provider":   req.Provider,
-		"action":     req.Action,
-		"message_id": req.MessageID,
-	}
-	if strings.TrimSpace(req.UntilAt) != "" {
-		args["until_at"] = req.UntilAt
-	}
-	resp, err := mcpToolsCallURL(mcpURL, "email_action", args)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
-		return
-	}
-	writeJSON(w, resp)
-}
-
-func (a *App) handleMailDraftReply(w http.ResponseWriter, r *http.Request) {
-	if !a.requireAuth(w, r) {
-		return
-	}
-	if strings.EqualFold(strings.TrimSpace(os.Getenv("TABURA_DRAFT_REPLY_DISABLED")), "1") {
-		http.Error(w, "draft reply is disabled", http.StatusServiceUnavailable)
-		return
-	}
-	var req struct {
-		Provider       string `json:"provider"`
-		MessageID      string `json:"message_id"`
-		Subject        string `json:"subject"`
-		Sender         string `json:"sender"`
-		SelectionText  string `json:"selection_text"`
-		ProducerMCPURL string `json:"producer_mcp_url"`
-	}
-	if err := decodeJSON(r, &req); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
-		return
-	}
-	if strings.TrimSpace(req.MessageID) == "" {
-		http.Error(w, "message_id is required", http.StatusBadRequest)
-		return
-	}
-	mcpURL, err := normalizeProducerMCPURL(req.ProducerMCPURL)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	if draft, ok := tryProducerDraftReply(mcpURL, req.Provider, req.MessageID, req.Subject, req.Sender, req.SelectionText); ok {
-		writeJSON(w, map[string]interface{}{
-			"draft_text": draft,
-			"source":     "llm",
-		})
-		return
-	}
-
-	messagePreview := ""
-	if readResp, err := mcpToolsCallURL(mcpURL, "email_read", map[string]interface{}{
-		"provider":   req.Provider,
-		"message_id": req.MessageID,
-		"format":     "full",
-	}); err == nil {
-		if message, _ := readResp["message"].(map[string]interface{}); message != nil {
-			messagePreview = strings.TrimSpace(firstNonEmpty(
-				fmt.Sprint(message["snippet"]),
-				fmt.Sprint(message["body"]),
-				fmt.Sprint(message["plain"]),
-			))
-		}
-	}
-	draft := composeFallbackDraftReply(req.Sender, req.Subject, req.SelectionText, messagePreview)
-	writeJSON(w, map[string]interface{}{
-		"draft_text": draft,
-		"source":     "fallback",
-	})
-}
-
-func (a *App) handleMailDraftIntent(w http.ResponseWriter, r *http.Request) {
-	if !a.requireAuth(w, r) {
-		return
-	}
-	var req struct {
-		Transcript string `json:"transcript"`
-	}
-	if err := decodeJSON(r, &req); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
-		return
-	}
-	transcript := strings.TrimSpace(req.Transcript)
-	if transcript == "" {
-		http.Error(w, "transcript is required", http.StatusBadRequest)
-		return
-	}
-	intent := classifyDraftReplyIntent(transcript)
-	writeJSON(w, map[string]interface{}{
-		"intent":           intent.Intent,
-		"reason":           intent.Reason,
-		"fallback_applied": intent.FallbackApplied,
-		"fallback_policy":  intent.FallbackPolicy,
-	})
-}
-
-func (a *App) handleMailSTT(w http.ResponseWriter, r *http.Request) {
-	if !a.requireAuth(w, r) {
-		return
-	}
-	var req struct {
-		MimeType    string `json:"mime_type"`
-		AudioBase64 string `json:"audio_base64"`
-	}
-	if err := decodeJSON(r, &req); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
-		return
-	}
-
-	decodedAudio := strings.TrimSpace(req.AudioBase64)
-	if decodedAudio == "" {
-		http.Error(w, "audio_base64 is required", http.StatusBadRequest)
-		return
-	}
-	audioData, err := base64.StdEncoding.DecodeString(decodedAudio)
-	if err != nil {
-		http.Error(w, "audio_base64 must be valid base64", http.StatusBadRequest)
-		return
-	}
-	if len(audioData) == 0 {
-		http.Error(w, "audio payload is empty", http.StatusBadRequest)
-		return
-	}
-	if len(audioData) > stt.MaxAudioBytes {
-		http.Error(w, "audio payload exceeds max size", http.StatusBadRequest)
-		return
-	}
-
-	mimeType := stt.NormalizeMimeType(req.MimeType)
-	if !stt.IsAllowedMimeType(mimeType) {
-		http.Error(w, "mime_type must be audio/* or application/octet-stream", http.StatusBadRequest)
-		return
-	}
-
-	text, err := stt.TranscribeWithVoxType(mimeType, audioData)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
-		return
-	}
-	text = strings.TrimSpace(text)
-	if text == "" {
-		http.Error(w, "speech recognizer returned empty text", http.StatusBadGateway)
-		return
-	}
-	writeJSON(w, map[string]interface{}{
-		"ok":     true,
-		"text":   text,
-		"source": "voxtype",
-	})
-}
-
-func tryProducerDraftReply(mcpURL, provider, messageID, subject, sender, selectionText string) (string, bool) {
-	resp, err := mcpToolsCallURL(mcpURL, "draft_reply", map[string]interface{}{
-		"provider":       provider,
-		"message_id":     messageID,
-		"subject":        subject,
-		"sender":         sender,
-		"selection_text": selectionText,
-	})
-	if err != nil {
-		return "", false
-	}
-	for _, key := range []string{"draft_text", "draft", "text"} {
-		if text := strings.TrimSpace(fmt.Sprint(resp[key])); text != "" && text != "<nil>" {
-			return text, true
-		}
-	}
-	if nested, _ := resp["reply"].(map[string]interface{}); nested != nil {
-		for _, key := range []string{"draft_text", "draft", "text"} {
-			if text := strings.TrimSpace(fmt.Sprint(nested[key])); text != "" && text != "<nil>" {
-				return text, true
-			}
-		}
-	}
-	return "", false
-}
-
-func composeFallbackDraftReply(sender, subject, selectionText, preview string) string {
-	senderName := formatSenderName(sender)
-	if senderName == "" {
-		senderName = "there"
-	}
-	subjectLine := strings.TrimSpace(subject)
-	if subjectLine == "" {
-		subjectLine = "your message"
-	}
-
-	var b strings.Builder
-	fmt.Fprintf(&b, "Hi %s,\n\n", senderName)
-	fmt.Fprintf(&b, "Thanks for your email regarding \"%s\".\n", subjectLine)
-	if strings.TrimSpace(selectionText) != "" {
-		b.WriteString("\nI noted this point:\n")
-		fmt.Fprintf(&b, "\"%s\"\n", strings.TrimSpace(selectionText))
-	}
-	if strings.TrimSpace(preview) != "" {
-		b.WriteString("\nI reviewed your note and will follow up with a concrete next step shortly.\n")
-	} else {
-		b.WriteString("\nI will follow up with a concrete next step shortly.\n")
-	}
-	b.WriteString("\nBest,\n")
-	b.WriteString("Your Name")
-	return b.String()
-}
-
-func formatSenderName(sender string) string {
-	sender = strings.TrimSpace(sender)
-	if sender == "" {
-		return ""
-	}
-	if i := strings.Index(sender, "<"); i > 0 {
-		return strings.Trim(strings.TrimSpace(sender[:i]), "\"")
-	}
-	if at := strings.Index(sender, "@"); at > 0 {
-		return strings.TrimSpace(sender[:at])
-	}
-	return sender
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, v := range values {
-		v = strings.TrimSpace(v)
-		if v != "" && v != "<nil>" {
-			return v
-		}
-	}
-	return ""
-}
-
 func (a *App) mcpToolsCall(port int, name string, arguments map[string]interface{}) (map[string]interface{}, error) {
 	return mcpToolsCallURL(fmt.Sprintf("http://127.0.0.1:%d/mcp", port), name, arguments)
 }
@@ -886,37 +518,6 @@ func mcpResultErrorText(result map[string]interface{}) string {
 		return "unknown error"
 	}
 	return strings.Join(parts, " | ")
-}
-
-func normalizeProducerMCPURL(raw string) (string, error) {
-	candidate := strings.TrimSpace(raw)
-	if candidate == "" {
-		candidate = defaultProducerMCPURL
-	}
-	u, err := url.Parse(candidate)
-	if err != nil {
-		return "", fmt.Errorf("invalid producer_mcp_url")
-	}
-	if u.Scheme != "http" && u.Scheme != "https" {
-		return "", fmt.Errorf("producer_mcp_url must use http or https")
-	}
-	host := u.Hostname()
-	if host == "" {
-		return "", fmt.Errorf("producer_mcp_url must include host")
-	}
-	if !isLoopbackHost(host) {
-		return "", fmt.Errorf("producer_mcp_url host must be loopback")
-	}
-	if strings.TrimSpace(u.Path) == "" || u.Path == "/" {
-		u.Path = "/mcp"
-	}
-	if u.Path != "/mcp" {
-		return "", fmt.Errorf("producer_mcp_url path must be /mcp")
-	}
-	if u.RawQuery != "" || u.Fragment != "" {
-		return "", fmt.Errorf("producer_mcp_url must not include query or fragment")
-	}
-	return u.String(), nil
 }
 
 func checkWSOrigin(r *http.Request) bool {
@@ -1111,7 +712,7 @@ func (a *App) startLocalServe() error {
 		}
 		time.Sleep(250 * time.Millisecond)
 	}
-	return errors.New("local tabura serve did not become healthy in time")
+	return errors.New("local tabura MCP listener did not become healthy in time")
 }
 
 func (a *App) Start(host string, port int) error {
@@ -1119,7 +720,7 @@ func (a *App) Start(host string, port int) error {
 		return err
 	}
 	srv := &http.Server{Addr: fmt.Sprintf("%s:%d", host, port), Handler: a.Router(), ReadHeaderTimeout: 15 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 60 * time.Second, IdleTimeout: 60 * time.Second}
-	fmt.Println("tabura web listening on:")
+	fmt.Println("tabura server web listener listening on:")
 	for _, u := range serve.ListenURLs(host, port) {
 		fmt.Printf("  %s\n", u)
 	}

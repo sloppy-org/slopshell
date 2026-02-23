@@ -40,15 +40,6 @@ Canvas/files:
 - `GET /api/canvas/{session_id}/snapshot`
 - `GET /api/files/{session_id}/*`
 
-Mail interaction endpoints:
-- `POST /api/mail/action-capabilities`
-- `POST /api/mail/read`
-- `POST /api/mail/mark-read`
-- `POST /api/mail/action`
-- `POST /api/mail/draft-reply`
-- `POST /api/mail/draft-intent`
-- `POST /api/mail/stt`
-
 Websocket routes:
 - `GET /ws/chat/{session_id}`
 - `GET /ws/canvas/{session_id}`
@@ -67,16 +58,6 @@ Defined in `internal/surface/definitions.go` and used by `internal/mcp/server.go
 - `delegate_to_model_cancel`
 - `delegate_to_model_active_count`
 - `delegate_to_model_cancel_all`
-
-## Reply Intent Contract
-
-`POST /api/mail/draft-intent` returns classification metadata including:
-- `intent` (`prompt` or `dictation`)
-- `reason`
-- `fallback_applied`
-- `fallback_policy`
-
-`POST /api/mail/draft-reply` returns generated or prepared draft text for explicit user review.
 
 ## Stability Statement
 

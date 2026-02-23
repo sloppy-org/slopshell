@@ -492,7 +492,7 @@ func (a *App) startProjectServe(sessionID, projectDir string) error {
 	stopCtx, stopCancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer stopCancel()
 	_ = projectApp.Stop(stopCtx)
-	return errors.New("project tabura serve did not become healthy in time")
+	return errors.New("project tabura MCP listener did not become healthy in time")
 }
 
 func (a *App) ensureProjectCanvasReady(project store.Project) error {

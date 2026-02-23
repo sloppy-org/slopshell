@@ -1,10 +1,4 @@
 import { marked } from './vendor/marked.esm.js';
-import {
-  normalizeMailHeadersContext,
-  renderMailArtifact,
-  clearMailInteractionHandlers,
-  setActiveMailContext,
-} from './canvas-mail.js';
 
 const FORTRAN_KEYWORDS = [
   'program', 'module', 'contains', 'implicit', 'none',
@@ -354,7 +348,6 @@ export function clearLineHighlight() {
 }
 
 function clearTextInteractionHandlers() {
-  clearMailInteractionHandlers();
 }
 
 function renderPdfSurface(event) {
@@ -394,14 +387,6 @@ export function renderCanvas(event) {
     activeArtifactTitle = event.title || '';
     activePdfEvent = null;
     const oldBlockTexts = previousBlockTexts.slice();
-    const mailContext = normalizeMailHeadersContext(event);
-    if (mailContext) {
-      setActiveMailContext(mailContext);
-      renderMailArtifact(event.event_id, mailContext);
-      previousArtifactText = event.text || '';
-      previousBlockTexts = [];
-      return;
-    }
     const { text: markdownText, stash: mathSegments } = extractMathSegments(event.text || '');
     const renderedMarkdownHtml = marked.parse(markdownText);
     e.text.innerHTML = restoreMathSegments(sanitizeHtml(renderedMarkdownHtml), mathSegments);

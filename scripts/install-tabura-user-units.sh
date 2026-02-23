@@ -10,6 +10,6 @@ cp "$UNIT_SRC"/*.service "$UNIT_DST"/
 
 systemctl --user daemon-reload
 systemctl --user disable --now tabura-dev-watch.path >/dev/null 2>&1 || true
-systemctl --user enable --now tabura-ptyd.service tabura-mcp.service tabura-codex-app-server.service tabura-voxtype-mcp.service tabura-piper-tts.service tabura-web.service tabura-dev-watch.service
+systemctl --user enable --now tabura-ptyd.service tabura-codex-app-server.service tabura-piper-tts.service tabura-web.service tabura-dev-watch.service
 
-echo "Installed and enabled: tabura-ptyd, tabura-mcp, tabura-codex-app-server, tabura-voxtype-mcp, tabura-piper-tts, tabura-web, tabura-dev-watch.service"
+echo "Installed and enabled: tabura-ptyd, tabura-codex-app-server, tabura-piper-tts, tabura-web, tabura-dev-watch.service"

@@ -5,150 +5,101 @@
 For direct runtime requests, run the obvious command first, then verify.
 Do not scan source/docs unless the command fails.
 
-## Canvas Layout (Zen Mode)
+## Runtime Model (Current)
 
-Full-viewport canvas with no visible chrome. Two modes: **tabula rasa** (blank white screen) and **artifact** (document fills viewport). Chat happens invisibly; responses appear as ephemeral overlays. Edge panels replace toolbar and chat column.
+Tabura uses one monolithic runtime command for app operation:
 
-Key structural selectors: `#workspace` (flex column, full viewport), `#canvas-column` (fills viewport), `.canvas-pane` (artifact panes), `#zen-input` (floating text input), `#zen-overlay` (response overlay), `#zen-indicator` (recording dot + label), `#edge-top` (project panel), `#edge-right` (diagnostics/chat log panel).
+- `tabura server` starts both listeners in one process:
+  - Web listener (public-facing)
+  - MCP listener (local-only by default)
+- `tabura mcp-server` remains available for stdio MCP use.
 
-Removed selectors (no longer exist): `#prompt-bar`, `#prompt-input`, `#prompt-send`, `#chat-column`, `.prompt-context`.
+No separate `tabura-mcp.service` or `tabura-voxtype-mcp.service` sidecars are used.
+No Helpy integration/runtime is active in Tabura.
 
-## Interaction Model
+## Security Boundary
 
-- **Tap/left-click** anywhere on canvas toggles voice recording. Recording symbol appears at tap position.
-- **Right-click** opens floating text input (`#zen-input`) at cursor position.
-- **Keyboard typing** (no input focused, rasa mode) auto-activates text input centered.
-- **Enter** in text input sends message and clears input.
-- **Ctrl long-press** (300ms) starts push-to-talk recording; release stops and sends.
-- **Escape** dismisses overlay/input. If nothing open and artifact showing, clears to tabula rasa.
-- On artifact: tap/right-click sets line context (`[Line N of "title"]`) prepended to message.
+- Web UI/API listener stays on port `8420` (typically routed publicly).
+- MCP listener stays on port `9420` and must bind loopback by default.
+- Web router does not expose MCP routes (`/mcp` must not be served by web listener).
+- Non-loopback MCP bind is blocked unless `--unsafe-public-mcp` is explicitly set.
 
-Response routing: All LLM response text is spoken via TTS (Piper default, F5-TTS/Chatterbox optional) except content inside `:::file{path="..."}` blocks. Language is set via `[lang:xx]` marker (default English). Canvas content is always file-backed (repo file or temporary file). Overlay is shown only when visual content exists; speak-only responses produce audio without overlay. `turn_started` shows overlay, `assistant_message` streams into overlay and feeds TTS chunker, file-canvas actions update in place with diff highlight, errors auto-dismiss after 2s. User tap/message interrupts TTS playback.
+## Canvas + Chat Contract
 
-## Edge Panels
+One canvas mode only: file-backed rendering.
 
-- **Desktop**: Mouse within 20px of edge reveals panel (300ms transition). Click to pin. Esc closes.
-- **Top edge** (`#edge-top`): Project list with "Tabula Rasa" button.
-- **Right edge** (`#edge-right`): Chat history / diagnostics log (`#chat-history`).
+Assistant output must be either:
+1. chat-only text (shown in chat and spoken), or
+2. two-part response where canvas content is file-backed (`:::file{path="..."}`) and rendered only on canvas.
 
-JS modules: `zen.js` (interaction state, indicator, text input, overlay), `canvas.js` (rendering + diff highlighting), `canvas-mail.js` (mail triage UI), `app.js` (orchestration, WS routing, edge panels).
+Rules:
+- Canvas content is never duplicated into chat speech.
+- Ephemeral canvas content is implemented via temporary files.
+- Multi-paragraph assistant output should be promoted to a temp canvas file and not shown/spoken in chat.
 
-## Post-Adjustment Artifact Rule
+## Zen Interaction
 
-After making a UI/interaction adjustment, always render a new test artifact in the local session (`session_id: local`) so the user can immediately try the latest behavior.
+- Tap/left-click toggles voice recording.
+- Right-click opens floating text input (`#zen-input`).
+- Keyboard typing auto-activates input when nothing is focused.
+- Enter sends and clears input.
+- Ctrl long-press starts push-to-talk; release stops/sends.
+- Escape dismisses overlay/input; if nothing is open and artifact is visible, clears to tabula rasa.
+
+Key selectors:
+- `#workspace`, `#canvas-column`, `.canvas-pane`
+- `#zen-input`, `#zen-overlay`, `#zen-indicator`
+- `#edge-top`, `#edge-right`
 
 ## Local Services (systemd --user)
 
-Main units:
-
+Primary units:
 - `tabura-web.service`
-- `tabura-mcp.service`
 - `tabura-codex-app-server.service`
-- `tabura-voxtype-mcp.service`
-- `tabura-piper-tts.service` (Piper TTS, fast EN+DE on `127.0.0.1:8424`)
-- `tabura-f5-tts.service` (F5-TTS Fast mode, EN+DE, GPU on `127.0.0.1:8424`, optional)
-- `tabura-tts.service` (Chatterbox Multilingual on `127.0.0.1:8423`, optional voice-clone)
-- `helpy-mcp.service`
+- `tabura-piper-tts.service` (default TTS)
+- `tabura-f5-tts.service` (optional alternative)
+- `tabura-tts.service` (optional alternative)
 
-Status:
+Quick status:
 
 ```bash
-systemctl --user status tabura-web.service tabura-mcp.service tabura-codex-app-server.service tabura-voxtype-mcp.service tabura-piper-tts.service tabura-tts.service helpy-mcp.service --no-pager -n 40
+systemctl --user status tabura-web.service tabura-codex-app-server.service tabura-piper-tts.service --no-pager -n 40
 ```
 
-Restart all integration services:
+Restart core stack:
 
 ```bash
-systemctl --user restart helpy-mcp.service tabura-codex-app-server.service tabura-mcp.service tabura-voxtype-mcp.service tabura-piper-tts.service tabura-web.service
+systemctl --user restart tabura-codex-app-server.service tabura-piper-tts.service tabura-web.service
 ```
 
-## Handoff-First UI Testing Rule
+## Endpoints
 
-When testing mail/file workflows intended for canvas UI:
-
-- Do not dump artifact payloads into terminal/chat.
-- Create a producer handoff in Helpy (`handoff.create`).
-- Import handoff into Tabura (`canvas_import_handoff`).
-- Test archive/delete/defer actions in the browser UI.
-
-Default local session and URLs:
-
-- Tabura MCP: `http://127.0.0.1:9420/mcp`
-- Helpy MCP: `http://127.0.0.1:8090/mcp`
-- Codex App Server: `ws://127.0.0.1:8787`
-- Piper TTS (default): `http://127.0.0.1:8424`
-- Chatterbox TTS (optional): `http://127.0.0.1:8423`
-- Tabura session id: `local`
-
-## TTS API
-
-WebSocket message `tts_speak` — proxied to TTS server (`/v1/audio/speech`). Default backend: Piper TTS (port 8424), alternative: F5-TTS (port 8424, swap service), Chatterbox (port 8423).
-
-Request (WS JSON): `{"type": "tts_speak", "text": "...", "lang": "en"}` (lang: "en" or "de")
-Response: binary WAV frame on same WS connection.
-
-Piper voices: `en_GB-alan-medium` (English), `de_DE-karlsson-low` (German). Instant (~100x realtime on CPU).
-F5-TTS: voice-cloned synthesis with 7 NFE steps (EPSS Fast mode). English uses base F5-TTS model, German uses aihpi/F5-TTS-German. ~150ms/sentence on GPU. Reference WAV at `~/.local/share/tabura-tts/reference.wav`. Setup: `scripts/setup-tabura-f5-tts.sh`, then swap `tabura-piper-tts` for `tabura-f5-tts` in service deps.
-Chatterbox: voice-cloned TTS with reference audio. High quality but ~5s/sentence latency.
-
-Frontend language is set by `[lang:xx]` marker in LLM response (default English). All response text is spoken except `:::file{}` blocks. Sentences are chunked via `SentenceChunker` and played sequentially via `TTSPlayer`.
-
-## Canvas Action Syntax
-
-Single visual action:
-
-- `:::file{path="filename.go"}...:::` — file-backed canvas artifact (repo file or temp file)
-
-Backend parses file blocks, writes/updates files, executes via MCP `canvas_artifact_show`, and strips `[lang:xx]` markers before persisting.
-
-## Handoff Example: Archive Folder (20 Headers)
-
-```bash
-HELPY=http://127.0.0.1:8090/mcp
-TAB=http://127.0.0.1:9420/mcp
-
-handoff_id=$(
-  curl -sS -X POST "$HELPY" -H 'content-type: application/json' \
-    -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"handoff.create","arguments":{"kind":"mail_headers","selector":{"provider":"tugraz","folder":"Archive","limit":20}}}}' \
-  | jq -r '.result.structuredContent.handoff_id'
-)
-
-curl -sS -X POST "$TAB" -H 'content-type: application/json' \
-  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"canvas_session_open","arguments":{"session_id":"local"}}}'
-
-curl -sS -X POST "$TAB" -H 'content-type: application/json' \
-  -d "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"canvas_import_handoff\",\"arguments\":{\"session_id\":\"local\",\"handoff_id\":\"$handoff_id\",\"producer_mcp_url\":\"http://127.0.0.1:8090/mcp\",\"title\":\"Archive (20)\"}}}"
-```
-
-## Troubleshooting
-
-- `unknown tool` from MCP after recent changes usually means stale daemon build; restart relevant services.
-- If helper wrappers do not expose newly-added generic tools, call MCP JSON-RPC directly on `/mcp`.
+- Web: `http://127.0.0.1:8420`
+- MCP: `http://127.0.0.1:9420/mcp`
+- MCP canvas WS: `ws://127.0.0.1:9420/ws/canvas`
+- App-server: `ws://127.0.0.1:8787`
+- TTS (default Piper): `http://127.0.0.1:8424`
+- Local canvas session: `local`
 
 ## Start Local Web UI In Temporary Directory
-
-Use this exact sequence:
 
 ```bash
 TMP_ROOT="$(mktemp -d -t tabura-web-XXXXXX)"
 PROJECT_DIR="$TMP_ROOT/project"
 DATA_DIR="$TMP_ROOT/data"
 LOG_FILE="$TMP_ROOT/web.log"
-nohup go run ./cmd/tabura web \
+nohup go run ./cmd/tabura server \
   --project-dir "$PROJECT_DIR" \
   --data-dir "$DATA_DIR" \
-  --host 127.0.0.1 \
-  --port 8420 >"$LOG_FILE" 2>&1 &
+  --web-host 127.0.0.1 \
+  --web-port 8420 \
+  --mcp-host 127.0.0.1 \
+  --mcp-port 9420 >"$LOG_FILE" 2>&1 &
 PID=$!
 curl -fsS http://127.0.0.1:8420/api/setup
 ```
 
-Report back:
-- URL: `http://127.0.0.1:8420`
-- PID: `$PID`
-- temp root/project/data/log paths
-
-Stop command:
+Stop:
 
 ```bash
 kill "$PID"
@@ -156,40 +107,36 @@ kill "$PID"
 
 ## Version Bump Policy
 
-Development uses `-dev` suffix: after releasing `v0.0.5`, immediately bump to `v0.0.6-dev`. On release, strip the suffix.
+Development uses `-dev` suffix; release strips suffix; then bump to next `-dev`.
 
-Workflow:
-1. Develop on `-dev` version (all commits during development carry `-dev` suffix)
-2. To release: `scripts/bump-version.sh v0.0.X` (strip -dev suffix)
-3. Create `docs/release-v0.0.X.md`, update README.md and docs/spec-index.md release links
-4. Commit release: `git add` the bump files + release docs + README + spec-index, then `git commit -m "release: v0.0.X"`
-5. Bump to next dev: `scripts/bump-version.sh v0.0.Y-dev` and commit
-6. Push: `git push origin main`
-7. Tag the release commit (not HEAD): `git tag v0.0.X <release-commit-hash> && git push origin v0.0.X`
-8. Create GitHub release: `gh release create v0.0.X --title "v0.0.X" --notes-file docs/release-v0.0.X.md`
+The bump script updates:
+- `.zenodo.json`
+- `CITATION.cff`
+- `internal/mcp/server.go`
+- `internal/web/server.go`
+- `internal/appserver/client.go`
 
-The bump script updates: `.zenodo.json`, `CITATION.cff`, `internal/mcp/server.go`, `internal/web/server.go`, `internal/appserver/client.go`, `internal/voxtypemcp/server.go`.
+Run consistency check:
 
-A pre-commit hook (`scripts/check-version-consistency.sh`) blocks commits when version strings are inconsistent.
+```bash
+scripts/check-version-consistency.sh
+```
 
-Never edit historical release notes. They document what happened in that release. Document new changes in a new release file.
+## Testing Policy
 
-## Playwright Testing Policy
+Every UI interaction flow must have a Playwright test.
 
-Every UI interaction flow must have a Playwright test. Never skip tests.
+Run before push:
 
-- New UI features require corresponding Playwright tests before merge.
-- Touch event flows (touchstart/touchend) must be tested alongside mouse flows (mousedown/mouseup).
-- Async flows (mic capture, STT, WebSocket) must use mock harnesses (see `tests/playwright/zen-harness.html` and `tests/playwright/harness.html`).
-- Key selectors: `#zen-input` (floating textarea), `#zen-overlay` (response overlay), `#zen-indicator` (recording indicator), `#canvas-column` (viewport), `.canvas-pane` (panes), `#edge-top`, `#edge-right` (edge panels).
-- Run `npx playwright test` locally and verify 100% pass before push.
-- Test files: `zen-canvas.spec.ts` (zen interactions, overlay, edge panels, diff highlight), `chat-voice-send.spec.ts` (voice recording), `artifact-context.spec.ts` (line context), `review-mode.spec.ts` (artifact rendering, mail teardown), `mail-actions.spec.ts` (mail triage), `canvas-refresh.spec.ts` (fsnotify refresh).
+```bash
+./scripts/sync-surface.sh --check
+go test ./...
+npx playwright test
+```
 
-## Cross-Repo Protocol
-
-The generic handoff protocol is maintained in:
-
-- `../handoff-protocol`
-- GitHub: `github.com/krystophny/handoff-protocol`
-
-Use that repo as the source of truth for handoff envelope/schema/lifecycle (`handoff.create|peek|consume|revoke|status`).
+Current core specs include:
+- `tests/playwright/zen-canvas.spec.ts`
+- `tests/playwright/chat-voice-send.spec.ts`
+- `tests/playwright/artifact-context.spec.ts`
+- `tests/playwright/review-mode.spec.ts`
+- `tests/playwright/canvas-refresh.spec.ts`

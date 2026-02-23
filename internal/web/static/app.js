@@ -1830,7 +1830,7 @@ function bindUi() {
   if (zenClickTarget) {
     zenClickTarget.addEventListener('click', (ev) => {
       // Ignore clicks on interactive elements
-      if (ev.target instanceof Element && ev.target.closest('button,a,input,textarea,select,[contenteditable="true"],.mail-triage-table,.mail-detail-view,.zen-overlay,.zen-input,.edge-panel')) return;
+      if (ev.target instanceof Element && ev.target.closest('button,a,input,textarea,select,[contenteditable="true"],.zen-overlay,.zen-input,.edge-panel')) return;
       // Ignore if right-click
       if (ev.button !== 0) return;
       // Ignore text selection
@@ -1861,7 +1861,7 @@ function bindUi() {
   // Zen: Right-click -> text input
   if (zenClickTarget) {
     zenClickTarget.addEventListener('contextmenu', (ev) => {
-      if (ev.target instanceof Element && ev.target.closest('.mail-triage-table,.mail-detail-view,.edge-panel')) return;
+      if (ev.target instanceof Element && ev.target.closest('.edge-panel')) return;
       ev.preventDefault();
       let anchor = null;
       if (state.hasArtifact && canvasText) {

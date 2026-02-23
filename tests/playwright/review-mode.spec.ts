@@ -1,12 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
 
-type Header = {
-  id: string;
-  date: string;
-  sender: string;
-  subject: string;
-};
-
 function plainTextEvent(eventID: string, text: string) {
   return {
     kind: 'text_artifact',
@@ -14,24 +7,6 @@ function plainTextEvent(eventID: string, text: string) {
     title: 'Notes',
     text,
     meta: {},
-  };
-}
-
-function mailEvent(eventID: string, provider: string, headers: Header[]) {
-  return {
-    kind: 'text_artifact',
-    event_id: eventID,
-    title: 'Mail Headers',
-    text: '# Mail Headers',
-    meta: {
-      producer_mcp_url: 'http://127.0.0.1:8090/mcp',
-      message_triage_v1: {
-        provider,
-        folder: 'INBOX',
-        count: headers.length,
-        headers,
-      },
-    },
   };
 }
 
@@ -70,14 +45,6 @@ async function clearHarnessMessages(page: Page) {
   });
 }
 
-async function getHarnessMessages(page: Page): Promise<Record<string, unknown>[]> {
-  await page.waitForFunction(() => typeof (window as any).getHarnessMessages === 'function');
-  return page.evaluate(() => {
-    // @ts-expect-error injected by harness module
-    return window.getHarnessMessages();
-  });
-}
-
 test.beforeEach(async ({ page }) => {
   await page.goto('/tests/playwright/harness.html');
   await clearHarnessMessages(page);
@@ -90,53 +57,16 @@ test('text artifact renders markdown into canvas-text', async ({ page }) => {
   expect(html).toContain('Header');
 });
 
-test('switching artifacts tears down stale mail handlers', async ({ page }) => {
-  await page.route('**/api/mail/action-capabilities', async (route) => {
-    await route.fulfill({
-      json: {
-        capabilities: {
-          provider: 'gmail',
-          supports_open: true,
-          supports_archive: true,
-          supports_delete_to_trash: true,
-          supports_native_defer: true,
-        },
-      },
-    });
-  });
+test('switching artifacts clears text pane content and classes', async ({ page }) => {
+  await renderArtifact(page, plainTextEvent('evt-text-2', '# Switch Test'));
+  await expect(page.locator('#canvas-text')).toBeVisible();
+  await expect(page.locator('#canvas-text')).toContainText('Switch Test');
 
-  await renderArtifact(page, mailEvent('evt-mail-2', 'gmail', [
-    { id: 'm1', date: '2026-02-20T09:00:00Z', sender: 'a@example.com', subject: 'Switch Test' },
-  ]));
-
-  const before = await page.evaluate(() => {
-    const root = document.getElementById('canvas-text') as any;
-    return {
-      hasMailClickHandler: Boolean(root?._mailClickHandler),
-      hasMailPointerDownHandler: Boolean(root?._mailPointerDownHandler),
-      hasMailClass: root?.classList.contains('mail-artifact') || false,
-    };
-  });
-  expect(before.hasMailClickHandler).toBe(true);
-  expect(before.hasMailPointerDownHandler).toBe(true);
-  expect(before.hasMailClass).toBe(true);
-
-  await clearHarnessMessages(page);
   await renderArtifact(page, imageEvent('evt-image-1'));
-
-  const after = await page.evaluate(() => {
-    const root = document.getElementById('canvas-text') as any;
-    return {
-      hasMailClickHandler: Boolean(root?._mailClickHandler),
-      hasMailPointerDownHandler: Boolean(root?._mailPointerDownHandler),
-      hasMailDetailKeyDownHandler: Boolean(root?._mailDetailKeyDownHandler),
-      hasMailClass: root?.classList.contains('mail-artifact') || false,
-    };
-  });
-  expect(after.hasMailClickHandler).toBe(false);
-  expect(after.hasMailPointerDownHandler).toBe(false);
-  expect(after.hasMailDetailKeyDownHandler).toBe(false);
-  expect(after.hasMailClass).toBe(false);
+  await expect(page.locator('#canvas-image')).toBeVisible();
+  await expect(page.locator('#canvas-text')).toBeHidden();
+  const textClasses = await page.locator('#canvas-text').evaluate((el) => Array.from(el.classList));
+  expect(textClasses).not.toContain('is-active');
 });
 
 test('pdf artifacts render without iframe using object surface', async ({ page }) => {

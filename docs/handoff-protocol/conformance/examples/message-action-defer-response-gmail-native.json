@@ -1,8 +1,0 @@
-{
-  "provider": "gmail",
-  "action": "defer",
-  "message_id": "m123",
-  "status": "ok",
-  "effective_provider_mode": "native",
-  "deferred_until_at": "2026-02-27T09:00:00Z"
-}

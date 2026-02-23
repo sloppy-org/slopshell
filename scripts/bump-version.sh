@@ -27,7 +27,6 @@ sed -E -i "s/(ServerVersion[[:space:]]*=[[:space:]]*\")[^\"]*(\")/\\1${bare}\\2/
 sed -E -i "s/(\"version\":[[:space:]]*\")[^\"]*(\")/\\1${bare}\\2/" internal/web/server.go
 sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"${bare}\"/" internal/appserver/client.go
 sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"${bare}\"/" internal/appserver/session.go
-sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"${bare}\"/" internal/voxtypemcp/server.go
 
 echo "Bumped to ${prefixed} (${today})"
 echo ""
@@ -38,7 +37,6 @@ echo "  internal/mcp/server.go"
 echo "  internal/web/server.go"
 echo "  internal/appserver/client.go"
 echo "  internal/appserver/session.go"
-echo "  internal/voxtypemcp/server.go"
 echo ""
 echo "Still manual:"
 echo "  - Create docs/release-${prefixed}.md"

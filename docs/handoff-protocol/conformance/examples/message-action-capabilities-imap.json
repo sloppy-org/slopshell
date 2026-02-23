@@ -1,7 +1,0 @@
-{
-  "provider": "imap",
-  "supports_open": true,
-  "supports_archive": true,
-  "supports_delete_to_trash": true,
-  "supports_native_defer": false
-}

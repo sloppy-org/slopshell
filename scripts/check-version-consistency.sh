@@ -17,7 +17,6 @@ v_mcp="$(extract internal/mcp/server.go 'ServerVersion')"
 v_web="$(extract internal/web/server.go '"version":')"
 v_appserver="$(extract internal/appserver/client.go '"version":')"
 v_appserver_session="$(extract internal/appserver/session.go '"version":')"
-v_voxtype="$(extract internal/voxtypemcp/server.go '"version":')"
 
 files=(
   ".zenodo.json"
@@ -26,7 +25,6 @@ files=(
   "internal/web/server.go"
   "internal/appserver/client.go"
   "internal/appserver/session.go"
-  "internal/voxtypemcp/server.go"
 )
 versions=(
   "$v_zenodo"
@@ -35,7 +33,6 @@ versions=(
   "$v_web"
   "$v_appserver"
   "$v_appserver_session"
-  "$v_voxtype"
 )
 
 canonical="$v_zenodo"

@@ -20,6 +20,10 @@ Release notes:
 - Previous release: `release-v0.0.8.md`
 - Published baseline: `release-v0.0.1.md`
 
+Migration/support docs:
+
+- `helpy-recovery-issue-pack.md`
+
 ## Source Code Anchors
 
 ### CLI and Runtime Entrypoints
@@ -45,5 +49,5 @@ Release notes:
 ## Scope Boundaries
 
 - Tabura defines the interaction/runtime layer for object-scoped intent workflows.
-- Producer-side source access (mail/files/calendar/etc.) is external and pluggable.
+- Producer-side source access (files/calendar/etc.) is external and pluggable.
 - Handoff transport contracts are documented in this repo under `docs/handoff-protocol/`.

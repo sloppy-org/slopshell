@@ -67,14 +67,6 @@ func InterfacesMarkdown() string {
 		b.WriteString("`\n")
 	}
 	b.WriteString("\n")
-
-	b.WriteString("## Reply Intent Contract\n\n")
-	b.WriteString("`POST /api/mail/draft-intent` returns classification metadata including:\n")
-	b.WriteString("- `intent` (`prompt` or `dictation`)\n")
-	b.WriteString("- `reason`\n")
-	b.WriteString("- `fallback_applied`\n")
-	b.WriteString("- `fallback_policy`\n\n")
-	b.WriteString("`POST /api/mail/draft-reply` returns generated or prepared draft text for explicit user review.\n\n")
 	b.WriteString("## Stability Statement\n\n")
 	b.WriteString("The current release is pre-stable; interfaces may evolve. Breaking changes are documented in release notes.\n")
 	return b.String()

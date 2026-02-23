@@ -1,7 +1,7 @@
 [Unit]
 Description=Watch Tabura source for dev reload
-After=tabura-mcp.service tabura-codex-app-server.service tabura-web.service
-Wants=tabura-mcp.service tabura-codex-app-server.service tabura-web.service
+After=tabura-codex-app-server.service tabura-web.service
+Wants=tabura-codex-app-server.service tabura-web.service
 
 [Service]
 Type=simple

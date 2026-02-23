@@ -7,7 +7,7 @@
   "properties": {
     "spec_version": { "type": "string", "const": "handoff.v1" },
     "handoff_id": { "type": "string", "minLength": 1 },
-    "kind": { "type": "string", "enum": ["file", "mail_headers"] },
+    "kind": { "type": "string", "enum": ["file"] },
     "created_at": { "type": "string", "format": "date-time" },
     "meta": { "type": "object" },
     "payload": { "type": "object" },

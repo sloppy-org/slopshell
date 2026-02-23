@@ -1,7 +1,7 @@
 [Unit]
 Description=Tabura Web UI
-After=network.target tabura-mcp.service tabura-codex-app-server.service tabura-voxtype-mcp.service tabura-piper-tts.service
-Wants=tabura-mcp.service tabura-codex-app-server.service tabura-voxtype-mcp.service tabura-piper-tts.service
+After=network.target tabura-codex-app-server.service tabura-piper-tts.service
+Wants=tabura-codex-app-server.service tabura-piper-tts.service
 
 [Service]
 Type=simple
@@ -10,7 +10,7 @@ PassEnvironment=DISPLAY WAYLAND_DISPLAY XAUTHORITY XDG_RUNTIME_DIR DBUS_SESSION_
 Environment=HOME=%h
 Environment=SHELL=/usr/bin/bash
 Environment=TABURA_APP_SERVER_MODEL=gpt-5.3-codex-spark
-ExecStart=/usr/bin/bash -lc 'source ~/.bashrc >/dev/null 2>&1 || true; cd %h/code/assi/tabula; exec /usr/bin/env go run ./cmd/tabura web --project-dir %h/code/assi/tabula --data-dir %h/.local/share/tabura-web --host 0.0.0.0 --port 8420 --local-mcp-url http://127.0.0.1:9420/mcp --app-server-url ws://127.0.0.1:8787 --tts-url http://127.0.0.1:8424 --dev-runtime'
+ExecStart=/usr/bin/bash -lc 'source ~/.bashrc >/dev/null 2>&1 || true; cd %h/code/assi/tabula; exec /usr/bin/env go run ./cmd/tabura server --project-dir %h/code/assi/tabula --data-dir %h/.local/share/tabura-web --web-host 0.0.0.0 --web-port 8420 --mcp-host 127.0.0.1 --mcp-port 9420 --app-server-url ws://127.0.0.1:8787 --tts-url http://127.0.0.1:8424 --dev-runtime'
 Restart=on-failure
 RestartSec=2
 TimeoutStopSec=5

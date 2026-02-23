@@ -1,6 +1,8 @@
 # Tabura Architecture
 
-Tabura is a Go-first MCP canvas/runtime stack with a browser UI.
+Tabura is a Go monolithic web runtime with a split listener model:
+- public web/UI listener
+- local-only MCP listener
 
 ## Components
 
@@ -11,9 +13,9 @@ Tabura is a Go-first MCP canvas/runtime stack with a browser UI.
 - `internal/canvas/adapter.go`
   - Canvas sessions, artifact state, and event log.
 - `internal/serve/app.go`
-  - MCP HTTP daemon (`/mcp`) and canvas websocket (`/ws/canvas`).
+  - MCP HTTP daemon (`/mcp`) and canvas websocket (`/ws/canvas`) mounted on the MCP listener.
 - `internal/web/server.go`
-  - Browser APIs for chat sessions, canvas/mail actions, and chat/canvas websocket routes.
+  - Browser APIs for chat sessions, canvas APIs, and chat/canvas websocket routes on the web listener.
 - `internal/store/store.go`
   - SQLite persistence for auth and chat session/message history.
 - `internal/protocol/bootstrap.go`
@@ -22,22 +24,20 @@ Tabura is a Go-first MCP canvas/runtime stack with a browser UI.
 ## Runtime Modes
 
 - `tabura mcp-server`: stdio MCP runtime
-- `tabura serve`: HTTP MCP + canvas websocket runtime
-- `tabura web`: browser-facing runtime
-- `tabura canvas`: convenience browser launcher
+- `tabura server`: monolithic runtime (web + local MCP listeners)
 
 ## UI Layout (Zen Canvas)
 
 The browser UI is a full-viewport canvas with no visible chrome:
 
 - **Tabula rasa**: blank white screen when no artifact is loaded.
-- **Artifact mode**: document (text, image, PDF, mail) fills the viewport.
+- **Artifact mode**: document (text, image, PDF) fills the viewport.
 - No toolbar, no prompt bar, no chat column. All interaction is invisible.
 - **Edge panels** (hidden): top edge = project switcher, right edge = chat log / diagnostics. Revealed by hovering near screen edge (desktop) or swiping inward (mobile).
 
 ## Primary Data Flows
 
-1. MCP client calls tool on `tabura mcp-server` or `tabura serve`.
+1. MCP client calls tool on `tabura mcp-server` or the local MCP listener from `tabura server`.
 2. Tool dispatch in `internal/mcp/server.go` resolves into adapter operations.
 3. Adapter updates session/artifact state in memory and emits events.
 4. Browser consumes websocket events: responses stream into ephemeral overlay, artifacts update the canvas in place.
@@ -64,3 +64,4 @@ The browser UI is a full-viewport canvas with no visible chrome:
 - Tabura does not require direct credentials to producer systems.
 - Producer endpoint authority remains outside Tabura.
 - Tabura stores local auth/session state in SQLite under web data dir.
+- MCP routes are not mounted on the web listener and default to loopback-only bind.

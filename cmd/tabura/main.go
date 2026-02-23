@@ -1,9 +1,14 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
+	"net"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,12 +18,10 @@ import (
 
 	"github.com/krystophny/tabura/internal/canvas"
 	"github.com/krystophny/tabura/internal/mcp"
-	"github.com/krystophny/tabura/internal/store"
 	"github.com/krystophny/tabura/internal/protocol"
 	"github.com/krystophny/tabura/internal/serve"
-	"github.com/krystophny/tabura/internal/voxtypemcp"
+	"github.com/krystophny/tabura/internal/store"
 	"github.com/krystophny/tabura/internal/web"
-	"github.com/pkg/browser"
 )
 
 func main() {
@@ -35,16 +38,10 @@ func run(args []string) int {
 		return cmdSchema()
 	case "bootstrap":
 		return cmdBootstrap(args[1:])
+	case "server":
+		return cmdServer(args[1:])
 	case "mcp-server":
 		return cmdMCPServer(args[1:])
-	case "serve":
-		return cmdServe(args[1:])
-	case "web":
-		return cmdWeb(args[1:])
-	case "voxtype-mcp":
-		return cmdVoxTypeMCP(args[1:])
-	case "canvas":
-		return cmdCanvas(args[1:])
 	case "set-password":
 		return cmdSetPassword(args[1:])
 	default:
@@ -56,7 +53,7 @@ func run(args []string) int {
 
 func printHelp() {
 	fmt.Println("tabura <command> [flags]")
-	fmt.Println("commands: canvas schema bootstrap mcp-server serve web voxtype-mcp set-password")
+	fmt.Println("commands: schema bootstrap server mcp-server set-password")
 }
 
 func cmdSchema() int {
@@ -113,34 +110,15 @@ func cmdMCPServer(args []string) int {
 	return mcp.RunStdio(adapter)
 }
 
-func cmdServe(args []string) int {
-	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
-	projectDir := fs.String("project-dir", ".", "project dir")
-	host := fs.String("host", serve.DefaultHost, "host")
-	port := fs.Int("port", serve.DefaultPort, "port")
-	if err := fs.Parse(args); err != nil {
-		return 2
-	}
-	res, err := protocol.BootstrapProject(*projectDir)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	app := serve.NewApp(res.Paths.ProjectDir)
-	if err := app.Start(*host, *port); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	return 0
-}
-
-func cmdWeb(args []string) int {
-	fs := flag.NewFlagSet("web", flag.ContinueOnError)
+func cmdServer(args []string) int {
+	fs := flag.NewFlagSet("server", flag.ContinueOnError)
 	dataDir := fs.String("data-dir", filepath.Join(os.Getenv("HOME"), ".tabura-web"), "data dir")
-	projectDir := fs.String("project-dir", ".", "local project dir for tabura serve")
-	host := fs.String("host", web.DefaultHost, "host")
-	port := fs.Int("port", web.DefaultPort, "port")
-	localMCPURL := fs.String("local-mcp-url", "", "external local MCP URL")
+	projectDir := fs.String("project-dir", ".", "project dir")
+	webHost := fs.String("web-host", "0.0.0.0", "web listener host")
+	webPort := fs.Int("web-port", web.DefaultPort, "web listener port")
+	mcpHost := fs.String("mcp-host", "127.0.0.1", "mcp listener host")
+	mcpPort := fs.Int("mcp-port", serve.DefaultPort, "mcp listener port")
+	unsafePublicMCP := fs.Bool("unsafe-public-mcp", false, "allow non-loopback MCP bind (unsafe)")
 	appServerURL := fs.String("app-server-url", web.DefaultAppServerURL, "Codex app-server websocket URL")
 	model := fs.String("model", "", "LLM model for chat (default: env TABURA_APP_SERVER_MODEL or "+web.DefaultModel+")")
 	sparkReasoningEffort := fs.String("spark-reasoning-effort", "", "Spark thinking budget, e.g. low|medium|high (default: env TABURA_APP_SERVER_SPARK_REASONING_EFFORT or low)")
@@ -149,46 +127,8 @@ func cmdWeb(args []string) int {
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	res, err := protocol.BootstrapProject(*projectDir)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	app, err := web.New(*dataDir, res.Paths.ProjectDir, *localMCPURL, *appServerURL, *model, *ttsURL, *sparkReasoningEffort, *devRuntime)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	if err := app.Start(*host, *port); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	return 0
-}
-
-func cmdVoxTypeMCP(args []string) int {
-	fs := flag.NewFlagSet("voxtype-mcp", flag.ContinueOnError)
-	bind := fs.String("bind", "127.0.0.1", "bind address")
-	port := fs.Int("port", 8091, "port")
-	if err := fs.Parse(args); err != nil {
-		return 2
-	}
-	server := voxtypemcp.NewServer(*bind, *port)
-	if err := server.Start(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	return 0
-}
-
-func cmdCanvas(args []string) int {
-	fs := flag.NewFlagSet("canvas", flag.ContinueOnError)
-	host := fs.String("host", "127.0.0.1", "host")
-	port := fs.Int("port", 8420, "port")
-	dataDir := fs.String("data-dir", filepath.Join(os.Getenv("HOME"), ".tabura-web"), "data dir")
-	projectDir := fs.String("project-dir", ".", "project dir")
-	noOpen := fs.Bool("no-open", false, "do not open browser")
-	if err := fs.Parse(args); err != nil {
+	if !*unsafePublicMCP && !isLoopbackOnlyHost(*mcpHost) {
+		fmt.Fprintln(os.Stderr, "refusing non-loopback MCP bind; use --unsafe-public-mcp to override")
 		return 2
 	}
 	res, err := protocol.BootstrapProject(*projectDir)
@@ -196,22 +136,73 @@ func cmdCanvas(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	app, err := web.New(*dataDir, res.Paths.ProjectDir, "", web.DefaultAppServerURL, "", "", "", false)
+	mcpApp := serve.NewApp(res.Paths.ProjectDir)
+	mcpErrCh := make(chan error, 1)
+	go func() {
+		mcpErrCh <- mcpApp.Start(*mcpHost, *mcpPort)
+	}()
+	mcpURL := (&url.URL{
+		Scheme: "http",
+		Host:   net.JoinHostPort(*mcpHost, fmt.Sprintf("%d", *mcpPort)),
+		Path:   "/mcp",
+	}).String()
+	if err := waitForMCPHealth(*mcpHost, *mcpPort, 10*time.Second); err != nil {
+		_ = mcpApp.Stop(context.Background())
+		fmt.Fprintf(os.Stderr, "failed to start local MCP listener: %v\n", err)
+		return 1
+	}
+	app, err := web.New(*dataDir, res.Paths.ProjectDir, mcpURL, *appServerURL, *model, *ttsURL, *sparkReasoningEffort, *devRuntime)
 	if err != nil {
+		_ = mcpApp.Stop(context.Background())
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	if !*noOpen {
-		go func() {
-			time.Sleep(500 * time.Millisecond)
-			_ = browser.OpenURL(fmt.Sprintf("http://%s:%d/canvas", *host, *port))
-		}()
-	}
-	if err := app.Start(*host, *port); err != nil {
+	if err := app.Start(*webHost, *webPort); err != nil {
+		_ = mcpApp.Stop(context.Background())
 		fmt.Fprintln(os.Stderr, err)
 		return 1
+	}
+	select {
+	case mcpErr := <-mcpErrCh:
+		if mcpErr != nil {
+			fmt.Fprintf(os.Stderr, "mcp listener failed: %v\n", mcpErr)
+			return 1
+		}
+	default:
 	}
 	return 0
+}
+
+func isLoopbackOnlyHost(host string) bool {
+	trimmed := strings.TrimSpace(strings.ToLower(host))
+	trimmed = strings.Trim(trimmed, "[]")
+	if trimmed == "localhost" {
+		return true
+	}
+	switch trimmed {
+	case "127.0.0.1", "::1":
+		return true
+	case "", "0.0.0.0", "::":
+		return false
+	}
+	ip := net.ParseIP(trimmed)
+	return ip != nil && ip.IsLoopback()
+}
+
+func waitForMCPHealth(host string, port int, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	url := fmt.Sprintf("http://%s/health", net.JoinHostPort(host, fmt.Sprintf("%d", port)))
+	for time.Now().Before(deadline) {
+		resp, err := http.Get(url)
+		if err == nil {
+			_ = resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				return nil
+			}
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	return errors.New("mcp health check timeout")
 }
 
 func cmdSetPassword(args []string) int {

@@ -212,18 +212,6 @@ var WebRouteSections = []RouteSection{
 		},
 	},
 	{
-		Title: "Mail interaction endpoints",
-		Routes: []string{
-			"POST /api/mail/action-capabilities",
-			"POST /api/mail/read",
-			"POST /api/mail/mark-read",
-			"POST /api/mail/action",
-			"POST /api/mail/draft-reply",
-			"POST /api/mail/draft-intent",
-			"POST /api/mail/stt",
-		},
-	},
-	{
 		Title: "Websocket routes",
 		Routes: []string{
 			"GET /ws/chat/{session_id}",

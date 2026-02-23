@@ -12,8 +12,6 @@
 - Bind tokens or credentials to consumer identity when possible.
 - Audit create/peek/consume/revoke operations.
 - For `file` handoffs, validate `sha256` and `size_bytes` on consume.
-- For message actions, validate action-specific required fields (`until_at` for `defer`) before provider calls.
-- Audit deterministic action invocations (`open`, `archive`, `delete`, `defer`) with provider mode (`native` or `stub`).
 
 ## Out of scope for v1
 

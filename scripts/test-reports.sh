@@ -28,26 +28,6 @@ printf '\n[reports] Generating Tabura Go coverage...\n'
 TABURA_TOTAL="$(go tool cover -func="${TABURA_PROFILE}" | awk '/^total:/ {print $3}')"
 go tool cover -html="${TABURA_PROFILE}" -o "${TABURA_HTML}"
 
-HELPY_DIR_DEFAULT="${ROOT_DIR}/../helpy"
-HELPY_DIR="${HELPY_DIR:-${HELPY_DIR_DEFAULT}}"
-HELPY_PROFILE="${COVERAGE_DIR}/helpy.cover.out"
-HELPY_HTML="${COVERAGE_DIR}/helpy.html"
-HELPY_TOTAL="N/A"
-HELPY_NOTE="skipped (Helpy repo not found at ${HELPY_DIR})"
-if [[ -d "${HELPY_DIR}" && -f "${HELPY_DIR}/go.mod" ]]; then
-  printf '\n[reports] Generating Helpy Go coverage from %s...\n' "${HELPY_DIR}"
-  (
-    cd "${HELPY_DIR}"
-    go test ./... -covermode=atomic -coverprofile="${HELPY_PROFILE}"
-  )
-  HELPY_TOTAL="$(cd "${HELPY_DIR}" && go tool cover -func="${HELPY_PROFILE}" | awk '/^total:/ {print $3}')"
-  (
-    cd "${HELPY_DIR}"
-    go tool cover -html="${HELPY_PROFILE}" -o "${HELPY_HTML}"
-  )
-  HELPY_NOTE="generated"
-fi
-
 PLAY_JSON="${E2E_DIR}/playwright-summary.json"
 PLAY_LOG="${E2E_DIR}/playwright.log"
 PLAY_REPORT_DIR="${E2E_DIR}/playwright-report"
@@ -100,7 +80,6 @@ cat > "${UNIT_INDEX}" <<EOF_HTML
   <p>Generated at <code>$(date -u +"%Y-%m-%dT%H:%M:%SZ")</code></p>
   <ul>
     <li>Tabura total coverage: <strong>${TABURA_TOTAL}</strong> - <a href="tabura.html">tabura.html</a></li>
-    <li>Helpy total coverage: <strong>${HELPY_TOTAL}</strong> - ${HELPY_NOTE}</li>
   </ul>
   <p>See <a href="summary.txt">summary.txt</a> for text summary.</p>
 </body>
@@ -114,11 +93,6 @@ Generated at: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
 Tabura total: ${TABURA_TOTAL}
 Tabura profile: ${TABURA_PROFILE}
 Tabura html: ${TABURA_HTML}
-
-Helpy total: ${HELPY_TOTAL}
-Helpy note: ${HELPY_NOTE}
-Helpy profile: ${HELPY_PROFILE}
-Helpy html: ${HELPY_HTML}
 
 E2E expected: ${E2E_EXPECTED}
 E2E unexpected: ${E2E_UNEXPECTED}

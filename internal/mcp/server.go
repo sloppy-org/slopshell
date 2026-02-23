@@ -34,7 +34,6 @@ const (
 	LatestProtocolVersion  = "2025-03-26"
 	defaultProducerMCPURL  = "http://127.0.0.1:8090/mcp"
 	handoffKindFile        = "file"
-	handoffKindMailHeader  = "mail_headers"
 	delegateDefaultTimeout = 3600 * time.Second
 
 	delegateStatusRunning   = "running"
@@ -934,8 +933,6 @@ func (s *Server) canvasImportHandoff(sessionID string, args map[string]interface
 	}
 	title := strings.TrimSpace(strArg(args, "title"))
 	switch env.Kind {
-	case handoffKindMailHeader:
-		return s.importMailHeaders(sessionID, handoffID, producerMCPURL, title, env)
 	case handoffKindFile:
 		return s.importFile(sessionID, handoffID, title, env)
 	default:
@@ -988,13 +985,6 @@ func mcpToolCall(mcpURL, name string, arguments map[string]interface{}) (map[str
 	return structured, nil
 }
 
-type importedMailHeader struct {
-	ID      string `json:"id"`
-	Date    string `json:"date"`
-	Sender  string `json:"sender"`
-	Subject string `json:"subject"`
-}
-
 func decodeEnvelope(payload map[string]interface{}) (handoffEnvelope, error) {
 	raw, _ := json.Marshal(payload)
 	var env handoffEnvelope
@@ -1011,36 +1001,6 @@ func decodeEnvelope(payload map[string]interface{}) (handoffEnvelope, error) {
 		env.Payload = map[string]interface{}{}
 	}
 	return env, nil
-}
-
-func (s *Server) importMailHeaders(sessionID, handoffID, producerMCPURL, title string, env handoffEnvelope) (map[string]interface{}, error) {
-	raw, _ := json.Marshal(env.Payload["headers"])
-	headers := []importedMailHeader{}
-	if len(raw) > 0 && string(raw) != "null" {
-		if err := json.Unmarshal(raw, &headers); err != nil {
-			return nil, fmt.Errorf("invalid mail_headers payload: %w", err)
-		}
-	}
-	if strings.TrimSpace(title) == "" {
-		title = "Mail Headers"
-	}
-	markdown := renderMailHeadersMarkdown(env.Meta, headers)
-	shown, err := s.adapter.CanvasArtifactShow(sessionID, "text", title, markdown, "", 0, "", map[string]interface{}{
-		"handoff_kind":      handoffKindMailHeader,
-		"handoff_id":        handoffID,
-		"producer_mcp_url":  producerMCPURL,
-		"message_triage_v1": buildMailHeadersViewModel(env.Meta, headers),
-	})
-	if err != nil {
-		return nil, err
-	}
-	return map[string]interface{}{
-		"artifact_id":    shown["artifact_id"],
-		"title":          title,
-		"handoff_id":     handoffID,
-		"kind":           env.Kind,
-		"imported_count": len(headers),
-	}, nil
 }
 
 func (s *Server) importFile(sessionID, handoffID, title string, env handoffEnvelope) (map[string]interface{}, error) {
@@ -1186,71 +1146,6 @@ func (s *Server) writeImportedFile(handoffID, filename string, content []byte) (
 		return "", err
 	}
 	return filepath.ToSlash(rel), nil
-}
-
-func renderMailHeadersMarkdown(meta map[string]interface{}, headers []importedMailHeader) string {
-	var b strings.Builder
-	b.WriteString("# Mail Headers\n\n")
-	count := len(headers)
-	if meta != nil {
-		if provider := strings.TrimSpace(fmt.Sprint(meta["provider"])); provider != "" && provider != "<nil>" {
-			b.WriteString("- Provider: `")
-			b.WriteString(provider)
-			b.WriteString("`\n")
-		}
-		if folder := strings.TrimSpace(fmt.Sprint(meta["folder"])); folder != "" && folder != "<nil>" {
-			b.WriteString("- Folder: `")
-			b.WriteString(folder)
-			b.WriteString("`\n")
-		}
-	}
-	b.WriteString("- Count: `")
-	b.WriteString(strconv.Itoa(count))
-	b.WriteString("`\n\n")
-
-	for i, h := range headers {
-		b.WriteString(strconv.Itoa(i + 1))
-		b.WriteString(". `")
-		if strings.TrimSpace(h.Date) != "" {
-			b.WriteString(h.Date)
-		} else {
-			b.WriteString("-")
-		}
-		b.WriteString("` | ")
-		if strings.TrimSpace(h.Sender) != "" {
-			b.WriteString(h.Sender)
-		} else {
-			b.WriteString("(no sender)")
-		}
-		b.WriteString(" | ")
-		if strings.TrimSpace(h.Subject) != "" {
-			b.WriteString(h.Subject)
-		} else {
-			b.WriteString("(no subject)")
-		}
-		b.WriteString("\n")
-	}
-	return b.String()
-}
-
-func buildMailHeadersViewModel(meta map[string]interface{}, headers []importedMailHeader) map[string]interface{} {
-	out := map[string]interface{}{
-		"count":   len(headers),
-		"headers": headers,
-	}
-	if meta == nil {
-		return out
-	}
-	if provider := strings.TrimSpace(fmt.Sprint(meta["provider"])); provider != "" && provider != "<nil>" {
-		out["provider"] = provider
-	}
-	if folder := strings.TrimSpace(fmt.Sprint(meta["folder"])); folder != "" && folder != "<nil>" {
-		out["folder"] = folder
-	}
-	if count, ok := asInt(meta["count"]); ok && count >= 0 {
-		out["count"] = count
-	}
-	return out
 }
 
 func (s *Server) dispatchResourceRead(params map[string]interface{}) (map[string]interface{}, *RPCError) {

@@ -1,6 +1,0 @@
-{
-  "provider": "gmail",
-  "action": "defer",
-  "message_id": "m123",
-  "until_at": "2026-02-27T09:00:00Z"
-}

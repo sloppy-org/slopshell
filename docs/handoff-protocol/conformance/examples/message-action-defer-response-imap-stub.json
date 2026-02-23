@@ -1,8 +1,0 @@
-{
-  "provider": "imap",
-  "action": "defer",
-  "message_id": "m999",
-  "status": "stub_not_supported",
-  "effective_provider_mode": "stub",
-  "stub_reason": "DEFER_NOT_SUPPORTED_FOR_PROVIDER"
-}

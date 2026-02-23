@@ -36,21 +36,21 @@ Requirements:
 ```bash
 tabura bootstrap --project-dir .
 tabura mcp-server --project-dir .
-tabura serve --project-dir . --host 127.0.0.1 --port 9420
-tabura web --data-dir ~/.tabura-web --project-dir . --host 127.0.0.1 --port 8420 --app-server-url ws://127.0.0.1:8787
-tabura voxtype-mcp --bind 127.0.0.1 --port 8091
-tabura canvas
+tabura server --project-dir . --data-dir ~/.tabura-web --web-host 0.0.0.0 --web-port 8420 --mcp-host 127.0.0.1 --mcp-port 9420 --app-server-url ws://127.0.0.1:8787
 ```
 
 ## Local Integration Defaults
 
-- Web UI: `http://localhost:8420`
-- MCP HTTP: `http://127.0.0.1:9420/mcp`
-- Canvas websocket (internal relay source): `ws://127.0.0.1:9420/ws/canvas`
+- Web UI/API listener: `http://localhost:8420` (public-facing)
+- MCP listener: `http://127.0.0.1:9420/mcp` (loopback-only)
+- Canvas websocket relay source: `ws://127.0.0.1:9420/ws/canvas`
 - Codex app-server websocket: `ws://127.0.0.1:8787`
-- VoxType MCP bridge: `http://127.0.0.1:8091/mcp`
 - Local canvas session id: `local`
 - Spark thinking budget for Spark model (fast path): `TABURA_APP_SERVER_SPARK_REASONING_EFFORT=low` (low|medium|high)
+
+Security model:
+- MCP routes are intentionally not exposed on the web listener.
+- By default, non-loopback MCP bind is rejected unless `--unsafe-public-mcp` is explicitly set.
 
 Zen canvas behavior:
 - Browser opens to tabula rasa (blank white screen) or last artifact.
@@ -63,14 +63,6 @@ Zen canvas behavior:
 - Edge panels: hover near top edge for projects, right edge for chat log.
 - Slash commands: `/plan`, `/plan on`, `/plan off`, `/clear`, `/compact`.
 - Artifacts render Markdown + LaTeX.
-
-## Push To Prompt
-
-Tabura uses the term **Push To Prompt** (coined in this project) for voice-driven intent capture, analogous to Push To Talk.  
-In `v0.0.5`, STT is routed through VoxType MCP (`/api/stt/push-to-prompt`) and no Helpy STT provider is used by Tabura.
-
-For always-on local usage, run the user `systemd` bridge service `tabura-voxtype-mcp.service`.
-It bridges browser audio capture to the `voxtype` transcription CLI.
 
 ## Markdown LaTeX Rendering
 
@@ -98,7 +90,7 @@ CONSUMER=http://127.0.0.1:9420/mcp
 
 handoff_id=$(
   curl -sS -X POST "$PRODUCER" -H 'content-type: application/json' \
-    -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"handoff.create","arguments":{"kind":"mail_headers","selector":{"provider":"work","folder":"INBOX","limit":20}}}}' \
+    -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"handoff.create","arguments":{"kind":"file","selector":{"path":"README.md"}}}}' \
   | jq -r '.result.structuredContent.handoff_id'
 )
 
@@ -106,7 +98,7 @@ curl -sS -X POST "$CONSUMER" -H 'content-type: application/json' \
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"canvas_session_open","arguments":{"session_id":"local"}}}'
 
 curl -sS -X POST "$CONSUMER" -H 'content-type: application/json' \
-  -d "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"canvas_import_handoff\",\"arguments\":{\"session_id\":\"local\",\"handoff_id\":\"$handoff_id\",\"producer_mcp_url\":\"$PRODUCER\",\"title\":\"Inbox (20)\"}}}"
+  -d "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"canvas_import_handoff\",\"arguments\":{\"session_id\":\"local\",\"handoff_id\":\"$handoff_id\",\"producer_mcp_url\":\"$PRODUCER\",\"title\":\"Imported File\"}}}"
 ```
 
 ## Tests
