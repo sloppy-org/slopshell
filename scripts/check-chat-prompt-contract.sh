@@ -6,10 +6,19 @@ TARGET_FILE="${ROOT_DIR}/internal/web/chat.go"
 
 require_literal() {
   local pattern="$1"
-  if ! rg -F --quiet -- "$pattern" "$TARGET_FILE"; then
+  if command -v rg >/dev/null 2>&1; then
+    if rg -F --quiet -- "$pattern" "$TARGET_FILE"; then
+      return 0
+    fi
+  else
+    if grep -F -q -- "$pattern" "$TARGET_FILE"; then
+      return 0
+    fi
+  fi
+  {
     echo "prompt-contract check failed: missing literal in ${TARGET_FILE}: ${pattern}" >&2
     exit 1
-  fi
+  }
 }
 
 require_literal "Use exactly one response shape:"
