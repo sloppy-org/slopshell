@@ -128,7 +128,7 @@ test.describe('zen canvas - tabula rasa', () => {
     expect(sent!.text).toBe('hello');
   });
 
-  test('click starts recording, indicator visible, click again stops', async ({ page }) => {
+  test('click starts recording, stop indicator stays visible after stop', async ({ page }) => {
     await clearLog(page);
 
     // Click on canvas area
@@ -143,17 +143,11 @@ test.describe('zen canvas - tabula rasa', () => {
     // Wait for recorder to start
     await waitForLogEntry(page, 'recorder', 'start');
 
-    // Click again to stop — transitions to thinking dots
+    // Click again to stop recording and start transcription
     await page.mouse.click(400, 400);
     await waitForLogEntry(page, 'stt', 'stop');
-
-    // Recording dot should be hidden, thinking dots visible
-    const dot = page.locator('.zen-indicator-dot');
-    const dotDisplay = await dot.evaluate(el => (el as HTMLElement).style.display);
-    expect(dotDisplay).toBe('none');
-    const dots = page.locator('.zen-indicator-dots');
-    const dotsDisplay = await dots.evaluate(el => getComputedStyle(el).display);
-    expect(dotsDisplay).not.toBe('none');
+    await expect(indicator).toBeVisible();
+    await expect(page.locator('.zen-stop-icon')).toBeVisible();
   });
 
   test('right-click opens text input at position', async ({ page }) => {
@@ -232,7 +226,7 @@ test.describe('zen canvas - response overlay', () => {
     await injectChatEvent(page, { type: 'turn_started', turn_id: 'draw-1' });
     await page.waitForTimeout(100);
     await expect(page.locator('#zen-overlay')).toBeVisible();
-    await expect(page.locator('#zen-indicator')).toBeHidden();
+    await expect(page.locator('#zen-indicator')).toBeVisible();
 
     // No event_id on purpose: empty->drawn transition must still flip to artifact symbol mode.
     await injectCanvasEvent(page, {
@@ -246,11 +240,7 @@ test.describe('zen canvas - response overlay', () => {
     await expect(page.locator('#canvas-text')).toContainText('Drawn content');
     await expect(page.locator('#zen-overlay')).toBeHidden();
     await expect(page.locator('#zen-indicator')).toBeVisible();
-
-    const dotDisplay = await page.locator('.zen-indicator-dot').evaluate(el => (el as HTMLElement).style.display);
-    expect(dotDisplay).toBe('none');
-    const dotsDisplay = await page.locator('.zen-indicator-dots').evaluate(el => getComputedStyle(el).display);
-    expect(dotsDisplay).not.toBe('none');
+    await expect(page.locator('.zen-stop-icon')).toBeVisible();
 
     const hasArtifact = await page.evaluate(() => Boolean((window as any)._taburaApp?.getState?.().hasArtifact));
     expect(hasArtifact).toBe(true);
@@ -359,28 +349,23 @@ test.describe('zen canvas - TTS voice output', () => {
     });
   }
 
-  test('voice turn shows thinking dots, no overlay', async ({ page }) => {
+  test('voice turn shows stop indicator, no overlay', async ({ page }) => {
     await clearLog(page);
     await setVoiceOrigin(page);
 
     await injectChatEvent(page, { type: 'turn_started', turn_id: 'tts-dots' });
     await page.waitForTimeout(100);
 
-    // Thinking dots visible, overlay hidden
+    // Stop indicator visible, overlay hidden
     const indicator = page.locator('#zen-indicator');
     await expect(indicator).toBeVisible();
-    const dots = page.locator('.zen-indicator-dots');
-    const dotsDisplay = await dots.evaluate(el => getComputedStyle(el).display);
-    expect(dotsDisplay).not.toBe('none');
-    const dot = page.locator('.zen-indicator-dot');
-    const dotDisplay = await dot.evaluate(el => (el as HTMLElement).style.display);
-    expect(dotDisplay).toBe('none');
+    await expect(page.locator('.zen-stop-icon')).toBeVisible();
 
     const overlay = page.locator('#zen-overlay');
     await expect(overlay).toBeHidden();
   });
 
-  test('text turn shows overlay with Thinking, no indicator', async ({ page }) => {
+  test('text turn shows overlay with Thinking and stop indicator', async ({ page }) => {
     await clearLog(page);
     // Default is text origin; send via keyboard to confirm
     await page.keyboard.type('hello');
@@ -395,9 +380,10 @@ test.describe('zen canvas - TTS voice output', () => {
     const content = await page.locator('.zen-overlay-content').textContent();
     expect(content).toContain('Thinking');
 
-    // Indicator should NOT show thinking dots
+    // Indicator stays visible while work is active
     const indicator = page.locator('#zen-indicator');
-    await expect(indicator).toBeHidden();
+    await expect(indicator).toBeVisible();
+    await expect(page.locator('.zen-stop-icon')).toBeVisible();
   });
 
   test('voice response triggers TTS, no overlay', async ({ page }) => {

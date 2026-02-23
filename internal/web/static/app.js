@@ -2,14 +2,12 @@ import { marked } from './vendor/marked.esm.js';
 import { renderCanvas, clearCanvas, getLocationFromPoint, getLocationFromSelection, showLineHighlight, clearLineHighlight, escapeHtml, sanitizeHtml, getActiveTextEventId } from './canvas.js';
 import {
   getZenState, setZenMode,
-  showIndicator, hideIndicator, showThinkingIndicator,
-  showDelegateIndicator, hideDelegateIndicator,
+  showStopIndicator, hideStopIndicator,
   showTextInput, hideTextInput,
   showOverlay, hideOverlay, updateOverlay,
   isOverlayVisible, isTextInputVisible, isRecording, setRecording,
   getInputAnchor, setInputAnchor, getAnchorFromPoint,
   buildContextPrefix, getLastInputPosition,
-  showSpeakingIndicator, hideSpeakingIndicator, dismissSpeakingIndicator,
 } from './zen.js';
 
 const state = {
@@ -36,8 +34,8 @@ const state = {
   assistantRemoteQueuedCount: 0,
   assistantRemoteDelegateActiveCount: 0,
   assistantCancelInFlight: false,
-  assistantDelegateCancelInFlight: false,
   assistantLastError: '',
+  ttsPlaying: false,
   chatCtrlHoldTimer: null,
   chatVoiceCapture: null,
   contextUsed: 0,
@@ -214,20 +212,27 @@ class TTSPlayer {
     }
     this._playing = false;
     this._nextStartTime = 0;
-    dismissSpeakingIndicator();
+    if (state.ttsPlaying) {
+      state.ttsPlaying = false;
+      updateAssistantActivityIndicator();
+    }
   }
   async _playNext() {
     if (this._stopped || this._queue.length === 0) {
       this._playing = false;
       this._nextStartTime = 0;
-      hideSpeakingIndicator();
+      if (state.ttsPlaying) {
+        state.ttsPlaying = false;
+        updateAssistantActivityIndicator();
+      }
       return;
     }
     this._playing = true;
+    if (!state.ttsPlaying) {
+      state.ttsPlaying = true;
+      updateAssistantActivityIndicator();
+    }
     const wavData = this._queue.shift();
-    const pos = getLastInputPosition();
-    hideIndicator();
-    showSpeakingIndicator(pos.x, pos.y);
     try {
       const ctx = this._ensureCtx();
       if (ctx.state === 'suspended') await ctx.resume();
@@ -279,6 +284,10 @@ function stopTTSPlayback() {
   if (ttsSentenceChunker) { ttsSentenceChunker.reset(); ttsSentenceChunker = null; }
   ttsLastSpeakText = '';
   ttsSpeakLang = 'en';
+  if (state.ttsPlaying) {
+    state.ttsPlaying = false;
+    updateAssistantActivityIndicator();
+  }
 }
 
 function ensureTTSChunker() {
@@ -691,12 +700,12 @@ async function beginZenVoiceCapture(x, y, anchor) {
   };
   state.chatVoiceCapture = capture;
   state.lastInputOrigin = 'voice';
-  setRecording(true);
-  setInputAnchor(anchor || null);
-  showIndicator(x, y);
   const zenS = getZenState();
   zenS.lastInputX = x;
   zenS.lastInputY = y;
+  setRecording(true);
+  setInputAnchor(anchor || null);
+  updateAssistantActivityIndicator();
   showStatus('recording...');
   try {
     const stream = await acquireMicStream();
@@ -717,7 +726,7 @@ async function beginZenVoiceCapture(x, y, anchor) {
     }
   } catch (err) {
     setRecording(false);
-    hideIndicator();
+    updateAssistantActivityIndicator();
     const message = String(err?.message || err || 'voice capture failed');
     showStatus(`voice capture failed: ${message}`);
     sttCancel();
@@ -734,10 +743,6 @@ async function stopZenVoiceCaptureAndSend() {
   capture.stopRequested = true;
   if (!capture.active) return;
   capture.stopping = true;
-  // Transition immediately: recording dot -> thinking dots (before network latency)
-  const pos = getLastInputPosition();
-  hideIndicator();
-  showThinkingIndicator(pos.x, pos.y);
   showStatus('transcribing...');
   let remoteStopped = false;
   try {
@@ -758,7 +763,7 @@ async function stopZenVoiceCaptureAndSend() {
     showStatus('sending...');
     void zenSubmitMessage(transcript);
   } catch (err) {
-    hideIndicator();
+    updateAssistantActivityIndicator();
     const message = String(err?.message || err || 'voice capture failed');
     showStatus(`voice capture failed: ${message}`);
   } finally {
@@ -770,6 +775,7 @@ async function stopZenVoiceCaptureAndSend() {
     if (state.chatVoiceCapture === capture) {
       state.chatVoiceCapture = null;
     }
+    updateAssistantActivityIndicator();
   }
 }
 
@@ -777,10 +783,10 @@ function cancelChatVoiceCapture() {
   const capture = state.chatVoiceCapture;
   if (!capture) return;
   setRecording(false);
-  hideIndicator();
   sttCancel();
   stopChatVoiceMedia(capture);
   state.chatVoiceCapture = null;
+  updateAssistantActivityIndicator();
 }
 
 function showCanvasColumn(paneId) {
@@ -862,16 +868,19 @@ function isDirectAssistantWorking() {
 }
 
 function isDelegateAssistantWorking() {
-  return state.assistantRemoteDelegateActiveCount > 0
-    || state.assistantDelegateCancelInFlight;
+  return state.assistantRemoteDelegateActiveCount > 0;
 }
 
 function isAssistantWorking() {
   return isDirectAssistantWorking() || isDelegateAssistantWorking();
 }
 
-function shouldUseSymbolIndicator() {
-  return isVoiceTurn() || state.hasArtifact;
+function isTTSSpeaking() {
+  return state.ttsPlaying;
+}
+
+function shouldShowStopIndicator() {
+  return isRecording() || isAssistantWorking() || isTTSSpeaking();
 }
 
 function updateAssistantActivityIndicator() {
@@ -882,23 +891,10 @@ function updateAssistantActivityIndicator() {
   const pos = getLastInputPosition();
   const px = Number.isFinite(pos?.x) && pos.x > 0 ? pos.x : Math.floor(window.innerWidth / 2);
   const py = Number.isFinite(pos?.y) && pos.y > 0 ? pos.y : Math.floor(window.innerHeight / 2);
-  if (isRecording()) {
-    if (isDelegateAssistantWorking()) {
-      showDelegateIndicator(px + 22, py);
-    } else {
-      hideDelegateIndicator();
-    }
-    return;
-  }
-  if (isDirectAssistantWorking() && shouldUseSymbolIndicator()) {
-    showThinkingIndicator(px, py);
+  if (shouldShowStopIndicator()) {
+    showStopIndicator(px, py);
   } else {
-    hideIndicator();
-  }
-  if (isDelegateAssistantWorking()) {
-    showDelegateIndicator(px + 22, py);
-  } else {
-    hideDelegateIndicator();
+    hideStopIndicator();
   }
 }
 
@@ -1043,7 +1039,6 @@ function resetAssistantTurnTracking({ clearError = false } = {}) {
   state.assistantRemoteQueuedCount = 0;
   state.assistantRemoteDelegateActiveCount = 0;
   state.assistantCancelInFlight = false;
-  state.assistantDelegateCancelInFlight = false;
   if (clearError) {
     state.assistantLastError = '';
   }
@@ -1303,11 +1298,9 @@ function handleChatEvent(payload) {
     // Reset TTS state for new turn
     stopTTSPlayback();
     const pos = getLastInputPosition();
-    if (shouldUseSymbolIndicator()) {
+    if (isVoiceTurn() || state.hasArtifact) {
       hideOverlay();
-      showThinkingIndicator(pos.x, pos.y);
     } else {
-      hideIndicator();
       showOverlay(pos.x, pos.y + 24);
       updateOverlay('_Thinking..._');
       getZenState().overlayTurnId = payload.turn_id || null;
@@ -1394,9 +1387,7 @@ function handleChatEvent(payload) {
     if (!autoCanvas && ttsSentenceChunker) {
       ttsSentenceChunker.flush();
     }
-    if (isVoiceTurn()) {
-      hideIndicator();
-    } else {
+    if (!isVoiceTurn()) {
       if (autoCanvas || state.hasArtifact) {
         hideOverlay();
         state.zenCanvasActionThisTurn = false;
@@ -1618,35 +1609,15 @@ async function cancelActiveAssistantTurn() {
   }
 }
 
-async function cancelActiveDelegatedJobs() {
-  if (!state.chatSessionId || state.assistantDelegateCancelInFlight) return;
-  await refreshAssistantActivity();
-  if (!isDelegateAssistantWorking()) {
-    updateAssistantActivityIndicator();
+async function handleZenStopAction() {
+  if (isRecording()) {
+    await stopZenVoiceCaptureAndSend();
     return;
   }
-  state.assistantDelegateCancelInFlight = true;
-  updateAssistantActivityIndicator();
-  showStatus('stopping delegated jobs...');
-  try {
-    const resp = await fetch(`/api/chat/sessions/${encodeURIComponent(state.chatSessionId)}/cancel-delegates`, { method: 'POST' });
-    if (!resp.ok) {
-      const detail = (await resp.text()).trim() || `HTTP ${resp.status}`;
-      showStatus(`delegate stop failed: ${detail}`);
-      return;
-    }
-    const payload = await resp.json();
-    const canceled = Number(payload?.canceled || 0);
-    if (canceled <= 0) {
-      await refreshAssistantActivity();
-    }
-  } catch (err) {
-    showStatus(`delegate stop failed: ${String(err?.message || err)}`);
-  } finally {
-    state.assistantDelegateCancelInFlight = false;
-    updateAssistantActivityIndicator();
-    window.setTimeout(() => { void refreshAssistantActivity(); }, 120);
+  if (isTTSSpeaking()) {
+    stopTTSPlayback();
   }
+  await cancelActiveAssistantTurn();
 }
 
 function openCanvasWs() {
@@ -1824,22 +1795,12 @@ function bindUi() {
   const canvasText = document.getElementById('canvas-text');
   const canvasViewport = document.getElementById('canvas-viewport');
   const zenIndicator = document.getElementById('zen-indicator');
-  const zenDelegateIndicator = document.getElementById('zen-delegate-indicator');
 
   if (zenIndicator) {
     zenIndicator.addEventListener('pointerdown', (ev) => {
-      if (!(ev.currentTarget instanceof HTMLElement)) return;
-      if (!ev.currentTarget.classList.contains('is-thinking')) return;
       ev.preventDefault();
       ev.stopPropagation();
-      void cancelActiveAssistantTurn();
-    });
-  }
-  if (zenDelegateIndicator) {
-    zenDelegateIndicator.addEventListener('pointerdown', (ev) => {
-      ev.preventDefault();
-      ev.stopPropagation();
-      void cancelActiveDelegatedJobs();
+      void handleZenStopAction();
     });
   }
 
@@ -1959,7 +1920,7 @@ function bindUi() {
         hideCanvasColumn();
         return;
       }
-      void cancelActiveAssistantTurn();
+      void handleZenStopAction();
       return;
     }
 

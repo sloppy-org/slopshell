@@ -213,16 +213,19 @@ func (a *App) handleChatSessionCancel(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing session_id", http.StatusBadRequest)
 		return
 	}
-	if _, err := a.store.GetChatSession(sessionID); err != nil {
+	session, err := a.store.GetChatSession(sessionID)
+	if err != nil {
 		http.Error(w, "session not found", http.StatusNotFound)
 		return
 	}
 	activeCanceled, queuedCanceled := a.cancelChatWork(sessionID)
+	delegateCanceled := a.cancelDelegatedJobsForProject(session.ProjectKey)
 	writeJSON(w, map[string]interface{}{
-		"ok":              true,
-		"canceled":        activeCanceled + queuedCanceled,
-		"active_canceled": activeCanceled,
-		"queued_canceled": queuedCanceled,
+		"ok":                true,
+		"canceled":          activeCanceled + queuedCanceled + delegateCanceled,
+		"active_canceled":   activeCanceled,
+		"queued_canceled":   queuedCanceled,
+		"delegate_canceled": delegateCanceled,
 	})
 }
 

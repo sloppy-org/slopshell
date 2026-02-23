@@ -53,6 +53,9 @@ func TestHandleChatSessionCancelStopsActiveTurn(t *testing.T) {
 	if got := intFromAny(payload["queued_canceled"], -1); got != 0 {
 		t.Fatalf("expected queued_canceled=0, got %v", payload["queued_canceled"])
 	}
+	if got := intFromAny(payload["delegate_canceled"], -1); got != 0 {
+		t.Fatalf("expected delegate_canceled=0, got %v", payload["delegate_canceled"])
+	}
 }
 
 func TestHandleChatSessionActivityReportsActiveTurns(t *testing.T) {
@@ -127,6 +130,9 @@ func TestHandleChatSessionCancelClearsQueuedTurns(t *testing.T) {
 	}
 	if got := intFromAny(payload["queued_canceled"], -1); got != 2 {
 		t.Fatalf("expected queued_canceled=2, got %v", payload["queued_canceled"])
+	}
+	if got := intFromAny(payload["delegate_canceled"], -1); got != 0 {
+		t.Fatalf("expected delegate_canceled=0, got %v", payload["delegate_canceled"])
 	}
 }
 

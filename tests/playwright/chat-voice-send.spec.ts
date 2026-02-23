@@ -132,19 +132,12 @@ test('recording indicator shows symbol', async ({ page }) => {
 
   const indicator = page.locator('#zen-indicator');
   await expect(indicator).toBeVisible();
+  await expect(page.locator('.zen-stop-icon')).toBeVisible();
 
-  const dot = page.locator('.zen-indicator-dot');
-  await expect(dot).toBeVisible();
-
-  // Stop recording — transitions to thinking dots (indicator stays visible)
+  // Stop recording while keeping the unified stop indicator visible
   await page.mouse.click(400, 400);
   await waitForSTTAction(page, 'stop');
   await page.waitForTimeout(200);
-
-  // Recording dot should be hidden, thinking dots visible
-  const dotDisplay = await dot.evaluate(el => (el as HTMLElement).style.display);
-  expect(dotDisplay).toBe('none');
-  const dots = page.locator('.zen-indicator-dots');
-  const dotsDisplay = await dots.evaluate(el => getComputedStyle(el).display);
-  expect(dotsDisplay).not.toBe('none');
+  await expect(indicator).toBeVisible();
+  await expect(page.locator('.zen-stop-icon')).toBeVisible();
 });
