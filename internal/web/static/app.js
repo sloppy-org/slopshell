@@ -72,13 +72,15 @@ const VOICE_EOU_AUTO_SEND_STORAGE_KEY = 'tabura.voiceEouAutoSend';
 const VOICE_EOU_AUTO_SEND_QUERY_PARAM = 'voice_eou_auto_send';
 const VOICE_EOU_MIN_UTTERANCE_MS = 300;
 const VOICE_EOU_EOS_SILENCE_MS = 700;
-const VOICE_EOU_NO_SPEECH_MS = 2800;
+const VOICE_EOU_NO_SPEECH_MS = 4000;
 const VOICE_EOU_MAX_RECORDING_MS = 20000;
 const VOICE_EOU_FRAME_MS = 40;
 const VOICE_EOU_NOISE_FLOOR_SAMPLES = 8;
-const VOICE_EOU_NOISE_OFFSET_DB = 10;
-const VOICE_EOU_NOISE_FLOOR_MIN_DB = -55;
-const VOICE_EOU_NOISE_FLOOR_MAX_DB = -35;
+const VOICE_EOU_SPEECH_START_OFFSET_DB = 5;
+const VOICE_EOU_SPEECH_END_HYSTERESIS_DB = 2;
+const VOICE_EOU_SPEECH_THRESHOLD_MIN_DB = -45;
+const VOICE_EOU_NOISE_FLOOR_MIN_DB = -70;
+const VOICE_EOU_NOISE_FLOOR_MAX_DB = -20;
 let devReloadBootID = '';
 let devReloadTimer = null;
 let devReloadInFlight = false;
@@ -704,6 +706,15 @@ function computeDecibelFromTimeDomain(data) {
   return 20 * Math.log10(rms);
 }
 
+function averageNumbers(values) {
+  if (!Array.isArray(values) || values.length === 0) return null;
+  let total = 0;
+  for (const value of values) {
+    total += Number(value) || 0;
+  }
+  return total / values.length;
+}
+
 function startVADMonitor(capture) {
   if (!isVoiceEOUAutoSendEnabled()) return;
   if (!capture || capture.vadState) return;
@@ -757,11 +768,16 @@ function startVADMonitor(capture) {
         }
       }
 
-      const thresholdDb = options.noiseFloorDb == null
-        ? VOICE_EOU_NOISE_FLOOR_MIN_DB
-        : options.noiseFloorDb + VOICE_EOU_NOISE_OFFSET_DB;
-
-      const isSpeaking = db >= thresholdDb;
+      const sampledFloorDb = averageNumbers(options.noiseSamples);
+      const estimatedFloorDb = options.noiseFloorDb == null
+        ? (sampledFloorDb == null ? VOICE_EOU_NOISE_FLOOR_MIN_DB : sampledFloorDb)
+        : options.noiseFloorDb;
+      const startThresholdDb = Math.max(
+        VOICE_EOU_SPEECH_THRESHOLD_MIN_DB,
+        estimatedFloorDb + VOICE_EOU_SPEECH_START_OFFSET_DB,
+      );
+      const endThresholdDb = startThresholdDb - VOICE_EOU_SPEECH_END_HYSTERESIS_DB;
+      const isSpeaking = options.hasSpeech ? db >= endThresholdDb : db >= startThresholdDb;
 
       if (isSpeaking) {
         if (!options.hasSpeech) {
@@ -777,7 +793,7 @@ function startVADMonitor(capture) {
         if (elapsed >= VOICE_EOU_NO_SPEECH_MS) {
           stopVADMonitor(capture);
           state.indicatorSuppressedByCanvasUpdate = false;
-          showStatus('ready');
+          showStatus('no speech detected');
           setRecording(false);
           sttCancel();
           stopChatVoiceMedia(capture);
@@ -785,6 +801,11 @@ function startVADMonitor(capture) {
             state.chatVoiceCapture = null;
           }
           updateAssistantActivityIndicator();
+          window.setTimeout(() => {
+            if (!state.chatVoiceCapture && !isAssistantWorking() && !isTTSSpeaking()) {
+              showStatus('ready');
+            }
+          }, 800);
           return;
         }
       } else {

@@ -83,6 +83,31 @@ test('silence auto-stop sends transcript without manual stop click', async ({ pa
   expect(log.some(e => e.type === 'stt' && e.action === 'cancel')).toBe(false);
 });
 
+test('silence auto-stop works with low-level speech near ambient floor', async ({ page }) => {
+  await clearLog(page);
+  await page.evaluate(() => {
+    // Simulate hardware like a quiet webcam mic:
+    // ambient ~ -41 dB, speech ~ -35 dB, then silence.
+    (window as any).__setVadDbFrames([
+      -41, -41, -41, -41, -41, -41, -41, -41,
+      -35, -35, -35, -35, -35, -35, -35, -35,
+      -44, -44, -44, -44, -44, -44, -44, -44, -44, -44,
+      -44, -44, -44, -44, -44, -44, -44, -44, -44, -44,
+    ]);
+  });
+
+  await page.mouse.click(400, 400);
+  await waitForLogEntry(page, 'recorder', 'start');
+  await waitForSTTAction(page, 'stop');
+  await page.waitForTimeout(200);
+
+  const log = await getLog(page);
+  const sent = log.find(e => e.type === 'message_sent');
+  expect(sent).toBeTruthy();
+  expect(sent!.text).toBe('hello world');
+  expect(log.some(e => e.type === 'stt' && e.action === 'cancel')).toBe(false);
+});
+
 test('Control long-press starts voice recording (desktop PTT)', async ({ page }) => {
   await clearLog(page);
 
