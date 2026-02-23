@@ -121,11 +121,11 @@ func TestAssistantFinalChatContent_StructuredWithCompanion(t *testing.T) {
 func TestAssistantFinalChatContent_StructuredMarkersOnly(t *testing.T) {
 	input := "[file: .tabura/artifacts/tmp/diff.md]"
 	markdown, plain, format := assistantFinalChatContent(input, true, false)
-	if markdown != "Canvas file updated." {
-		t.Fatalf("markdown = %q, want fallback", markdown)
+	if markdown != "" {
+		t.Fatalf("markdown = %q, want empty", markdown)
 	}
-	if plain != markdown {
-		t.Fatalf("plain = %q, want %q", plain, markdown)
+	if plain != "" {
+		t.Fatalf("plain = %q, want empty", plain)
 	}
 	if format != "markdown" {
 		t.Fatalf("format = %q, want markdown", format)

@@ -1175,15 +1175,12 @@ func (a *App) finalizeAssistantResponse(
 	return chatMarkdown
 }
 
-func assistantFinalChatContent(text string, renderOnCanvas bool, autoCanvas bool) (string, string, string) {
+func assistantFinalChatContent(text string, _ bool, autoCanvas bool) (string, string, string) {
 	if autoCanvas {
 		return "", "", "text"
 	}
 	trimmed := strings.TrimSpace(text)
 	companion := strings.TrimSpace(stripCanvasFileMarkers(trimmed))
-	if companion == "" && renderOnCanvas {
-		companion = "Canvas file updated."
-	}
 	return companion, companion, "markdown"
 }
 
