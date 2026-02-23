@@ -63,6 +63,16 @@ const ASSISTANT_ACTIVITY_POLL_MS = 1200;
 let localMessageSeq = 0;
 const CHAT_CTRL_LONG_PRESS_MS = 180;
 const CHAT_SEND_HOLD_MS = 300;
+const VOICE_EOU_AUTO_SEND_ENABLED = true;
+const VOICE_EOU_MIN_UTTERANCE_MS = 300;
+const VOICE_EOU_EOS_SILENCE_MS = 700;
+const VOICE_EOU_NO_SPEECH_MS = 2000;
+const VOICE_EOU_MAX_RECORDING_MS = 20000;
+const VOICE_EOU_FRAME_MS = 40;
+const VOICE_EOU_NOISE_FLOOR_SAMPLES = 8;
+const VOICE_EOU_NOISE_OFFSET_DB = 10;
+const VOICE_EOU_NOISE_FLOOR_MIN_DB = -55;
+const VOICE_EOU_NOISE_FLOOR_MAX_DB = -35;
 let devReloadBootID = '';
 let devReloadTimer = null;
 let devReloadInFlight = false;
@@ -640,6 +650,9 @@ function handleSTTWSMessage(payload) {
 
 function stopChatVoiceMedia(capture) {
   if (!capture) return;
+  if (capture.vadState?.isRunning) {
+    stopVADMonitor(capture);
+  }
   if (capture.mediaRecorder) {
     try {
       if (capture.mediaRecorder.state !== 'inactive') {
@@ -650,6 +663,127 @@ function stopChatVoiceMedia(capture) {
   capture.mediaRecorder = null;
   capture.mediaStream = null;
   releaseMicStream();
+}
+
+function computeDecibelFromTimeDomain(data) {
+  let sumSquares = 0;
+  for (let i = 0; i < data.length; i++) {
+    const sample = (data[i] - 128) / 128;
+    sumSquares += sample * sample;
+  }
+  const rms = Math.sqrt(sumSquares / Math.max(1, data.length));
+  if (rms <= 0 || Number.isNaN(rms)) return -100;
+  return 20 * Math.log10(rms);
+}
+
+function startVADMonitor(capture) {
+  if (!VOICE_EOU_AUTO_SEND_ENABLED) return;
+  if (!capture || capture.vadState) return;
+  if (!capture.mediaStream) return;
+  if (!ttsAudioCtx || typeof ttsAudioCtx.createAnalyser !== 'function' || typeof ttsAudioCtx.createMediaStreamSource !== 'function') return;
+
+  if (ttsAudioCtx.state === 'suspended') {
+    ttsAudioCtx.resume().catch(() => {});
+  }
+
+  const options = {
+    startAtMs: performance.now(),
+    speechMs: 0,
+    silenceMs: 0,
+    hasSpeech: false,
+    noiseSamples: [],
+    noiseFloorDb: null,
+    isRunning: true,
+  };
+
+  let source;
+  let analyser;
+  try {
+    source = ttsAudioCtx.createMediaStreamSource(capture.mediaStream);
+    analyser = ttsAudioCtx.createAnalyser();
+    analyser.fftSize = 1024;
+    analyser.smoothingTimeConstant = 0.25;
+    const bins = new Uint8Array(analyser.frequencyBinCount);
+    source.connect(analyser);
+
+    const update = () => {
+      if (!options.isRunning || !capture || capture.stopping || state.chatVoiceCapture !== capture) {
+        stopVADMonitor(capture);
+        return;
+      }
+
+      analyser.getByteTimeDomainData(bins);
+      const db = computeDecibelFromTimeDomain(bins);
+      const now = performance.now();
+      const elapsed = now - options.startAtMs;
+
+      if (options.noiseFloorDb == null && options.noiseSamples.length < VOICE_EOU_NOISE_FLOOR_SAMPLES) {
+        options.noiseSamples.push(db);
+        if (options.noiseSamples.length >= VOICE_EOU_NOISE_FLOOR_SAMPLES) {
+          const sum = options.noiseSamples.reduce((a, v) => a + v, 0);
+          const avg = sum / options.noiseSamples.length;
+          options.noiseFloorDb = Math.max(
+            VOICE_EOU_NOISE_FLOOR_MIN_DB,
+            Math.min(VOICE_EOU_NOISE_FLOOR_MAX_DB, avg),
+          );
+        }
+      }
+
+      const thresholdDb = options.noiseFloorDb == null
+        ? VOICE_EOU_NOISE_FLOOR_MIN_DB
+        : options.noiseFloorDb + VOICE_EOU_NOISE_OFFSET_DB;
+
+      const isSpeaking = db >= thresholdDb;
+
+      if (isSpeaking) {
+        if (!options.hasSpeech) {
+          options.hasSpeech = true;
+          options.speechStartAt = now;
+        }
+        options.silenceMs = 0;
+      } else {
+        options.silenceMs += VOICE_EOU_FRAME_MS;
+      }
+
+      if (!options.hasSpeech) {
+        if (elapsed >= VOICE_EOU_NO_SPEECH_MS) {
+          stopVADMonitor(capture);
+          cancelChatVoiceCapture();
+          return;
+        }
+      } else {
+        options.speechMs = Math.max(0, now - options.speechStartAt);
+        if (options.speechMs < VOICE_EOU_MIN_UTTERANCE_MS) return;
+        if (options.silenceMs >= VOICE_EOU_EOS_SILENCE_MS || elapsed >= VOICE_EOU_MAX_RECORDING_MS) {
+          stopVADMonitor(capture);
+          void stopZenVoiceCaptureAndSend();
+          return;
+        }
+      }
+    };
+
+    const timer = window.setInterval(update, VOICE_EOU_FRAME_MS);
+    capture.vadState = { source, analyser, timer, options, bins, isRunning: true };
+  } catch (_) {
+    if (source) {
+      try { source.disconnect(); } catch (_) {}
+    }
+    capture.vadState = null;
+  }
+}
+
+function stopVADMonitor(capture) {
+  if (!capture || !capture.vadState) return;
+  const state = capture.vadState;
+  capture.vadState = null;
+  state.isRunning = false;
+  if (state.timer) window.clearInterval(state.timer);
+  if (state.source) {
+    try { state.source.disconnect(); } catch (_) {}
+  }
+  if (state.analyser) {
+    try { state.analyser.disconnect(); } catch (_) {}
+  }
 }
 
 function stopChatVoiceMediaAndFlush(capture) {
@@ -723,6 +857,9 @@ async function beginZenVoiceCapture(x, y, anchor) {
       capture.chunks.push(ev.data);
     });
     recorder.start();
+    if (!capture.stopRequested) {
+      startVADMonitor(capture);
+    }
     if (capture.stopRequested) {
       void stopZenVoiceCaptureAndSend();
     }
