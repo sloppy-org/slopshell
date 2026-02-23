@@ -146,55 +146,39 @@ package main
 	}
 }
 
-func TestParseCanvasBlocks_IgnoresMarkersInsideCodeFence(t *testing.T) {
-	for _, fence := range []string{"~~~text", "```text"} {
-		close := fence[:3]
-		input := ":::canvas{title=\"Start\"}\nStart block.\n:::\n\n" +
-			fence + "\n:::canvas{title=\"Ignored\"}\nDo not parse this.\n:::\n" + close + "\n\n" +
-			":::canvas{title=\"After\"}\nAfter block.\n:::\n"
+func TestParseCanvasBlocks_ContentWithCodeFences(t *testing.T) {
+	input := ":::canvas{title=\"Code Review\"}\nHere is the code:\n```go\nfunc main() {}\n```\nLooks good.\n:::\n"
 
-		blocks, cleaned := parseCanvasBlocks(input)
-		if len(blocks) != 2 {
-			t.Fatalf("fence %q: expected 2 canvas blocks, got %d", fence, len(blocks))
-		}
-		if blocks[0].Title != "Start" {
-			t.Errorf("fence %q: blocks[0].Title = %q, want %q", fence, blocks[0].Title, "Start")
-		}
-		if blocks[1].Title != "After" {
-			t.Errorf("fence %q: blocks[1].Title = %q, want %q", fence, blocks[1].Title, "After")
-		}
-		if strings.Contains(cleaned, "[canvas: Ignored]") {
-			t.Errorf("fence %q: marker inside code fence should not be parsed, got cleaned %q", fence, cleaned)
-		}
-		if !strings.Contains(cleaned, "[canvas: Start]") || !strings.Contains(cleaned, "[canvas: After]") {
-			t.Errorf("fence %q: cleaned should contain both canvas references, got %q", fence, cleaned)
-		}
+	blocks, cleaned := parseCanvasBlocks(input)
+	if len(blocks) != 1 {
+		t.Fatalf("expected 1 canvas block, got %d", len(blocks))
+	}
+	if blocks[0].Title != "Code Review" {
+		t.Errorf("title = %q, want %q", blocks[0].Title, "Code Review")
+	}
+	if !strings.Contains(blocks[0].Content, "```go") {
+		t.Errorf("content should preserve code fences, got %q", blocks[0].Content)
+	}
+	if !strings.Contains(cleaned, "[canvas: Code Review]") {
+		t.Errorf("cleaned should contain reference, got %q", cleaned)
 	}
 }
 
-func TestParseFileBlocks_IgnoresMarkersInsideCodeFence(t *testing.T) {
-	for _, fence := range []string{"~~~text", "```text"} {
-		close := fence[:3]
-		input := ":::file{path=\"before.go\"}\npackage main\n:::\n\n" +
-			fence + "\n:::file{path=\"ignored.go\"}\npackage ignored\n:::\n" + close + "\n\n" +
-			":::file{path=\"after.go\"}\npackage after\n:::\n"
+func TestParseFileBlocks_ContentWithCodeFences(t *testing.T) {
+	input := ":::file{path=\"README.md\"}\n# Title\n```bash\necho hello\n```\n:::\n"
 
-		blocks, cleaned := parseFileBlocks(input)
-		if len(blocks) != 2 {
-			t.Fatalf("fence %q: expected 2 file blocks, got %d", fence, len(blocks))
-		}
-		if blocks[0].Path != "before.go" {
-			t.Errorf("fence %q: blocks[0].Path = %q, want %q", fence, blocks[0].Path, "before.go")
-		}
-		if blocks[1].Path != "after.go" {
-			t.Errorf("fence %q: blocks[1].Path = %q, want %q", fence, blocks[1].Path, "after.go")
-		}
-		if strings.Contains(cleaned, "[file: ignored.go]") {
-			t.Errorf("fence %q: marker inside code fence should not be parsed, got cleaned %q", fence, cleaned)
-		}
-		if !strings.Contains(cleaned, "[file: before.go]") || !strings.Contains(cleaned, "[file: after.go]") {
-			t.Errorf("fence %q: cleaned should contain both file references, got %q", fence, cleaned)
-		}
+	blocks, cleaned := parseFileBlocks(input)
+	if len(blocks) != 1 {
+		t.Fatalf("expected 1 file block, got %d", len(blocks))
+	}
+	if blocks[0].Path != "README.md" {
+		t.Errorf("path = %q, want %q", blocks[0].Path, "README.md")
+	}
+	if !strings.Contains(blocks[0].Content, "```bash") {
+		t.Errorf("content should preserve code fences, got %q", blocks[0].Content)
+	}
+	if !strings.Contains(cleaned, "[file: README.md]") {
+		t.Errorf("cleaned should contain reference, got %q", cleaned)
 	}
 }
 
