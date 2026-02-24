@@ -2563,10 +2563,14 @@ function initEdgePanels() {
           case 'top': if (edgeTop) edgeTop.classList.add('edge-pinned'); break;
           case 'bottom': openChatPaneWithInput(); break;
         }
+        // Prevent iOS from synthesizing a click after edge tap — the
+        // panel pin above can cause the click to land inside the
+        // newly-visible panel (e.g. chatHistory) and start recording.
+        ev.preventDefault();
       }
     }
     edgeTouchStart = null;
-  }, { passive: true });
+  }, { passive: false });
 
   // Keyboard dismiss detection: close chat panel when virtual keyboard closes
   if (window.visualViewport) {
@@ -2939,6 +2943,7 @@ function bindUi() {
     chatHistory.addEventListener('click', (ev) => {
       if (ev.button !== 0) return;
       if (ev.target instanceof Element && ev.target.closest('a,button,input,textarea,select,[contenteditable="true"]')) return;
+      if (isInEdgeZone(ev.clientX, ev.clientY)) return;
       const edgeR = chatHistory.closest('.edge-panel');
       if (edgeR && !edgeR.classList.contains('edge-pinned')) return;
       if (shouldStopInUiClick()) { void handleZenStopAction(); return; }
