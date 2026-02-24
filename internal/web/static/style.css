@@ -17,6 +17,11 @@
   --terminal-text: #ffffff;
   --terminal-border: #ffffff;
   --zen-cue-corner-radius: 0 0 0 0;
+  --zen-cue-top-offset: 0px;
+  --zen-safe-area-top: env(safe-area-inset-top, 0px);
+  --zen-safe-area-right: env(safe-area-inset-right, 0px);
+  --zen-safe-area-left: env(safe-area-inset-left, 0px);
+  --zen-safe-area-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -242,6 +247,8 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
   --cue-frame-border: 5px;
   --cue-frame-radius: var(--zen-cue-corner-radius);
   --cue-frame-inset: 0px;
+  --cue-frame-top-offset: 0px;
+  --cue-frame-border-top: var(--cue-frame-border);
   display: block;
   position: fixed;
   inset: 0;
@@ -269,19 +276,22 @@ body.ios-cue-fullscreen .zen-indicator.is-stop,
 body.ios-cue-fullscreen .zen-indicator.is-recording::before,
 body.ios-cue-fullscreen .zen-indicator.is-stop::before {
   --cue-frame-radius: var(--zen-cue-corner-radius);
+  --cue-frame-top-offset: var(--zen-cue-top-offset);
+  --cue-frame-border-top: 0px;
 }
 
 .zen-indicator.is-recording::before,
 .zen-indicator.is-stop::before {
   content: '';
   position: fixed;
-  inset: var(--cue-frame-inset, 0px);
+  inset: var(--cue-frame-top-offset, 0px) var(--cue-frame-inset, 0px) var(--cue-frame-inset, 0px) var(--cue-frame-inset, 0px);
   width: auto;
   height: auto;
   pointer-events: none;
   box-sizing: border-box;
   border-radius: var(--cue-frame-radius);
-  box-shadow: inset 0 0 0 var(--cue-frame-border) var(--cue-frame-color);
+  border: var(--cue-frame-border) solid var(--cue-frame-color);
+  border-top-width: var(--cue-frame-border-top, var(--cue-frame-border));
   background: transparent;
   transition: none;
   animation: none;
@@ -301,8 +311,8 @@ body.ios-cue-fullscreen .zen-indicator.is-stop::before {
 .zen-indicator .zen-stop-square {
   display: none;
   position: fixed;
-  top: max(12px, env(safe-area-inset-top));
-  right: max(12px, env(safe-area-inset-right));
+  top: max(12px, var(--zen-safe-area-top));
+  right: max(12px, var(--zen-safe-area-right));
   width: var(--cue-chip-size);
   height: var(--cue-chip-size);
   border-radius: 0;
@@ -359,8 +369,8 @@ body.ios-cue-fullscreen .zen-indicator.is-stop::before {
   .zen-indicator .zen-stop-square {
     width: 24px;
     height: 24px;
-    top: max(10px, env(safe-area-inset-top));
-    right: max(10px, env(safe-area-inset-right));
+    top: max(10px, var(--zen-safe-area-top));
+    right: max(10px, var(--zen-safe-area-right));
   }
 }
 

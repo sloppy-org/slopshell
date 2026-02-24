@@ -377,12 +377,18 @@ const IPHONE_CORNER_RADIUS_PROFILES = [
   { shortSide: 390, longSide: 844, dpr: 3, radius: 47 },
   { shortSide: 393, longSide: 852, dpr: 3, radius: 55 },
   // iPhone 16 Pro: 1206x2622 physical at 3x => 402x874 CSS pixels.
-  { shortSide: 402, longSide: 874, dpr: 3, radius: 62 },
+  { shortSide: 402, longSide: 874, dpr: 3, radius: 62, safeAreaTopPortrait: 62 },
   { shortSide: 414, longSide: 896, dpr: 2, radius: 41 },
   { shortSide: 428, longSide: 926, dpr: 3, radius: 53 },
-  { shortSide: 430, longSide: 932, dpr: 3, radius: 55 },
+  { shortSide: 430, longSide: 932, dpr: 3, radius: 55, safeAreaTopPortrait: 62 },
   { shortSide: 440, longSide: 956, dpr: 3, radius: 62 },
 ];
+
+function readNumericCssVar(name) {
+  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
 
 function iPhoneRoundedCornerRadiusPx() {
   if (!isIPhone()) return null;
@@ -432,6 +438,42 @@ function iPhoneRoundedCornerRadiusPx() {
   return 44;
 }
 
+function iPhoneProfileForCurrentDisplay() {
+  if (!isIPhone()) return null;
+
+  const shortSide = Math.min(
+    Math.round(window.innerWidth),
+    Math.round(window.innerHeight),
+  );
+  const longSide = Math.max(
+    Math.round(window.innerWidth),
+    Math.round(window.innerHeight),
+  );
+  if (!Number.isFinite(shortSide) || !Number.isFinite(longSide) || shortSide <= 0 || longSide <= 0) {
+    return null;
+  }
+
+  const dpr = Math.max(1, Math.round(window.devicePixelRatio || 1));
+  return IPHONE_CORNER_RADIUS_PROFILES.find((entry) => (
+    entry.shortSide === shortSide
+    && entry.longSide === longSide
+    && entry.dpr === dpr
+  )) || null;
+}
+
+function iPhoneStatusBarInsetPx() {
+  if (!isIPhone()) return 0;
+  if (window.innerWidth > window.innerHeight) return 0;
+
+  const envInset = readNumericCssVar('--zen-safe-area-top');
+  if (envInset > 0) return envInset;
+
+  const profile = iPhoneProfileForCurrentDisplay();
+  return Number.isFinite(profile?.safeAreaTopPortrait) && profile.safeAreaTopPortrait > 0
+    ? profile.safeAreaTopPortrait
+    : 0;
+}
+
 function applyIPhoneStandaloneCueHints() {
   const body = document.body;
   const root = document.documentElement;
@@ -441,7 +483,9 @@ function applyIPhoneStandaloneCueHints() {
   const roundedRadius = iPhoneRoundedCornerRadiusPx();
   const radius = Number.isFinite(roundedRadius) && roundedRadius > 0 ? roundedRadius : null;
   const modeRadius = Number.isFinite(radius) ? Math.max(0, Math.round(radius)) : 0;
+  const cueTopInset = isStandaloneLike ? iPhoneStatusBarInsetPx() : 0;
   body.classList.toggle('ios-cue-fullscreen', isStandaloneLike);
+  root.style.setProperty('--zen-cue-top-offset', `${Math.max(0, cueTopInset)}px`);
   if (isStandaloneLike && modeRadius > 0) {
     const cornerRadius = `0 0 ${modeRadius}px ${modeRadius}px`;
     root.style.setProperty('--zen-cue-corner-radius', cornerRadius);
