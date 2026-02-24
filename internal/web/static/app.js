@@ -366,17 +366,6 @@ function isIPhoneStandalone() {
   }
 }
 
-function isFirefoxLinuxDesktop() {
-  const ua = String(navigator.userAgent || '').toLowerCase();
-  const platform = String(navigator.userAgentData?.platform || navigator.platform || '').toLowerCase();
-  const isFirefox = ua.includes('firefox/') && !ua.includes('android');
-  if (!isFirefox) return false;
-  const isLinux = platform.includes('linux') || ua.includes('linux');
-  if (!isLinux) return false;
-  const isMobile = /mobile|tablet|android|iphone|ipad/.test(ua);
-  return !isMobile;
-}
-
 function applyIPhoneFrameCorners() {
   const root = document.documentElement;
   if (!isIPhoneStandalone()) {
@@ -3234,11 +3223,7 @@ function bindUi() {
     if (state.hasArtifact && canvasText) {
       anchor = getAnchorFromPoint(x, y);
     }
-    const captureOptions = options && typeof options === 'object' ? { ...options } : {};
-    if (!Object.prototype.hasOwnProperty.call(captureOptions, 'manualStopOnly') && isFirefoxLinuxDesktop()) {
-      captureOptions.manualStopOnly = true;
-    }
-    return beginZenVoiceCapture(x, y, anchor, captureOptions);
+    return beginZenVoiceCapture(x, y, anchor, options);
   };
 
   document.addEventListener('mousemove', (ev) => {
