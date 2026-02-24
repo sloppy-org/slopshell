@@ -2515,34 +2515,50 @@ function initEdgePanels() {
     });
   }
 
-  // Mobile: swipe from edge
+  // Mobile: tap or swipe from edge
   document.addEventListener('touchstart', (ev) => {
     if (ev.touches.length !== 1) return;
     const t = ev.touches[0];
     const edgeTapSize = getEdgeTapSizePx();
-    if (t.clientX > window.innerWidth - edgeTapSize || t.clientY < edgeTapSize || t.clientX < edgeTapSize || t.clientY > window.innerHeight - edgeTapSize) {
-      edgeTouchStart = { x: t.clientX, y: t.clientY, edge: null };
-      if (t.clientX > window.innerWidth - edgeTapSize) edgeTouchStart.edge = 'right';
+    if (t.clientX < edgeTapSize || t.clientX > window.innerWidth - edgeTapSize || t.clientY < edgeTapSize || t.clientY > window.innerHeight - edgeTapSize) {
+      edgeTouchStart = { x: t.clientX, y: t.clientY, edge: null, handled: false };
+      if (t.clientX < edgeTapSize) edgeTouchStart.edge = 'left';
+      else if (t.clientX > window.innerWidth - edgeTapSize) edgeTouchStart.edge = 'right';
       else if (t.clientY < edgeTapSize) edgeTouchStart.edge = 'top';
       else if (t.clientY > window.innerHeight - edgeTapSize) edgeTouchStart.edge = 'bottom';
     }
   }, { passive: true });
 
   document.addEventListener('touchmove', (ev) => {
-    if (!edgeTouchStart || ev.touches.length !== 1) return;
+    if (!edgeTouchStart || edgeTouchStart.handled || ev.touches.length !== 1) return;
     const t = ev.touches[0];
     const dx = t.clientX - edgeTouchStart.x;
     const dy = t.clientY - edgeTouchStart.y;
     if (edgeTouchStart.edge === 'right' && dx < -30 && edgeRight) {
       edgeRight.classList.add('edge-active');
+      edgeTouchStart.handled = true;
     } else if (edgeTouchStart.edge === 'top' && dy > 30 && edgeTop) {
       edgeTop.classList.add('edge-active');
+      edgeTouchStart.handled = true;
     } else if (edgeTouchStart.edge === 'bottom' && dy < -30) {
       openChatPaneWithInput();
+      edgeTouchStart.handled = true;
     }
   }, { passive: true });
 
-  document.addEventListener('touchend', () => {
+  document.addEventListener('touchend', (ev) => {
+    if (!edgeTouchStart || edgeTouchStart.handled) { edgeTouchStart = null; return; }
+    const touch = ev.changedTouches && ev.changedTouches[0];
+    if (touch) {
+      const dx = Math.abs(touch.clientX - edgeTouchStart.x);
+      const dy = Math.abs(touch.clientY - edgeTouchStart.y);
+      if (dx < 15 && dy < 15) {
+        if (edgeTouchStart.edge === 'left') handleLeftEdgeTap();
+        else if (edgeTouchStart.edge === 'right' && edgeRight) edgeRight.classList.add('edge-pinned');
+        else if (edgeTouchStart.edge === 'top' && edgeTop) edgeTop.classList.add('edge-pinned');
+        else if (edgeTouchStart.edge === 'bottom') openChatPaneWithInput();
+      }
+    }
     edgeTouchStart = null;
   }, { passive: true });
 
