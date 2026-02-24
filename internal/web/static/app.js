@@ -2089,20 +2089,37 @@ async function cancelActiveAssistantTurn() {
 }
 
 async function handleZenStopAction() {
-  if (isRecording()) {
+  const capture = state.chatVoiceCapture;
+  const isCaptureActive = Boolean(capture && !capture.stopping);
+  if (isCaptureActive) {
     await stopZenVoiceCaptureAndSend();
     return;
   }
+
+  if (isAssistantWorking()) {
+    if (isTTSSpeaking()) {
+      stopTTSPlayback();
+    }
+    await cancelActiveAssistantTurn();
+    return;
+  }
+
+  if (isTTSSpeaking()) {
+    stopTTSPlayback();
+    return;
+  }
+
   if (state.voiceAwaitingTurn) {
     state.voiceAwaitingTurn = false;
     sttCancel();
     updateAssistantActivityIndicator();
     return;
   }
-  if (isTTSSpeaking()) {
-    stopTTSPlayback();
+
+  if (capture) {
+    sttCancel();
+    updateAssistantActivityIndicator();
   }
-  await cancelActiveAssistantTurn();
 }
 
 function openCanvasWs() {
@@ -2372,12 +2389,23 @@ function bindUi() {
   }, true);
 
   if (zenIndicator) {
+    const handleZenIndicatorTap = () => {
+      if (!isRecording() && !shouldStopInUiClick()) return;
+      void handleZenStopAction();
+    };
     zenIndicator.addEventListener('pointerdown', (ev) => {
       if (!(ev.currentTarget instanceof HTMLElement)) return;
-      if (!ev.currentTarget.classList.contains('is-stop')) return;
+      if (!ev.currentTarget.classList.contains('is-stop') && !ev.currentTarget.classList.contains('is-recording')) return;
       ev.preventDefault();
       ev.stopPropagation();
-      void handleZenStopAction();
+      handleZenIndicatorTap();
+    });
+    zenIndicator.addEventListener('click', (ev) => {
+      if (!(ev.currentTarget instanceof HTMLElement)) return;
+      if (!ev.currentTarget.classList.contains('is-stop') && !ev.currentTarget.classList.contains('is-recording')) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      handleZenIndicatorTap();
     });
   }
 
