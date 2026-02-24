@@ -165,6 +165,23 @@ function parseDiffPathFromMarker(line, marker) {
   return raw;
 }
 
+function highlightDiffCodeLine(line, langRaw) {
+  const lang = normalizeLanguage(langRaw);
+  if (!lang) {
+    return escapeHtml(line);
+  }
+  if (line.startsWith('+') && !line.startsWith('+++')) {
+    return `${escapeHtml('+')}${highlightCode(line.slice(1), lang)}`;
+  }
+  if (line.startsWith('-') && !line.startsWith('---')) {
+    return `${escapeHtml('-')}${highlightCode(line.slice(1), lang)}`;
+  }
+  if (line.startsWith(' ')) {
+    return `${escapeHtml(' ')}${highlightCode(line.slice(1), lang)}`;
+  }
+  return escapeHtml(line);
+}
+
 function isMarkdownPath(pathRaw) {
   const path = String(pathRaw || '').trim();
   if (!path) return false;
@@ -380,6 +397,7 @@ function highlightDiff(code) {
   let oldLine = null;
   let newLine = null;
   let filePath = '';
+  let fileLang = '';
   return lines.map((line, index) => {
     const kind = classifyDiffLine(line);
     const hunk = parseDiffHunkHeader(line);
@@ -390,15 +408,24 @@ function highlightDiff(code) {
 
     if (line.startsWith('diff --git ')) {
       const nextPath = parseDiffPathFromHeader(line);
-      if (nextPath) filePath = nextPath;
+      if (nextPath) {
+        filePath = nextPath;
+        fileLang = languageFromArtifactTitle(filePath);
+      }
       oldLine = null;
       newLine = null;
     } else if (line.startsWith('+++ ')) {
       const plusPath = parseDiffPathFromMarker(line, '+++ ');
-      if (plusPath) filePath = plusPath;
+      if (plusPath) {
+        filePath = plusPath;
+        fileLang = languageFromArtifactTitle(filePath);
+      }
     } else if (line.startsWith('--- ') && !filePath) {
       const minusPath = parseDiffPathFromMarker(line, '--- ');
-      if (minusPath) filePath = minusPath;
+      if (minusPath) {
+        filePath = minusPath;
+        fileLang = languageFromArtifactTitle(filePath);
+      }
     }
 
     let oldAtLine = null;
@@ -447,7 +474,7 @@ function highlightDiff(code) {
     if (!line) {
       return `<span ${attrs.join(' ')}></span>`;
     }
-    return `<span ${attrs.join(' ')}>${escapeHtml(line)}</span>`;
+    return `<span ${attrs.join(' ')}>${highlightDiffCodeLine(line, fileLang)}</span>`;
   }).join('');
 }
 

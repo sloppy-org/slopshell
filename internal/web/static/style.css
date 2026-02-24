@@ -265,6 +265,7 @@ body.pr-review-mode #pr-file-pane {
 #canvas-text pre { background: var(--bg-elevated); padding: 0.75rem; border-radius: 4px; overflow-x: auto; border: 1px solid #000000; }
 #canvas-text pre code { background: none; padding: 0; }
 #canvas-text pre code.hljs { display: block; background: transparent; padding: 0; }
+#canvas-text pre code.hljs .hljs-keyword { font-weight: 700 !important; }
 
 #canvas-text pre code .hl-kw { color: #0000FF; font-weight: 600; }
 #canvas-text pre code .hl-str { color: #A31515; }
