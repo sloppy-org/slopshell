@@ -2492,11 +2492,19 @@ function initEdgePanels() {
     });
   }
 
-  // Desktop: button clicks for left/bottom edge taps
+  // Desktop: button clicks for left/right/bottom edge taps
   if (edgeLeftTap) {
     edgeLeftTap.addEventListener('click', (ev) => {
       ev.preventDefault();
       handleLeftEdgeTap();
+    });
+  }
+
+  const edgeRightTap = document.getElementById('edge-right-tap');
+  if (edgeRightTap) {
+    edgeRightTap.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      if (edgeRight) edgeRight.classList.add('edge-pinned');
     });
   }
 

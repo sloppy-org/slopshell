@@ -440,6 +440,33 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
   }
 }
 
+.edge-right-tap {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 20px;
+  z-index: 150;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.edge-right-tap:hover,
+.edge-right-tap:active {
+  background: transparent;
+}
+
+@media (max-width: 768px) {
+  .edge-right-tap {
+    width: 30px;
+  }
+}
+
 .edge-bottom-tap {
   position: fixed;
   bottom: 0;

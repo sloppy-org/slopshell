@@ -656,4 +656,33 @@ test.describe('zen canvas - edge panels', () => {
     const cpInput = page.locator('#chat-pane-input');
     await expect(cpInput).toBeFocused();
   });
+
+  test('touch tap on right edge opens chat panel without recording', async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 667 });
+    await clearLog(page);
+
+    const edgeRight = page.locator('#edge-right');
+    const initialClasses = await edgeRight.getAttribute('class');
+    expect(initialClasses).not.toContain('edge-pinned');
+
+    // Dispatch synthetic touch events at right edge (x=372, well inside 30px zone)
+    await page.evaluate(() => {
+      const x = window.innerWidth - 3;
+      const y = Math.floor(window.innerHeight / 2);
+      const target = document.elementFromPoint(x, y) || document.body;
+      const touchInit = { clientX: x, clientY: y, pageX: x, pageY: y, identifier: 0, target };
+      const touch = new Touch(touchInit);
+      target.dispatchEvent(new TouchEvent('touchstart', { touches: [touch], changedTouches: [touch], bubbles: true }));
+      target.dispatchEvent(new TouchEvent('touchend', { touches: [], changedTouches: [touch], bubbles: true, cancelable: true }));
+    });
+    await page.waitForTimeout(300);
+
+    // Panel should be pinned
+    await expect(edgeRight).toHaveClass(/edge-pinned/);
+
+    // No recording should have started
+    const log = await getLog(page);
+    const sttStart = log.find(e => e.type === 'stt' && e.action === 'start');
+    expect(sttStart).toBeFalsy();
+  });
 });
