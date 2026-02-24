@@ -637,7 +637,7 @@ test.describe('zen canvas - edge panels', () => {
     expect(chatText).toContain('test msg');
   });
 
-  test('bottom tap opens chat pane with focused input', async ({ page }) => {
+  test('bottom tap opens floating input without opening chat panel', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 720 });
 
     const edgeRight = page.locator('#edge-right');
@@ -648,7 +648,11 @@ test.describe('zen canvas - edge panels', () => {
     await page.click('#edge-bottom-tap');
     await page.waitForTimeout(200);
 
-    await expect(edgeRight).toHaveClass(/edge-pinned/);
+    // Panel should NOT open in canvas/voice mode
+    await expect(edgeRight).not.toHaveClass(/edge-pinned/);
+    // Floating input bar should be visible and focused
+    const bar = page.locator('#chat-bottom-bar');
+    await expect(bar).toHaveClass(/is-active/);
     const cpInput = page.locator('#chat-pane-input');
     await expect(cpInput).toBeFocused();
   });

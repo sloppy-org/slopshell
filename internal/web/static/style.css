@@ -742,18 +742,37 @@ body.silent-mode .edge-left-tap { z-index: 250; }
 body.silent-mode .edge-top { z-index: 250; }
 body.silent-mode .zen-indicator { z-index: 1000; }
 
-/* Chat pane input — hidden until bottom-tap activates it */
-.chat-pane-input-row {
+/* Floating chat input bar — hidden until bottom-tap activates it */
+.chat-bottom-bar {
   display: none;
-  flex-shrink: 0;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 250;
   padding: 0.4rem 0.6rem calc(0.4rem + var(--zen-safe-area-bottom, 0px));
+  background: var(--bg);
 }
 
-.chat-pane-input-row.is-active {
+.chat-bottom-bar.is-active {
   display: block;
 }
 
-.chat-pane-input-row textarea {
+/* In silent mode with panel open, constrain to panel width */
+body.silent-mode .edge-right.edge-pinned ~ .chat-bottom-bar.is-active,
+body.silent-mode .edge-right.edge-active ~ .chat-bottom-bar.is-active {
+  left: auto;
+  width: 380px;
+}
+
+@media (max-width: 767px) {
+  body.silent-mode .edge-right.edge-pinned ~ .chat-bottom-bar.is-active,
+  body.silent-mode .edge-right.edge-active ~ .chat-bottom-bar.is-active {
+    width: 100vw;
+  }
+}
+
+.chat-bottom-bar textarea {
   width: 100%;
   box-sizing: border-box;
   resize: none;

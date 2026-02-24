@@ -2559,21 +2559,26 @@ function closeEdgePanels() {
   const edgeTop = document.getElementById('edge-top');
   const edgeRight = document.getElementById('edge-right');
   if (edgeTop) edgeTop.classList.remove('edge-active', 'edge-pinned');
-  if (edgeRight) {
-    edgeRight.classList.remove('edge-active', 'edge-pinned');
-    const inputRow = edgeRight.querySelector('.chat-pane-input-row');
-    if (inputRow) inputRow.classList.remove('is-active');
-  }
+  if (edgeRight) edgeRight.classList.remove('edge-active', 'edge-pinned');
+  closeChatBottomBar();
+}
+
+function closeChatBottomBar() {
+  const bar = document.getElementById('chat-bottom-bar');
+  if (bar) bar.classList.remove('is-active');
 }
 
 function openChatPaneWithInput() {
   const edgeRight = document.getElementById('edge-right');
-  if (!edgeRight) return;
-  edgeRight.classList.add('edge-pinned');
-  const inputRow = edgeRight.querySelector('.chat-pane-input-row');
-  if (inputRow) inputRow.classList.add('is-active');
-  const chatHistory = document.getElementById('chat-history');
-  if (chatHistory) scrollChatToBottom(chatHistory);
+  const bar = document.getElementById('chat-bottom-bar');
+  // Silent/chat mode: open panel + floating input bar.
+  // Canvas/voice mode: pop out only the input bar.
+  if (isMobileSilent() || (edgeRight && (edgeRight.classList.contains('edge-active') || edgeRight.classList.contains('edge-pinned')))) {
+    if (edgeRight) edgeRight.classList.add('edge-pinned');
+    const chatHistory = document.getElementById('chat-history');
+    if (chatHistory) scrollChatToBottom(chatHistory);
+  }
+  if (bar) bar.classList.add('is-active');
   const cpInput = document.getElementById('chat-pane-input');
   if (cpInput instanceof HTMLTextAreaElement) {
     requestAnimationFrame(() => cpInput.focus());
@@ -2838,6 +2843,7 @@ function bindUi() {
           chatPaneInput.value = '';
           chatPaneInput.style.height = '';
           chatPaneInput.blur();
+          closeChatBottomBar();
           void zenSubmitMessage(text);
         }
       }
@@ -2846,6 +2852,7 @@ function bindUi() {
         chatPaneInput.value = '';
         chatPaneInput.style.height = '';
         chatPaneInput.blur();
+        closeChatBottomBar();
       }
     });
     chatPaneInput.addEventListener('input', () => {
