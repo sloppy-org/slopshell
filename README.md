@@ -16,7 +16,7 @@ Risk notice: see [`DISCLAIMER.md`](DISCLAIMER.md)
 - **Codex app-server integration**: [`docs/codex-app-server-pivot.md`](docs/codex-app-server-pivot.md)
 - **HTTP/MCP interface inventory**: [`docs/interfaces.md`](docs/interfaces.md)
 - **UI paradigm**: [`docs/object-scoped-intent-ui.md`](docs/object-scoped-intent-ui.md)
-- **Current release notes (v0.0.9)**: [`docs/release-v0.0.9.md`](docs/release-v0.0.9.md)
+- **Current release notes (v0.1.0)**: [`docs/release-v0.1.0.md`](docs/release-v0.1.0.md)
 
 ## Install
 
