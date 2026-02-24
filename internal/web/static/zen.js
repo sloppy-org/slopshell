@@ -133,7 +133,8 @@ export function showIndicatorMode(mode, x, y) {
   el.style.left = `${x}px`;
   el.style.top = `${y}px`;
   if (body) {
-    body.classList.toggle('zen-recording', nextMode === 'recording');
+    const isCueVisible = nextMode === 'recording' || nextMode === 'stop';
+    body.classList.toggle('zen-recording', isCueVisible);
   }
   zenState.indicatorVisible = true;
   zenState.indicatorMode = nextMode;
