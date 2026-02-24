@@ -601,7 +601,17 @@ func (a *App) handleFilesProxy(w http.ResponseWriter, r *http.Request) {
 			"base-uri 'none'; "+
 			"form-action 'self'")
 	sid := chi.URLParam(r, "session_id")
-	filePath := strings.TrimPrefix(chi.URLParam(r, "*"), "/")
+	rawPath := strings.TrimPrefix(chi.URLParam(r, "*"), "/")
+	filePath, err := url.PathUnescape(rawPath)
+	if err != nil {
+		http.Error(w, "invalid path encoding", http.StatusBadRequest)
+		return
+	}
+	filePath = strings.TrimPrefix(filePath, "/")
+	if filePath == "" {
+		http.Error(w, "missing path", http.StatusBadRequest)
+		return
+	}
 	if strings.Contains(filePath, "..") || strings.ContainsRune(filePath, '\x00') {
 		http.Error(w, "invalid path", http.StatusForbidden)
 		return
@@ -613,8 +623,12 @@ func (a *App) handleFilesProxy(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no active tunnel for session", http.StatusNotFound)
 		return
 	}
-	url := fmt.Sprintf("http://127.0.0.1:%d/files/%s", port, filePath)
-	resp, err := http.Get(url)
+	upstreamURL := (&url.URL{
+		Scheme: "http",
+		Host:   fmt.Sprintf("127.0.0.1:%d", port),
+		Path:   "/files/" + filePath,
+	}).String()
+	resp, err := http.Get(upstreamURL)
 	if err != nil {
 		http.Error(w, "file fetch failed", http.StatusBadGateway)
 		return

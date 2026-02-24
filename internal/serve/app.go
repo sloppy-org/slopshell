@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -171,7 +172,13 @@ func (a *App) handleCanvasWS(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleFiles(w http.ResponseWriter, r *http.Request) {
-	raw := strings.TrimPrefix(chi.URLParam(r, "*"), "/")
+	rawPath := strings.TrimPrefix(chi.URLParam(r, "*"), "/")
+	raw, err := url.PathUnescape(rawPath)
+	if err != nil {
+		http.Error(w, "invalid path encoding", http.StatusBadRequest)
+		return
+	}
+	raw = strings.TrimPrefix(raw, "/")
 	if raw == "" {
 		http.Error(w, "missing path", http.StatusBadRequest)
 		return

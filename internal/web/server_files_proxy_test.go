@@ -49,3 +49,48 @@ func TestFilesProxyAllowsSameOriginEmbedding(t *testing.T) {
 		t.Fatalf("did not expect frame-ancestors 'none' in csp: %q", csp)
 	}
 }
+
+func TestFilesProxyDecodesEncodedNestedPath(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/files/docs/test.pdf" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/pdf")
+		_, _ = w.Write([]byte("%PDF-1.4\n%encoded\n"))
+	}))
+	defer upstream.Close()
+
+	app := newAuthedTestApp(t)
+	port, err := extractPort(upstream.URL)
+	if err != nil {
+		t.Fatalf("extract port: %v", err)
+	}
+	app.mu.Lock()
+	app.tunnelPorts["s1"] = port
+	app.mu.Unlock()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/files/s1/docs%2Ftest.pdf", nil)
+	req.AddCookie(&http.Cookie{Name: SessionCookie, Value: testAuthToken})
+	rr := httptest.NewRecorder()
+	app.Router().ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rr.Code)
+	}
+	if got := rr.Body.String(); !strings.Contains(got, "%encoded") {
+		t.Fatalf("expected proxied body, got %q", got)
+	}
+}
+
+func TestFilesProxyRejectsEncodedTraversal(t *testing.T) {
+	app := newAuthedTestApp(t)
+	req := httptest.NewRequest(http.MethodGet, "/api/files/s1/%2e%2e%2Fsecret.pdf", nil)
+	req.AddCookie(&http.Cookie{Name: SessionCookie, Value: testAuthToken})
+	rr := httptest.NewRecorder()
+	app.Router().ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", rr.Code)
+	}
+}

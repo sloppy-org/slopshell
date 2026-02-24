@@ -70,7 +70,7 @@ test('switching artifacts clears text pane content and classes', async ({ page }
 });
 
 test('pdf artifacts render without iframe using object surface', async ({ page }) => {
-  await renderArtifact(page, pdfEvent('evt-pdf-render'));
+  await renderArtifact(page, pdfEvent('evt-pdf-render', 'docs/reports/missing.pdf'));
 
   await expect(page.locator('#canvas-pdf iframe')).toHaveCount(0);
   await expect(page.locator('#canvas-pdf .canvas-pdf-object')).toHaveCount(1);
@@ -81,13 +81,13 @@ test('pdf artifacts render without iframe using object surface', async ({ page }
     return (el as HTMLObjectElement).data || '';
   });
   expect(dataAttr).toContain('/api/files/');
-  expect(dataAttr).toContain('missing.pdf');
+  expect(dataAttr).toContain('docs%2Freports%2Fmissing.pdf');
 
   const fallbackHref = await page.locator('#canvas-pdf .canvas-pdf-fallback a').evaluate((el) => {
     return (el as HTMLAnchorElement).href || '';
   });
   expect(fallbackHref).toContain('/api/files/');
-  expect(fallbackHref).toContain('missing.pdf');
+  expect(fallbackHref).toContain('docs%2Freports%2Fmissing.pdf');
 });
 
 test('clearCanvas hides all artifact panes', async ({ page }) => {
