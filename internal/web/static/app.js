@@ -2569,15 +2569,7 @@ function closeChatBottomBar() {
 }
 
 function openChatPaneWithInput() {
-  const edgeRight = document.getElementById('edge-right');
   const bar = document.getElementById('chat-bottom-bar');
-  // Silent/chat mode: open panel + floating input bar.
-  // Canvas/voice mode: pop out only the input bar.
-  if (isMobileSilent() || (edgeRight && (edgeRight.classList.contains('edge-active') || edgeRight.classList.contains('edge-pinned')))) {
-    if (edgeRight) edgeRight.classList.add('edge-pinned');
-    const chatHistory = document.getElementById('chat-history');
-    if (chatHistory) scrollChatToBottom(chatHistory);
-  }
   if (bar) bar.classList.add('is-active');
   const cpInput = document.getElementById('chat-pane-input');
   if (cpInput instanceof HTMLTextAreaElement) {
