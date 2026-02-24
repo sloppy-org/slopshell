@@ -21,7 +21,7 @@
   --zen-safe-area-right: env(safe-area-inset-right, 0px);
   --zen-safe-area-left: env(safe-area-inset-left, 0px);
   --zen-safe-area-bottom: env(safe-area-inset-bottom, 0px);
-  --chat-content-font-size: 16px;
+  --chat-content-font-size: 1rem;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
