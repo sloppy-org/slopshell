@@ -59,6 +59,7 @@ type Project struct {
 	Kind            string `json:"kind"`
 	MCPURL          string `json:"mcp_url,omitempty"`
 	CanvasSessionID string `json:"canvas_session_id"`
+	ChatModel       string `json:"chat_model"`
 	IsDefault       bool   `json:"is_default"`
 	CreatedAt       int64  `json:"created_at"`
 	UpdatedAt       int64  `json:"updated_at"`
@@ -148,6 +149,7 @@ CREATE TABLE IF NOT EXISTS projects (
   kind TEXT NOT NULL DEFAULT 'managed',
   mcp_url TEXT NOT NULL DEFAULT '',
   canvas_session_id TEXT NOT NULL DEFAULT '',
+  chat_model TEXT NOT NULL DEFAULT '',
   is_default INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
@@ -186,6 +188,7 @@ func (s *Store) migrateProjectColumns() error {
 	columns := []colDef{
 		{Table: "projects", Name: "mcp_url", SQL: `ALTER TABLE projects ADD COLUMN mcp_url TEXT NOT NULL DEFAULT ''`},
 		{Table: "projects", Name: "canvas_session_id", SQL: `ALTER TABLE projects ADD COLUMN canvas_session_id TEXT NOT NULL DEFAULT ''`},
+		{Table: "projects", Name: "chat_model", SQL: `ALTER TABLE projects ADD COLUMN chat_model TEXT NOT NULL DEFAULT ''`},
 		{Table: "projects", Name: "last_opened_at", SQL: `ALTER TABLE projects ADD COLUMN last_opened_at INTEGER NOT NULL DEFAULT 0`},
 		{Table: "chat_messages", Name: "thread_key", SQL: `ALTER TABLE chat_messages ADD COLUMN thread_key TEXT NOT NULL DEFAULT ''`},
 	}
@@ -224,6 +227,7 @@ func (s *Store) migrateProjectColumns() error {
 
 	_, _ = s.db.Exec(`UPDATE projects SET canvas_session_id = 'local' WHERE is_default <> 0 AND trim(canvas_session_id) = ''`)
 	_, _ = s.db.Exec(`UPDATE projects SET canvas_session_id = id WHERE trim(canvas_session_id) = ''`)
+	_, _ = s.db.Exec(`UPDATE projects SET chat_model = lower(trim(chat_model))`)
 	_, _ = s.db.Exec(`UPDATE projects SET last_opened_at = updated_at WHERE last_opened_at = 0`)
 	_, _ = s.db.Exec(`UPDATE chat_messages SET render_format = 'text' WHERE lower(trim(render_format)) = 'canvas'`)
 	return nil
@@ -437,6 +441,10 @@ func normalizeProjectName(name string) string {
 	return strings.TrimSpace(name)
 }
 
+func normalizeProjectChatModel(model string) string {
+	return strings.ToLower(strings.TrimSpace(model))
+}
+
 func scanProject(
 	row interface {
 		Scan(dest ...any) error
@@ -452,6 +460,7 @@ func scanProject(
 		&out.Kind,
 		&out.MCPURL,
 		&out.CanvasSessionID,
+		&out.ChatModel,
 		&isDefault,
 		&out.CreatedAt,
 		&out.UpdatedAt,
@@ -464,13 +473,14 @@ func scanProject(
 	out.Name = normalizeProjectName(out.Name)
 	out.RootPath = normalizeProjectPath(out.RootPath)
 	out.ProjectKey = strings.TrimSpace(out.ProjectKey)
+	out.ChatModel = normalizeProjectChatModel(out.ChatModel)
 	out.IsDefault = isDefault != 0
 	return out, nil
 }
 
 func (s *Store) ListProjects() ([]Project, error) {
 	rows, err := s.db.Query(
-		`SELECT id, name, project_key, root_path, kind, mcp_url, canvas_session_id, is_default, created_at, updated_at, last_opened_at
+		`SELECT id, name, project_key, root_path, kind, mcp_url, canvas_session_id, chat_model, is_default, created_at, updated_at, last_opened_at
 		 FROM projects
 		 ORDER BY is_default DESC, last_opened_at DESC, lower(name) ASC, created_at ASC`,
 	)
@@ -491,7 +501,7 @@ func (s *Store) ListProjects() ([]Project, error) {
 
 func (s *Store) GetProject(id string) (Project, error) {
 	return scanProject(s.db.QueryRow(
-		`SELECT id, name, project_key, root_path, kind, mcp_url, canvas_session_id, is_default, created_at, updated_at, last_opened_at
+		`SELECT id, name, project_key, root_path, kind, mcp_url, canvas_session_id, chat_model, is_default, created_at, updated_at, last_opened_at
 		 FROM projects WHERE id = ?`,
 		strings.TrimSpace(id),
 	))
@@ -499,7 +509,7 @@ func (s *Store) GetProject(id string) (Project, error) {
 
 func (s *Store) GetProjectByProjectKey(projectKey string) (Project, error) {
 	return scanProject(s.db.QueryRow(
-		`SELECT id, name, project_key, root_path, kind, mcp_url, canvas_session_id, is_default, created_at, updated_at, last_opened_at
+		`SELECT id, name, project_key, root_path, kind, mcp_url, canvas_session_id, chat_model, is_default, created_at, updated_at, last_opened_at
 		 FROM projects WHERE project_key = ?`,
 		strings.TrimSpace(projectKey),
 	))
@@ -507,7 +517,7 @@ func (s *Store) GetProjectByProjectKey(projectKey string) (Project, error) {
 
 func (s *Store) GetProjectByRootPath(rootPath string) (Project, error) {
 	return scanProject(s.db.QueryRow(
-		`SELECT id, name, project_key, root_path, kind, mcp_url, canvas_session_id, is_default, created_at, updated_at, last_opened_at
+		`SELECT id, name, project_key, root_path, kind, mcp_url, canvas_session_id, chat_model, is_default, created_at, updated_at, last_opened_at
 		 FROM projects WHERE root_path = ?`,
 		normalizeProjectPath(rootPath),
 	))
@@ -515,7 +525,7 @@ func (s *Store) GetProjectByRootPath(rootPath string) (Project, error) {
 
 func (s *Store) GetProjectByCanvasSession(canvasSessionID string) (Project, error) {
 	return scanProject(s.db.QueryRow(
-		`SELECT id, name, project_key, root_path, kind, mcp_url, canvas_session_id, is_default, created_at, updated_at, last_opened_at
+		`SELECT id, name, project_key, root_path, kind, mcp_url, canvas_session_id, chat_model, is_default, created_at, updated_at, last_opened_at
 		 FROM projects WHERE canvas_session_id = ?`,
 		strings.TrimSpace(canvasSessionID),
 	))
@@ -632,6 +642,20 @@ func (s *Store) UpdateProjectRuntime(id, mcpURL, canvasSessionID string) error {
 		`UPDATE projects SET mcp_url = ?, canvas_session_id = ?, updated_at = ? WHERE id = ?`,
 		strings.TrimSpace(mcpURL),
 		canvasID,
+		time.Now().Unix(),
+		projectID,
+	)
+	return err
+}
+
+func (s *Store) UpdateProjectChatModel(id, chatModel string) error {
+	projectID := strings.TrimSpace(id)
+	if projectID == "" {
+		return errors.New("project id is required")
+	}
+	_, err := s.db.Exec(
+		`UPDATE projects SET chat_model = ?, updated_at = ? WHERE id = ?`,
+		normalizeProjectChatModel(chatModel),
 		time.Now().Unix(),
 		projectID,
 	)

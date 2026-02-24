@@ -25,6 +25,7 @@ import (
 
 	"github.com/krystophny/tabura/internal/appserver"
 	"github.com/krystophny/tabura/internal/canvas"
+	"github.com/krystophny/tabura/internal/modelprofile"
 	"github.com/krystophny/tabura/internal/surface"
 )
 
@@ -255,31 +256,18 @@ func (s *Server) callTool(name string, args map[string]interface{}) (map[string]
 	}
 }
 
-var modelAliases = map[string]string{
-	"spark": "gpt-5.3-codex-spark",
-	"codex": "gpt-5.3-codex",
-	"gpt":   "gpt-5.2",
-}
-
 func resolveModelAlias(raw string) string {
-	key := strings.TrimSpace(strings.ToLower(raw))
-	if key == "" {
-		return modelAliases["codex"]
+	resolved := modelprofile.ResolveModel(raw, modelprofile.AliasCodex)
+	if strings.TrimSpace(resolved) != "" {
+		return resolved
 	}
-	if full, ok := modelAliases[key]; ok {
-		return full
-	}
-	return raw
+	return strings.TrimSpace(raw)
 }
 
 // delegateReasoningParams returns high reasoning effort for non-spark models
 // (gpt-5.3-codex, gpt-5.2) so delegated tasks get full reasoning budget.
 func delegateReasoningParams(model string) map[string]interface{} {
-	m := strings.TrimSpace(strings.ToLower(model))
-	if m == "" || strings.Contains(m, "spark") {
-		return nil
-	}
-	return map[string]interface{}{"model_reasoning_effort": "high"}
+	return modelprofile.DelegateReasoningParams(model)
 }
 
 const defaultDelegateSystemPrompt = "You have full filesystem access in the working directory. " +

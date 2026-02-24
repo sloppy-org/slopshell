@@ -669,7 +669,7 @@ func (a *App) runAssistantTurnQueue(sessionID string) {
 	}
 }
 
-func (a *App) getOrCreateAppSession(sessionID string, cwd string) (*appserver.Session, bool, error) {
+func (a *App) getOrCreateAppSession(sessionID string, cwd string, profile appServerModelProfile) (*appserver.Session, bool, error) {
 	a.mu.Lock()
 	s := a.chatAppSessions[sessionID]
 	a.mu.Unlock()
@@ -678,7 +678,7 @@ func (a *App) getOrCreateAppSession(sessionID string, cwd string) (*appserver.Se
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	s, err := a.appServerClient.OpenSessionWithParams(ctx, cwd, a.appServerModel, appServerReasoningParamsForModel(a.appServerModel, a.appServerSparkReasoningEffort))
+	s, err := a.appServerClient.OpenSessionWithParams(ctx, cwd, profile.Model, profile.ThreadParams)
 	if err != nil {
 		return nil, false, err
 	}
@@ -720,9 +720,10 @@ func (a *App) runAssistantTurn(sessionID string, outputMode string) {
 	}
 
 	cwd := a.cwdForProjectKey(session.ProjectKey)
-	appSess, resumed, sessErr := a.getOrCreateAppSession(sessionID, cwd)
+	profile := a.appServerModelProfileForProjectKey(session.ProjectKey)
+	appSess, resumed, sessErr := a.getOrCreateAppSession(sessionID, cwd, profile)
 	if sessErr != nil {
-		a.runAssistantTurnLegacy(sessionID, session, messages, outputMode)
+		a.runAssistantTurnLegacy(sessionID, session, messages, outputMode, profile)
 		return
 	}
 
@@ -819,7 +820,7 @@ func (a *App) runAssistantTurn(sessionID string, outputMode string) {
 		persistedAssistantFormat = candidateFormat
 	}
 
-	appResp, err := appSess.SendTurnWithParams(ctx, prompt, "", appServerReasoningParamsForModel(a.appServerModel, a.appServerSparkReasoningEffort), func(ev appserver.StreamEvent) {
+	appResp, err := appSess.SendTurnWithParams(ctx, prompt, "", profile.TurnParams, func(ev appserver.StreamEvent) {
 		payload := map[string]interface{}{
 			"type":      ev.Type,
 			"thread_id": ev.ThreadID,
@@ -925,7 +926,7 @@ func (a *App) runAssistantTurn(sessionID string, outputMode string) {
 
 // runAssistantTurnLegacy is the single-shot fallback when persistent session
 // fails to connect. Each call creates a new WS + thread.
-func (a *App) runAssistantTurnLegacy(sessionID string, session store.ChatSession, messages []store.ChatMessage, outputMode string) {
+func (a *App) runAssistantTurnLegacy(sessionID string, session store.ChatSession, messages []store.ChatMessage, outputMode string, profile appServerModelProfile) {
 	canvasCtx := a.resolveCanvasContext(session.ProjectKey)
 	prompt := buildPromptFromHistory(session.Mode, messages, canvasCtx)
 	if strings.TrimSpace(prompt) == "" {
@@ -1015,9 +1016,9 @@ func (a *App) runAssistantTurnLegacy(sessionID string, session store.ChatSession
 	appResp, err := a.appServerClient.SendPromptStream(ctx, appserver.PromptRequest{
 		CWD:          a.cwdForProjectKey(session.ProjectKey),
 		Prompt:       prompt,
-		Model:        a.appServerModel,
-		ThreadParams: appServerReasoningParamsForModel(a.appServerModel, a.appServerSparkReasoningEffort),
-		TurnParams:   appServerReasoningParamsForModel(a.appServerModel, a.appServerSparkReasoningEffort),
+		Model:        profile.Model,
+		ThreadParams: profile.ThreadParams,
+		TurnParams:   profile.TurnParams,
 		Timeout:      assistantTurnTimeout,
 	}, func(ev appserver.StreamEvent) {
 		payload := map[string]interface{}{

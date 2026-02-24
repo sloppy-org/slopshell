@@ -23,6 +23,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/krystophny/tabura/internal/appserver"
 	"github.com/krystophny/tabura/internal/eou"
+	"github.com/krystophny/tabura/internal/modelprofile"
 	"github.com/krystophny/tabura/internal/serve"
 	"github.com/krystophny/tabura/internal/store"
 )
@@ -36,7 +37,7 @@ const (
 	DaemonPort                  = 9420
 	LocalSessionID              = "local"
 	DefaultSparkReasoningEffort = "low"
-	SparkModel                  = "gpt-5.3-codex-spark"
+	SparkModel                  = modelprofile.ModelSpark
 	mcpToolsCallTimeout         = 45 * time.Second
 )
 
@@ -87,7 +88,7 @@ type App struct {
 	startedAt string
 }
 
-const DefaultModel = "gpt-5.3-codex-spark"
+const DefaultModel = modelprofile.ModelSpark
 
 func New(dataDir, localProjectDir, localMCPURL, appServerURL, model, ttsURL, sparkReasoningEffort string, devRuntime bool) (*App, error) {
 	s, err := store.New(filepath.Join(dataDir, "tabura.db"))
@@ -230,6 +231,7 @@ func (a *App) Router() http.Handler {
 	r.Get("/api/projects", a.handleProjectsList)
 	r.Post("/api/projects", a.handleProjectCreate)
 	r.Post("/api/projects/{project_id}/activate", a.handleProjectActivate)
+	r.Post("/api/projects/{project_id}/chat-model", a.handleProjectChatModelUpdate)
 	r.Get("/api/projects/{project_id}/context", a.handleProjectContext)
 	r.Post("/api/chat/sessions", a.handleChatSessionCreate)
 	r.Get("/api/chat/sessions/{session_id}/history", a.handleChatSessionHistory)
@@ -384,7 +386,7 @@ func (a *App) handleRuntime(w http.ResponseWriter, r *http.Request) {
 		"app_server_url":              a.appServerURL,
 		"app_server_model":            a.appServerModel,
 		"app_server_reasoning_effort": sparkReasoningEffort,
-		"available_models":            []string{"gpt-5.3-codex-spark", "gpt-5.3-codex", "gpt-5.2"},
+		"available_models":            modelprofile.SupportedModels(),
 		"tts_enabled":                 a.ttsURL != "",
 		"eou_enabled":                 a.eouEnabled,
 		"eou_url":                     a.eouURL,
@@ -401,7 +403,7 @@ func resolveSparkReasoningEffort(raw string) string {
 }
 
 func isSparkModel(model string) bool {
-	return strings.EqualFold(strings.TrimSpace(model), SparkModel)
+	return modelprofile.AliasForModel(model) == modelprofile.AliasSpark
 }
 
 func appServerReasoningParamsForModel(model, effort string) map[string]interface{} {

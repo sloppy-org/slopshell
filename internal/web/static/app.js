@@ -26,6 +26,7 @@ const state = {
   activeProjectId: '',
   projectsOpen: false,
   projectSwitchInFlight: false,
+  projectModelSwitchInFlight: false,
   pendingByTurn: new Map(),
   pendingQueue: [],
   assistantActiveTurns: new Set(),
@@ -99,6 +100,7 @@ let assistantActivityInFlight = false;
 
 const ACTIVE_PROJECT_STORAGE_KEY = 'tabura.activeProjectId';
 const LAST_VIEW_STORAGE_KEY = 'tabura.lastView';
+const PROJECT_CHAT_MODEL_ALIASES = ['codex', 'gpt', 'spark'];
 
 // --- Block stripping & TTS infrastructure ---
 
@@ -492,6 +494,19 @@ function activeProject() {
   return state.projects.find((project) => project.id === state.activeProjectId) || null;
 }
 
+function normalizeProjectChatModelAlias(value) {
+  const clean = String(value || '').trim().toLowerCase();
+  if (PROJECT_CHAT_MODEL_ALIASES.includes(clean)) {
+    return clean;
+  }
+  return '';
+}
+
+function activeProjectChatModelAlias() {
+  const alias = normalizeProjectChatModelAlias(activeProject()?.chat_model);
+  return alias || 'spark';
+}
+
 function persistActiveProjectID(projectID) {
   if (!projectID) return;
   try {
@@ -527,6 +542,7 @@ function setActiveProjectID(projectID) {
     persistActiveProjectID(state.activeProjectId);
   }
   renderEdgeTopProjects();
+  renderEdgeTopModelButtons();
 }
 
 
@@ -1440,6 +1456,7 @@ async function fetchProjects() {
   state.defaultProjectId = String(payload?.default_project_id || '').trim();
   state.serverActiveProjectId = String(payload?.active_project_id || '').trim();
   renderEdgeTopProjects();
+  renderEdgeTopModelButtons();
 }
 
 function upsertProject(project) {
@@ -1450,6 +1467,7 @@ function upsertProject(project) {
   } else {
     state.projects.push(project);
   }
+  renderEdgeTopModelButtons();
 }
 
 function resolveInitialProjectID() {
@@ -1484,6 +1502,66 @@ function renderEdgeTopProjects() {
       void switchProject(project.id);
     });
     host.appendChild(button);
+  }
+}
+
+function renderEdgeTopModelButtons() {
+  const host = document.getElementById('edge-top-models');
+  if (!(host instanceof HTMLElement)) return;
+  host.innerHTML = '';
+  const project = activeProject();
+  const selectedAlias = activeProjectChatModelAlias();
+  for (const alias of PROJECT_CHAT_MODEL_ALIASES) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'edge-project-btn edge-model-btn';
+    button.textContent = alias;
+    if (alias === selectedAlias) {
+      button.classList.add('is-active');
+    }
+    button.disabled = !project || state.projectSwitchInFlight || state.projectModelSwitchInFlight;
+    button.addEventListener('click', () => {
+      void switchProjectChatModel(alias);
+    });
+    host.appendChild(button);
+  }
+}
+
+async function switchProjectChatModel(modelAlias) {
+  const project = activeProject();
+  if (!project || !project.id) return;
+  const nextAlias = normalizeProjectChatModelAlias(modelAlias);
+  if (!nextAlias) return;
+  const currentAlias = activeProjectChatModelAlias();
+  if (nextAlias === currentAlias) return;
+  if (state.projectModelSwitchInFlight || state.projectSwitchInFlight) return;
+
+  state.projectModelSwitchInFlight = true;
+  renderEdgeTopModelButtons();
+  showStatus(`switching model to ${nextAlias}...`);
+  try {
+    const resp = await fetch(`/api/projects/${encodeURIComponent(project.id)}/chat-model`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: nextAlias }),
+    });
+    if (!resp.ok) {
+      const detail = (await resp.text()).trim() || `HTTP ${resp.status}`;
+      throw new Error(detail);
+    }
+    const payload = await resp.json();
+    const updatedProject = payload?.project || {};
+    upsertProject(updatedProject);
+    renderEdgeTopProjects();
+    renderEdgeTopModelButtons();
+    showStatus('ready');
+  } catch (err) {
+    const message = String(err?.message || err || 'model switch failed');
+    appendPlainMessage('system', `Model switch failed: ${message}`);
+    showStatus(`model switch failed: ${message}`);
+  } finally {
+    state.projectModelSwitchInFlight = false;
+    renderEdgeTopModelButtons();
   }
 }
 
@@ -1898,6 +1976,7 @@ async function switchProject(projectID) {
     showStatus(`project switch failed: ${message}`);
   } finally {
     state.projectSwitchInFlight = false;
+    renderEdgeTopModelButtons();
   }
 }
 

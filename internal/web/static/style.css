@@ -424,6 +424,18 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
 }
 
 /* Edge panel project list */
+#edge-top-models {
+  padding: 0.45rem 0.65rem;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.edge-model-btn {
+  text-transform: lowercase;
+}
+
 #edge-top-projects {
   flex: 1;
   overflow: auto;
