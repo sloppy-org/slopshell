@@ -352,6 +352,25 @@ function isIPhone() {
   return /iphone/.test(userAgent) || platform === 'iphone' || (platform === 'macintel' && navigator.maxTouchPoints > 1);
 }
 
+function getIPhoneDisplayCandidatesPx() {
+  const candidates = [];
+  if (Number.isFinite(window.screen?.width) && Number.isFinite(window.screen?.height)) {
+    candidates.push({
+      shortSide: Math.round(Math.min(window.screen.width, window.screen.height)),
+      longSide: Math.round(Math.max(window.screen.width, window.screen.height)),
+      source: 'screen',
+    });
+  }
+  if (Number.isFinite(window.innerWidth) && Number.isFinite(window.innerHeight)) {
+    candidates.push({
+      shortSide: Math.round(Math.min(window.innerWidth, window.innerHeight)),
+      longSide: Math.round(Math.max(window.innerWidth, window.innerHeight)),
+      source: 'viewport',
+    });
+  }
+  return candidates;
+}
+
 const IPHONE_CORNER_RADIUS_PROFILES = [
   { shortSide: 375, longSide: 812, dpr: 2, radius: 41.5 },
   { shortSide: 375, longSide: 812, dpr: 3, radius: 44 },
@@ -379,10 +398,18 @@ function iPhoneRoundedCornerRadiusPx() {
   }
 
   const dpr = Math.max(1, Math.round(window.devicePixelRatio || 1));
-  const directMatch = IPHONE_CORNER_RADIUS_PROFILES.find(
-    (entry) => entry.shortSide === shortSide && entry.longSide === longSide && entry.dpr === dpr,
-  );
-  if (directMatch) return directMatch.radius;
+  const exactMatch = getIPhoneDisplayCandidatesPx()
+    .find((candidate) => IPHONE_CORNER_RADIUS_PROFILES.some(
+      (entry) => entry.shortSide === candidate.shortSide && entry.longSide === candidate.longSide && entry.dpr === dpr,
+    ));
+  if (exactMatch) {
+    const profile = IPHONE_CORNER_RADIUS_PROFILES.find((entry) => (
+      entry.shortSide === exactMatch.shortSide
+      && entry.longSide === exactMatch.longSide
+      && entry.dpr === dpr
+    ));
+    if (profile?.radius) return profile.radius;
+  }
 
   // Fallback by family/scale; keep values conservative so UI stays inside the visible radius.
   if (dpr >= 3) {
@@ -409,12 +436,11 @@ function applyIPhoneStandaloneCueHints() {
   const isIPhoneDevice = isIPhone();
   const isStandaloneLike = isHomeScreenStandaloneLike() && isIPhoneDevice;
   const roundedRadius = iPhoneRoundedCornerRadiusPx();
-  const radius = Number.isFinite(roundedRadius) && roundedRadius > 0 ? roundedRadius : 44;
+  const radius = Number.isFinite(roundedRadius) && roundedRadius > 0 ? roundedRadius : null;
   const cueBorderWidth = Number.parseFloat(getComputedStyle(root).getPropertyValue('--cue-frame-border')) || 5;
-  const cueHalfBorder = Math.max(0, cueBorderWidth / 2);
-  const modeRadius = Math.max(0, Math.round(radius - cueHalfBorder));
+  const modeRadius = Number.isFinite(radius) ? Math.max(0, Math.round(radius - cueBorderWidth)) : 0;
   body.classList.toggle('ios-cue-fullscreen', isStandaloneLike);
-  if (isIPhoneDevice) {
+  if (isStandaloneLike && modeRadius > 0) {
     const cornerRadius = `0 0 ${modeRadius}px ${modeRadius}px`;
     root.style.setProperty('--zen-cue-corner-radius', cornerRadius);
     return;
