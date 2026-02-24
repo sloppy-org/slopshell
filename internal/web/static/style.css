@@ -436,6 +436,10 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
   text-transform: lowercase;
 }
 
+.edge-silent-btn {
+  margin-left: auto;
+}
+
 #edge-top-projects {
   flex: 1;
   overflow: auto;

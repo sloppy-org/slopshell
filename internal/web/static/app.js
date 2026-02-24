@@ -27,6 +27,7 @@ const state = {
   projectsOpen: false,
   projectSwitchInFlight: false,
   projectModelSwitchInFlight: false,
+  ttsSilent: false,
   pendingByTurn: new Map(),
   pendingQueue: [],
   assistantActiveTurns: new Set(),
@@ -101,6 +102,7 @@ let assistantActivityInFlight = false;
 const ACTIVE_PROJECT_STORAGE_KEY = 'tabura.activeProjectId';
 const LAST_VIEW_STORAGE_KEY = 'tabura.lastView';
 const PROJECT_CHAT_MODEL_ALIASES = ['codex', 'gpt', 'spark'];
+const TTS_SILENT_STORAGE_KEY = 'tabura.ttsSilent';
 
 // --- Block stripping & TTS infrastructure ---
 
@@ -296,6 +298,46 @@ let ttsEnabled = false;
 let ttsLastSpeakText = '';
 let ttsSpeakLang = 'en';
 
+function readTTSSilentPreference() {
+  try {
+    const value = window.localStorage.getItem(TTS_SILENT_STORAGE_KEY);
+    const parsed = parseOptionalBoolean(value);
+    return parsed === true;
+  } catch (_) {
+    return false;
+  }
+}
+
+function persistTTSSilentPreference(silent) {
+  try {
+    window.localStorage.setItem(TTS_SILENT_STORAGE_KEY, silent ? 'true' : 'false');
+  } catch (_) {}
+}
+
+function canSpeakTTS() {
+  return Boolean(ttsEnabled) && !Boolean(state.ttsSilent);
+}
+
+function setTTSSilentMode(silent, { persist = true } = {}) {
+  const next = Boolean(silent);
+  if (state.ttsSilent === next) return;
+  state.ttsSilent = next;
+  if (persist) {
+    persistTTSSilentPreference(next);
+  }
+  if (next) {
+    stopTTSPlayback();
+  }
+  renderEdgeTopModelButtons();
+}
+
+function toggleTTSSilentMode() {
+  if (!ttsEnabled) return;
+  const next = !state.ttsSilent;
+  setTTSSilentMode(next);
+  showStatus(next ? 'silent mode on' : 'voice mode on');
+}
+
 // Single shared AudioContext — created once, unlocked via resume() on user
 // gesture per Web Audio API best practice (MDN). Safari iOS requires resume()
 // to be called from a user-initiated event; once resumed the context stays
@@ -333,6 +375,7 @@ function ensureTTSChunker() {
 }
 
 function queueTTSDiff(diffText) {
+  if (!canSpeakTTS()) return;
   const fragment = String(diffText || '').trim();
   if (!fragment) return;
   ensureTTSChunker();
@@ -1525,6 +1568,20 @@ function renderEdgeTopModelButtons() {
     });
     host.appendChild(button);
   }
+
+  const silentButton = document.createElement('button');
+  silentButton.type = 'button';
+  silentButton.className = 'edge-project-btn edge-model-btn edge-silent-btn';
+  silentButton.textContent = 'silent';
+  silentButton.setAttribute('aria-pressed', state.ttsSilent ? 'true' : 'false');
+  if (state.ttsSilent) {
+    silentButton.classList.add('is-active');
+  }
+  silentButton.disabled = !ttsEnabled || state.projectSwitchInFlight || state.projectModelSwitchInFlight;
+  silentButton.addEventListener('click', () => {
+    toggleTTSSilentMode();
+  });
+  host.appendChild(silentButton);
 }
 
 async function switchProjectChatModel(modelAlias) {
@@ -1683,6 +1740,7 @@ function openChatWs() {
   ws.onmessage = (event) => {
     if (turnToken !== state.chatWsToken || targetSessionID !== state.chatSessionId) return;
     if (event.data instanceof ArrayBuffer) {
+      if (!canSpeakTTS()) return;
       if (ttsPlayer) ttsPlayer.enqueue(event.data);
       return;
     }
@@ -1832,7 +1890,7 @@ function handleChatEvent(payload) {
     updateAssistantActivityIndicator();
     void refreshAssistantActivity();
 
-    if (shouldSpeakTurn && !autoCanvas && ttsEnabled && md.trim()) {
+    if (shouldSpeakTurn && !autoCanvas && canSpeakTTS() && md.trim()) {
       const { ttsText, ttsLang } = extractTTSText(md);
       if (ttsLang) ttsSpeakLang = ttsLang;
       const diff = computeTTSDiff(ttsText);
@@ -2707,6 +2765,7 @@ async function init() {
   } catch (_) {
     ttsEnabled = false;
   }
+  setTTSSilentMode(readTTSSilentPreference(), { persist: false });
 
   await fetchProjects();
   const initialProjectID = resolveInitialProjectID();
