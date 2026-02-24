@@ -396,6 +396,15 @@ func (a *App) executeChatCommand(sessionID, raw string) (map[string]interface{},
 			"delegate_canceled": delegateCanceled,
 			"message":         message,
 		}, nil
+	case "status":
+		message, err := a.fetchCodexStatusMessage(session.ProjectKey)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{
+			"name":    "status",
+			"message": message,
+		}, nil
 	case "clear", "clearall", "reset":
 		report, err := a.clearAllAgentsAndContexts(session.ID)
 		if err != nil {
@@ -430,6 +439,35 @@ func (a *App) executeChatCommand(sessionID, raw string) (map[string]interface{},
 	default:
 		return nil, fmt.Errorf("unknown command: /%s", name)
 	}
+}
+
+func (a *App) fetchCodexStatusMessage(projectKey string) (string, error) {
+	if a.appServerClient == nil {
+		return "", errors.New("app-server is not configured")
+	}
+	cwd := strings.TrimSpace(a.cwdForProjectKey(projectKey))
+	if cwd == "" {
+		cwd = "."
+	}
+	profile := a.appServerModelProfileForProjectKey(projectKey)
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	resp, err := a.appServerClient.SendPrompt(ctx, appserver.PromptRequest{
+		CWD:          cwd,
+		Prompt:       "/status",
+		Model:        profile.Model,
+		ThreadParams: profile.ThreadParams,
+		TurnParams:   profile.TurnParams,
+		Timeout:      45 * time.Second,
+	})
+	if err != nil {
+		return "", fmt.Errorf("status command failed: %s", normalizeAssistantError(err))
+	}
+	message := strings.TrimSpace(resp.Message)
+	if message == "" {
+		return "", errors.New("status command returned an empty response")
+	}
+	return message, nil
 }
 
 func (a *App) registerActiveChatTurn(sessionID, runID string, cancel context.CancelFunc) {

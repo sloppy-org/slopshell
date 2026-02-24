@@ -7,7 +7,10 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strconv"
+	"strings"
 	"testing"
+
+	"github.com/gorilla/websocket"
 )
 
 func setupMockDelegateCancelServer(t *testing.T, canceled int, seen *int) *httptest.Server {
@@ -40,6 +43,67 @@ func setupMockDelegateCancelServer(t *testing.T, canceled int, seen *int) *httpt
 		if err := json.NewEncoder(w).Encode(out); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
+		}
+	}))
+}
+
+func setupMockAppServerStatusServer(t *testing.T, statusMessage string) *httptest.Server {
+	t.Helper()
+	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Fatalf("upgrade: %v", err)
+		}
+		defer conn.Close()
+
+		for {
+			_, data, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+			var msg map[string]interface{}
+			if err := json.Unmarshal(data, &msg); err != nil {
+				t.Fatalf("decode message: %v", err)
+			}
+			method, _ := msg["method"].(string)
+			switch method {
+			case "initialize":
+				_ = conn.WriteJSON(map[string]interface{}{
+					"id":     msg["id"],
+					"result": map[string]interface{}{"userAgent": "test-client"},
+				})
+			case "thread/start":
+				_ = conn.WriteJSON(map[string]interface{}{
+					"id": msg["id"],
+					"result": map[string]interface{}{
+						"thread": map[string]interface{}{"id": "thread-status"},
+					},
+				})
+			case "turn/start":
+				_ = conn.WriteJSON(map[string]interface{}{
+					"id": msg["id"],
+					"result": map[string]interface{}{
+						"turn": map[string]interface{}{"id": "turn-status"},
+					},
+				})
+				_ = conn.WriteJSON(map[string]interface{}{
+					"method": "item/completed",
+					"params": map[string]interface{}{
+						"item": map[string]interface{}{
+							"type": "agentMessage",
+							"text": statusMessage,
+						},
+					},
+				})
+				_ = conn.WriteJSON(map[string]interface{}{
+					"method": "turn/completed",
+					"params": map[string]interface{}{
+						"turn": map[string]interface{}{"id": "turn-status", "status": "completed"},
+					},
+				})
+				return
+			}
 		}
 	}))
 }
@@ -123,6 +187,107 @@ func TestExecuteChatCommandStopCancelsDelegatedWork(t *testing.T) {
 	}
 	if delegateCancelCalls != 1 {
 		t.Fatalf("expected 1 delegate cancel RPC call, got %d", delegateCancelCalls)
+	}
+}
+
+func TestExecuteChatCommandStatusUsesAppServerStatusOutput(t *testing.T) {
+	statusMessage := "Weekly usage: 123k / 1M tokens."
+	wsServer := setupMockAppServerStatusServer(t, statusMessage)
+	defer wsServer.Close()
+	wsURL := "ws" + strings.TrimPrefix(wsServer.URL, "http")
+
+	app, err := New(t.TempDir(), "", "", wsURL, "", "", "", false)
+	if err != nil {
+		t.Fatalf("new app: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = app.Shutdown(context.Background())
+	})
+
+	projectRoot := t.TempDir()
+	project, err := app.store.CreateProject(
+		"status-project",
+		"status-project",
+		projectRoot,
+		"local",
+		"",
+		"canvas-status-project",
+		false,
+	)
+	if err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	session, err := app.store.GetOrCreateChatSession(project.ProjectKey)
+	if err != nil {
+		t.Fatalf("create chat session: %v", err)
+	}
+
+	result, err := app.executeChatCommand(session.ID, "/status")
+	if err != nil {
+		t.Fatalf("execute /status: %v", err)
+	}
+	if got := strings.TrimSpace(result["message"].(string)); got != statusMessage {
+		t.Fatalf("status message mismatch: got %q want %q", got, statusMessage)
+	}
+	if got := strings.TrimSpace(result["name"].(string)); got != "status" {
+		t.Fatalf("status name mismatch: got %q", got)
+	}
+}
+
+func TestHandleChatSessionCommandStatusUsesAppServerStatusOutput(t *testing.T) {
+	statusMessage := "Weekly usage: 222k / 1M tokens."
+	wsServer := setupMockAppServerStatusServer(t, statusMessage)
+	defer wsServer.Close()
+	wsURL := "ws" + strings.TrimPrefix(wsServer.URL, "http")
+
+	app, err := New(t.TempDir(), "", "", wsURL, "", "", "", false)
+	if err != nil {
+		t.Fatalf("new app: %v", err)
+	}
+	if err := app.store.AddAuthSession("token-test"); err != nil {
+		t.Fatalf("add auth session: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = app.Shutdown(context.Background())
+	})
+
+	projectRoot := t.TempDir()
+	project, err := app.store.CreateProject(
+		"status-api-project",
+		"status-api-project",
+		projectRoot,
+		"local",
+		"",
+		"canvas-status-api",
+		false,
+	)
+	if err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	session, err := app.store.GetOrCreateChatSession(project.ProjectKey)
+	if err != nil {
+		t.Fatalf("create chat session: %v", err)
+	}
+
+	rr := doAuthedJSONRequest(t, app.Router(), http.MethodPost, "/api/chat/sessions/"+session.ID+"/commands", map[string]any{
+		"command": "/status",
+	})
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	resultRaw, ok := payload["result"].(map[string]any)
+	if !ok {
+		t.Fatalf("unexpected response: %v", payload)
+	}
+	if got := strings.TrimSpace(resultRaw["message"].(string)); got != statusMessage {
+		t.Fatalf("status message mismatch: got %q want %q", got, statusMessage)
+	}
+	if got := strings.TrimSpace(resultRaw["name"].(string)); got != "status" {
+		t.Fatalf("status name mismatch: got %q", got)
 	}
 }
 
