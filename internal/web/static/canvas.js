@@ -1,4 +1,5 @@
 import { marked } from './vendor/marked.esm.js';
+import { GlobalWorkerOptions, getDocument } from './vendor/pdf.mjs';
 
 const SOURCE_LANGUAGE_BY_EXT = {
   c: 'c',
@@ -56,6 +57,9 @@ const SOURCE_LANGUAGE_BY_BASENAME = {
 };
 
 const MARKDOWN_EXTENSIONS = new Set(['md', 'markdown', 'mdown', 'mkdn', 'mkd', 'mdx']);
+const PDFJS_MODULE_URL = new URL('./vendor/pdfjs/pdf.min.mjs', import.meta.url).toString();
+const PDFJS_WORKER_URL = new URL('./vendor/pdfjs/pdf.worker.min.mjs', import.meta.url).toString();
+const PDFJS_STANDARD_FONTS_URL = new URL('./vendor/pdfjs/standard_fonts/', import.meta.url).toString();
 
 export function escapeHtml(text) {
   return String(text)
@@ -647,11 +651,29 @@ const els = {};
 let activeTextEventId = null;
 let activeArtifactTitle = '';
 let activePdfEvent = null;
+let activePdfCleanup = null;
+let activePdfRenderToken = 0;
 let previousArtifactText = '';
 let previousBlockTexts = [];
 let previousArtifactTitle = '';
+let pdfJsModulePromise = null;
 
 const MATH_SEGMENT_TOKEN_PREFIX = '@@TABURA_MATH_SEGMENT_';
+const PDF_MIN_RENDER_WIDTH_PX = 240;
+const PDF_MAX_RENDER_SCALE = 3;
+const PDF_RESIZE_DEBOUNCE_MS = 120;
+
+GlobalWorkerOptions.workerSrc = '/static/vendor/pdf.worker.mjs';
+
+const pdfRenderState = {
+  generation: 0,
+  key: '',
+  doc: null,
+  loadingTask: null,
+  resizeObserver: null,
+  resizeTimer: null,
+  lastWidth: 0,
+};
 
 export function getEls() {
   if (!els.text) {
@@ -659,8 +681,70 @@ export function getEls() {
     els.image = document.getElementById('canvas-image');
     els.img = document.getElementById('canvas-img');
     els.pdf = document.getElementById('canvas-pdf');
+    ensurePdfResizeObserver();
   }
   return els;
+}
+
+function clearPdfResizeTimer() {
+  if (pdfRenderState.resizeTimer) {
+    window.clearTimeout(pdfRenderState.resizeTimer);
+    pdfRenderState.resizeTimer = null;
+  }
+}
+
+function cancelPdfRender({ destroyDocument = false } = {}) {
+  pdfRenderState.generation += 1;
+  clearPdfResizeTimer();
+  if (pdfRenderState.loadingTask && typeof pdfRenderState.loadingTask.destroy === 'function') {
+    try {
+      void pdfRenderState.loadingTask.destroy();
+    } catch (_) {}
+  }
+  pdfRenderState.loadingTask = null;
+  if (destroyDocument && pdfRenderState.doc && typeof pdfRenderState.doc.destroy === 'function') {
+    try {
+      void pdfRenderState.doc.destroy();
+    } catch (_) {}
+    pdfRenderState.doc = null;
+    pdfRenderState.key = '';
+  }
+}
+
+function getPdfContainerWidth(container) {
+  if (!(container instanceof HTMLElement)) return PDF_MIN_RENDER_WIDTH_PX;
+  const rect = container.getBoundingClientRect();
+  const measured = Number.isFinite(rect.width) ? rect.width : container.clientWidth;
+  return Math.max(PDF_MIN_RENDER_WIDTH_PX, Math.floor(measured || PDF_MIN_RENDER_WIDTH_PX));
+}
+
+function schedulePdfRerender() {
+  if (!activePdfEvent) return;
+  clearPdfResizeTimer();
+  pdfRenderState.resizeTimer = window.setTimeout(() => {
+    pdfRenderState.resizeTimer = null;
+    if (!activePdfEvent) return;
+    const e = getEls();
+    if (!e.pdf || !e.pdf.classList.contains('is-active')) return;
+    void renderPdfSurface(activePdfEvent, { reuseDocument: true });
+  }, PDF_RESIZE_DEBOUNCE_MS);
+}
+
+function ensurePdfResizeObserver() {
+  const pdfPane = els.pdf;
+  if (!pdfPane || pdfRenderState.resizeObserver) return;
+  if (typeof ResizeObserver !== 'function') {
+    window.addEventListener('resize', schedulePdfRerender);
+    return;
+  }
+  pdfRenderState.resizeObserver = new ResizeObserver((entries) => {
+    if (!Array.isArray(entries) || entries.length === 0) return;
+    const width = getPdfContainerWidth(entries[0].target);
+    if (Math.abs(width - pdfRenderState.lastWidth) < 4) return;
+    pdfRenderState.lastWidth = width;
+    schedulePdfRerender();
+  });
+  pdfRenderState.resizeObserver.observe(pdfPane);
 }
 
 export function sanitizeHtml(html) {
@@ -766,6 +850,7 @@ function typesetMarkdownMath(root, attempt = 0) {
 }
 
 export function hideAll() {
+  cancelPdfRender({ destroyDocument: false });
   const e = getEls();
   if (e.text) e.text.style.display = 'none';
   if (e.image) e.image.style.display = 'none';
@@ -938,29 +1023,150 @@ export function clearLineHighlight() {
 function clearTextInteractionHandlers() {
 }
 
-function renderPdfSurface(event) {
-  const e = getEls();
+function getPdfURL(event) {
   const pdfState = (window._taburaApp || {}).getState ? window._taburaApp.getState() : {};
-  const pdfSid = pdfState.sessionId || '';
-  const pdfURL = `/api/files/${encodeURIComponent(pdfSid)}/${encodeURIComponent(event.path)}`;
+  const pdfSid = String(pdfState.sessionId || '');
+  const pdfPath = String(event?.path || '');
+  return {
+    sid: pdfSid,
+    path: pdfPath,
+    url: `/api/files/${encodeURIComponent(pdfSid)}/${encodeURIComponent(pdfPath)}`,
+  };
+}
+
+function renderPdfFallback(host, pdfURL, message) {
+  host.innerHTML = '';
+  const fallback = document.createElement('div');
+  fallback.className = 'canvas-pdf-fallback';
+  fallback.append(`${message} `);
+  const link = document.createElement('a');
+  link.href = pdfURL;
+  link.target = '_blank';
+  link.rel = 'noopener noreferrer';
+  link.textContent = 'Open PDF';
+  fallback.appendChild(link);
+  host.appendChild(fallback);
+}
+
+async function loadPdfDocument(pdfKey, pdfURL, token, reuseDocument) {
+  if (reuseDocument && pdfRenderState.doc && pdfRenderState.key === pdfKey) {
+    return pdfRenderState.doc;
+  }
+  if (pdfRenderState.loadingTask && typeof pdfRenderState.loadingTask.destroy === 'function') {
+    try {
+      await pdfRenderState.loadingTask.destroy();
+    } catch (_) {}
+  }
+  pdfRenderState.loadingTask = null;
+  if (pdfRenderState.doc && pdfRenderState.key !== pdfKey && typeof pdfRenderState.doc.destroy === 'function') {
+    try {
+      await pdfRenderState.doc.destroy();
+    } catch (_) {}
+    pdfRenderState.doc = null;
+  }
+
+  pdfRenderState.key = pdfKey;
+  const loadingTask = getDocument({ url: pdfURL, withCredentials: true });
+  pdfRenderState.loadingTask = loadingTask;
+
+  const doc = await loadingTask.promise;
+  if (token !== pdfRenderState.generation) {
+    if (typeof doc.destroy === 'function') {
+      try {
+        await doc.destroy();
+      } catch (_) {}
+    }
+    return null;
+  }
+  pdfRenderState.doc = doc;
+  if (pdfRenderState.loadingTask === loadingTask) {
+    pdfRenderState.loadingTask = null;
+  }
+  return doc;
+}
+
+async function renderPdfPages(pdfDoc, pagesHost, statusNode, token) {
+  if (!pdfDoc || !pagesHost) return;
+  const pageCount = Number(pdfDoc.numPages || 0);
+  if (pageCount < 1) return;
+
+  statusNode.textContent = 'Preparing PDF...';
+  const firstPage = await pdfDoc.getPage(1);
+  if (token !== pdfRenderState.generation) return;
+  const baseViewport = firstPage.getViewport({ scale: 1 });
+  const targetWidth = getPdfContainerWidth(pagesHost);
+  pdfRenderState.lastWidth = targetWidth;
+  const scale = Math.max(0.2, Math.min(PDF_MAX_RENDER_SCALE, targetWidth / Math.max(1, baseViewport.width)));
+
+  const outputScale = Math.min(2, window.devicePixelRatio || 1);
+  for (let pageIndex = 1; pageIndex <= pageCount; pageIndex += 1) {
+    if (token !== pdfRenderState.generation) return;
+    statusNode.textContent = `Rendering page ${pageIndex} / ${pageCount}...`;
+    const page = pageIndex === 1 ? firstPage : await pdfDoc.getPage(pageIndex);
+    const viewport = page.getViewport({ scale });
+    const pageNode = document.createElement('section');
+    pageNode.className = 'canvas-pdf-page';
+    pageNode.dataset.page = String(pageIndex);
+    const canvas = document.createElement('canvas');
+    canvas.className = 'canvas-pdf-canvas';
+    canvas.width = Math.max(1, Math.floor(viewport.width * outputScale));
+    canvas.height = Math.max(1, Math.floor(viewport.height * outputScale));
+    canvas.style.width = `${Math.floor(viewport.width)}px`;
+    canvas.style.height = `${Math.floor(viewport.height)}px`;
+    pageNode.appendChild(canvas);
+    pagesHost.appendChild(pageNode);
+
+    const context = canvas.getContext('2d', { alpha: false });
+    if (!context) continue;
+    const renderTask = page.render({
+      canvasContext: context,
+      viewport,
+      transform: outputScale === 1 ? null : [outputScale, 0, 0, outputScale, 0, 0],
+    });
+    await renderTask.promise;
+    if (typeof page.cleanup === 'function') {
+      page.cleanup();
+    }
+  }
+  statusNode.remove();
+}
+
+async function renderPdfSurface(event, options = {}) {
+  const e = getEls();
+  if (!e.pdf) return;
+  const { sid, path, url } = getPdfURL(event);
+  if (!path) {
+    renderPdfFallback(e.pdf, url, 'PDF path missing.');
+    return;
+  }
+
+  const token = pdfRenderState.generation + 1;
+  pdfRenderState.generation = token;
+  clearPdfResizeTimer();
   e.pdf.innerHTML = '';
 
   const surface = document.createElement('div');
   surface.className = 'canvas-pdf-surface';
-  const objectEl = document.createElement('object');
-  objectEl.className = 'canvas-pdf-object';
-  objectEl.type = 'application/pdf';
-  objectEl.data = pdfURL;
-  const fallback = document.createElement('div');
-  fallback.className = 'canvas-pdf-fallback';
-  fallback.innerHTML = `PDF preview unavailable. <a href="${pdfURL}" target="_blank" rel="noopener noreferrer">Open PDF</a>`;
-  const hitLayer = document.createElement('div');
-  hitLayer.className = 'canvas-pdf-hit-layer';
-  objectEl.appendChild(fallback);
-  surface.appendChild(objectEl);
-  surface.appendChild(hitLayer);
+  const status = document.createElement('div');
+  status.className = 'canvas-pdf-status';
+  status.textContent = 'Loading PDF...';
+  const pagesHost = document.createElement('div');
+  pagesHost.className = 'canvas-pdf-pages';
+  surface.appendChild(status);
+  surface.appendChild(pagesHost);
   e.pdf.appendChild(surface);
-  e.pdf._pdfHitLayer = hitLayer;
+
+  const pdfKey = `${sid}:${path}`;
+  const reuseDocument = options.reuseDocument !== false;
+  try {
+    const pdfDoc = await loadPdfDocument(pdfKey, url, token, reuseDocument);
+    if (!pdfDoc || token !== pdfRenderState.generation) return;
+    await renderPdfPages(pdfDoc, pagesHost, status, token);
+  } catch (err) {
+    if (token !== pdfRenderState.generation) return;
+    console.warn('PDF render failed:', err);
+    renderPdfFallback(e.pdf, url, 'PDF preview unavailable.');
+  }
 }
 
 export function renderCanvas(event) {
@@ -1034,6 +1240,7 @@ export function renderCanvas(event) {
 export function clearCanvas() {
   clearTextInteractionHandlers();
   hideAll();
+  cancelPdfRender({ destroyDocument: true });
   activeTextEventId = null;
   activeArtifactTitle = '';
   activePdfEvent = null;
