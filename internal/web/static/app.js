@@ -317,6 +317,10 @@ function canSpeakTTS() {
   return Boolean(ttsEnabled) && !Boolean(state.ttsSilent);
 }
 
+function isMobileSilent() {
+  return state.ttsSilent && window.matchMedia('(max-width: 767px)').matches;
+}
+
 function setTTSSilentMode(silent, { persist = true } = {}) {
   const next = Boolean(silent);
   if (state.ttsSilent === next) return;
@@ -326,6 +330,13 @@ function setTTSSilentMode(silent, { persist = true } = {}) {
   }
   if (next) {
     stopTTSPlayback();
+    document.body.classList.add('silent-mode');
+    if (window.matchMedia('(max-width: 767px)').matches) {
+      const edgeRight = document.getElementById('edge-right');
+      if (edgeRight) edgeRight.classList.add('edge-pinned');
+    }
+  } else {
+    document.body.classList.remove('silent-mode');
   }
   renderEdgeTopModelButtons();
 }
@@ -1735,12 +1746,18 @@ function handleChatEvent(payload) {
     state.indicatorSuppressedByCanvasUpdate = false;
     if (turnIsVoice) {
       ensurePendingForTurn(turnID);
+    } else if (isMobileSilent()) {
+      const edgeRight = document.getElementById('edge-right');
+      if (edgeRight) edgeRight.classList.add('edge-pinned');
+      ensurePendingForTurn(turnID);
     }
     state.zenCanvasActionThisTurn = false;
     // Reset TTS state for new turn
     stopTTSPlayback();
     const pos = getLastInputPosition();
     if (isVoiceTurn() || state.hasArtifact) {
+      hideOverlay();
+    } else if (isMobileSilent()) {
       hideOverlay();
     } else {
       showOverlay(pos.x, pos.y + 24);
@@ -1763,6 +1780,13 @@ function handleChatEvent(payload) {
       } else if (!renderOnCanvas) {
         updateAssistantRow(row, '_Thinking..._', true);
       }
+    } else if (isMobileSilent()) {
+      const row = ensurePendingForTurn(turnID);
+      if (String(md || '').trim()) {
+        updateAssistantRow(row, md, true);
+      } else if (!renderOnCanvas) {
+        updateAssistantRow(row, '_Thinking..._', true);
+      }
     }
 
     if (autoCanvas) {
@@ -1774,7 +1798,7 @@ function handleChatEvent(payload) {
       return;
     }
 
-    if (!isVoiceTurn() && !state.hasArtifact) {
+    if (!isVoiceTurn() && !isMobileSilent() && !state.hasArtifact) {
       const cleaned = cleanForOverlay(md);
       if (cleaned) updateOverlay(cleaned);
     } else if (!isVoiceTurn()) {
@@ -1793,7 +1817,8 @@ function handleChatEvent(payload) {
     // Persisted text may be empty for voice-only responses; fall back to TTS text.
     const displayMd = md || (ttsLastSpeakText ? `_${ttsLastSpeakText}_` : '');
     const hasDisplayMd = Boolean(String(displayMd || '').trim());
-    if (isVoiceTurn()) {
+    const mobileSilent = isMobileSilent();
+    if (isVoiceTurn() || mobileSilent) {
       const row = takePendingRow(turnID);
       if (row && hasDisplayMd) {
         updateAssistantRow(row, displayMd, false);
@@ -1822,6 +1847,15 @@ function handleChatEvent(payload) {
 
     if (ttsSentenceChunker) {
       ttsSentenceChunker.flush();
+    }
+    if (mobileSilent) {
+      if (autoCanvas) {
+        const edgeRight = document.getElementById('edge-right');
+        if (edgeRight) edgeRight.classList.remove('edge-active', 'edge-pinned');
+      }
+      hideOverlay();
+      state.zenCanvasActionThisTurn = false;
+      return;
     }
     if (!isVoiceTurn()) {
       if (autoCanvas || state.hasArtifact) {
@@ -1977,7 +2011,7 @@ async function zenSubmitMessage(text) {
   updateAssistantActivityIndicator();
   appendPlainMessage('user', finalText);
 
-  if (!finalText.startsWith('/') && isVoiceTurn()) {
+  if (!finalText.startsWith('/') && (isVoiceTurn() || isMobileSilent())) {
     const pending = appendRenderedAssistant('_Thinking..._', { pending: true, localId: nextLocalMessageId() });
     state.pendingQueue.push(pending);
     updateAssistantActivityIndicator();
@@ -2509,6 +2543,93 @@ function bindUi() {
     });
   }
 
+  // Chat pane input: Enter sends, Escape blurs, auto-resize
+  const chatPaneInput = document.getElementById('chat-pane-input');
+  if (chatPaneInput instanceof HTMLTextAreaElement) {
+    chatPaneInput.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter' && !ev.shiftKey) {
+        ev.preventDefault();
+        const text = chatPaneInput.value.trim();
+        if (text) {
+          state.lastInputOrigin = 'text';
+          chatPaneInput.value = '';
+          chatPaneInput.style.height = '';
+          chatPaneInput.blur();
+          void zenSubmitMessage(text);
+        }
+      }
+      if (ev.key === 'Escape') {
+        ev.preventDefault();
+        chatPaneInput.value = '';
+        chatPaneInput.style.height = '';
+        chatPaneInput.blur();
+      }
+    });
+    chatPaneInput.addEventListener('input', () => {
+      chatPaneInput.style.height = 'auto';
+      chatPaneInput.style.height = `${Math.min(chatPaneInput.scrollHeight, 240)}px`;
+    });
+
+    // Touch-hold PTT on chat pane input
+    let chatInputHoldTimer = null;
+    let chatInputHoldActive = false;
+    let chatInputHoldX = 0;
+    let chatInputHoldY = 0;
+    const CHAT_INPUT_HOLD_MOVE_THRESHOLD = 5;
+
+    chatPaneInput.addEventListener('touchstart', (ev) => {
+      if (ev.touches.length !== 1) return;
+      const t = ev.touches[0];
+      chatInputHoldActive = false;
+      chatInputHoldX = t.clientX;
+      chatInputHoldY = t.clientY;
+      chatInputHoldTimer = window.setTimeout(() => {
+        chatInputHoldTimer = null;
+        chatInputHoldActive = true;
+        chatPaneInput.blur();
+        void beginVoiceCaptureFromPoint(chatInputHoldX, chatInputHoldY, { manualStopOnly: true });
+      }, CHAT_SEND_HOLD_MS);
+    }, { passive: true });
+
+    chatPaneInput.addEventListener('touchmove', (ev) => {
+      if (!chatInputHoldTimer) return;
+      if (ev.touches.length !== 1) return;
+      const t = ev.touches[0];
+      const dx = t.clientX - chatInputHoldX;
+      const dy = t.clientY - chatInputHoldY;
+      if (Math.sqrt(dx * dx + dy * dy) > CHAT_INPUT_HOLD_MOVE_THRESHOLD) {
+        if (chatInputHoldTimer) { clearTimeout(chatInputHoldTimer); chatInputHoldTimer = null; }
+      }
+    }, { passive: true });
+
+    window.addEventListener('touchend', () => {
+      if (chatInputHoldTimer) { clearTimeout(chatInputHoldTimer); chatInputHoldTimer = null; return; }
+      if (chatInputHoldActive) {
+        chatInputHoldActive = false;
+        if (isRecording()) void stopZenVoiceCaptureAndSend();
+      }
+    }, { passive: true });
+
+    window.addEventListener('touchcancel', () => {
+      if (chatInputHoldTimer) { clearTimeout(chatInputHoldTimer); chatInputHoldTimer = null; }
+      chatInputHoldActive = false;
+    });
+  }
+
+  // Voice tap on chat history (only when panel is pinned, not just hover-active)
+  const chatHistory = document.getElementById('chat-history');
+  if (chatHistory) {
+    chatHistory.addEventListener('click', (ev) => {
+      if (ev.button !== 0) return;
+      if (ev.target instanceof Element && ev.target.closest('a,button,input,textarea,select,[contenteditable="true"]')) return;
+      const edgeR = chatHistory.closest('.edge-panel');
+      if (edgeR && !edgeR.classList.contains('edge-pinned')) return;
+      if (shouldStopInUiClick()) { void handleZenStopAction(); return; }
+      if (isRecording()) { void stopZenVoiceCaptureAndSend(); return; }
+      void beginVoiceCaptureFromPoint(ev.clientX, ev.clientY);
+    });
+  }
+
   // Zen: Click outside overlay/input -> dismiss
   document.addEventListener('mousedown', (ev) => {
     if (!(ev.target instanceof Element)) return;
@@ -2590,6 +2711,19 @@ function bindUi() {
 
     // Auto-activate text input on printable key
     if (ev.key.length === 1 && !isTextInputVisible()) {
+      // Route to chat pane input when chat pane is open (desktop only)
+      const edgeR = document.getElementById('edge-right');
+      const cpInput = document.getElementById('chat-pane-input');
+      const chatPaneOpen = edgeR && (edgeR.classList.contains('edge-active') || edgeR.classList.contains('edge-pinned'));
+      if (chatPaneOpen && cpInput instanceof HTMLTextAreaElement && !window.matchMedia('(max-width: 767px)').matches) {
+        cpInput.focus();
+        cpInput.value = ev.key;
+        const caret = ev.key.length;
+        cpInput.setSelectionRange(caret, caret);
+        cpInput.dispatchEvent(new Event('input', { bubbles: true }));
+        ev.preventDefault();
+        return;
+      }
       const cx = window.innerWidth / 2 - 130;
       const cy = window.innerHeight / 2;
       showTextInput(cx, cy, null);

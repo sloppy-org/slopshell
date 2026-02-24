@@ -124,7 +124,7 @@ test('silence auto-stop sends transcript without manual stop click', async ({ pa
     (window as any).__setVadDbFrames([
       ...Array.from({ length: 8 }, () => -80),
       ...Array.from({ length: 10 }, () => -12),
-      ...Array.from({ length: 26 }, () => -80),
+      ...Array.from({ length: 40 }, () => -80),
     ]);
   });
 
@@ -148,7 +148,7 @@ test('silence auto-stop works with low-level speech near ambient floor', async (
     (window as any).__setVadDbFrames([
       ...Array.from({ length: 8 }, () => -41),
       ...Array.from({ length: 10 }, () => -35),
-      ...Array.from({ length: 26 }, () => -44),
+      ...Array.from({ length: 40 }, () => -44),
     ]);
   });
 
@@ -172,7 +172,7 @@ test('silence auto-stop works when speech is only slightly above noisy ambient b
     (window as any).__setVadDbFrames([
       ...Array.from({ length: 8 }, () => -22),
       ...Array.from({ length: 10 }, () => -18),
-      ...Array.from({ length: 26 }, () => -22),
+      ...Array.from({ length: 40 }, () => -22),
     ]);
   });
 
