@@ -1976,9 +1976,7 @@ function assistantMessageUsesCanvasBlocks(text) {
   return lower.includes(':::file{');
 }
 
-function shouldRenderAssistantHistoryInChat(renderFormat, markdown, plain) {
-  const format = String(renderFormat || '').trim().toLowerCase();
-  if (format === 'canvas') return false;
+function shouldRenderAssistantHistoryInChat(_renderFormat, markdown, plain) {
   return Boolean(String(markdown || plain || '').trim());
 }
 

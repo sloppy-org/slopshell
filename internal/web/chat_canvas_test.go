@@ -257,13 +257,13 @@ func TestBuildPromptFromHistory_WithCanvasContext(t *testing.T) {
 	}
 }
 
-func TestAssistantFinalChatContent_AutoCanvasSuppressesChat(t *testing.T) {
+func TestAssistantFinalChatContent_AutoCanvasRetainsCompanionChat(t *testing.T) {
 	markdown, plain, format := assistantFinalChatContent("Long answer", true, true)
-	if markdown != "" || plain != "" {
-		t.Fatalf("expected empty chat for auto canvas, got markdown=%q plain=%q", markdown, plain)
+	if markdown != "Long answer" || plain != "Long answer" {
+		t.Fatalf("expected companion chat for auto canvas, got markdown=%q plain=%q", markdown, plain)
 	}
-	if format != "text" {
-		t.Fatalf("format = %q, want text", format)
+	if format != "markdown" {
+		t.Fatalf("format = %q, want markdown", format)
 	}
 }
 
@@ -341,13 +341,14 @@ func TestAssistantRenderPlanForMode_SilentAlwaysReturnsFalse(t *testing.T) {
 	}
 }
 
-func TestAssistantSnapshotContent_AutoCanvasSuppressesChat(t *testing.T) {
+func TestAssistantSnapshotContent_AutoCanvasRetainsCompanionChat(t *testing.T) {
 	markdown, plain, format := assistantSnapshotContent("Paragraph one.\n\nParagraph two.", true, true)
-	if markdown != "" || plain != "" {
-		t.Fatalf("expected empty snapshot for auto canvas, got markdown=%q plain=%q", markdown, plain)
+	expected := "Paragraph one.\n\nParagraph two."
+	if markdown != expected || plain != expected {
+		t.Fatalf("expected companion snapshot for auto canvas, got markdown=%q plain=%q", markdown, plain)
 	}
-	if format != "text" {
-		t.Fatalf("format = %q, want text", format)
+	if format != "markdown" {
+		t.Fatalf("format = %q, want markdown", format)
 	}
 }
 

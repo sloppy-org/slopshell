@@ -855,25 +855,6 @@ func (a *App) runAssistantTurn(sessionID string, outputMode string) {
 	persistWriteFailed := false
 
 	persistAssistantSnapshot := func(text string, renderOnCanvas bool, autoCanvas bool) {
-		if autoCanvas && persistedAssistantID != 0 {
-			if persistedAssistantText == "" && persistedAssistantPlain == "" && persistedAssistantFormat == "text" {
-				return
-			}
-			if storeErr := a.store.UpdateChatMessageContent(persistedAssistantID, "", "", "text"); storeErr != nil {
-				if !persistWriteFailed {
-					persistWriteFailed = true
-					a.broadcastChatEvent(sessionID, map[string]interface{}{
-						"type":  "error",
-						"error": storeErr.Error(),
-					})
-				}
-				return
-			}
-			persistedAssistantText = ""
-			persistedAssistantPlain = ""
-			persistedAssistantFormat = "text"
-			return
-		}
 		candidateMarkdown, candidatePlain, candidateFormat := assistantSnapshotContent(text, renderOnCanvas, autoCanvas)
 		if candidateMarkdown == "" && candidatePlain == "" {
 			return
@@ -1053,25 +1034,6 @@ func (a *App) runAssistantTurnLegacy(sessionID string, session store.ChatSession
 	persistedAssistantFormat := ""
 	persistWriteFailed := false
 	persistAssistantSnapshot := func(text string, renderOnCanvas bool, autoCanvas bool) {
-		if autoCanvas && persistedAssistantID != 0 {
-			if persistedAssistantText == "" && persistedAssistantPlain == "" && persistedAssistantFormat == "text" {
-				return
-			}
-			if storeErr := a.store.UpdateChatMessageContent(persistedAssistantID, "", "", "text"); storeErr != nil {
-				if !persistWriteFailed {
-					persistWriteFailed = true
-					a.broadcastChatEvent(sessionID, map[string]interface{}{
-						"type":  "error",
-						"error": storeErr.Error(),
-					})
-				}
-				return
-			}
-			persistedAssistantText = ""
-			persistedAssistantPlain = ""
-			persistedAssistantFormat = "text"
-			return
-		}
 		candidateMarkdown, candidatePlain, candidateFormat := assistantSnapshotContent(text, renderOnCanvas, autoCanvas)
 		if candidateMarkdown == "" && candidatePlain == "" {
 			return
@@ -1294,10 +1256,7 @@ func (a *App) finalizeAssistantResponse(
 	return chatMarkdown
 }
 
-func assistantFinalChatContent(text string, _ bool, autoCanvas bool) (string, string, string) {
-	if autoCanvas {
-		return "", "", "text"
-	}
+func assistantFinalChatContent(text string, _ bool, _ bool) (string, string, string) {
 	trimmed := strings.TrimSpace(text)
 	companion := strings.TrimSpace(stripCanvasFileMarkers(trimmed))
 	return companion, companion, "markdown"
@@ -1368,10 +1327,7 @@ func assistantRenderPlanForMode(text string, outputMode string) assistantRenderD
 	}
 }
 
-func assistantSnapshotContent(text string, renderOnCanvas bool, autoCanvas bool) (string, string, string) {
-	if autoCanvas {
-		return "", "", "text"
-	}
+func assistantSnapshotContent(text string, renderOnCanvas bool, _ bool) (string, string, string) {
 	candidate := stripLangTags(strings.TrimSpace(text))
 	if candidate == "" {
 		return "", "", "markdown"
