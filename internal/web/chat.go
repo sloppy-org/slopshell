@@ -717,17 +717,34 @@ func (a *App) getOrCreateAppSession(sessionID string, cwd string, profile appSer
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	s, err := a.appServerClient.OpenSessionWithParams(ctx, cwd, profile.Model, profile.ThreadParams)
-	if err != nil {
-		return nil, false, err
+	// Try to resume the previous thread if one was stored.
+	var existingThreadID string
+	if sess, err := a.store.GetChatSession(sessionID); err == nil {
+		existingThreadID = strings.TrimSpace(sess.AppThreadID)
+	}
+	var newSess *appserver.Session
+	var resumed bool
+	if existingThreadID != "" {
+		rs, ok, err := a.appServerClient.ResumeSessionWithParams(ctx, cwd, profile.Model, profile.ThreadParams, existingThreadID)
+		if err != nil {
+			return nil, false, err
+		}
+		newSess = rs
+		resumed = ok
+	} else {
+		rs, err := a.appServerClient.OpenSessionWithParams(ctx, cwd, profile.Model, profile.ThreadParams)
+		if err != nil {
+			return nil, false, err
+		}
+		newSess = rs
 	}
 	a.mu.Lock()
 	if old := a.chatAppSessions[sessionID]; old != nil {
 		_ = old.Close()
 	}
-	a.chatAppSessions[sessionID] = s
+	a.chatAppSessions[sessionID] = newSess
 	a.mu.Unlock()
-	return s, false, nil
+	return newSess, resumed, nil
 }
 
 func (a *App) closeAppSession(sessionID string) {

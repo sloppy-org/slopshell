@@ -724,7 +724,7 @@ body.silent-mode .zen-indicator { z-index: 1000; }
 /* Chat pane input */
 .chat-pane-input-row {
   flex-shrink: 0;
-  padding: 0.4rem 0.6rem;
+  padding: 0.4rem 0.6rem calc(0.4rem + var(--zen-safe-area-bottom, 0px));
 }
 
 .chat-pane-input-row textarea {
