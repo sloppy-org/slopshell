@@ -55,6 +55,8 @@ const SOURCE_LANGUAGE_BY_BASENAME = {
   cmakelists: 'cmake',
 };
 
+const MARKDOWN_EXTENSIONS = new Set(['md', 'markdown', 'mdown', 'mkdn', 'mkd', 'mdx']);
+
 export function escapeHtml(text) {
   return String(text)
     .replaceAll('&', '&amp;')
@@ -163,6 +165,216 @@ function parseDiffPathFromMarker(line, marker) {
   return raw;
 }
 
+function isMarkdownPath(pathRaw) {
+  const path = String(pathRaw || '').trim();
+  if (!path) return false;
+  const base = path.split(/[\\/]/).pop() || '';
+  const lowerBase = base.toLowerCase();
+  const dot = lowerBase.lastIndexOf('.');
+  if (dot < 0 || dot === lowerBase.length - 1) return false;
+  return MARKDOWN_EXTENSIONS.has(lowerBase.slice(dot + 1));
+}
+
+function inferDiffPath(diffTextRaw) {
+  const lines = String(diffTextRaw || '').replaceAll('\r\n', '\n').split('\n');
+  let path = '';
+  for (const line of lines) {
+    if (line.startsWith('diff --git ')) {
+      const headerPath = parseDiffPathFromHeader(line);
+      if (headerPath) return headerPath;
+    } else if (line.startsWith('+++ ')) {
+      const plusPath = parseDiffPathFromMarker(line, '+++ ');
+      if (plusPath) return plusPath;
+    } else if (line.startsWith('--- ')) {
+      const minusPath = parseDiffPathFromMarker(line, '--- ');
+      if (minusPath) path = minusPath;
+    }
+  }
+  return path;
+}
+
+function buildMarkdownDiffPreview(diffTextRaw, artifactTitleRaw) {
+  const diffText = String(diffTextRaw || '').replaceAll('\r\n', '\n');
+  if (!diffText.trim()) return null;
+  const artifactTitle = String(artifactTitleRaw || '').trim();
+  const inferredPath = inferDiffPath(diffText);
+  if (!isMarkdownPath(artifactTitle) && !isMarkdownPath(inferredPath)) {
+    return null;
+  }
+  if (!(diffText.startsWith('diff --git ') || diffText.includes('\ndiff --git '))) {
+    return null;
+  }
+
+  const lines = diffText.split('\n');
+  const previewLines = [];
+  const lineMap = [];
+  const changedMap = [];
+  let sawHunk = false;
+  let inHunk = false;
+  let pendingDeletion = false;
+  let newLine = null;
+  let lastMappedLine = null;
+
+  const appendLine = (text, fileLine, changed) => {
+    previewLines.push(String(text || ''));
+    if (Number.isFinite(fileLine) && fileLine > 0) {
+      const resolved = Math.trunc(fileLine);
+      lineMap.push(resolved);
+      lastMappedLine = resolved;
+    } else {
+      lineMap.push(null);
+    }
+    changedMap.push(Boolean(changed));
+  };
+
+  for (const line of lines) {
+    const hunk = parseDiffHunkHeader(line);
+    if (hunk) {
+      sawHunk = true;
+      inHunk = true;
+      pendingDeletion = false;
+      const hunkStart = Number.isFinite(hunk.newStart) ? hunk.newStart : null;
+      if (
+        Number.isFinite(lastMappedLine)
+        && Number.isFinite(hunkStart)
+        && hunkStart > lastMappedLine + 1
+        && previewLines.length > 0
+      ) {
+        appendLine('', null, false);
+        appendLine('[...]', null, false);
+        appendLine('', null, false);
+      }
+      newLine = Number.isFinite(hunkStart) ? hunkStart : null;
+      continue;
+    }
+
+    if (!inHunk) continue;
+    if (line.startsWith('\\ No newline at end of file')) continue;
+
+    if (line.startsWith('+') && !line.startsWith('+++')) {
+      appendLine(line.slice(1), newLine, true);
+      if (Number.isFinite(newLine)) newLine += 1;
+      pendingDeletion = false;
+      continue;
+    }
+
+    if (line.startsWith('-') && !line.startsWith('---')) {
+      pendingDeletion = true;
+      continue;
+    }
+
+    if (line.startsWith(' ')) {
+      appendLine(line.slice(1), newLine, pendingDeletion);
+      if (Number.isFinite(newLine)) newLine += 1;
+      pendingDeletion = false;
+      continue;
+    }
+  }
+
+  if (!sawHunk || previewLines.length === 0) return null;
+  if (!lineMap.some((line) => Number.isFinite(line) && line > 0)) return null;
+
+  return {
+    markdown: previewLines.join('\n'),
+    lineMap,
+    changedMap,
+  };
+}
+
+function countNewlines(textRaw) {
+  const text = String(textRaw || '');
+  let count = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    if (text.charCodeAt(i) === 10) count += 1;
+  }
+  return count;
+}
+
+function resolveTokenSourceMeta(lineMap, changedMap, startLine, endLine) {
+  const start = Math.max(1, Math.trunc(startLine || 1));
+  const end = Math.max(start, Math.trunc(endLine || start));
+  let sourceLine = null;
+  let changed = false;
+  for (let line = start; line <= end; line += 1) {
+    const mapped = lineMap[line - 1];
+    if (sourceLine === null && Number.isFinite(mapped) && mapped > 0) {
+      sourceLine = mapped;
+    }
+    if (changedMap[line - 1]) {
+      changed = true;
+    }
+    if (sourceLine !== null && changed) break;
+  }
+  return { sourceLine, changed };
+}
+
+function annotateToken(token, startLine, endLine, lineMap, changedMap) {
+  if (!token || typeof token !== 'object') return;
+  const meta = resolveTokenSourceMeta(lineMap, changedMap, startLine, endLine);
+  if (Number.isFinite(meta.sourceLine) && meta.sourceLine > 0) {
+    token.taburaSourceLine = Math.trunc(meta.sourceLine);
+  } else {
+    delete token.taburaSourceLine;
+  }
+  token.taburaDiffChanged = Boolean(meta.changed);
+}
+
+function annotateListItems(token, listStartLine, lineMap, changedMap) {
+  if (!token || token.type !== 'list' || !Array.isArray(token.items) || typeof token.raw !== 'string') return;
+  let localCursor = 0;
+  for (const item of token.items) {
+    const raw = typeof item?.raw === 'string' ? item.raw : '';
+    if (!raw) continue;
+    const found = token.raw.indexOf(raw, localCursor);
+    const index = found >= 0 ? found : localCursor;
+    const start = listStartLine + countNewlines(token.raw.slice(0, index));
+    const end = start + countNewlines(raw);
+    annotateToken(item, start, end, lineMap, changedMap);
+    localCursor = index + raw.length;
+  }
+}
+
+function annotateMarkdownTokens(tokens, sourceTextRaw, lineMap, changedMap) {
+  if (!Array.isArray(tokens) || tokens.length === 0) return;
+  const sourceText = String(sourceTextRaw || '');
+  let cursor = 0;
+  for (const token of tokens) {
+    const raw = typeof token?.raw === 'string' ? token.raw : '';
+    if (!raw) continue;
+    const found = sourceText.indexOf(raw, cursor);
+    const index = found >= 0 ? found : cursor;
+    const start = 1 + countNewlines(sourceText.slice(0, index));
+    const end = start + countNewlines(raw);
+    annotateToken(token, start, end, lineMap, changedMap);
+    annotateListItems(token, start, lineMap, changedMap);
+    cursor = index + raw.length;
+  }
+}
+
+function markdownTokenAttrs(token) {
+  if (!token || typeof token !== 'object') return '';
+  const attrs = [];
+  if (Number.isFinite(token.taburaSourceLine) && token.taburaSourceLine > 0) {
+    attrs.push(`data-source-line="${Math.trunc(token.taburaSourceLine)}"`);
+  }
+  if (token.taburaDiffChanged) {
+    attrs.push('class="md-diff-changed"');
+  }
+  if (attrs.length === 0) return '';
+  return ` ${attrs.join(' ')}`;
+}
+
+function injectAttrsIntoOpeningTag(htmlRaw, tagNameRaw, attrs) {
+  const html = String(htmlRaw || '');
+  const tagName = String(tagNameRaw || '').trim();
+  if (!attrs || !tagName || !html) return html;
+  const open = `<${tagName}`;
+  const index = html.indexOf(open);
+  if (index < 0) return html;
+  const insertAt = index + open.length;
+  return `${html.slice(0, insertAt)}${attrs}${html.slice(insertAt)}`;
+}
+
 function highlightDiff(code) {
   const lines = code.split('\n');
   let oldLine = null;
@@ -256,8 +468,41 @@ function renderCodeBlock(code, langRaw) {
   return renderHighlightedCodeBlock(code, lang || 'plaintext');
 }
 
+const baseRenderer = new marked.Renderer();
 const renderer = new marked.Renderer();
-renderer.code = ({ text, lang }) => renderCodeBlock(text || '', lang || '');
+renderer.code = function codeRenderer(token) {
+  const rendered = renderCodeBlock(token?.text || '', token?.lang || '');
+  return injectAttrsIntoOpeningTag(rendered, 'pre', markdownTokenAttrs(token));
+};
+renderer.heading = function headingRenderer(token) {
+  const html = baseRenderer.heading.call(this, token);
+  return injectAttrsIntoOpeningTag(html, `h${token?.depth || 1}`, markdownTokenAttrs(token));
+};
+renderer.paragraph = function paragraphRenderer(token) {
+  const html = baseRenderer.paragraph.call(this, token);
+  return injectAttrsIntoOpeningTag(html, 'p', markdownTokenAttrs(token));
+};
+renderer.blockquote = function blockquoteRenderer(token) {
+  const html = baseRenderer.blockquote.call(this, token);
+  return injectAttrsIntoOpeningTag(html, 'blockquote', markdownTokenAttrs(token));
+};
+renderer.list = function listRenderer(token) {
+  const html = baseRenderer.list.call(this, token);
+  const tag = token?.ordered ? 'ol' : 'ul';
+  return injectAttrsIntoOpeningTag(html, tag, markdownTokenAttrs(token));
+};
+renderer.listitem = function listItemRenderer(token) {
+  const html = baseRenderer.listitem.call(this, token);
+  return injectAttrsIntoOpeningTag(html, 'li', markdownTokenAttrs(token));
+};
+renderer.table = function tableRenderer(token) {
+  const html = baseRenderer.table.call(this, token);
+  return injectAttrsIntoOpeningTag(html, 'table', markdownTokenAttrs(token));
+};
+renderer.hr = function hrRenderer(token) {
+  const html = baseRenderer.hr.call(this, token);
+  return injectAttrsIntoOpeningTag(html, 'hr', markdownTokenAttrs(token));
+};
 
 marked.setOptions({
   breaks: true,
@@ -470,6 +715,20 @@ function getDiffAnchorContext(node) {
   };
 }
 
+function getMarkdownSourceAnchorContext(node) {
+  const start = node instanceof Element ? node : node?.parentElement;
+  if (!(start instanceof Element)) return null;
+  const sourceEl = start.closest('[data-source-line]');
+  if (!(sourceEl instanceof HTMLElement)) return null;
+  const lineRaw = String(sourceEl.dataset.sourceLine || '').trim();
+  const line = Number.parseInt(lineRaw, 10);
+  if (!Number.isFinite(line) || line <= 0) return null;
+  return {
+    line,
+    title: getActiveArtifactTitle(),
+  };
+}
+
 export function getLocationFromPoint(clientX, clientY) {
   const e = getEls();
   if (!e.text || !activeTextEventId) return null;
@@ -477,6 +736,8 @@ export function getLocationFromPoint(clientX, clientY) {
   if (!range || !e.text.contains(range.startContainer)) return null;
   const diffAnchor = getDiffAnchorContext(range.startContainer);
   if (diffAnchor) return diffAnchor;
+  const markdownAnchor = getMarkdownSourceAnchorContext(range.startContainer);
+  if (markdownAnchor) return markdownAnchor;
   try {
     const startProbe = range.cloneRange();
     startProbe.selectNodeContents(e.text);
@@ -502,6 +763,10 @@ export function getLocationFromSelection() {
   const diffAnchor = getDiffAnchorContext(range.startContainer);
   if (diffAnchor) {
     return { ...diffAnchor, selectedText };
+  }
+  const markdownAnchor = getMarkdownSourceAnchorContext(range.startContainer);
+  if (markdownAnchor) {
+    return { ...markdownAnchor, selectedText };
   }
   const { startOffset } = getSelectionOffsets(e.text, range);
   const lines = (e.text.textContent || '').split('\n');
@@ -579,8 +844,21 @@ export function renderCanvas(event) {
     activePdfEvent = null;
     const oldBlockTexts = shouldHighlightChanges ? previousBlockTexts.slice() : [];
     const textBody = String(event.text || '');
+    const isUnifiedDiff = textBody.startsWith('diff --git ') || textBody.includes('\ndiff --git ');
+    const diffPreview = isUnifiedDiff ? buildMarkdownDiffPreview(textBody, activeArtifactTitle) : null;
     const sourceLang = languageFromArtifactTitle(activeArtifactTitle);
-    if (sourceLang) {
+    if (diffPreview) {
+      const markdownSource = diffPreview ? diffPreview.markdown : textBody;
+      const { text: markdownText, stash: mathSegments } = extractMathSegments(markdownSource);
+      let renderedMarkdownHtml = '';
+      const tokens = marked.lexer(markdownText);
+      annotateMarkdownTokens(tokens, markdownText, diffPreview.lineMap, diffPreview.changedMap);
+      renderedMarkdownHtml = marked.parser(tokens);
+      e.text.innerHTML = restoreMathSegments(sanitizeHtml(renderedMarkdownHtml), mathSegments);
+      typesetMarkdownMath(e.text);
+    } else if (isUnifiedDiff) {
+      e.text.innerHTML = sanitizeHtml(renderCodeBlock(textBody, 'diff'));
+    } else if (sourceLang) {
       e.text.innerHTML = sanitizeHtml(renderHighlightedCodeBlock(textBody, sourceLang));
     } else {
       const { text: markdownText, stash: mathSegments } = extractMathSegments(textBody);

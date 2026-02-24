@@ -348,6 +348,16 @@ body.pr-review-mode #pr-file-pane {
   background: #fef3c7;
 }
 
+/* Markdown diff preview highlight (persistent, non-animated) */
+#canvas-text .md-diff-changed {
+  background: #fef3c7;
+  border-radius: 4px;
+}
+
+#canvas-text li.md-diff-changed {
+  padding-right: 0.2rem;
+}
+
 /* Zen: Full-screen recording state indicator */
 .zen-indicator {
   display: none;
