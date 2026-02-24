@@ -270,6 +270,11 @@ body.ios-cue-fullscreen .zen-indicator.is-stop::before {
   --cue-frame-radius: var(--zen-cue-corner-radius);
 }
 
+body.ios-cue-fullscreen .zen-indicator.is-recording::before,
+body.ios-cue-fullscreen .zen-indicator.is-stop::before {
+  border-width: 5px;
+}
+
 .zen-indicator.is-recording::before,
 .zen-indicator.is-stop::before {
   content: '';

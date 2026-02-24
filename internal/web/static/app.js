@@ -376,9 +376,10 @@ function applyIPhoneStandaloneCueHints() {
   const isStandaloneLike = isHomeScreenStandaloneLike() && isIPhoneDevice;
   const roundedRadius = iPhoneRoundedCornerRadiusPx();
   const radius = Number.isFinite(roundedRadius) && roundedRadius > 0 ? roundedRadius : 44;
+  const modeRadius = isStandaloneLike ? Math.max(24, Math.round(radius - 5)) : radius;
   body.classList.toggle('ios-cue-fullscreen', isStandaloneLike);
   if (isIPhoneDevice) {
-    const cornerRadius = `0 0 ${radius}px ${radius}px`;
+    const cornerRadius = `0 0 ${modeRadius}px ${modeRadius}px`;
     root.style.setProperty('--zen-cue-corner-radius', cornerRadius);
     return;
   }
