@@ -195,32 +195,47 @@ func (a *App) runHubTurn(sessionID string, session store.ChatSession, messages [
 
 	persistedAssistantID := int64(0)
 	persistedAssistantText := ""
+	executeClassifiedAction := func(action *SystemAction) bool {
+		actionMessage, actionPayload, actionErr := a.executeSystemAction(sessionID, session, action)
+		if actionErr != nil {
+			return false
+		}
+		assistantText := strings.TrimSpace(actionMessage)
+		if assistantText == "" {
+			assistantText = "Done."
+		}
+		if actionPayload != nil {
+			a.broadcastChatEvent(sessionID, map[string]interface{}{
+				"type":   "system_action",
+				"action": actionPayload,
+			})
+		}
+		a.finalizeAssistantResponse(
+			sessionID,
+			session.ProjectKey,
+			assistantText,
+			&persistedAssistantID,
+			&persistedAssistantText,
+			"",
+			runID,
+			"",
+			outputMode,
+		)
+		return true
+	}
+
 	localAction, localConfidence, localErr := a.classifyIntentLocally(ctx, userText)
 	if localErr == nil && localAction != nil && localConfidence >= intentClassifierMinConfidence {
-		actionMessage, actionPayload, actionErr := a.executeSystemAction(sessionID, session, localAction)
-		if actionErr == nil {
-			assistantText := strings.TrimSpace(actionMessage)
-			if assistantText == "" {
-				assistantText = "Done."
-			}
-			if actionPayload != nil {
-				a.broadcastChatEvent(sessionID, map[string]interface{}{
-					"type":   "system_action",
-					"action": actionPayload,
-				})
-			}
-			a.finalizeAssistantResponse(
-				sessionID,
-				session.ProjectKey,
-				assistantText,
-				&persistedAssistantID,
-				&persistedAssistantText,
-				"",
-				runID,
-				"",
-				outputMode,
-			)
+		if executeClassifiedAction(localAction) {
 			return
+		}
+	}
+	if localErr != nil || localAction == nil || localConfidence < intentClassifierMinConfidence {
+		llmAction, llmErr := a.classifyIntentWithLLM(ctx, userText)
+		if llmErr == nil && llmAction != nil {
+			if executeClassifiedAction(llmAction) {
+				return
+			}
 		}
 	}
 

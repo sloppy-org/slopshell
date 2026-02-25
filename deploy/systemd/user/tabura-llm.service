@@ -1,0 +1,16 @@
+[Unit]
+Description=Tabura Local Intent LLM (Qwen3 0.6B)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/code/assi/tabula
+Environment=HOME=%h
+Environment=TABURA_LLM_MODEL_DIR=%h/.local/share/tabura-llm/models
+ExecStart=%h/code/assi/tabula/scripts/setup-local-llm.sh
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+
+[Install]
+WantedBy=default.target

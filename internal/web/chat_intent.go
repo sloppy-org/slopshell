@@ -16,10 +16,28 @@ import (
 
 const (
 	DefaultIntentClassifierURL     = "http://127.0.0.1:8425"
+	DefaultIntentLLMURL            = "http://127.0.0.1:8426"
 	intentClassifierMinConfidence  = 0.8
 	intentClassifierRequestTimeout = 75 * time.Millisecond
 	intentClassifierResponseLimit  = 64 * 1024
+	intentLLMRequestTimeout        = 150 * time.Millisecond
+	intentLLMResponseLimit         = 128 * 1024
+	intentLLMModel                 = "qwen3-0.6b-q4_k_m"
 )
+
+const intentLLMSystemPrompt = `Classify the user intent and return JSON only.
+Allowed actions:
+- switch_project (name)
+- switch_model (alias, effort)
+- toggle_silent
+- toggle_conversation
+- cancel_work
+- show_status
+- delegate
+- chat
+
+For system actions, return {"action":"<action>", ...params}.
+For non-system conversation, return {"action":"chat"}.`
 
 type localIntentClassifierResponse struct {
 	Action     string                 `json:"action"`
@@ -32,12 +50,28 @@ type localIntentClassifierResponse struct {
 	Effort     string                 `json:"effort"`
 }
 
+type localIntentLLMChatCompletionResponse struct {
+	Choices []localIntentLLMChoice `json:"choices"`
+}
+
+type localIntentLLMChoice struct {
+	Message localIntentLLMMessage `json:"message"`
+}
+
+type localIntentLLMMessage struct {
+	Content string `json:"content"`
+}
+
 type SystemAction struct {
 	Action string                 `json:"action"`
 	Params map[string]interface{} `json:"-"`
 }
 
 func parseSystemAction(raw string) (*SystemAction, error) {
+	return parseSystemActionJSON(raw)
+}
+
+func parseSystemActionJSON(raw string) (*SystemAction, error) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
 		return nil, nil
@@ -46,13 +80,16 @@ func parseSystemAction(raw string) (*SystemAction, error) {
 	if err := json.Unmarshal([]byte(trimmed), &obj); err != nil {
 		return nil, nil
 	}
-	action := strings.ToLower(strings.TrimSpace(fmt.Sprint(obj["action"])))
+	action := normalizeSystemActionName(fmt.Sprint(obj["action"]))
+	if action == "" {
+		action = normalizeSystemActionName(fmt.Sprint(obj["intent"]))
+	}
 	if action == "" {
 		return nil, nil
 	}
 	params := make(map[string]interface{}, len(obj))
 	for key, value := range obj {
-		if strings.EqualFold(strings.TrimSpace(key), "action") {
+		if strings.EqualFold(strings.TrimSpace(key), "action") || strings.EqualFold(strings.TrimSpace(key), "intent") {
 			continue
 		}
 		params[key] = value
@@ -84,6 +121,28 @@ func mergeSystemActionParams(target map[string]interface{}, source map[string]in
 		}
 		target[trimmed] = value
 	}
+}
+
+func stripCodeFence(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if !strings.HasPrefix(trimmed, "```") {
+		return trimmed
+	}
+	lines := strings.Split(trimmed, "\n")
+	if len(lines) == 0 {
+		return trimmed
+	}
+	if !strings.HasPrefix(strings.TrimSpace(lines[0]), "```") {
+		return trimmed
+	}
+	end := len(lines)
+	if end > 1 && strings.HasPrefix(strings.TrimSpace(lines[end-1]), "```") {
+		end--
+	}
+	if end <= 1 {
+		return ""
+	}
+	return strings.TrimSpace(strings.Join(lines[1:end], "\n"))
 }
 
 func (a *App) classifyIntentLocally(ctx context.Context, text string) (*SystemAction, float64, error) {
@@ -141,6 +200,71 @@ func (a *App) classifyIntentLocally(ctx context.Context, text string) (*SystemAc
 		params["effort"] = strings.TrimSpace(payload.Effort)
 	}
 	return &SystemAction{Action: actionName, Params: params}, payload.Confidence, nil
+}
+
+func (a *App) classifyIntentWithLLM(ctx context.Context, text string) (*SystemAction, error) {
+	baseURL := strings.TrimRight(strings.TrimSpace(a.intentLLMURL), "/")
+	if baseURL == "" {
+		return nil, nil
+	}
+	trimmedText := strings.TrimSpace(text)
+	if trimmedText == "" {
+		return nil, nil
+	}
+
+	requestBody, _ := json.Marshal(map[string]interface{}{
+		"model":       intentLLMModel,
+		"temperature": 0,
+		"max_tokens":  128,
+		"messages": []map[string]string{
+			{"role": "system", "content": intentLLMSystemPrompt},
+			{"role": "user", "content": trimmedText},
+		},
+	})
+	requestCtx, cancel := context.WithTimeout(ctx, intentLLMRequestTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(
+		requestCtx,
+		http.MethodPost,
+		baseURL+"/v1/chat/completions",
+		bytes.NewReader(requestBody),
+	)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, intentLLMResponseLimit))
+		return nil, fmt.Errorf("intent llm HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	var payload localIntentLLMChatCompletionResponse
+	if err := json.NewDecoder(io.LimitReader(resp.Body, intentLLMResponseLimit)).Decode(&payload); err != nil {
+		return nil, err
+	}
+	if len(payload.Choices) == 0 {
+		return nil, nil
+	}
+	content := strings.TrimSpace(payload.Choices[0].Message.Content)
+	if content == "" {
+		return nil, nil
+	}
+	action, parseErr := parseSystemActionJSON(stripCodeFence(content))
+	if parseErr != nil {
+		return nil, parseErr
+	}
+	if action == nil {
+		return nil, nil
+	}
+	if normalizeSystemActionName(action.Action) == "" {
+		return nil, nil
+	}
+	return action, nil
 }
 
 func (a *App) executeSystemAction(sessionID string, session store.ChatSession, action *SystemAction) (string, map[string]interface{}, error) {

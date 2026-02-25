@@ -80,13 +80,14 @@ tabura server --project-dir . --data-dir ~/.tabura-web --web-host 0.0.0.0 --web-
 
 ## Runtime Stack (Canonical)
 
-Tabura runs as one Go runtime plus four local sidecars:
+Tabura runs as one Go runtime plus five local services:
 
 1. `tabura-web.service` (`tabura server`)
 2. `tabura-codex-app-server.service` (`codex app-server`)
 3. `tabura-piper-tts.service` (Piper `/v1/audio/speech`)
 4. `tabura-intent.service` (local intent classifier at `127.0.0.1:8425/classify`)
-5. Voice commit uses built-in VAD auto-stop (no extra voice sidecar)
+5. `tabura-llm.service` (Qwen3 0.6B fallback at `127.0.0.1:8426/v1/chat/completions`)
+6. Voice commit uses built-in VAD auto-stop (no extra voice sidecar)
 
 Why Piper remains an HTTP sidecar:
 - Piper `libpiper` linking is GPL-governed; direct linking would change distribution obligations.
@@ -100,6 +101,7 @@ Why Piper remains an HTTP sidecar:
 - Codex app-server websocket: `ws://127.0.0.1:8787`
 - Piper TTS endpoint: `http://127.0.0.1:8424/v1/audio/speech`
 - Intent classifier endpoint: `http://127.0.0.1:8425/classify` (`TABURA_INTENT_CLASSIFIER_URL`, set `off` to disable)
+- Intent LLM fallback endpoint: `http://127.0.0.1:8426/v1/chat/completions` (`TABURA_INTENT_LLM_URL`, set `off` to disable)
 - Local canvas session id: `local`
 - Spark thinking budget for Spark model (fast path): `TABURA_APP_SERVER_SPARK_REASONING_EFFORT=low` (`low`/`medium`/`high`/`extra_high`)
 
