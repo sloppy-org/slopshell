@@ -1380,6 +1380,7 @@ async function renderPdfSurface(event, options = {}) {
   if (!e.pdf) return;
   const { sid, path, url } = getPdfURL(event);
   if (!path) {
+    pdfRenderState.lastWidth = getPdfContainerWidth(e.pdf);
     renderPdfFallback(e.pdf, url, 'PDF path missing.');
     return;
   }
@@ -1411,6 +1412,7 @@ async function renderPdfSurface(event, options = {}) {
     if (token !== pdfRenderState.generation) return;
     if (isPdfCancellationError(err)) return;
     console.warn('PDF render failed:', err);
+    pdfRenderState.lastWidth = getPdfContainerWidth(e.pdf);
     renderPdfFallback(e.pdf, url, 'PDF preview unavailable.');
   }
 }
