@@ -2,7 +2,6 @@ package web
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -33,11 +32,6 @@ Available actions:
 - {"action":"show_status"}
 
 For conversational responses, reply with plain text.`
-
-type hubAction struct {
-	Action string
-	Raw    map[string]interface{}
-}
 
 func isHubProject(project store.Project) bool {
 	if strings.EqualFold(strings.TrimSpace(project.ProjectKey), HubProjectKey) {
@@ -112,26 +106,6 @@ func latestUserMessage(messages []store.ChatMessage) string {
 		}
 	}
 	return ""
-}
-
-func parseHubAction(raw string) (*hubAction, error) {
-	trimmed := strings.TrimSpace(raw)
-	if trimmed == "" {
-		return nil, nil
-	}
-	var obj map[string]interface{}
-	if err := json.Unmarshal([]byte(trimmed), &obj); err != nil {
-		return nil, nil
-	}
-	action := strings.ToLower(strings.TrimSpace(fmt.Sprint(obj["action"])))
-	if action == "" {
-		return nil, nil
-	}
-	return &hubAction{Action: action, Raw: obj}, nil
-}
-
-func hubStringParam(raw map[string]interface{}, key string) string {
-	return strings.TrimSpace(fmt.Sprint(raw[key]))
 }
 
 func (a *App) hubPrimaryProject() (store.Project, error) {
@@ -258,9 +232,9 @@ func (a *App) runHubTurn(sessionID string, session store.ChatSession, messages [
 	if assistantText == "" {
 		assistantText = "(assistant returned no content)"
 	}
-	action, _ := parseHubAction(assistantText)
+	action, _ := parseSystemAction(assistantText)
 	if action != nil {
-		actionMessage, actionPayload, actionErr := a.executeHubAction(sessionID, session, action)
+		actionMessage, actionPayload, actionErr := a.executeSystemAction(sessionID, session, action)
 		if actionErr != nil {
 			assistantText = fmt.Sprintf("Hub action failed: %s", actionErr.Error())
 		} else {
@@ -290,62 +264,4 @@ func (a *App) runHubTurn(sessionID string, session store.ChatSession, messages [
 		resp.ThreadID,
 		outputMode,
 	)
-}
-
-func (a *App) executeHubAction(sessionID string, session store.ChatSession, action *hubAction) (string, map[string]interface{}, error) {
-	if action == nil {
-		return "", nil, errors.New("hub action is required")
-	}
-	switch action.Action {
-	case "switch_project":
-		targetName := hubStringParam(action.Raw, "name")
-		project, err := a.hubFindProjectByName(targetName)
-		if err != nil {
-			return "", nil, err
-		}
-		activated, err := a.activateProject(project.ID)
-		if err != nil {
-			return "", nil, err
-		}
-		return fmt.Sprintf("Switched to %s.", activated.Name), map[string]interface{}{
-			"type":       "switch_project",
-			"project_id": activated.ID,
-		}, nil
-	case "switch_model":
-		targetProject, err := a.hubPrimaryProject()
-		if err != nil {
-			return "", nil, err
-		}
-		updated, err := a.updateProjectChatModel(
-			targetProject.ID,
-			hubStringParam(action.Raw, "alias"),
-			hubStringParam(action.Raw, "effort"),
-		)
-		if err != nil {
-			return "", nil, err
-		}
-		return fmt.Sprintf(
-			"Model for %s set to %s (%s).",
-			updated.Name,
-			updated.ChatModel,
-			updated.ChatModelReasoningEffort,
-		), nil, nil
-	case "toggle_silent":
-		return "Toggled silent mode.", map[string]interface{}{"type": "toggle_silent"}, nil
-	case "toggle_conversation":
-		return "Toggled conversation mode.", map[string]interface{}{"type": "toggle_conversation"}, nil
-	case "cancel_work":
-		activeCanceled, queuedCanceled := a.cancelChatWork(sessionID)
-		delegateCanceled := a.cancelDelegatedJobsForProject(session.ProjectKey)
-		total := activeCanceled + queuedCanceled + delegateCanceled
-		return fmt.Sprintf("Canceled %d running task(s).", total), nil, nil
-	case "show_status":
-		status, err := a.fetchCodexStatusMessage(session.ProjectKey)
-		if err != nil {
-			return "", nil, err
-		}
-		return status, nil, nil
-	default:
-		return "", nil, fmt.Errorf("unsupported action: %s", action.Action)
-	}
 }

@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -8,8 +9,8 @@ import (
 	"github.com/krystophny/tabura/internal/modelprofile"
 )
 
-func TestParseHubAction(t *testing.T) {
-	plain, err := parseHubAction("hello world")
+func TestParseSystemAction(t *testing.T) {
+	plain, err := parseSystemAction("hello world")
 	if err != nil {
 		t.Fatalf("plain parse returned error: %v", err)
 	}
@@ -17,15 +18,32 @@ func TestParseHubAction(t *testing.T) {
 		t.Fatalf("expected nil action for plain text")
 	}
 
-	action, err := parseHubAction(`{"action":"switch_project","name":"docs"}`)
-	if err != nil {
-		t.Fatalf("json parse returned error: %v", err)
+	cases := []struct {
+		name       string
+		raw        string
+		wantAction string
+	}{
+		{name: "switch project", raw: `{"action":"switch_project","name":"docs"}`, wantAction: "switch_project"},
+		{name: "switch model", raw: `{"action":"switch_model","alias":"gpt","effort":"high"}`, wantAction: "switch_model"},
+		{name: "toggle silent", raw: `{"action":"toggle_silent"}`, wantAction: "toggle_silent"},
+		{name: "toggle conversation", raw: `{"action":"toggle_conversation"}`, wantAction: "toggle_conversation"},
+		{name: "cancel work", raw: `{"action":"cancel_work"}`, wantAction: "cancel_work"},
+		{name: "show status", raw: `{"action":"show_status"}`, wantAction: "show_status"},
 	}
-	if action == nil {
-		t.Fatalf("expected parsed action")
-	}
-	if action.Action != "switch_project" {
-		t.Fatalf("action = %q, want switch_project", action.Action)
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			action, parseErr := parseSystemAction(tc.raw)
+			if parseErr != nil {
+				t.Fatalf("parse action: %v", parseErr)
+			}
+			if action == nil {
+				t.Fatalf("expected parsed action")
+			}
+			if action.Action != tc.wantAction {
+				t.Fatalf("action = %q, want %q", action.Action, tc.wantAction)
+			}
+		})
 	}
 }
 
@@ -43,10 +61,9 @@ func TestHubSwitchModelTargetsPrimaryProject(t *testing.T) {
 		t.Fatalf("hub session: %v", err)
 	}
 
-	msg, payload, err := app.executeHubAction(session.ID, session, &hubAction{
+	msg, payload, err := app.executeSystemAction(session.ID, session, &SystemAction{
 		Action: "switch_model",
-		Raw: map[string]interface{}{
-			"action": "switch_model",
+		Params: map[string]interface{}{
 			"alias":  "gpt",
 			"effort": "extra_high",
 		},
@@ -54,8 +71,11 @@ func TestHubSwitchModelTargetsPrimaryProject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("execute switch_model: %v", err)
 	}
-	if payload != nil {
-		t.Fatalf("switch_model payload = %#v, want nil", payload)
+	if payload == nil {
+		t.Fatalf("expected switch_model payload")
+	}
+	if got := strings.TrimSpace(payload["type"].(string)); got != "switch_model" {
+		t.Fatalf("action payload type = %q, want switch_model", got)
 	}
 	if !strings.Contains(strings.ToLower(msg), "model") {
 		t.Fatalf("expected model update message, got %q", msg)
@@ -112,11 +132,10 @@ func TestHubSwitchProjectActionReturnsActivationPayload(t *testing.T) {
 		t.Fatalf("expected linked project to be created")
 	}
 
-	_, payload, err := app.executeHubAction(session.ID, session, &hubAction{
+	_, payload, err := app.executeSystemAction(session.ID, session, &SystemAction{
 		Action: "switch_project",
-		Raw: map[string]interface{}{
-			"action": "switch_project",
-			"name":   "note",
+		Params: map[string]interface{}{
+			"name": "note",
 		},
 	})
 	if err != nil {
@@ -130,6 +149,74 @@ func TestHubSwitchProjectActionReturnsActivationPayload(t *testing.T) {
 	}
 	if got := strings.TrimSpace(payload["project_id"].(string)); got != target.ID {
 		t.Fatalf("action payload project_id = %q, want %q", got, target.ID)
+	}
+}
+
+func TestExecuteSystemActionRejectsUnsupportedAction(t *testing.T) {
+	app := newAuthedTestApp(t)
+	hub, err := app.ensureHubProject()
+	if err != nil {
+		t.Fatalf("ensure hub project: %v", err)
+	}
+	session, err := app.store.GetOrCreateChatSession(hub.ProjectKey)
+	if err != nil {
+		t.Fatalf("hub session: %v", err)
+	}
+
+	_, _, err = app.executeSystemAction(session.ID, session, &SystemAction{Action: "unknown"})
+	if err == nil {
+		t.Fatalf("expected unsupported action error")
+	}
+	if !strings.Contains(strings.ToLower(err.Error()), "unsupported action") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestHubRunTurnKeepsPlainTextAssistantOutput(t *testing.T) {
+	const assistantReply = "All systems nominal."
+	wsServer := setupMockAppServerStatusServer(t, assistantReply)
+	defer wsServer.Close()
+	wsURL := "ws" + strings.TrimPrefix(wsServer.URL, "http")
+
+	app, err := New(t.TempDir(), "", "", wsURL, "", "", "", false)
+	if err != nil {
+		t.Fatalf("new app: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = app.Shutdown(context.Background())
+	})
+
+	hub, err := app.ensureHubProject()
+	if err != nil {
+		t.Fatalf("ensure hub project: %v", err)
+	}
+	session, err := app.store.GetOrCreateChatSession(hub.ProjectKey)
+	if err != nil {
+		t.Fatalf("hub session: %v", err)
+	}
+	if _, err := app.store.AddChatMessage(session.ID, "user", "status?", "status?", "text"); err != nil {
+		t.Fatalf("add user message: %v", err)
+	}
+
+	messages, err := app.store.ListChatMessages(session.ID, 100)
+	if err != nil {
+		t.Fatalf("list messages: %v", err)
+	}
+	app.runHubTurn(session.ID, session, messages, turnOutputModeSilent)
+
+	updatedMessages, err := app.store.ListChatMessages(session.ID, 100)
+	if err != nil {
+		t.Fatalf("list updated messages: %v", err)
+	}
+	lastAssistant := ""
+	for i := len(updatedMessages) - 1; i >= 0; i-- {
+		if strings.EqualFold(strings.TrimSpace(updatedMessages[i].Role), "assistant") {
+			lastAssistant = strings.TrimSpace(updatedMessages[i].ContentPlain)
+			break
+		}
+	}
+	if lastAssistant != assistantReply {
+		t.Fatalf("assistant plain text = %q, want %q", lastAssistant, assistantReply)
 	}
 }
 

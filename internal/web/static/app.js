@@ -2478,6 +2478,32 @@ function handleChatEvent(payload) {
       if (projectID) {
         void switchProject(projectID);
       }
+    } else if (actionType === 'switch_model') {
+      const projectID = String(action?.project_id || '').trim();
+      const alias = normalizeProjectChatModelAlias(action?.alias);
+      const effortRaw = String(action?.effort || '').trim().toLowerCase();
+      if (projectID && alias) {
+        const existing = state.projects.find((item) => item.id === projectID);
+        if (existing) {
+          const nextEffort = normalizeProjectChatModelReasoningEffort(
+            effortRaw || existing.chat_model_reasoning_effort || '',
+            alias,
+          );
+          upsertProject({
+            ...existing,
+            chat_model: alias,
+            chat_model_reasoning_effort: nextEffort,
+          });
+          renderEdgeTopProjects();
+          renderEdgeTopModelButtons();
+          showStatus(`model set to ${alias}`);
+          return;
+        }
+      }
+      if (alias) {
+        const effort = effortRaw ? normalizeProjectChatModelReasoningEffort(effortRaw, alias) : '';
+        void switchProjectChatModel(alias, effort);
+      }
     } else if (actionType === 'toggle_silent') {
       toggleTTSSilentMode();
     } else if (actionType === 'toggle_conversation') {

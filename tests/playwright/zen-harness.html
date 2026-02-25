@@ -167,6 +167,36 @@
           project,
         }), { status: 200 });
       }
+      if (u.includes('/api/projects') && u.includes('/chat-model') && opts?.method === 'POST') {
+        const projectId = decodeURIComponent(u.split('/api/projects/')[1].split('/chat-model')[0] || '').trim();
+        const index = harnessProjects.findIndex((project) => project.id === projectId);
+        if (index < 0) {
+          return new Response('project not found', { status: 404 });
+        }
+        let body = {};
+        try {
+          body = JSON.parse(String(opts?.body || '{}'));
+        } catch (_) {
+          body = {};
+        }
+        const model = String(body?.model || harnessProjects[index].chat_model || 'spark').trim().toLowerCase();
+        const effort = String(body?.reasoning_effort || harnessProjects[index].chat_model_reasoning_effort || 'low').trim().toLowerCase();
+        harnessProjects[index] = {
+          ...harnessProjects[index],
+          chat_model: model || harnessProjects[index].chat_model,
+          chat_model_reasoning_effort: effort || harnessProjects[index].chat_model_reasoning_effort,
+        };
+        window.__harnessLog.push({
+          type: 'api_fetch',
+          action: 'project_chat_model',
+          method: opts?.method || 'POST',
+          url: u,
+          payload: { project_id: projectId, model, reasoning_effort: effort },
+        });
+        return new Response(JSON.stringify({
+          project: { ...harnessProjects[index] },
+        }), { status: 200 });
+      }
       if (u.includes('/api/projects')) {
         const projects = harnessProjects.map((project) => ({ ...project }));
         return new Response(JSON.stringify({
