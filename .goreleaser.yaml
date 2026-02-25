@@ -32,6 +32,9 @@ archives:
       - LICENSE
       - README.md
       - scripts/piper_tts_server.py
+      - scripts/setup-local-llm.sh
+      - services/intent-classifier/main.py
+      - services/intent-classifier/intents.json
 
 checksum:
   name_template: checksums.txt

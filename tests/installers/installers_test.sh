@@ -35,6 +35,20 @@ run_install_sh_dry_run() {
     make_fake_cmd "$fakebin" codex
     make_fake_cmd "$fakebin" ffmpeg
     make_fake_cmd "$fakebin" systemctl
+    make_fake_cmd "$fakebin" launchctl
+
+    # Need a real python3 >= 3.10 for the version check.
+    # Prefer the system-wide python3 if adequate, otherwise try common paths.
+    local real_python3=""
+    for candidate in /usr/bin/python3 /usr/local/bin/python3 /opt/homebrew/bin/python3; do
+        if [ -x "$candidate" ] && "$candidate" -c 'import sys; sys.exit(0 if sys.version_info >= (3,10) else 1)' 2>/dev/null; then
+            real_python3="$candidate"
+            break
+        fi
+    done
+    if [ -n "$real_python3" ]; then
+        ln -sf "$real_python3" "${fakebin}/python3"
+    fi
 
     PATH="${fakebin}:/usr/bin:/bin" \
     HOME="$home_dir" \
@@ -44,8 +58,15 @@ run_install_sh_dry_run() {
     "${ROOT_DIR}/scripts/install.sh" --dry-run --version v0.0.0-test >"$out_file" 2>&1
 
     assert_contains "$out_file" "Install complete"
-    assert_contains "$out_file" "Service mode:  linux"
+    local expected_os
+    case "$(uname -s | tr '[:upper:]' '[:lower:]')" in
+        darwin) expected_os="darwin" ;;
+        *)      expected_os="linux" ;;
+    esac
+    assert_contains "$out_file" "Service mode:  ${expected_os}"
     assert_contains "$out_file" "Piper TTS"
+    assert_contains "$out_file" "Intent Classifier"
+    assert_contains "$out_file" "Local LLM"
 
     PATH="${fakebin}:/usr/bin:/bin" \
     HOME="$home_dir" \
@@ -63,6 +84,10 @@ run_install_ps1_static_checks() {
     assert_contains "$ps1" "Speech-to-text requires voxtype (Linux/macOS only)"
     assert_contains "$ps1" "schtasks /Create"
     assert_contains "$ps1" "piper-tts"
+    assert_contains "$ps1" "tabura-intent"
+    assert_contains "$ps1" "tabura-llm"
+    assert_contains "$ps1" "Setup-IntentClassifier"
+    assert_contains "$ps1" "Setup-LocalLlm"
 }
 
 main() {

@@ -25,6 +25,13 @@ $PiperVenv = Join-Path $PiperRoot "venv"
 $ModelDir = Join-Path $PiperRoot "models"
 $ScriptDir = Join-Path $DataRoot "scripts"
 $PiperScriptPath = Join-Path $ScriptDir "piper_tts_server.py"
+$IntentDir = Join-Path $DataRoot "intent-classifier"
+$IntentVenv = Join-Path $IntentDir "venv"
+$LlmDir = Join-Path $DataRoot "llm"
+$LlmModelDir = Join-Path $LlmDir "models"
+$LlmSetupScript = Join-Path $ScriptDir "setup-local-llm.sh"
+$SkipIntent = $env:TABURA_INSTALL_SKIP_INTENT -eq "1"
+$SkipLlm = $env:TABURA_INSTALL_SKIP_LLM -eq "1"
 
 function Write-Log {
     param([string]$Message)
@@ -142,7 +149,7 @@ function Get-Asset {
 
 function Ensure-InstallDirectories {
     Invoke-Step -Display "Create install directories" -Action {
-        New-Item -ItemType Directory -Force -Path $InstallRoot, $DataRoot, $ProjectDir, $WebDataDir, $PiperRoot, $ModelDir, $ScriptDir | Out-Null
+        New-Item -ItemType Directory -Force -Path $InstallRoot, $DataRoot, $ProjectDir, $WebDataDir, $PiperRoot, $ModelDir, $ScriptDir, $IntentDir, $LlmDir, $LlmModelDir | Out-Null
     }
 }
 
@@ -252,6 +259,77 @@ function Setup-Piper {
     }
 }
 
+function Setup-IntentClassifier {
+    if ($SkipIntent) {
+        Write-Log "skipping intent classifier due to TABURA_INSTALL_SKIP_INTENT=1"
+        return
+    }
+    Write-Host "=== Intent Classifier (local, optional) ==="
+    Write-Host "A lightweight intent classifier for system action routing."
+    Write-Host "Runs as a local HTTP service on port 8425."
+
+    if (-not (Confirm-DefaultYes "Install intent classifier?")) {
+        Write-Log "skipping intent classifier setup"
+        return
+    }
+
+    if ($DryRun.IsPresent) {
+        Invoke-Step -Display "Create intent classifier venv and install dependencies" -Action {}
+        return
+    }
+
+    $python = Require-Python
+    if (-not (Test-Path $IntentVenv)) {
+        & $python -m venv $IntentVenv
+    }
+    $venvPython = Join-Path $IntentVenv "Scripts\python.exe"
+    & $venvPython -m pip install --upgrade pip
+    & $venvPython -m pip install fastapi uvicorn numpy onnxruntime transformers
+}
+
+function Setup-LocalLlm {
+    if ($SkipLlm) {
+        Write-Log "skipping local LLM due to TABURA_INSTALL_SKIP_LLM=1"
+        return
+    }
+    Write-Host "=== Local LLM (Qwen3 0.6B via llama.cpp, optional) ==="
+    Write-Host "A small local language model for intent classification fallback."
+    Write-Host "Runs as a local HTTP service on port 8426."
+    Write-Host "Requires llama.cpp (llama-server binary)."
+
+    if (-not (Confirm-DefaultYes "Install local LLM service?")) {
+        Write-Log "skipping local LLM setup"
+        return
+    }
+
+    $llamaCmd = Get-Command llama-server -ErrorAction SilentlyContinue
+    if (-not $llamaCmd) {
+        $wingetCmd = Get-Command winget -ErrorAction SilentlyContinue
+        if ($wingetCmd -and (Confirm-DefaultYes "Install llama.cpp via winget?")) {
+            if ($DryRun.IsPresent) {
+                Invoke-Step -Display "winget install ggml-org.llama-cpp" -Action {}
+            } else {
+                winget install --id ggml-org.llama-cpp --accept-source-agreements --accept-package-agreements
+            }
+        } else {
+            Write-Log "llama-server not found; install llama.cpp and ensure llama-server is on PATH"
+        }
+    }
+
+    $modelFile = "Qwen3-0.6B-Q4_K_M.gguf"
+    $modelPath = Join-Path $LlmModelDir $modelFile
+    if (Test-Path $modelPath) {
+        Write-Log "LLM model already present: $modelFile"
+    } elseif (Confirm-DefaultYes "Download Qwen3 0.6B model (~400 MB)?") {
+        if ($DryRun.IsPresent) {
+            Invoke-Step -Display "Download $modelFile" -Action {}
+        } else {
+            $modelUrl = "https://huggingface.co/lmstudio-community/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q4_K_M.gguf?download=true"
+            Invoke-WebRequest -Uri $modelUrl -OutFile $modelPath
+        }
+    }
+}
+
 function Write-TaskFiles {
     param([string]$CodexPath)
 
@@ -259,16 +337,36 @@ function Write-TaskFiles {
     $piperCmd = 'set "PIPER_MODEL_DIR=' + $ModelDir + '" && "' + (Join-Path $PiperVenv 'Scripts\python.exe') + '" -m uvicorn piper_tts_server:app --app-dir "' + $ScriptDir + '" --host 127.0.0.1 --port 8424'
     $codexCmd = '"' + $CodexPath + '" app-server --listen ws://127.0.0.1:8787'
 
+    $intentVenvPython = Join-Path $IntentVenv "Scripts\python.exe"
+    $intentCmd = 'set "PYTHONUNBUFFERED=1" && "' + $intentVenvPython + '" -m uvicorn main:app --app-dir "' + $IntentDir + '" --host 127.0.0.1 --port 8425'
+
+    $llamaPath = (Get-Command llama-server -ErrorAction SilentlyContinue)
+    $llmCmd = ""
+    if ($llamaPath) {
+        $llmCmd = '"' + $llamaPath.Source + '" -m "' + (Join-Path $LlmModelDir "Qwen3-0.6B-Q4_K_M.gguf") + '" --host 127.0.0.1 --port 8426 -c 2048 --threads 4 -ngl 99'
+    }
+
     if ($DryRun.IsPresent) {
-        Write-Log "[dry-run] Register scheduled tasks tabura-web, tabura-piper-tts, tabura-codex-app-server"
+        Write-Log "[dry-run] Register scheduled tasks tabura-web, tabura-piper-tts, tabura-codex-app-server, tabura-intent, tabura-llm"
         return
     }
 
     schtasks /Create /SC ONLOGON /TN "tabura-codex-app-server" /TR $codexCmd /F | Out-Null
     schtasks /Create /SC ONLOGON /TN "tabura-piper-tts" /TR ("cmd /c " + $piperCmd) /F | Out-Null
-    schtasks /Create /SC ONLOGON /TN "tabura-web" /TR $webCmd /F | Out-Null
     schtasks /Run /TN "tabura-codex-app-server" | Out-Null
     schtasks /Run /TN "tabura-piper-tts" | Out-Null
+
+    if (Test-Path $intentVenvPython) {
+        schtasks /Create /SC ONLOGON /TN "tabura-intent" /TR ("cmd /c " + $intentCmd) /F | Out-Null
+        schtasks /Run /TN "tabura-intent" | Out-Null
+    }
+
+    if ($llmCmd) {
+        schtasks /Create /SC ONLOGON /TN "tabura-llm" /TR $llmCmd /F | Out-Null
+        schtasks /Run /TN "tabura-llm" | Out-Null
+    }
+
+    schtasks /Create /SC ONLOGON /TN "tabura-web" /TR $webCmd /F | Out-Null
     schtasks /Run /TN "tabura-web" | Out-Null
 }
 
@@ -311,6 +409,8 @@ function Remove-Task {
 
 function Uninstall-Tabura {
     Remove-Task "tabura-web"
+    Remove-Task "tabura-llm"
+    Remove-Task "tabura-intent"
     Remove-Task "tabura-piper-tts"
     Remove-Task "tabura-codex-app-server"
 
@@ -339,6 +439,8 @@ function Install-Tabura {
     $tag = Install-Binary -Release $release
     Ensure-UserPath
     Setup-Piper
+    Setup-IntentClassifier
+    Setup-LocalLlm
     Print-WindowsVoxtypeNotice
     Write-TaskFiles -CodexPath $codexPath
     Open-Browser
