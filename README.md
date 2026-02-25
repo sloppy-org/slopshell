@@ -22,6 +22,28 @@ Risk notice: see [`DISCLAIMER.md`](DISCLAIMER.md)
 
 ## Install
 
+Universal installers:
+
+```bash
+curl -fsSL https://github.com/krystophny/tabura/releases/latest/download/install.sh | bash
+```
+
+```powershell
+irm https://github.com/krystophny/tabura/releases/latest/download/install.ps1 | iex
+```
+
+Uninstall:
+
+```bash
+./scripts/install.sh --uninstall
+```
+
+```powershell
+./scripts/install.ps1 -Uninstall
+```
+
+Manual build:
+
 ```bash
 go build ./cmd/tabura
 go install ./cmd/tabura
