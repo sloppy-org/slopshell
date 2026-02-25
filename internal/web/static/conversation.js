@@ -152,6 +152,73 @@ function nextConversationToken() {
   return state.conversationSessionToken;
 }
 
+function seedConversationNoiseFloor(options, db) {
+  if (options.noiseFloorDb != null) return false;
+  if (options.noiseSamples.length >= VAD_NOISE_FLOOR_SAMPLES) return false;
+  options.noiseSamples.push(db);
+  if (options.noiseSamples.length < VAD_NOISE_FLOOR_SAMPLES) return true;
+  const seededFloor = percentileValue(options.noiseSamples, VAD_NOISE_FLOOR_PERCENTILE);
+  if (seededFloor != null) {
+    options.noiseFloorDb = clampNumber(
+      seededFloor,
+      VAD_NOISE_FLOOR_MIN_DB,
+      VAD_NOISE_FLOOR_MAX_DB,
+    );
+  }
+  return true;
+}
+
+function updateConversationStartThreshold(options, db) {
+  const startThresholdBefore = Math.max(
+    VAD_SPEECH_START_THRESHOLD_MIN_DB,
+    options.noiseFloorDb + VAD_SPEECH_START_OFFSET_DB,
+  );
+  if (db <= startThresholdBefore) {
+    options.noiseFloorDb = clampNumber(
+      ((1 - VAD_NOISE_FLOOR_ADAPT_ALPHA) * options.noiseFloorDb) + (VAD_NOISE_FLOOR_ADAPT_ALPHA * db),
+      VAD_NOISE_FLOOR_MIN_DB,
+      VAD_NOISE_FLOOR_MAX_DB,
+    );
+  }
+  return Math.max(
+    VAD_SPEECH_START_THRESHOLD_MIN_DB,
+    options.noiseFloorDb + VAD_SPEECH_START_OFFSET_DB,
+  );
+}
+
+function runConversationMonitorFrame(token, options, computeDb) {
+  if (token !== state.conversationSessionToken) {
+    closeConversationListenWindow();
+    return;
+  }
+  if (!state.conversationListenActive || !canStartConversationListen()) {
+    cancelConversationListen();
+    return;
+  }
+  const analyser = state.conversationListenAnalyser;
+  const bins = state.conversationListenBins;
+  if (!analyser || !(bins instanceof Uint8Array)) {
+    cancelConversationListen();
+    return;
+  }
+
+  analyser.getByteTimeDomainData(bins);
+  const db = computeDb(bins);
+
+  if (seedConversationNoiseFloor(options, db)) return;
+  if (options.noiseFloorDb == null) return;
+
+  const startThresholdDb = updateConversationStartThreshold(options, db);
+  if (db >= startThresholdDb) {
+    options.speechFrames += 1;
+  } else {
+    options.speechFrames = 0;
+  }
+  if (options.speechFrames >= VAD_SPEECH_START_FRAMES) {
+    onConversationSpeechDetected();
+  }
+}
+
 function startConversationAudioMonitor(stream, token) {
   const audioCtx = typeof hooks.getAudioContext === 'function' ? hooks.getAudioContext() : null;
   if (!audioCtx || typeof audioCtx.createMediaStreamSource !== 'function' || typeof audioCtx.createAnalyser !== 'function') {
@@ -189,67 +256,7 @@ function startConversationAudioMonitor(stream, token) {
     : computeDecibelFromTimeDomain;
 
   state.conversationListenMonitor = window.setInterval(() => {
-    if (token !== state.conversationSessionToken) {
-      closeConversationListenWindow();
-      return;
-    }
-    if (!state.conversationListenActive || !canStartConversationListen()) {
-      cancelConversationListen();
-      return;
-    }
-    const analyser = state.conversationListenAnalyser;
-    const bins = state.conversationListenBins;
-    if (!analyser || !(bins instanceof Uint8Array)) {
-      cancelConversationListen();
-      return;
-    }
-
-    analyser.getByteTimeDomainData(bins);
-    const db = computeDb(bins);
-
-    if (options.noiseFloorDb == null && options.noiseSamples.length < VAD_NOISE_FLOOR_SAMPLES) {
-      options.noiseSamples.push(db);
-      if (options.noiseSamples.length >= VAD_NOISE_FLOOR_SAMPLES) {
-        const seededFloor = percentileValue(options.noiseSamples, VAD_NOISE_FLOOR_PERCENTILE);
-        if (seededFloor != null) {
-          options.noiseFloorDb = clampNumber(
-            seededFloor,
-            VAD_NOISE_FLOOR_MIN_DB,
-            VAD_NOISE_FLOOR_MAX_DB,
-          );
-        }
-      }
-      return;
-    }
-
-    if (options.noiseFloorDb == null) return;
-
-    const startThresholdBefore = Math.max(
-      VAD_SPEECH_START_THRESHOLD_MIN_DB,
-      options.noiseFloorDb + VAD_SPEECH_START_OFFSET_DB,
-    );
-    if (db <= startThresholdBefore) {
-      options.noiseFloorDb = clampNumber(
-        ((1 - VAD_NOISE_FLOOR_ADAPT_ALPHA) * options.noiseFloorDb) + (VAD_NOISE_FLOOR_ADAPT_ALPHA * db),
-        VAD_NOISE_FLOOR_MIN_DB,
-        VAD_NOISE_FLOOR_MAX_DB,
-      );
-    }
-
-    const startThresholdDb = Math.max(
-      VAD_SPEECH_START_THRESHOLD_MIN_DB,
-      options.noiseFloorDb + VAD_SPEECH_START_OFFSET_DB,
-    );
-
-    if (db >= startThresholdDb) {
-      options.speechFrames += 1;
-    } else {
-      options.speechFrames = 0;
-    }
-
-    if (options.speechFrames >= VAD_SPEECH_START_FRAMES) {
-      onConversationSpeechDetected();
-    }
+    runConversationMonitorFrame(token, options, computeDb);
   }, VAD_FRAME_MS);
 
   notifyConversationStateChange();
