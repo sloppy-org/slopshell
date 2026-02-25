@@ -2,6 +2,7 @@ package update
 
 import (
 	"archive/tar"
+	"archive/zip"
 	"bytes"
 	"compress/gzip"
 	"fmt"
@@ -120,6 +121,68 @@ func TestRunUpdatesExecutableFromTarGzWithChecksumVerification(t *testing.T) {
 	}
 }
 
+func TestRunUpdatesExecutableFromZipOnWindowsAndRemovesBackup(t *testing.T) {
+	t.Parallel()
+
+	archiveName := "tabura_1.2.4_windows_amd64.zip"
+	binaryPayload := []byte("new-windows-binary-payload")
+	archivePayload := mustZipBinary(t, "tabura.exe", binaryPayload)
+	archiveChecksum := sha256Hex(archivePayload)
+	checksumPayload := []byte(fmt.Sprintf("%s  %s\n", archiveChecksum, archiveName))
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/repos/o/r/releases/latest":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(fmt.Sprintf(
+				`{"tag_name":"v1.2.4","assets":[{"name":"%s","browser_download_url":"%s/asset/archive"},{"name":"checksums.txt","browser_download_url":"%s/asset/checksums"}]}`,
+				archiveName,
+				"http://"+r.Host,
+				"http://"+r.Host,
+			)))
+		case "/asset/archive":
+			_, _ = w.Write(archivePayload)
+		case "/asset/checksums":
+			_, _ = w.Write(checksumPayload)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	exePath := filepath.Join(t.TempDir(), "tabura.exe")
+	if err := os.WriteFile(exePath, []byte("old-binary-payload"), 0o755); err != nil {
+		t.Fatalf("write executable fixture: %v", err)
+	}
+
+	res, err := Run(Options{
+		CurrentVersion: "1.2.3",
+		ExecutablePath: exePath,
+		GOOS:           "windows",
+		GOARCH:         "amd64",
+		APIBaseURL:     srv.URL,
+		RepoOwner:      "o",
+		RepoName:       "r",
+		HTTPClient:     srv.Client(),
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if !res.Updated {
+		t.Fatalf("expected updated=true")
+	}
+	got, err := os.ReadFile(exePath)
+	if err != nil {
+		t.Fatalf("read updated executable: %v", err)
+	}
+	if !bytes.Equal(got, binaryPayload) {
+		t.Fatalf("updated executable payload mismatch")
+	}
+	if _, err := os.Stat(exePath + ".old"); !os.IsNotExist(err) {
+		t.Fatalf("expected backup executable to be removed, err=%v", err)
+	}
+}
+
 func TestRunRejectsChecksumMismatchAndKeepsOriginalExecutable(t *testing.T) {
 	t.Parallel()
 
@@ -201,6 +264,24 @@ func mustTarGzBinary(t *testing.T, name string, data []byte) []byte {
 	}
 	if err := gz.Close(); err != nil {
 		t.Fatalf("gzip close: %v", err)
+	}
+	return buf.Bytes()
+}
+
+func mustZipBinary(t *testing.T, name string, data []byte) []byte {
+	t.Helper()
+
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	w, err := zw.Create(name)
+	if err != nil {
+		t.Fatalf("zip create entry: %v", err)
+	}
+	if _, err := w.Write(data); err != nil {
+		t.Fatalf("zip write payload: %v", err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatalf("zip close: %v", err)
 	}
 	return buf.Bytes()
 }
