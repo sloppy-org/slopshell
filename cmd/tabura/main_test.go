@@ -1,6 +1,11 @@
 package main
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+
+	updater "github.com/krystophny/tabura/internal/update"
+)
 
 func TestParseServerConfigDefaultsToLoopbackWebHost(t *testing.T) {
 	cfg, status := parseServerConfig([]string{})
@@ -32,5 +37,26 @@ func TestFormatVersionLineKeepsPrefixedVersionAndHandlesMissingCommit(t *testing
 	want := "tabura v1.2.3 (unknown) windows/arm64"
 	if got != want {
 		t.Fatalf("formatVersionLine() = %q, want %q", got, want)
+	}
+}
+
+func TestRunDispatchesUpdateCommand(t *testing.T) {
+	prev := runUpdate
+	t.Cleanup(func() { runUpdate = prev })
+	called := false
+	runUpdate = func(opts updater.Options) (updater.Result, error) {
+		called = true
+		if opts.CurrentVersion != defaultBinaryVersion {
+			return updater.Result{}, fmt.Errorf("unexpected version %q", opts.CurrentVersion)
+		}
+		return updater.Result{CurrentVersion: "v0.1.4", LatestVersion: "v0.1.4", Updated: false}, nil
+	}
+
+	status := run([]string{"update"})
+	if status != 0 {
+		t.Fatalf("run(update) status = %d, want 0", status)
+	}
+	if !called {
+		t.Fatalf("expected updater to be called")
 	}
 }

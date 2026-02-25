@@ -22,14 +22,16 @@ import (
 	"github.com/krystophny/tabura/internal/protocol"
 	"github.com/krystophny/tabura/internal/serve"
 	"github.com/krystophny/tabura/internal/store"
+	updater "github.com/krystophny/tabura/internal/update"
 	"github.com/krystophny/tabura/internal/web"
 )
 
 const defaultBinaryVersion = "0.1.4"
 
 var (
-	version = defaultBinaryVersion
-	commit  = "dev"
+	version   = defaultBinaryVersion
+	commit    = "dev"
+	runUpdate = updater.Run
 )
 
 func main() {
@@ -54,6 +56,8 @@ func run(args []string) int {
 		return cmdSetPassword(args[1:])
 	case "version":
 		return cmdVersion()
+	case "update":
+		return cmdUpdate(args[1:])
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", args[0])
 		printHelp()
@@ -63,7 +67,7 @@ func run(args []string) int {
 
 func printHelp() {
 	fmt.Println("tabura <command> [flags]")
-	fmt.Println("commands: schema bootstrap server mcp-server set-password version")
+	fmt.Println("commands: schema bootstrap server mcp-server set-password version update")
 }
 
 func cmdSchema() int {
@@ -313,6 +317,24 @@ func cmdSetPassword(args []string) int {
 
 func cmdVersion() int {
 	fmt.Println(formatVersionLine(version, commit, runtime.GOOS, runtime.GOARCH))
+	return 0
+}
+
+func cmdUpdate(args []string) int {
+	fs := flag.NewFlagSet("update", flag.ContinueOnError)
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	res, err := runUpdate(updater.Options{CurrentVersion: version})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	if res.Updated {
+		fmt.Printf("Updated tabura %s -> %s. Restart service to apply.\n", res.CurrentVersion, res.LatestVersion)
+		return 0
+	}
+	fmt.Printf("Already up to date (%s)\n", res.CurrentVersion)
 	return 0
 }
 
