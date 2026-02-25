@@ -702,6 +702,22 @@ function activeProject() {
   return state.projects.find((project) => project.id === state.activeProjectId) || null;
 }
 
+function isHubProject(project) {
+  if (!project || typeof project !== 'object') return false;
+  const kind = String(project.kind || '').trim().toLowerCase();
+  if (kind === 'hub') return true;
+  const key = String(project.project_key || '').trim();
+  return key === '__hub__';
+}
+
+function hubProject() {
+  return state.projects.find((project) => isHubProject(project)) || null;
+}
+
+function isHubActive() {
+  return isHubProject(activeProject());
+}
+
 function normalizeReasoningEffortOptions(rawEfforts) {
   const raw = Array.isArray(rawEfforts) ? rawEfforts : [];
   const clean = [];
@@ -2098,6 +2114,9 @@ function renderEdgeTopProjects() {
   if (!(host instanceof HTMLElement)) return;
   host.innerHTML = '';
   for (const project of state.projects) {
+    if (isHubProject(project)) {
+      continue;
+    }
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'edge-project-btn';
@@ -2119,9 +2138,25 @@ function renderEdgeTopModelButtons() {
   if (!(host instanceof HTMLElement)) return;
   host.innerHTML = '';
   const project = activeProject();
+  const hub = hubProject();
+  const hubActive = isHubActive();
   const selectedAlias = activeProjectChatModelAlias();
   const selectedEffort = activeProjectChatModelReasoningEffort();
   const effortOptions = reasoningEffortOptionsForAlias(selectedAlias);
+  if (hub && hub.id) {
+    const hubButton = document.createElement('button');
+    hubButton.type = 'button';
+    hubButton.className = 'edge-project-btn edge-model-btn edge-hub-btn';
+    hubButton.textContent = 'Hub';
+    if (hubActive) {
+      hubButton.classList.add('is-active');
+    }
+    hubButton.disabled = state.projectSwitchInFlight || state.projectModelSwitchInFlight;
+    hubButton.addEventListener('click', () => {
+      void switchToHub();
+    });
+    host.appendChild(hubButton);
+  }
   for (const alias of PROJECT_CHAT_MODEL_ALIASES) {
     const button = document.createElement('button');
     button.type = 'button';
@@ -2130,7 +2165,7 @@ function renderEdgeTopModelButtons() {
     if (alias === selectedAlias) {
       button.classList.add('is-active');
     }
-    button.disabled = !project || state.projectSwitchInFlight || state.projectModelSwitchInFlight;
+    button.disabled = !project || hubActive || state.projectSwitchInFlight || state.projectModelSwitchInFlight;
     button.addEventListener('click', () => {
       void switchProjectChatModel(alias);
     });
@@ -2149,7 +2184,7 @@ function renderEdgeTopModelButtons() {
     effortSelect.appendChild(option);
   }
   effortSelect.value = effortOptions.includes(selectedEffort) ? selectedEffort : (effortOptions[0] || '');
-  effortSelect.disabled = !project || state.projectSwitchInFlight || state.projectModelSwitchInFlight;
+  effortSelect.disabled = !project || hubActive || state.projectSwitchInFlight || state.projectModelSwitchInFlight;
   effortSelect.addEventListener('change', () => {
     const nextEffort = normalizeProjectChatModelReasoningEffort(effortSelect.value, selectedAlias);
     void switchProjectChatModel(selectedAlias, nextEffort);
@@ -2435,6 +2470,26 @@ function handleChatEvent(payload) {
     return;
   }
 
+  if (type === 'system_action') {
+    const action = payload && typeof payload.action === 'object' ? payload.action : {};
+    const actionType = String(action?.type || '').trim();
+    if (actionType === 'switch_project') {
+      const projectID = String(action?.project_id || '').trim();
+      if (projectID) {
+        void switchProject(projectID);
+      }
+    } else if (actionType === 'toggle_silent') {
+      toggleTTSSilentMode();
+    } else if (actionType === 'toggle_conversation') {
+      const enabled = setConversationMode(!isConversationMode());
+      applyConversationStateSnapshot();
+      renderEdgeTopModelButtons();
+      updateAssistantActivityIndicator();
+      showStatus(enabled ? 'conversation mode on' : 'conversation mode off');
+    }
+    return;
+  }
+
   if (type === 'turn_started') {
     const turnID = String(payload.turn_id || '').trim();
     const turnIsVoice = state.voiceAwaitingTurn || isVoiceTurn();
@@ -2710,6 +2765,12 @@ async function switchProject(projectID) {
     state.projectSwitchInFlight = false;
     renderEdgeTopModelButtons();
   }
+}
+
+async function switchToHub() {
+  const project = hubProject();
+  if (!project || !project.id) return;
+  await switchProject(project.id);
 }
 
 function setPendingSubmit(controller, kind = '') {

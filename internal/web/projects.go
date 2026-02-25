@@ -223,6 +223,9 @@ func (a *App) listProjectsWithDefault() ([]store.Project, store.Project, error) 
 	if err != nil {
 		return nil, store.Project{}, err
 	}
+	if _, err := a.ensureHubProject(); err != nil {
+		return nil, store.Project{}, err
+	}
 	projects, err := a.store.ListProjects()
 	if err != nil {
 		return nil, store.Project{}, err
@@ -592,6 +595,9 @@ func (a *App) updateProjectChatModel(projectID, rawModel, rawReasoningEffort str
 	project, err := a.store.GetProject(strings.TrimSpace(projectID))
 	if err != nil {
 		return store.Project{}, err
+	}
+	if isHubProject(project) {
+		return store.Project{}, errors.New("hub model is fixed to spark/low")
 	}
 	modelAlias := modelprofile.ResolveAlias(rawModel, "")
 	if modelAlias == "" {

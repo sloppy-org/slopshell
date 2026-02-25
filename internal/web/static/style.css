@@ -884,6 +884,17 @@ body.keyboard-open .zen-indicator.is-listening {
   text-transform: lowercase;
 }
 
+.edge-hub-btn {
+  text-transform: none;
+  margin-right: 0.2rem;
+}
+
+.edge-hub-btn.is-active {
+  background: #0f766e;
+  border-color: #0f766e;
+  color: #ecfeff;
+}
+
 .edge-model-effort-wrap {
   display: flex;
   align-items: center;

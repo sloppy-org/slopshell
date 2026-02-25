@@ -866,6 +866,10 @@ func (a *App) runAssistantTurn(sessionID string, outputMode string) {
 		a.broadcastChatEvent(sessionID, map[string]interface{}{"type": "error", "error": err.Error()})
 		return
 	}
+	if project, projectErr := a.store.GetProjectByProjectKey(session.ProjectKey); projectErr == nil && isHubProject(project) {
+		a.runHubTurn(sessionID, session, messages, outputMode)
+		return
+	}
 	if a.appServerClient == nil {
 		errText := "app-server is not configured"
 		_, _ = a.store.AddChatMessage(sessionID, "system", errText, errText, "text")

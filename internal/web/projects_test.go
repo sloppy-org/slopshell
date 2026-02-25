@@ -14,6 +14,8 @@ type projectsListResponse struct {
 	Projects         []struct {
 		ID              string `json:"id"`
 		Name            string `json:"name"`
+		Kind            string `json:"kind"`
+		ProjectKey      string `json:"project_key"`
 		ChatSessionID   string `json:"chat_session_id"`
 		ChatModel       string `json:"chat_model"`
 		ReasoningEffort string `json:"chat_model_reasoning_effort"`
@@ -220,5 +222,58 @@ func TestProjectChatModelUpdate(t *testing.T) {
 	)
 	if rrInvalid.Code != http.StatusBadRequest {
 		t.Fatalf("expected invalid model 400, got %d: %s", rrInvalid.Code, rrInvalid.Body.String())
+	}
+}
+
+func TestHubProjectCreatedWithFixedSparkModel(t *testing.T) {
+	app := newAuthedTestApp(t)
+
+	rrList := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/projects", map[string]any{})
+	if rrList.Code != http.StatusOK {
+		t.Fatalf("expected list 200, got %d: %s", rrList.Code, rrList.Body.String())
+	}
+	var payload projectsListResponse
+	if err := json.Unmarshal(rrList.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode projects response: %v", err)
+	}
+
+	foundHub := false
+	for _, project := range payload.Projects {
+		if project.ProjectKey != HubProjectKey {
+			continue
+		}
+		foundHub = true
+		if project.Kind != HubProjectKind {
+			t.Fatalf("hub project kind = %q, want %q", project.Kind, HubProjectKind)
+		}
+		if project.ChatModel != "spark" {
+			t.Fatalf("hub chat model = %q, want spark", project.ChatModel)
+		}
+		if project.ReasoningEffort != "low" {
+			t.Fatalf("hub reasoning effort = %q, want low", project.ReasoningEffort)
+		}
+		break
+	}
+	if !foundHub {
+		t.Fatalf("expected hub project in projects list")
+	}
+}
+
+func TestHubProjectRejectsModelUpdates(t *testing.T) {
+	app := newAuthedTestApp(t)
+	hub, err := app.ensureHubProject()
+	if err != nil {
+		t.Fatalf("ensure hub project: %v", err)
+	}
+
+	rr := doAuthedJSONRequest(
+		t,
+		app.Router(),
+		http.MethodPost,
+		"/api/projects/"+hub.ID+"/chat-model",
+		map[string]any{"model": "gpt"},
+	)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", rr.Code, rr.Body.String())
 	}
 }

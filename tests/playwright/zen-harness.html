@@ -109,6 +109,38 @@
     window.__setActivityResponse({ active_turns: 0, queued_turns: 0, delegate_active: 0 });
     window.__setMessagePostDelay(0);
 
+    const harnessProjects = [
+      {
+        id: 'test',
+        name: 'Test',
+        kind: 'managed',
+        project_key: '/tmp/test',
+        root_path: '/tmp',
+        chat_session_id: 'chat-1',
+        canvas_session_id: 'local',
+        chat_mode: 'chat',
+        chat_model: 'spark',
+        chat_model_reasoning_effort: 'low',
+      },
+      {
+        id: 'hub',
+        name: 'Hub',
+        kind: 'hub',
+        project_key: '__hub__',
+        root_path: '/tmp/hub',
+        chat_session_id: 'chat-hub',
+        canvas_session_id: 'local',
+        chat_mode: 'chat',
+        chat_model: 'spark',
+        chat_model_reasoning_effort: 'low',
+      },
+    ];
+    let activeProjectId = 'test';
+    const cloneProject = (id) => {
+      const project = harnessProjects.find((item) => item.id === id) || harnessProjects[0];
+      return { ...project };
+    };
+
     // Mock fetch for /api/setup etc.
     const _realFetch = window.fetch;
     window.fetch = async function(url, opts) {
@@ -121,18 +153,26 @@
         }), { status: 200 });
       }
       if (u.includes('/api/projects') && u.includes('/activate')) {
+        const activateId = decodeURIComponent(u.split('/api/projects/')[1].split('/activate')[0] || '').trim();
+        const project = cloneProject(activateId);
+        activeProjectId = project.id;
+        window.__harnessLog.push({
+          type: 'api_fetch',
+          action: 'project_activate',
+          method: opts?.method || 'POST',
+          url: u,
+          payload: { project_id: project.id },
+        });
         return new Response(JSON.stringify({
-          project: {
-            id: 'test', name: 'Test', kind: 'managed', root_path: '/tmp',
-            chat_session_id: 'chat-1', canvas_session_id: 'local', chat_mode: 'chat',
-          },
+          project,
         }), { status: 200 });
       }
       if (u.includes('/api/projects')) {
+        const projects = harnessProjects.map((project) => ({ ...project }));
         return new Response(JSON.stringify({
-          projects: [{ id: 'test', name: 'Test', kind: 'managed', root_path: '/tmp' }],
+          projects,
           default_project_id: 'test',
-          active_project_id: 'test',
+          active_project_id: activeProjectId,
         }), { status: 200 });
       }
       if (u.includes('/api/chat/sessions') && u.includes('/cancel-delegates')) {

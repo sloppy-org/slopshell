@@ -424,6 +424,8 @@ func normalizeProjectKind(kind string) string {
 	switch strings.ToLower(strings.TrimSpace(kind)) {
 	case "linked":
 		return "linked"
+	case "hub":
+		return "hub"
 	default:
 		return "managed"
 	}
