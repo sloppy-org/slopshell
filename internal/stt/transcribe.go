@@ -62,7 +62,7 @@ func TranscribeWithVoxType(mimeType string, data []byte) (string, error) {
 		return "", fmt.Errorf("voxtype stderr pipe: %w", err)
 	}
 	if err := voxCmd.Start(); err != nil {
-		return "", fmt.Errorf("failed to start voxtype: %w", err)
+		return "", wrapVoxTypeStartError(err)
 	}
 	outBytes, _ := io.ReadAll(stdout)
 	errBytes, _ := io.ReadAll(stderr)
@@ -181,4 +181,11 @@ func IsAllowedMimeType(mimeType string) bool {
 		return true
 	}
 	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(mimeType)), "audio/")
+}
+
+func wrapVoxTypeStartError(err error) error {
+	if errors.Is(err, exec.ErrNotFound) {
+		return errors.New("STT requires voxtype; install from https://github.com/pbizopoulos/voxtype")
+	}
+	return fmt.Errorf("failed to start voxtype: %w", err)
 }

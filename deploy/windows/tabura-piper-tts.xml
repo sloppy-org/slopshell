@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Description>Tabura Piper TTS sidecar task</Description>
+    <URI>\tabura-piper-tts</URI>
+  </RegistrationInfo>
+  <Triggers>
+    <LogonTrigger>
+      <Enabled>true</Enabled>
+    </LogonTrigger>
+  </Triggers>
+  <Principals>
+    <Principal id="Author">
+      <LogonType>InteractiveToken</LogonType>
+      <RunLevel>LeastPrivilege</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <AllowHardTerminate>true</AllowHardTerminate>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+    <AllowStartOnDemand>true</AllowStartOnDemand>
+    <Enabled>true</Enabled>
+    <Hidden>false</Hidden>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <Command>cmd.exe</Command>
+      <Arguments>/c set "PIPER_MODEL_DIR=%USERPROFILE%\.local\share\tabura-piper-tts\models" &amp;&amp; "%USERPROFILE%\.local\share\tabura-piper-tts\venv\Scripts\python.exe" -m uvicorn piper_tts_server:app --app-dir %USERPROFILE%\code\assi\tabula\scripts --host 127.0.0.1 --port 8424</Arguments>
+      <WorkingDirectory>%USERPROFILE%\code\assi\tabula</WorkingDirectory>
+    </Exec>
+  </Actions>
+</Task>

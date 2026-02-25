@@ -1,6 +1,12 @@
 package stt
 
-import "testing"
+import (
+	"errors"
+	"fmt"
+	"os/exec"
+	"strings"
+	"testing"
+)
 
 func TestParseVoxTypeTranscript(t *testing.T) {
 	tests := []struct {
@@ -177,4 +183,25 @@ func TestIsWhisperHallucination(t *testing.T) {
 			t.Errorf("IsWhisperHallucination(%q) = true, want false", s)
 		}
 	}
+}
+
+func TestWrapVoxTypeStartError(t *testing.T) {
+	t.Run("not found returns install hint", func(t *testing.T) {
+		err := wrapVoxTypeStartError(fmt.Errorf("exec: %w", exec.ErrNotFound))
+		want := "STT requires voxtype; install from https://github.com/pbizopoulos/voxtype"
+		if err == nil || err.Error() != want {
+			t.Fatalf("wrapVoxTypeStartError(not found) = %v, want %q", err, want)
+		}
+	})
+
+	t.Run("other startup error is wrapped", func(t *testing.T) {
+		base := errors.New("permission denied")
+		err := wrapVoxTypeStartError(base)
+		if err == nil {
+			t.Fatal("wrapVoxTypeStartError returned nil")
+		}
+		if !strings.Contains(err.Error(), "failed to start voxtype: permission denied") {
+			t.Fatalf("unexpected error text: %q", err.Error())
+		}
+	})
 }

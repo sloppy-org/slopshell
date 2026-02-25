@@ -72,18 +72,18 @@ func cmdSchema() int {
 }
 
 type serverConfig struct {
-	dataDir             string
-	projectDir          string
-	webHost             string
-	webPort             int
-	mcpHost             string
-	mcpPort             int
-	unsafePublicMCP     bool
-	appServerURL        string
-	model               string
+	dataDir              string
+	projectDir           string
+	webHost              string
+	webPort              int
+	mcpHost              string
+	mcpPort              int
+	unsafePublicMCP      bool
+	appServerURL         string
+	model                string
 	sparkReasoningEffort string
-	ttsURL              string
-	devRuntime          bool
+	ttsURL               string
+	devRuntime           bool
 }
 
 func cmdBootstrap(args []string) int {
@@ -140,7 +140,7 @@ func parseServerConfig(args []string) (*serverConfig, int) {
 	}
 	projectDir := fs.String("project-dir", ".", "project dir")
 	fs.StringVar(&cfg.dataDir, "data-dir", cfg.dataDir, "data dir")
-	fs.StringVar(&cfg.webHost, "web-host", "0.0.0.0", "web listener host")
+	fs.StringVar(&cfg.webHost, "web-host", "127.0.0.1", "web listener host")
 	fs.IntVar(&cfg.webPort, "web-port", web.DefaultPort, "web listener port")
 	fs.StringVar(&cfg.mcpHost, "mcp-host", "127.0.0.1", "mcp listener host")
 	fs.IntVar(&cfg.mcpPort, "mcp-port", serve.DefaultPort, "mcp listener port")
