@@ -334,7 +334,7 @@ func selectReleaseAsset(assets []githubAsset, version, goos, goarch string) (git
 		if !strings.HasPrefix(name, "tabura_") {
 			continue
 		}
-		if !strings.Contains(name, goos) || !strings.Contains(name, goarch) {
+		if !assetNameHasToken(name, goos) || !assetNameHasToken(name, goarch) {
 			continue
 		}
 		if goos == "windows" && strings.HasSuffix(name, ".zip") {
@@ -345,6 +345,22 @@ func selectReleaseAsset(assets []githubAsset, version, goos, goarch string) (git
 		}
 	}
 	return githubAsset{}, fmt.Errorf("no release asset found for %s/%s", goos, goarch)
+}
+
+func assetNameHasToken(name, want string) bool {
+	want = strings.ToLower(strings.TrimSpace(want))
+	if want == "" {
+		return false
+	}
+	tokens := strings.FieldsFunc(strings.ToLower(name), func(r rune) bool {
+		return (r < 'a' || r > 'z') && (r < '0' || r > '9')
+	})
+	for _, token := range tokens {
+		if token == want {
+			return true
+		}
+	}
+	return false
 }
 
 func selectChecksumAsset(assets []githubAsset) (githubAsset, error) {

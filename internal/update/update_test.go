@@ -241,6 +241,34 @@ func TestRunRejectsChecksumMismatchAndKeepsOriginalExecutable(t *testing.T) {
 	}
 }
 
+func TestSelectReleaseAssetFallbackDoesNotPartialMatchArch(t *testing.T) {
+	t.Parallel()
+
+	_, err := selectReleaseAsset([]githubAsset{
+		{Name: "tabura_latest_linux_arm64.tar.gz"},
+	}, "1.2.4", "linux", "arm")
+	if err == nil {
+		t.Fatalf("expected no matching asset for linux/arm when only arm64 exists")
+	}
+	if !strings.Contains(err.Error(), "no release asset found") {
+		t.Fatalf("error = %q, want no release asset found", err)
+	}
+}
+
+func TestSelectReleaseAssetFallbackMatchesTokenizedArch(t *testing.T) {
+	t.Parallel()
+
+	asset, err := selectReleaseAsset([]githubAsset{
+		{Name: "tabura_latest_linux_arm.tar.gz"},
+	}, "1.2.4", "linux", "arm")
+	if err != nil {
+		t.Fatalf("selectReleaseAsset() error = %v", err)
+	}
+	if asset.Name != "tabura_latest_linux_arm.tar.gz" {
+		t.Fatalf("asset name = %q, want tabura_latest_linux_arm.tar.gz", asset.Name)
+	}
+}
+
 func mustTarGzBinary(t *testing.T, name string, data []byte) []byte {
 	t.Helper()
 
