@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -74,6 +76,57 @@ func setupMockIntentLLMServer(t *testing.T, status int, content string) *httptes
 	}))
 }
 
+func setupMockDelegateStartServer(t *testing.T, jobID string, seen *int, observed *map[string]interface{}) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var payload map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			http.Error(w, "invalid json", http.StatusBadRequest)
+			return
+		}
+		params, _ := payload["params"].(map[string]interface{})
+		if strings.TrimSpace(strFromAny(params["name"])) != "delegate_to_model" {
+			http.Error(w, "unexpected tool", http.StatusBadRequest)
+			return
+		}
+		args, _ := params["arguments"].(map[string]interface{})
+		if args == nil {
+			http.Error(w, "missing arguments", http.StatusBadRequest)
+			return
+		}
+		if strings.TrimSpace(strFromAny(args["prompt"])) == "" {
+			http.Error(w, "missing prompt", http.StatusBadRequest)
+			return
+		}
+		if strings.TrimSpace(strFromAny(args["cwd"])) == "" {
+			http.Error(w, "missing cwd", http.StatusBadRequest)
+			return
+		}
+		if seen != nil {
+			*seen += 1
+		}
+		if observed != nil {
+			copied := map[string]interface{}{}
+			for key, value := range args {
+				copied[key] = value
+			}
+			*observed = copied
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"result": map[string]interface{}{
+				"structuredContent": map[string]interface{}{
+					"job_id": jobID,
+				},
+			},
+		})
+	}))
+}
+
 func latestAssistantMessage(t *testing.T, app *App, sessionID string) string {
 	t.Helper()
 	updatedMessages, err := app.store.ListChatMessages(sessionID, 100)
@@ -108,6 +161,7 @@ func TestParseSystemAction(t *testing.T) {
 		{name: "toggle conversation", raw: `{"action":"toggle_conversation"}`, wantAction: "toggle_conversation"},
 		{name: "cancel work", raw: `{"action":"cancel_work"}`, wantAction: "cancel_work"},
 		{name: "show status", raw: `{"action":"show_status"}`, wantAction: "show_status"},
+		{name: "delegate", raw: `{"action":"delegate","model":"codex","task":"audit tests"}`, wantAction: "delegate"},
 	}
 	for _, tc := range cases {
 		tc := tc
@@ -123,6 +177,121 @@ func TestParseSystemAction(t *testing.T) {
 				t.Fatalf("action = %q, want %q", action.Action, tc.wantAction)
 			}
 		})
+	}
+}
+
+func TestClassifyIntentLocallyAcceptsDelegateAction(t *testing.T) {
+	classifier := setupMockIntentClassifierServer(t, http.StatusOK, map[string]interface{}{
+		"intent":     "delegate",
+		"confidence": 0.92,
+		"entities": map[string]interface{}{
+			"model": "gpt",
+			"task":  "review this repository",
+		},
+	})
+	defer classifier.Close()
+
+	app, err := New(t.TempDir(), "", "", "", "", "", "", false)
+	if err != nil {
+		t.Fatalf("new app: %v", err)
+	}
+	app.intentClassifierURL = classifier.URL
+	t.Cleanup(func() {
+		_ = app.Shutdown(context.Background())
+	})
+
+	action, confidence, err := app.classifyIntentLocally(context.Background(), "delegate repo review")
+	if err != nil {
+		t.Fatalf("classify intent locally: %v", err)
+	}
+	if action == nil {
+		t.Fatalf("expected delegate action")
+	}
+	if action.Action != "delegate" {
+		t.Fatalf("action = %q, want delegate", action.Action)
+	}
+	if confidence != 0.92 {
+		t.Fatalf("confidence = %v, want 0.92", confidence)
+	}
+	if got := strings.TrimSpace(strFromAny(action.Params["model"])); got != "gpt" {
+		t.Fatalf("delegate model = %q, want gpt", got)
+	}
+	if got := strings.TrimSpace(strFromAny(action.Params["task"])); got != "review this repository" {
+		t.Fatalf("delegate task = %q, want review this repository", got)
+	}
+}
+
+func TestExecuteSystemActionDelegateStartsJob(t *testing.T) {
+	app := newAuthedTestApp(t)
+	defaultProject, err := app.ensureDefaultProjectRecord()
+	if err != nil {
+		t.Fatalf("ensure default project: %v", err)
+	}
+	hub, err := app.ensureHubProject()
+	if err != nil {
+		t.Fatalf("ensure hub project: %v", err)
+	}
+	session, err := app.store.GetOrCreateChatSession(hub.ProjectKey)
+	if err != nil {
+		t.Fatalf("hub session: %v", err)
+	}
+
+	delegateCalls := 0
+	var observed map[string]interface{}
+	server := setupMockDelegateStartServer(t, "job-123", &delegateCalls, &observed)
+	defer server.Close()
+
+	parsed, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatalf("parse mock url: %v", err)
+	}
+	port, err := strconv.Atoi(parsed.Port())
+	if err != nil {
+		t.Fatalf("parse mock port: %v", err)
+	}
+	app.mu.Lock()
+	app.tunnelPorts[app.canvasSessionIDForProject(defaultProject)] = port
+	app.mu.Unlock()
+
+	msg, payload, err := app.executeSystemAction(session.ID, session, &SystemAction{
+		Action: "delegate",
+		Params: map[string]interface{}{
+			"model": "gpt",
+			"task":  "review the current repository state",
+		},
+	})
+	if err != nil {
+		t.Fatalf("execute delegate: %v", err)
+	}
+	if !strings.Contains(msg, "job-123") {
+		t.Fatalf("delegate message = %q, want job id", msg)
+	}
+	if payload == nil {
+		t.Fatalf("expected delegate payload")
+	}
+	if got := strings.TrimSpace(strFromAny(payload["type"])); got != "delegate" {
+		t.Fatalf("payload type = %q, want delegate", got)
+	}
+	if got := strings.TrimSpace(strFromAny(payload["job_id"])); got != "job-123" {
+		t.Fatalf("payload job_id = %q, want job-123", got)
+	}
+	if got := strings.TrimSpace(strFromAny(payload["model"])); got != "gpt" {
+		t.Fatalf("payload model = %q, want gpt", got)
+	}
+	if got := strings.TrimSpace(strFromAny(payload["project_id"])); got != defaultProject.ID {
+		t.Fatalf("payload project_id = %q, want %q", got, defaultProject.ID)
+	}
+	if delegateCalls != 1 {
+		t.Fatalf("delegate tool calls = %d, want 1", delegateCalls)
+	}
+	if got := strings.TrimSpace(strFromAny(observed["model"])); got != "gpt" {
+		t.Fatalf("delegate model arg = %q, want gpt", got)
+	}
+	if got := strings.TrimSpace(strFromAny(observed["prompt"])); got != "review the current repository state" {
+		t.Fatalf("delegate prompt arg = %q, want expected task", got)
+	}
+	if got := strings.TrimSpace(strFromAny(observed["cwd"])); got != strings.TrimSpace(defaultProject.RootPath) {
+		t.Fatalf("delegate cwd arg = %q, want %q", got, defaultProject.RootPath)
 	}
 }
 

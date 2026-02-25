@@ -28,6 +28,7 @@ Available actions:
 - {"action":"switch_model","alias":"codex|gpt|spark","effort":"low|medium|high|extra_high"}
 - {"action":"toggle_silent"}
 - {"action":"toggle_conversation"}
+- {"action":"delegate","model":"codex|gpt|spark","task":"..."}
 - {"action":"cancel_work"}
 - {"action":"show_status"}
 

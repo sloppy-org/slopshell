@@ -103,11 +103,32 @@ func systemActionStringParam(params map[string]interface{}, key string) string {
 
 func normalizeSystemActionName(raw string) string {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case "switch_project", "switch_model", "toggle_silent", "toggle_conversation", "cancel_work", "show_status":
+	case "switch_project", "switch_model", "toggle_silent", "toggle_conversation", "cancel_work", "show_status", "delegate":
 		return strings.ToLower(strings.TrimSpace(raw))
 	default:
 		return ""
 	}
+}
+
+func normalizeDelegateModel(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "", "codex":
+		return "codex"
+	case "gpt", "spark":
+		return strings.ToLower(strings.TrimSpace(raw))
+	default:
+		return ""
+	}
+}
+
+func systemActionDelegateTask(params map[string]interface{}) string {
+	for _, key := range []string{"task", "prompt", "text"} {
+		value := strings.TrimSpace(fmt.Sprint(params[key]))
+		if value != "" && value != "<nil>" {
+			return value
+		}
+	}
+	return ""
 }
 
 func mergeSystemActionParams(target map[string]interface{}, source map[string]interface{}) {
@@ -325,6 +346,59 @@ func (a *App) executeSystemAction(sessionID string, session store.ChatSession, a
 			return "", nil, err
 		}
 		return status, nil, nil
+	case "delegate":
+		targetProject, err := a.hubPrimaryProject()
+		if err != nil {
+			return "", nil, err
+		}
+		model := normalizeDelegateModel(
+			firstNonEmptyPrompt(
+				systemActionStringParam(action.Params, "model"),
+				systemActionStringParam(action.Params, "alias"),
+			),
+		)
+		if model == "" {
+			return "", nil, errors.New("delegate model must be codex, gpt, or spark")
+		}
+		task := systemActionDelegateTask(action.Params)
+		if task == "" {
+			return "", nil, errors.New("delegate task is required")
+		}
+		cwd := strings.TrimSpace(targetProject.RootPath)
+		if cwd == "" {
+			cwd = strings.TrimSpace(a.cwdForProjectKey(targetProject.ProjectKey))
+		}
+		if cwd == "" {
+			return "", nil, errors.New("delegate cwd is not available")
+		}
+		canvasSessionID := strings.TrimSpace(a.canvasSessionIDForProject(targetProject))
+		if canvasSessionID == "" {
+			return "", nil, errors.New("delegate canvas session is not available")
+		}
+		a.mu.Lock()
+		port, ok := a.tunnelPorts[canvasSessionID]
+		a.mu.Unlock()
+		if !ok {
+			return "", nil, fmt.Errorf("no active MCP tunnel for project %q", targetProject.Name)
+		}
+		status, err := a.mcpToolsCall(port, "delegate_to_model", map[string]interface{}{
+			"model":  model,
+			"prompt": task,
+			"cwd":    cwd,
+		})
+		if err != nil {
+			return "", nil, err
+		}
+		jobID := strings.TrimSpace(fmt.Sprint(status["job_id"]))
+		if jobID == "" || jobID == "<nil>" {
+			return "", nil, errors.New("delegate_to_model did not return job_id")
+		}
+		return fmt.Sprintf("Delegated to %s as job %s.", model, jobID), map[string]interface{}{
+			"type":       "delegate",
+			"job_id":     jobID,
+			"model":      model,
+			"project_id": targetProject.ID,
+		}, nil
 	default:
 		return "", nil, fmt.Errorf("unsupported action: %s", action.Action)
 	}
