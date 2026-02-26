@@ -76,6 +76,7 @@ Requirements:
 tabura bootstrap --project-dir .
 tabura mcp-server --project-dir .
 tabura server --project-dir . --data-dir ~/.tabura-web --web-host 0.0.0.0 --web-port 8420 --mcp-host 127.0.0.1 --mcp-port 9420 --app-server-url ws://127.0.0.1:8787 --tts-url http://127.0.0.1:8424
+tabura server --project-dir . --data-dir ~/.tabura-web --web-host 0.0.0.0 --web-port 8443 --web-cert-file ~/.config/tabura/certs/tabura.pem --web-key-file ~/.config/tabura/certs/tabura-key.pem --mcp-host 127.0.0.1 --mcp-port 9420 --app-server-url ws://127.0.0.1:8787 --tts-url http://127.0.0.1:8424
 ```
 
 ## Runtime Stack (Canonical)
@@ -96,6 +97,7 @@ Why Piper remains an HTTP sidecar:
 ## Local Integration Defaults
 
 - Web UI/API listener: `http://localhost:8420` (public-facing)
+- Optional HTTPS listener: add `--web-cert-file <cert.pem> --web-key-file <key.pem>` (for example on `8443`)
 - MCP listener: `http://127.0.0.1:9420/mcp` (loopback-only)
 - Canvas websocket relay source: `ws://127.0.0.1:9420/ws/canvas`
 - Codex app-server websocket: `ws://127.0.0.1:8787`
@@ -108,6 +110,22 @@ Why Piper remains an HTTP sidecar:
 Security model:
 - MCP routes are intentionally not exposed on the web listener.
 - By default, non-loopback MCP bind is rejected unless `--unsafe-public-mcp` is explicitly set.
+
+## LAN HTTPS For Voice Capture
+
+Some browsers (especially on macOS/iOS) block microphone features on insecure LAN origins.
+Run the web listener with TLS and open `https://<your-lan-ip>:8443`.
+
+Example with `mkcert`:
+
+```bash
+mkdir -p ~/.config/tabura/certs
+mkcert -install
+mkcert -cert-file ~/.config/tabura/certs/tabura.pem -key-file ~/.config/tabura/certs/tabura-key.pem localhost 127.0.0.1 ::1 192.168.1.50
+tabura server --project-dir . --data-dir ~/.tabura-web --web-host 0.0.0.0 --web-port 8443 --web-cert-file ~/.config/tabura/certs/tabura.pem --web-key-file ~/.config/tabura/certs/tabura-key.pem --mcp-host 127.0.0.1 --mcp-port 9420 --app-server-url ws://127.0.0.1:8787 --tts-url http://127.0.0.1:8424
+```
+
+If a second device (for example a Mac) connects to this server, trust the same local CA on that device too.
 
 Zen canvas behavior:
 - Browser opens to tabula rasa (blank white screen) or last artifact.

@@ -24,6 +24,26 @@ func TestParseServerConfigRejectsPublicMCPWithoutUnsafeFlag(t *testing.T) {
 	}
 }
 
+func TestParseServerConfigRejectsIncompleteTLSConfig(t *testing.T) {
+	_, status := parseServerConfig([]string{"--web-cert-file", "/tmp/cert.pem"})
+	if status != 2 {
+		t.Fatalf("parseServerConfig(incomplete tls) status = %d, want 2", status)
+	}
+}
+
+func TestParseServerConfigAcceptsTLSConfigPair(t *testing.T) {
+	cfg, status := parseServerConfig([]string{"--web-cert-file", "/tmp/cert.pem", "--web-key-file", "/tmp/key.pem"})
+	if status != 0 {
+		t.Fatalf("parseServerConfig(tls pair) status = %d, want 0", status)
+	}
+	if cfg.webCertFile != "/tmp/cert.pem" {
+		t.Fatalf("webCertFile = %q, want /tmp/cert.pem", cfg.webCertFile)
+	}
+	if cfg.webKeyFile != "/tmp/key.pem" {
+		t.Fatalf("webKeyFile = %q, want /tmp/key.pem", cfg.webKeyFile)
+	}
+}
+
 func TestFormatVersionLinePrefixesVersion(t *testing.T) {
 	got := formatVersionLine("0.1.4", "abc1234", "linux", "amd64")
 	want := "tabura v0.1.4 (abc1234) linux/amd64"

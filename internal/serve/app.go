@@ -254,10 +254,18 @@ func randomSessionID() string {
 }
 
 func ListenURLs(host string, port int) []string {
-	if host != "0.0.0.0" && host != "::" {
-		return []string{fmt.Sprintf("http://%s:%d", host, port)}
+	return ListenURLsWithScheme(host, port, "http")
+}
+
+func ListenURLsWithScheme(host string, port int, scheme string) []string {
+	cleanScheme := strings.TrimSpace(strings.ToLower(scheme))
+	if cleanScheme == "" {
+		cleanScheme = "http"
 	}
-	urls := []string{fmt.Sprintf("http://localhost:%d", port)}
+	if host != "0.0.0.0" && host != "::" {
+		return []string{fmt.Sprintf("%s://%s:%d", cleanScheme, host, port)}
+	}
+	urls := []string{fmt.Sprintf("%s://localhost:%d", cleanScheme, port)}
 	ifaces, _ := net.Interfaces()
 	for _, iface := range ifaces {
 		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
@@ -269,7 +277,7 @@ func ListenURLs(host string, port int) []string {
 			if !ok || ipnet.IP == nil || ipnet.IP.To4() == nil {
 				continue
 			}
-			urls = append(urls, fmt.Sprintf("http://%s:%d", ipnet.IP.String(), port))
+			urls = append(urls, fmt.Sprintf("%s://%s:%d", cleanScheme, ipnet.IP.String(), port))
 		}
 	}
 	return urls

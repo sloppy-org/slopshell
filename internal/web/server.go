@@ -809,12 +809,24 @@ func (a *App) startLocalServe() error {
 }
 
 func (a *App) Start(host string, port int) error {
+	return a.start(host, port, "", "")
+}
+
+func (a *App) StartTLS(host string, port int, certFile, keyFile string) error {
+	return a.start(host, port, strings.TrimSpace(certFile), strings.TrimSpace(keyFile))
+}
+
+func (a *App) start(host string, port int, certFile, keyFile string) error {
 	if err := a.startLocalServe(); err != nil {
 		return err
 	}
 	srv := &http.Server{Addr: fmt.Sprintf("%s:%d", host, port), Handler: a.Router(), ReadHeaderTimeout: 15 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 60 * time.Second, IdleTimeout: 60 * time.Second}
+	scheme := "http"
+	if certFile != "" && keyFile != "" {
+		scheme = "https"
+	}
 	fmt.Println("tabura server web listener listening on:")
-	for _, u := range serve.ListenURLs(host, port) {
+	for _, u := range serve.ListenURLsWithScheme(host, port, scheme) {
 		fmt.Printf("  %s\n", u)
 	}
 	if a.localProjectDir != "" {
@@ -825,7 +837,12 @@ func (a *App) Start(host string, port int) error {
 		fmt.Printf("  local project: %s\n", a.localProjectDir)
 		fmt.Printf("  local MCP:     %s\n", mcpURL)
 	}
-	err := srv.ListenAndServe()
+	var err error
+	if certFile != "" && keyFile != "" {
+		err = srv.ListenAndServeTLS(certFile, keyFile)
+	} else {
+		err = srv.ListenAndServe()
+	}
 	if err == http.ErrServerClosed {
 		return nil
 	}
