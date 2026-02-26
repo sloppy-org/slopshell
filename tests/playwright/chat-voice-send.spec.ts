@@ -197,6 +197,10 @@ async function waitForSTTAction(page: Page, action: string) {
   await waitForLogEntry(page, 'stt', action);
 }
 
+function countGetUserMediaCalls(log: HarnessLogEntry[]): number {
+  return log.filter((entry) => entry.type === 'media' && entry.action === 'get_user_media').length;
+}
+
 test.beforeEach(async ({ page }) => {
   page.on('console', (msg) => {
     if (msg.type() === 'error') console.log(`BROWSER [error]: ${msg.text()}`);
@@ -598,4 +602,65 @@ test('recording indicator shows symbol', async ({ page }) => {
   await expect(indicator).toBeVisible();
   await expect(page.locator('.zen-play-icon')).toBeVisible();
   await expect(page.locator('.zen-record-dot')).toBeHidden();
+});
+
+test('focus refreshes cached mic stream before next recording', async ({ page }) => {
+  await clearLog(page);
+
+  await page.evaluate(async () => {
+    await (window as any)._taburaApp.acquireMicStream();
+  });
+
+  await clearLog(page);
+  await page.evaluate(() => {
+    window.dispatchEvent(new Event('focus'));
+  });
+
+  await page.evaluate(async () => {
+    await (window as any)._taburaApp.acquireMicStream();
+  });
+
+  const log = await getLog(page);
+  expect(countGetUserMediaCalls(log)).toBe(1);
+});
+
+test('pageshow refreshes cached mic stream before next recording', async ({ page }) => {
+  await clearLog(page);
+
+  await page.evaluate(async () => {
+    await (window as any)._taburaApp.acquireMicStream();
+  });
+
+  await clearLog(page);
+  await page.evaluate(() => {
+    window.dispatchEvent(new Event('pageshow'));
+  });
+
+  await page.evaluate(async () => {
+    await (window as any)._taburaApp.acquireMicStream();
+  });
+
+  const log = await getLog(page);
+  expect(countGetUserMediaCalls(log)).toBe(1);
+});
+
+test('ended mic track invalidates cached stream before next recording', async ({ page }) => {
+  await clearLog(page);
+
+  await page.evaluate(async () => {
+    await (window as any)._taburaApp.acquireMicStream();
+  });
+
+  await clearLog(page);
+  await page.evaluate(() => {
+    const trigger = (window as any).__triggerMicTrackEnded;
+    if (typeof trigger === 'function') trigger();
+  });
+
+  await page.evaluate(async () => {
+    await (window as any)._taburaApp.acquireMicStream();
+  });
+
+  const log = await getLog(page);
+  expect(countGetUserMediaCalls(log)).toBe(1);
 });

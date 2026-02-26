@@ -519,20 +519,76 @@
     window.webkitAudioContext = MockAudioContext;
 
     // Mock getUserMedia
-    const fakeTrack = {
-      stop() {},
-      kind: 'audio',
-      enabled: true,
-      readyState: 'live',
-    };
-    const fakeStream = {
-      getTracks() { return [fakeTrack]; },
-      getAudioTracks() { return [fakeTrack]; },
-    };
-    if (!navigator.mediaDevices) {
-      navigator.mediaDevices = {};
+    let getUserMediaCallCount = 0;
+    let currentMicTrack = null;
+    let currentMicStream = null;
+
+    function createMockMicTrack() {
+      const track = new EventTarget();
+      track.kind = 'audio';
+      track.enabled = true;
+      track.muted = false;
+      track.readyState = 'live';
+      track.stop = () => {
+        if (track.readyState === 'ended') return;
+        track.readyState = 'ended';
+        track.dispatchEvent(new Event('ended'));
+      };
+      return track;
     }
-    navigator.mediaDevices.getUserMedia = async () => fakeStream;
+
+    function createMockMicStream() {
+      const stream = new EventTarget();
+      const track = createMockMicTrack();
+      stream.active = true;
+      stream.getTracks = () => [track];
+      stream.getAudioTracks = () => [track];
+      const endTrack = () => {
+        if (track.readyState !== 'ended') {
+          track.readyState = 'ended';
+          track.dispatchEvent(new Event('ended'));
+        }
+        stream.active = false;
+        stream.dispatchEvent(new Event('inactive'));
+      };
+      return { stream, track, endTrack };
+    }
+
+    window.__triggerMicTrackEnded = () => {
+      if (currentMicTrack && currentMicTrack.readyState !== 'ended') {
+        currentMicTrack.readyState = 'ended';
+        currentMicTrack.dispatchEvent(new Event('ended'));
+      }
+      if (currentMicStream) {
+        currentMicStream.active = false;
+        currentMicStream.dispatchEvent(new Event('inactive'));
+      }
+    };
+
+    window.__triggerMicDeviceChange = () => {
+      const md = navigator.mediaDevices;
+      if (md && typeof md.dispatchEvent === 'function') {
+        md.dispatchEvent(new Event('devicechange'));
+      }
+    };
+
+    if (!navigator.mediaDevices) {
+      navigator.mediaDevices = new EventTarget();
+    }
+    if (typeof navigator.mediaDevices.addEventListener !== 'function') {
+      const mdEvents = new EventTarget();
+      navigator.mediaDevices.addEventListener = (...args) => mdEvents.addEventListener(...args);
+      navigator.mediaDevices.removeEventListener = (...args) => mdEvents.removeEventListener(...args);
+      navigator.mediaDevices.dispatchEvent = (...args) => mdEvents.dispatchEvent(...args);
+    }
+    navigator.mediaDevices.getUserMedia = async () => {
+      const next = createMockMicStream();
+      currentMicTrack = next.track;
+      currentMicStream = next.stream;
+      getUserMediaCallCount += 1;
+      window.__harnessLog.push({ type: 'media', action: 'get_user_media', call: getUserMediaCallCount });
+      return next.stream;
+    };
 
     // Mock MediaRecorder
     window.MediaRecorder = class MockMediaRecorder {

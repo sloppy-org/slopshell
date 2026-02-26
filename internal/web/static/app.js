@@ -969,20 +969,110 @@ const MIC_CAPTURE_CONSTRAINTS = {
 
 let _cachedMicStream = null;
 let _micStreamPromise = null;
+let _cachedMicStreamCleanup = null;
+let _micRefreshRequested = false;
+
+function detachCachedMicStreamObservers() {
+  if (typeof _cachedMicStreamCleanup === 'function') {
+    try {
+      _cachedMicStreamCleanup();
+    } catch (_) {}
+  }
+  _cachedMicStreamCleanup = null;
+}
+
+function requestMicRefresh() {
+  _micRefreshRequested = true;
+}
+
+function streamHasLiveAudioTrack(stream) {
+  if (!stream || typeof stream.getAudioTracks !== 'function') return false;
+  if (typeof stream.active === 'boolean' && !stream.active) return false;
+  const tracks = stream.getAudioTracks();
+  if (!Array.isArray(tracks) || tracks.length === 0) return false;
+  return tracks.every((track) => {
+    if (!track) return false;
+    if (String(track.readyState || '').toLowerCase() !== 'live') return false;
+    if (typeof track.enabled === 'boolean' && !track.enabled) return false;
+    if (typeof track.muted === 'boolean' && track.muted) return false;
+    return true;
+  });
+}
+
+function invalidateCachedMicStream({ stopTracks = false } = {}) {
+  const stream = _cachedMicStream;
+  detachCachedMicStreamObservers();
+  _cachedMicStream = null;
+  if (!stream || !stopTracks || typeof stream.getTracks !== 'function') return;
+  try {
+    stream.getTracks().forEach((track) => {
+      try {
+        if (track?.readyState !== 'ended') track.stop();
+      } catch (_) {}
+    });
+  } catch (_) {}
+}
+
+function observeCachedMicStream(stream) {
+  if (!stream || typeof stream.getAudioTracks !== 'function') return;
+  const tracks = stream.getAudioTracks();
+  const disposers = [];
+  const invalidate = () => {
+    requestMicRefresh();
+    if (_cachedMicStream === stream) {
+      const activeCapture = state.chatVoiceCapture;
+      if (activeCapture && activeCapture.mediaStream === stream && !activeCapture.stopping) {
+        return;
+      }
+      invalidateCachedMicStream({ stopTracks: false });
+    }
+  };
+
+  if (typeof stream.addEventListener === 'function') {
+    const onInactive = () => invalidate();
+    try {
+      stream.addEventListener('inactive', onInactive, { once: true });
+      disposers.push(() => {
+        try {
+          stream.removeEventListener('inactive', onInactive);
+        } catch (_) {}
+      });
+    } catch (_) {}
+  }
+
+  tracks.forEach((track) => {
+    if (!track || typeof track.addEventListener !== 'function') return;
+    const onEnded = () => invalidate();
+    const onMute = () => invalidate();
+    try {
+      track.addEventListener('ended', onEnded, { once: true });
+      track.addEventListener('mute', onMute, { once: true });
+      disposers.push(() => {
+        try { track.removeEventListener('ended', onEnded); } catch (_) {}
+        try { track.removeEventListener('mute', onMute); } catch (_) {}
+      });
+    } catch (_) {}
+  });
+
+  _cachedMicStreamCleanup = () => {
+    for (const dispose of disposers) {
+      try { dispose(); } catch (_) {}
+    }
+  };
+}
 
 function acquireMicStream() {
-  if (_cachedMicStream) {
-    const tracks = _cachedMicStream.getAudioTracks();
-    if (tracks.length > 0 && tracks[0].readyState === 'live') {
-      return Promise.resolve(_cachedMicStream);
-    }
-    _cachedMicStream = null;
+  if (_cachedMicStream && !_micRefreshRequested && streamHasLiveAudioTrack(_cachedMicStream)) {
+    return Promise.resolve(_cachedMicStream);
   }
+  if (_cachedMicStream) invalidateCachedMicStream({ stopTracks: false });
   if (_micStreamPromise) return _micStreamPromise;
   _micStreamPromise = navigator.mediaDevices.getUserMedia({
     audio: { ...MIC_CAPTURE_CONSTRAINTS },
   }).then((stream) => {
+    _micRefreshRequested = false;
     _cachedMicStream = stream;
+    observeCachedMicStream(stream);
     _micStreamPromise = null;
     return stream;
   }).catch((err) => {
@@ -998,8 +1088,7 @@ function releaseMicStream({ force = false } = {}) {
   if (!force && activeCapture && activeCapture.mediaStream === _cachedMicStream && !activeCapture.stopping) {
     return;
   }
-  _cachedMicStream.getTracks().forEach((t) => t.stop());
-  _cachedMicStream = null;
+  invalidateCachedMicStream({ stopTracks: true });
 }
 
 function parseOptionalBoolean(value) {
@@ -2768,10 +2857,20 @@ function startAssistantActivityWatcher() {
   };
   assistantActivityTimer = window.setInterval(tick, ASSISTANT_ACTIVITY_POLL_MS);
   tick();
-  window.addEventListener('focus', tick);
+  window.addEventListener('focus', () => {
+    tick();
+    if (document.hidden || state.chatVoiceCapture) return;
+    requestMicRefresh();
+    releaseMicStream({ force: true });
+    requestHotwordSync();
+  });
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
+      requestMicRefresh();
+      stopHotwordMonitor();
+      state.hotwordActive = false;
       cancelConversationListen();
+      releaseMicStream({ force: true });
       if (state.chatVoiceCapture) {
         cancelChatVoiceCapture();
       }
@@ -2783,7 +2882,28 @@ function startAssistantActivityWatcher() {
       return;
     }
     tick();
+    requestHotwordSync();
   });
+  window.addEventListener('pageshow', () => {
+    if (state.chatVoiceCapture) return;
+    requestMicRefresh();
+    releaseMicStream({ force: true });
+    requestHotwordSync();
+  });
+  window.addEventListener('pagehide', () => {
+    requestMicRefresh();
+    stopHotwordMonitor();
+    state.hotwordActive = false;
+    releaseMicStream({ force: true });
+  });
+  const mediaDevices = navigator.mediaDevices;
+  if (mediaDevices && typeof mediaDevices.addEventListener === 'function') {
+    mediaDevices.addEventListener('devicechange', () => {
+      requestMicRefresh();
+      releaseMicStream({ force: true });
+      requestHotwordSync();
+    });
+  }
 }
 
 function closeChatWs() {
