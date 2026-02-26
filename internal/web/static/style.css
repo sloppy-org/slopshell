@@ -324,7 +324,10 @@ body.file-sidebar-enabled #pr-file-drawer-backdrop.is-open {
 #canvas-text pre code .hl-diff-meta { color: #000080; }
 #canvas-text pre code .hl-diff-hunk { color: #0451A5; }
 #canvas-text pre code .hl-diff-add { color: inherit; background: #9bb95533; }
-#canvas-text pre code .hl-diff-del { color: inherit; background: #ff000033; }
+#canvas-text pre code .hl-diff-del {
+  color: #6b7280;
+  background: #9ca3af2b;
+}
 #canvas-text pre code .hl-diff-ctx { color: #3B3B3B; }
 #canvas-text mjx-container {
   max-width: 100%;
@@ -515,18 +518,24 @@ body.file-sidebar-enabled #pr-file-drawer-backdrop.is-open {
 }
 
 #canvas-text del.md-diff-del-inline {
+  color: #6b7280;
+  background: #9ca3af1f;
   text-decoration: line-through;
+  text-decoration-color: #9ca3af;
 }
 
 #canvas-text .md-diff-del-line {
-  border-left: 2px solid #000000;
+  border-left: 2px solid #9ca3af;
+  background: #9ca3af14;
   margin: 0.14rem 0;
   padding: 0.05rem 0.5rem;
   white-space: pre-wrap;
 }
 
 #canvas-text .md-diff-del-line del {
+  color: #6b7280;
   text-decoration: line-through;
+  text-decoration-color: #9ca3af;
 }
 
 /* Zen: Full-screen recording state indicator */
