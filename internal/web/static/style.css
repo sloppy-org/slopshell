@@ -767,6 +767,15 @@ body.keyboard-open .zen-indicator.is-listening {
   outline: none;
 }
 
+/* iOS Safari/Chrome zoom into focused inputs below 16px.
+   Force touch-device message inputs to 16px while keeping desktop unchanged. */
+@media (hover: none) and (pointer: coarse) {
+  .zen-input,
+  .chat-pane-input-row textarea {
+    font-size: 16px;
+  }
+}
+
 .zen-overlay-content {
   min-height: 1.2em;
 }
