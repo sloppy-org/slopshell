@@ -25,6 +25,18 @@ async function injectCanvasEvent(page: Page, payload: Record<string, unknown>) {
   }, payload);
 }
 
+async function horizontalFlip(page: Page, deltaX: number) {
+  await page.locator('#canvas-viewport').evaluate((el, dX) => {
+    const ev = new WheelEvent('wheel', {
+      deltaX: Number(dX),
+      deltaY: 0,
+      bubbles: true,
+      cancelable: true,
+    });
+    el.dispatchEvent(ev);
+  }, deltaX);
+}
+
 function twoFileDiff(): string {
   return [
     'diff --git a/docs/one.md b/docs/one.md',
@@ -86,6 +98,25 @@ test.describe('pr review canvas mode', () => {
     await expect(page.locator('#pr-file-list .pr-file-item.is-active .pr-file-name')).toContainText('docs/one.md');
   });
 
+  test('supports horizontal canvas flip in pr mode', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await waitReady(page);
+
+    await injectCanvasEvent(page, {
+      kind: 'text_artifact',
+      event_id: 'evt-pr-2b',
+      title: '.tabura/artifacts/pr/pr-18.diff',
+      text: twoFileDiff(),
+    });
+    await expect(page.locator('#pr-file-list .pr-file-item.is-active .pr-file-name')).toContainText('docs/one.md');
+
+    await horizontalFlip(page, 140);
+    await expect(page.locator('#pr-file-list .pr-file-item.is-active .pr-file-name')).toContainText('src/two.js');
+
+    await horizontalFlip(page, -140);
+    await expect(page.locator('#pr-file-list .pr-file-item.is-active .pr-file-name')).toContainText('docs/one.md');
+  });
+
   test('uses drawer-style file pane on mobile', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await waitReady(page);
@@ -124,5 +155,32 @@ test.describe('pr review canvas mode', () => {
     await page.locator('#pr-file-list .pr-file-item', { hasText: '..' }).click();
     await expect(page.locator('#pr-file-list .pr-file-item .pr-file-name', { hasText: 'README.md' })).toHaveCount(1);
     await expect(page.locator('#pr-file-list .pr-file-item .pr-file-name', { hasText: '..' })).toHaveCount(0);
+  });
+
+  test('supports horizontal canvas flip in workspace folder files', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await waitReady(page);
+
+    await page.locator('#edge-left-tap').click();
+    await expect(page.locator('#pr-file-pane')).toHaveClass(/is-open/);
+    await page.locator('#pr-file-list .pr-file-item', { hasText: 'README.md' }).click();
+    await page.waitForFunction(() => {
+      const app = (window as any)._taburaApp;
+      return app?.getState?.().workspaceOpenFilePath === 'README.md';
+    });
+
+    await horizontalFlip(page, 140);
+    await page.waitForFunction(() => {
+      const app = (window as any)._taburaApp;
+      return app?.getState?.().workspaceOpenFilePath === 'NOTES.md';
+    });
+    await expect(page.locator('#canvas-text')).toContainText('NOTES.md');
+
+    await horizontalFlip(page, -140);
+    await page.waitForFunction(() => {
+      const app = (window as any)._taburaApp;
+      return app?.getState?.().workspaceOpenFilePath === 'README.md';
+    });
+    await expect(page.locator('#canvas-text')).toContainText('README.md');
   });
 });
