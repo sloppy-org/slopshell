@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -47,6 +48,12 @@ type projectAPIModel struct {
 type projectChatModelRequest struct {
 	Model           string `json:"model"`
 	ReasoningEffort string `json:"reasoning_effort"`
+}
+
+type projectFileEntry struct {
+	Name  string `json:"name"`
+	Path  string `json:"path"`
+	IsDir bool   `json:"is_dir"`
 }
 
 func normalizeProjectKindInput(kind, path string) string {
@@ -656,23 +663,57 @@ func (a *App) handleProjectChatModelUpdate(w http.ResponseWriter, r *http.Reques
 	})
 }
 
+func (a *App) resolveProjectByIDOrActive(projectID string) (store.Project, error) {
+	id := strings.TrimSpace(projectID)
+	if id == "" || strings.EqualFold(id, "active") {
+		projects, defaultProject, err := a.listProjectsWithDefault()
+		if err != nil {
+			return store.Project{}, err
+		}
+		return a.chooseActiveProject(projects, defaultProject)
+	}
+	return a.store.GetProject(id)
+}
+
+func normalizeProjectListPath(raw string) (string, error) {
+	cleaned := strings.TrimSpace(strings.ReplaceAll(raw, "\\", "/"))
+	cleaned = strings.Trim(cleaned, "/")
+	if cleaned == "" || cleaned == "." {
+		return "", nil
+	}
+	if strings.ContainsRune(cleaned, '\x00') {
+		return "", errors.New("invalid path")
+	}
+	parts := strings.Split(cleaned, "/")
+	normalized := make([]string, 0, len(parts))
+	for _, part := range parts {
+		switch part {
+		case "", ".":
+			continue
+		case "..":
+			return "", errors.New("invalid path")
+		default:
+			normalized = append(normalized, part)
+		}
+	}
+	return strings.Join(normalized, "/"), nil
+}
+
+func pathWithinRoot(path, root string) bool {
+	cleanPath := filepath.Clean(path)
+	cleanRoot := filepath.Clean(root)
+	if cleanPath == cleanRoot {
+		return true
+	}
+	return strings.HasPrefix(cleanPath, cleanRoot+string(os.PathSeparator))
+}
+
 func (a *App) handleProjectContext(w http.ResponseWriter, r *http.Request) {
 	if !a.requireAuth(w, r) {
 		return
 	}
 	projectID := strings.TrimSpace(chi.URLParam(r, "project_id"))
-	var project store.Project
-	var err error
-	if projectID == "" || strings.EqualFold(projectID, "active") {
-		projects, defaultProject, listErr := a.listProjectsWithDefault()
-		if listErr != nil {
-			http.Error(w, listErr.Error(), http.StatusInternalServerError)
-			return
-		}
-		project, err = a.chooseActiveProject(projects, defaultProject)
-	} else {
-		project, err = a.store.GetProject(projectID)
-	}
+	project, err := a.resolveProjectByIDOrActive(projectID)
 	if err != nil {
 		if isNoRows(err) {
 			http.Error(w, "project not found", http.StatusNotFound)
@@ -695,6 +736,90 @@ func (a *App) handleProjectContext(w http.ResponseWriter, r *http.Request) {
 		"ok":                true,
 		"active_project_id": project.ID,
 		"project":           item,
+	})
+}
+
+func (a *App) handleProjectFilesList(w http.ResponseWriter, r *http.Request) {
+	if !a.requireAuth(w, r) {
+		return
+	}
+	projectID := strings.TrimSpace(chi.URLParam(r, "project_id"))
+	project, err := a.resolveProjectByIDOrActive(projectID)
+	if err != nil {
+		if isNoRows(err) {
+			http.Error(w, "project not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	relPath, err := normalizeProjectListPath(r.URL.Query().Get("path"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	rootPath := filepath.Clean(project.RootPath)
+	targetPath := rootPath
+	if relPath != "" {
+		targetPath = filepath.Join(rootPath, filepath.FromSlash(relPath))
+	}
+	targetPath = filepath.Clean(targetPath)
+	if !pathWithinRoot(targetPath, rootPath) {
+		http.Error(w, "invalid path", http.StatusForbidden)
+		return
+	}
+	info, err := os.Stat(targetPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			http.Error(w, "path not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if !info.IsDir() {
+		http.Error(w, "path is not a directory", http.StatusBadRequest)
+		return
+	}
+	entries, err := os.ReadDir(targetPath)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	items := make([]projectFileEntry, 0, len(entries))
+	for _, entry := range entries {
+		name := entry.Name()
+		if name == "" || name == "." || name == ".." {
+			continue
+		}
+		entryPath := name
+		if relPath != "" {
+			entryPath = relPath + "/" + name
+		}
+		items = append(items, projectFileEntry{
+			Name:  name,
+			Path:  entryPath,
+			IsDir: entry.IsDir(),
+		})
+	}
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].IsDir != items[j].IsDir {
+			return items[i].IsDir
+		}
+		leftLower := strings.ToLower(items[i].Name)
+		rightLower := strings.ToLower(items[j].Name)
+		if leftLower != rightLower {
+			return leftLower < rightLower
+		}
+		return items[i].Name < items[j].Name
+	})
+	writeJSON(w, map[string]interface{}{
+		"ok":         true,
+		"project_id": project.ID,
+		"path":       relPath,
+		"is_root":    relPath == "",
+		"entries":    items,
 	})
 }
 

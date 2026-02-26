@@ -14,15 +14,10 @@
     <div id="view-main" class="view">
 
       <div id="workspace">
-        <aside id="pr-file-pane" aria-label="Pull request files">
-          <div class="pr-file-pane-head">
-            <span id="pr-file-pane-title">Files</span>
-            <button id="pr-file-pane-close" type="button" class="edge-btn">Close</button>
-          </div>
+        <aside id="pr-file-pane" aria-label="File sidebar">
           <div id="pr-file-list" class="pr-file-list"></div>
         </aside>
         <div id="canvas-column">
-          <button id="pr-file-drawer-toggle" type="button" aria-label="Open pull request file list">Files</button>
           <div id="pr-file-drawer-backdrop" aria-hidden="true"></div>
           <div id="canvas-viewport">
             <section id="canvas-text" class="canvas-pane" aria-label="Text artifact"></section>
@@ -43,7 +38,7 @@
         <div class="zen-overlay-content"></div>
       </div>
 
-      <button id="edge-left-tap" type="button" class="edge-left-tap" aria-label="Tabula Rasa"></button>
+      <button id="edge-left-tap" type="button" class="edge-left-tap" aria-label="Toggle file sidebar"></button>
       <button id="edge-right-tap" type="button" class="edge-right-tap" aria-label="Open chat panel"></button>
 
       <div id="edge-top" class="edge-panel edge-top">
@@ -244,6 +239,47 @@
           project: { ...harnessProjects[index] },
         }), { status: 200 });
       }
+      if (u.includes('/api/projects/') && u.includes('/files')) {
+        const pathPart = u.split('/api/projects/')[1] || '';
+        const projectId = decodeURIComponent(pathPart.split('/files')[0] || '').trim();
+        const effectiveProjectId = projectId.toLowerCase() === 'active' ? activeProjectId : projectId;
+        const query = new URL(u, window.location.href).searchParams;
+        const path = String(query.get('path') || '').trim();
+        const cleanedPath = path.replace(/^\/+|\/+$/g, '');
+        if (effectiveProjectId !== activeProjectId && !harnessProjects.some((project) => project.id === effectiveProjectId)) {
+          return new Response('project not found', { status: 404 });
+        }
+        if (!cleanedPath) {
+          return new Response(JSON.stringify({
+            ok: true,
+            project_id: effectiveProjectId || activeProjectId,
+            path: '',
+            is_root: true,
+            entries: [
+              { name: 'docs', path: 'docs', is_dir: true },
+              { name: 'README.md', path: 'README.md', is_dir: false },
+            ],
+          }), { status: 200 });
+        }
+        if (cleanedPath === 'docs') {
+          return new Response(JSON.stringify({
+            ok: true,
+            project_id: effectiveProjectId || activeProjectId,
+            path: 'docs',
+            is_root: false,
+            entries: [
+              { name: 'guide.md', path: 'docs/guide.md', is_dir: false },
+            ],
+          }), { status: 200 });
+        }
+        return new Response(JSON.stringify({
+          ok: true,
+          project_id: effectiveProjectId || activeProjectId,
+          path: cleanedPath,
+          is_root: false,
+          entries: [],
+        }), { status: 200 });
+      }
       if (u.includes('/api/projects')) {
         const projects = harnessProjects.map((project) => ({ ...project }));
         return new Response(JSON.stringify({
@@ -327,6 +363,12 @@
       }
       if (u.includes('/api/canvas/')) {
         return new Response(JSON.stringify({}), { status: 200 });
+      }
+      if (u.includes('/api/files/')) {
+        return new Response('# Harness file\n', {
+          status: 200,
+          headers: { 'Content-Type': 'text/markdown; charset=utf-8' },
+        });
       }
       return _realFetch.apply(this, arguments);
     };

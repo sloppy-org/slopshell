@@ -3,6 +3,7 @@ package web
 import (
 	"encoding/json"
 	"net/http"
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -21,6 +22,18 @@ type projectsListResponse struct {
 		ReasoningEffort string `json:"chat_model_reasoning_effort"`
 		CanvasSessionID string `json:"canvas_session_id"`
 	} `json:"projects"`
+}
+
+type projectFilesListResponse struct {
+	OK        bool   `json:"ok"`
+	ProjectID string `json:"project_id"`
+	Path      string `json:"path"`
+	IsRoot    bool   `json:"is_root"`
+	Entries   []struct {
+		Name  string `json:"name"`
+		Path  string `json:"path"`
+		IsDir bool   `json:"is_dir"`
+	} `json:"entries"`
 }
 
 func TestProjectsListIncludesActiveAndSessions(t *testing.T) {
@@ -275,5 +288,109 @@ func TestHubProjectRejectsModelUpdates(t *testing.T) {
 	)
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestProjectFilesListReturnsOneLevelAndSupportsSubfolders(t *testing.T) {
+	app := newAuthedTestApp(t)
+	project, err := app.ensureDefaultProjectRecord()
+	if err != nil {
+		t.Fatalf("default project: %v", err)
+	}
+	root := filepath.Clean(project.RootPath)
+	dirName := "zz_test_dir"
+	fileName := "zz_test_file.txt"
+	dirPath := filepath.Join(root, dirName)
+	filePath := filepath.Join(root, fileName)
+	if err := os.MkdirAll(dirPath, 0o755); err != nil {
+		t.Fatalf("mkdir test dir: %v", err)
+	}
+	if err := os.WriteFile(filePath, []byte("root"), 0o644); err != nil {
+		t.Fatalf("write root test file: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dirPath, "child.md"), []byte("child"), 0o644); err != nil {
+		t.Fatalf("write child test file: %v", err)
+	}
+
+	rrRoot := doAuthedJSONRequest(
+		t,
+		app.Router(),
+		http.MethodGet,
+		"/api/projects/"+project.ID+"/files",
+		nil,
+	)
+	if rrRoot.Code != http.StatusOK {
+		t.Fatalf("expected root list 200, got %d: %s", rrRoot.Code, rrRoot.Body.String())
+	}
+	var rootPayload projectFilesListResponse
+	if err := json.Unmarshal(rrRoot.Body.Bytes(), &rootPayload); err != nil {
+		t.Fatalf("decode root payload: %v", err)
+	}
+	if !rootPayload.OK {
+		t.Fatalf("expected ok=true")
+	}
+	if !rootPayload.IsRoot || rootPayload.Path != "" {
+		t.Fatalf("expected root listing, got is_root=%v path=%q", rootPayload.IsRoot, rootPayload.Path)
+	}
+	dirIndex := -1
+	fileIndex := -1
+	for i, entry := range rootPayload.Entries {
+		if entry.Path == dirName {
+			if !entry.IsDir {
+				t.Fatalf("expected %q to be a directory", dirName)
+			}
+			dirIndex = i
+		}
+		if entry.Path == fileName {
+			if entry.IsDir {
+				t.Fatalf("expected %q to be a file", fileName)
+			}
+			fileIndex = i
+		}
+	}
+	if dirIndex < 0 || fileIndex < 0 {
+		t.Fatalf("expected seeded entries in root listing")
+	}
+	if dirIndex > fileIndex {
+		t.Fatalf("expected directories before files in listing")
+	}
+
+	rrSub := doAuthedJSONRequest(
+		t,
+		app.Router(),
+		http.MethodGet,
+		"/api/projects/"+project.ID+"/files?path="+dirName,
+		nil,
+	)
+	if rrSub.Code != http.StatusOK {
+		t.Fatalf("expected subdirectory list 200, got %d: %s", rrSub.Code, rrSub.Body.String())
+	}
+	var subPayload projectFilesListResponse
+	if err := json.Unmarshal(rrSub.Body.Bytes(), &subPayload); err != nil {
+		t.Fatalf("decode sub payload: %v", err)
+	}
+	if subPayload.IsRoot || subPayload.Path != dirName {
+		t.Fatalf("expected subdirectory payload for %q, got is_root=%v path=%q", dirName, subPayload.IsRoot, subPayload.Path)
+	}
+	if len(subPayload.Entries) == 0 || subPayload.Entries[0].Path != dirName+"/child.md" {
+		t.Fatalf("expected child file path %q in subdirectory listing", dirName+"/child.md")
+	}
+}
+
+func TestProjectFilesListRejectsTraversal(t *testing.T) {
+	app := newAuthedTestApp(t)
+	project, err := app.ensureDefaultProjectRecord()
+	if err != nil {
+		t.Fatalf("default project: %v", err)
+	}
+	rr := doAuthedJSONRequest(
+		t,
+		app.Router(),
+		http.MethodGet,
+		"/api/projects/"+project.ID+"/files?path=../secret",
+		nil,
+	)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected traversal request 400, got %d: %s", rr.Code, rr.Body.String())
 	}
 }

@@ -246,6 +246,7 @@ func (a *App) Router() http.Handler {
 	r.Post("/api/projects/{project_id}/activate", a.handleProjectActivate)
 	r.Post("/api/projects/{project_id}/chat-model", a.handleProjectChatModelUpdate)
 	r.Get("/api/projects/{project_id}/context", a.handleProjectContext)
+	r.Get("/api/projects/{project_id}/files", a.handleProjectFilesList)
 	r.Post("/api/chat/sessions", a.handleChatSessionCreate)
 	r.Get("/api/chat/sessions/{session_id}/history", a.handleChatSessionHistory)
 	r.Get("/api/chat/sessions/{session_id}/activity", a.handleChatSessionActivity)
