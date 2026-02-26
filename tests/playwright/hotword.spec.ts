@@ -18,7 +18,7 @@ async function clearLog(page: Page) {
 }
 
 async function waitReady(page: Page, query = '') {
-  await page.goto(`/tests/playwright/zen-harness.html${query}`);
+  await page.goto(`/tests/playwright/harness.html${query}`);
   await page.waitForFunction(() => {
     const app = (window as any)._taburaApp;
     if (typeof app?.getState !== 'function') return false;
@@ -108,7 +108,7 @@ test('hotword detection opens conversation listening window', async ({ page }) =
   await triggerHotword(page);
 
   await expect.poll(async () => page.evaluate(() => {
-    const indicator = document.getElementById('zen-indicator');
+    const indicator = document.getElementById('indicator');
     return Boolean(indicator?.classList.contains('is-listening'));
   })).toBe(true);
 });
@@ -193,7 +193,7 @@ test('conversation mode off keeps hotword disabled', async ({ page }) => {
   await page.waitForTimeout(250);
 
   const isListening = await page.evaluate(() => {
-    const indicator = document.getElementById('zen-indicator');
+    const indicator = document.getElementById('indicator');
     return Boolean(indicator?.classList.contains('is-listening'));
   });
   expect(isListening).toBe(false);
@@ -216,7 +216,7 @@ test('hotword init failure degrades gracefully with no crash', async ({ page }) 
 
   await triggerVoiceAssistantTTS(page, 'hotword-degrade-1');
   await expect.poll(async () => page.evaluate(() => {
-    const indicator = document.getElementById('zen-indicator');
+    const indicator = document.getElementById('indicator');
     return Boolean(indicator?.classList.contains('is-listening'));
   })).toBe(true);
 });

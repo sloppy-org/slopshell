@@ -6,9 +6,9 @@ import {
   sanitizeHtml,
 } from './canvas.js';
 
-const MATH_SEGMENT_TOKEN_PREFIX = '@@TABURA_ZEN_MATH_SEGMENT_';
+const MATH_SEGMENT_TOKEN_PREFIX = '@@TABURA_MATH_SEGMENT_';
 
-const zenState = {
+const uiState = {
   mode: 'rasa',
   recording: false,
   overlayVisible: false,
@@ -64,20 +64,20 @@ function renderMarkdown(md) {
   return restoreMathSegments(sanitizeHtml(rendered), stash);
 }
 
-export function getZenState() {
-  return zenState;
+export function getUiState() {
+  return uiState;
 }
 
-export function setZenMode(mode) {
-  zenState.mode = mode === 'artifact' ? 'artifact' : 'rasa';
+export function setUiMode(mode) {
+  uiState.mode = mode === 'artifact' ? 'artifact' : 'rasa';
 }
 
 function indicatorEl() {
-  return document.getElementById('zen-indicator');
+  return document.getElementById('indicator');
 }
 
 function inputEl() {
-  return document.getElementById('zen-input');
+  return document.getElementById('floating-input');
 }
 
 function activeCanvasPaneEl() {
@@ -87,38 +87,38 @@ function activeCanvasPaneEl() {
 function setPaneAnchor(x, y) {
   const pane = activeCanvasPaneEl();
   if (!(pane instanceof HTMLElement)) {
-    zenState.lastInputPaneId = '';
+    uiState.lastInputPaneId = '';
     return;
   }
   const rect = pane.getBoundingClientRect();
   if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
-    zenState.lastInputPaneId = '';
+    uiState.lastInputPaneId = '';
     return;
   }
-  zenState.lastInputPaneId = pane.id || '';
-  zenState.lastInputPaneLocalX = x - rect.left + pane.scrollLeft;
-  zenState.lastInputPaneLocalY = y - rect.top + pane.scrollTop;
+  uiState.lastInputPaneId = pane.id || '';
+  uiState.lastInputPaneLocalX = x - rect.left + pane.scrollLeft;
+  uiState.lastInputPaneLocalY = y - rect.top + pane.scrollTop;
 }
 
 function paneAnchoredPosition() {
-  const paneID = String(zenState.lastInputPaneId || '').trim();
+  const paneID = String(uiState.lastInputPaneId || '').trim();
   if (!paneID) return null;
   const pane = document.getElementById(paneID);
   if (!(pane instanceof HTMLElement)) return null;
   const rect = pane.getBoundingClientRect();
   return {
-    x: rect.left + zenState.lastInputPaneLocalX - pane.scrollLeft,
-    y: rect.top + zenState.lastInputPaneLocalY - pane.scrollTop,
+    x: rect.left + uiState.lastInputPaneLocalX - pane.scrollLeft,
+    y: rect.top + uiState.lastInputPaneLocalY - pane.scrollTop,
   };
 }
 
 function overlayEl() {
-  return document.getElementById('zen-overlay');
+  return document.getElementById('overlay');
 }
 
 function overlayContentEl() {
   const ol = overlayEl();
-  return ol ? ol.querySelector('.zen-overlay-content') : null;
+  return ol ? ol.querySelector('.overlay-content') : null;
 }
 
 export function showIndicatorMode(mode, x, y) {
@@ -151,7 +151,7 @@ export function showIndicatorMode(mode, x, y) {
   el.style.transform = '';
   el.style.translate = '';
   // Recording dot appears at tap point; stop square stays in top-right (CSS default).
-  const dot = el.querySelector('.zen-record-dot');
+  const dot = el.querySelector('.record-dot');
   if (dot) {
     if (nextMode === 'recording' && Number.isFinite(x) && Number.isFinite(y)) {
       dot.style.top = `${Math.round(y)}px`;
@@ -167,10 +167,10 @@ export function showIndicatorMode(mode, x, y) {
   }
   if (body) {
     const isCueVisible = nextMode === 'recording' || nextMode === 'play' || nextMode === 'listening';
-    body.classList.toggle('zen-recording', isCueVisible);
+    body.classList.toggle('cue-active', isCueVisible);
   }
-  zenState.indicatorVisible = true;
-  zenState.indicatorMode = nextMode;
+  uiState.indicatorVisible = true;
+  uiState.indicatorMode = nextMode;
 }
 
 export function hideIndicator() {
@@ -180,17 +180,17 @@ export function hideIndicator() {
   el.style.display = 'none';
   const body = document.body;
   if (body) {
-    body.classList.remove('zen-recording');
+    body.classList.remove('cue-active');
   }
-  zenState.indicatorVisible = false;
-  zenState.indicatorMode = '';
+  uiState.indicatorVisible = false;
+  uiState.indicatorMode = '';
 }
 
 export function showTextInput(x, y, anchor) {
   const el = inputEl();
   if (!el) return;
-  zenState.inputAnchor = anchor || null;
-  zenState.inputVisible = true;
+  uiState.inputAnchor = anchor || null;
+  uiState.inputVisible = true;
   setLastInputPosition(x, y);
   el.style.display = '';
   el.style.left = `${Math.min(x, window.innerWidth - 280)}px`;
@@ -206,8 +206,8 @@ export function hideTextInput() {
     try { el.blur(); } catch (_) {}
   }
   el.style.display = 'none';
-  zenState.inputVisible = false;
-  zenState.inputAnchor = null;
+  uiState.inputVisible = false;
+  uiState.inputAnchor = null;
 }
 
 export function showOverlay(x, y) {
@@ -220,15 +220,15 @@ export function showOverlay(x, y) {
   el.style.left = `${Math.max(8, Math.min(cx, window.innerWidth - 320))}px`;
   el.style.top = `${Math.max(8, Math.min(cy, window.innerHeight - 200))}px`;
   el.style.display = '';
-  zenState.overlayVisible = true;
+  uiState.overlayVisible = true;
 }
 
 export function hideOverlay() {
   const el = overlayEl();
   if (!el) return;
   el.style.display = 'none';
-  zenState.overlayVisible = false;
-  zenState.overlayTurnId = null;
+  uiState.overlayVisible = false;
+  uiState.overlayTurnId = null;
 }
 
 export function updateOverlay(markdownText) {
@@ -246,32 +246,32 @@ export function updateOverlay(markdownText) {
 }
 
 export function isOverlayVisible() {
-  return zenState.overlayVisible;
+  return uiState.overlayVisible;
 }
 
 export function isTextInputVisible() {
-  return zenState.inputVisible;
+  return uiState.inputVisible;
 }
 
 export function isRecording() {
-  return zenState.recording;
+  return uiState.recording;
 }
 
 export function setRecording(active) {
   const next = Boolean(active);
-  zenState.recording = next;
+  uiState.recording = next;
   const body = document.body;
   if (body) {
-    body.classList.toggle('zen-recording', next);
+    body.classList.toggle('cue-active', next);
   }
 }
 
 export function getInputAnchor() {
-  return zenState.inputAnchor;
+  return uiState.inputAnchor;
 }
 
 export function setInputAnchor(anchor) {
-  zenState.inputAnchor = anchor || null;
+  uiState.inputAnchor = anchor || null;
 }
 
 export function getAnchorFromPoint(clientX, clientY) {
@@ -311,11 +311,11 @@ export function buildContextPrefix(anchor) {
 export function getLastInputPosition() {
   const anchored = paneAnchoredPosition();
   if (anchored) return anchored;
-  return { x: zenState.lastInputX, y: zenState.lastInputY };
+  return { x: uiState.lastInputX, y: uiState.lastInputY };
 }
 
 export function setLastInputPosition(x, y) {
-  zenState.lastInputX = x;
-  zenState.lastInputY = y;
+  uiState.lastInputX = x;
+  uiState.lastInputY = y;
   setPaneAnchor(x, y);
 }

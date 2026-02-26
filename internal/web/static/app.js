@@ -1,14 +1,14 @@
 import { marked } from './vendor/marked.esm.js';
 import { renderCanvas, clearCanvas, getLocationFromSelection, clearLineHighlight, escapeHtml, sanitizeHtml } from './canvas.js';
 import {
-  getZenState, setZenMode,
+  getUiState, setUiMode,
   showIndicatorMode, hideIndicator,
   showTextInput, hideTextInput,
   showOverlay, hideOverlay, updateOverlay,
   isOverlayVisible, isTextInputVisible, isRecording, setRecording,
   getInputAnchor, setInputAnchor, getAnchorFromPoint,
   buildContextPrefix, getLastInputPosition, setLastInputPosition,
-} from './zen.js';
+} from './ui.js';
 import {
   configureConversation,
   isConversationMode,
@@ -71,8 +71,8 @@ const state = {
   },
   contextUsed: 0,
   contextMax: 0,
-  // Zen-specific: track if a canvas action happened during this turn
-  zenCanvasActionThisTurn: false,
+  // Track if a canvas action happened during this turn
+  canvasActionThisTurn: false,
   turnFirstResponseShown: false,
   lastInputOrigin: 'text',
   pendingSubmitController: null,
@@ -553,7 +553,7 @@ function isIPhoneStandalone() {
 function applyIPhoneFrameCorners() {
   const root = document.documentElement;
   if (!isIPhoneStandalone()) {
-    root.style.removeProperty('--zen-cue-corner-radius');
+    root.style.removeProperty('--cue-corner-radius');
     return;
   }
   const short = Math.min(Math.round(screen.width), Math.round(screen.height));
@@ -563,7 +563,7 @@ function applyIPhoneFrameCorners() {
     (p) => p.shortSide === short && p.longSide === long && p.dpr === dpr,
   );
   const r = match ? match.radius : (dpr >= 3 ? 55 : 44);
-  root.style.setProperty('--zen-cue-corner-radius', `0 0 ${r}px ${r}px`);
+  root.style.setProperty('--cue-corner-radius', `0 0 ${r}px ${r}px`);
 }
 
 let syncKeyboardStateNow = null;
@@ -788,8 +788,8 @@ function typesetMath(root, attempt = 0) {
 function showStatus(text) {
   const el = document.getElementById('status-text');
   if (el) el.textContent = text;
-  const zenEl = document.getElementById('zen-status');
-  if (zenEl) zenEl.textContent = text;
+  const statusEl = document.getElementById('status-label');
+  if (statusEl) statusEl.textContent = text;
 }
 
 function forceUiHardReload() {
@@ -1448,7 +1448,7 @@ function startVADMonitor(capture) {
 
       if (hitHardSilence || hitHardMaxDuration || hitSoftMaxDuration) {
         stopVADMonitor(capture);
-        void stopZenVoiceCaptureAndSend();
+        void stopVoiceCaptureAndSend();
         return;
       }
 
@@ -1459,7 +1459,7 @@ function startVADMonitor(capture) {
         }
         if (now >= options.pendingCommitAtMs) {
           stopVADMonitor(capture);
-          void stopZenVoiceCaptureAndSend();
+          void stopVoiceCaptureAndSend();
         }
         return;
       }
@@ -1540,7 +1540,7 @@ function stopChatVoiceMediaAndFlush(capture) {
   });
 }
 
-async function beginZenVoiceCapture(x, y, anchor, options = null) {
+async function beginVoiceCapture(x, y, anchor, options = null) {
   if (state.chatVoiceCapture) return;
   if (!canUseMicrophoneCapture()) return;
   const manualStopOnly = Boolean(options && options.manualStopOnly);
@@ -1584,7 +1584,7 @@ async function beginZenVoiceCapture(x, y, anchor, options = null) {
       startVADMonitor(capture);
     }
     if (capture.stopRequested) {
-      void stopZenVoiceCaptureAndSend();
+      void stopVoiceCaptureAndSend();
     }
   } catch (err) {
     setRecording(false);
@@ -1599,7 +1599,7 @@ async function beginZenVoiceCapture(x, y, anchor, options = null) {
   }
 }
 
-async function stopZenVoiceCaptureAndSend() {
+async function stopVoiceCaptureAndSend() {
   const capture = state.chatVoiceCapture;
   if (!capture || capture.stopping) return;
   capture.stopRequested = true;
@@ -1627,7 +1627,7 @@ async function stopZenVoiceCaptureAndSend() {
       throw new Error('speech recognizer returned empty text');
     }
     showStatus('sending...');
-    void zenSubmitMessage(transcript, { kind: 'voice_transcript' });
+    void submitMessage(transcript, { kind: 'voice_transcript' });
   } catch (err) {
     state.voiceAwaitingTurn = false;
     updateAssistantActivityIndicator();
@@ -1676,7 +1676,7 @@ function showCanvasColumn(paneId) {
     }
   }
   state.hasArtifact = true;
-  setZenMode('artifact');
+  setUiMode('artifact');
   persistLastView({ mode: 'artifact' });
   if (!isVoiceTurn() && isDirectAssistantWorking()) {
     hideOverlay();
@@ -1689,10 +1689,10 @@ function hideCanvasColumn() {
   state.hasArtifact = false;
   state.workspaceOpenFilePath = '';
   state.workspaceStepInFlight = false;
-  setZenMode('rasa');
+  setUiMode('rasa');
   clearLineHighlight();
   persistLastView({ mode: 'rasa' });
-  // In zen mode, hide all panes to show blank canvas
+  // Hide all panes to show blank canvas
   const viewport = document.getElementById('canvas-viewport');
   if (viewport) {
     viewport.querySelectorAll('.canvas-pane').forEach((p) => {
@@ -1766,7 +1766,7 @@ function canStartConversationListen() {
 function beginConversationVoiceCapture() {
   const x = Math.floor(window.innerWidth / 2);
   const y = Math.floor(window.innerHeight / 2);
-  void beginZenVoiceCapture(x, y, null);
+  void beginVoiceCapture(x, y, null);
 }
 
 function currentIndicatorMode() {
@@ -3052,9 +3052,9 @@ function handleChatEvent(payload) {
     const action = String(payload.action || '').trim();
     if (action === 'open_canvas') {
       showCanvasColumn('canvas-text');
-      state.zenCanvasActionThisTurn = true;
+      state.canvasActionThisTurn = true;
     } else if (action === 'open_chat') {
-      // In zen mode, this just means "no more canvas" - stay on rasa
+      // No more canvas - stay on rasa
     }
     return;
   }
@@ -3120,7 +3120,7 @@ function handleChatEvent(payload) {
       const edgeRight = document.getElementById('edge-right');
       if (edgeRight) edgeRight.classList.add('edge-pinned');
     }
-    state.zenCanvasActionThisTurn = false;
+    state.canvasActionThisTurn = false;
     state.turnFirstResponseShown = false;
     // Reset TTS state for new turn
     stopTTSPlayback();
@@ -3132,7 +3132,7 @@ function handleChatEvent(payload) {
     } else {
       showOverlay(pos.x, pos.y + 24);
       updateOverlay('_Thinking..._');
-      getZenState().overlayTurnId = payload.turn_id || null;
+      getUiState().overlayTurnId = payload.turn_id || null;
     }
     return;
   }
@@ -3223,7 +3223,7 @@ function handleChatEvent(payload) {
       ttsSentenceChunker.flush();
     }
     if (mobileSilent) {
-      if (state.zenCanvasActionThisTurn) {
+      if (state.canvasActionThisTurn) {
         // LLM touched the canvas this turn — keep showing the document.
         const edgeRight = document.getElementById('edge-right');
         if (edgeRight) edgeRight.classList.remove('edge-active', 'edge-pinned');
@@ -3236,17 +3236,17 @@ function handleChatEvent(payload) {
         });
       }
       hideOverlay();
-      state.zenCanvasActionThisTurn = false;
+      state.canvasActionThisTurn = false;
       return;
     }
     if (!isVoiceTurn()) {
       if (autoCanvas || state.hasArtifact) {
         hideOverlay();
-        state.zenCanvasActionThisTurn = false;
+        state.canvasActionThisTurn = false;
         return;
       }
       const cleaned = cleanForOverlay(md);
-      if (state.zenCanvasActionThisTurn && !cleaned) {
+      if (state.canvasActionThisTurn && !cleaned) {
         hideOverlay();
       } else if (cleaned) {
         updateOverlay(cleaned);
@@ -3254,7 +3254,7 @@ function handleChatEvent(payload) {
         hideOverlay();
       }
     }
-    state.zenCanvasActionThisTurn = false;
+    state.canvasActionThisTurn = false;
     return;
   }
 
@@ -3412,7 +3412,7 @@ function abortPendingSubmit(kind = '') {
   return true;
 }
 
-async function zenSubmitMessage(text, options = {}) {
+async function submitMessage(text, options = {}) {
   const trimmed = String(text || '').trim();
   if (!trimmed || !state.chatSessionId) return;
   cancelConversationListen();
@@ -3553,7 +3553,7 @@ async function cancelActiveAssistantTurnWithRetry(maxAttempts = 3) {
   return false;
 }
 
-async function handleZenStopAction() {
+async function handleStopAction() {
   if (isConversationListenActive()) {
     cancelConversationListen();
     if (!state.chatVoiceCapture && !state.voiceAwaitingTurn && !isAssistantWorking() && !isTTSSpeaking()) {
@@ -3569,7 +3569,7 @@ async function handleZenStopAction() {
   }
   const isCaptureActive = Boolean(capture && !capture.stopping);
   if (isCaptureActive) {
-    await stopZenVoiceCaptureAndSend();
+    await stopVoiceCaptureAndSend();
     return;
   }
 
@@ -3639,7 +3639,7 @@ function applyCanvasArtifactEvent(payload) {
   if (!paneId) return;
   const realCanvasArtifact = isRealCanvasArtifactEvent(payload);
   showCanvasColumn(paneId);
-  state.zenCanvasActionThisTurn = state.zenCanvasActionThisTurn || realCanvasArtifact;
+  state.canvasActionThisTurn = state.canvasActionThisTurn || realCanvasArtifact;
   if (isMobileSilent() && realCanvasArtifact) {
     const edgeRight = document.getElementById('edge-right');
     if (edgeRight) edgeRight.classList.remove('edge-active', 'edge-pinned');
@@ -4087,7 +4087,7 @@ function initEdgePanels() {
         document.body.classList.toggle('keyboard-open', keyboardOpen);
         if (!isIPhoneStandalone()) return;
         if (keyboardOpen) {
-          root.style.setProperty('--zen-cue-corner-radius', '0 0 0 0');
+          root.style.setProperty('--cue-corner-radius', '0 0 0 0');
         } else {
           applyIPhoneFrameCorners();
         }
@@ -4148,9 +4148,9 @@ function closeEdgePanels() {
 function bindUi() {
   const canvasText = document.getElementById('canvas-text');
   const canvasViewport = document.getElementById('canvas-viewport');
-  const zenIndicator = document.getElementById('zen-indicator');
-  if (zenIndicator && zenIndicator.parentElement !== document.body) {
-    document.body.appendChild(zenIndicator);
+  const indicatorNode = document.getElementById('indicator');
+  if (indicatorNode && indicatorNode.parentElement !== document.body) {
+    document.body.appendChild(indicatorNode);
   }
   let lastMouseX = Math.floor(window.innerWidth / 2);
   let lastMouseY = Math.floor(window.innerHeight / 2);
@@ -4162,7 +4162,7 @@ function bindUi() {
   const isVoiceInteractionTarget = (target, x, y) => (
     isInEdgeZone(x, y)
     || (target instanceof Element
-      && target.closest('button,a,input,textarea,select,[contenteditable="true"],.zen-overlay,.zen-input,.edge-panel,#canvas-pdf .canvas-pdf-page,#canvas-pdf .textLayer,#canvas-pdf .annotationLayer'))
+      && target.closest('button,a,input,textarea,select,[contenteditable="true"],.overlay,.floating-input,.edge-panel,#canvas-pdf .canvas-pdf-page,#canvas-pdf .textLayer,#canvas-pdf .annotationLayer'))
   );
   const rememberMousePosition = (x, y) => {
     if (!Number.isFinite(x) || !Number.isFinite(y)) return;
@@ -4188,7 +4188,7 @@ function bindUi() {
     if (state.hasArtifact && canvasText) {
       anchor = getAnchorFromPoint(x, y);
     }
-    return beginZenVoiceCapture(x, y, anchor, options);
+    return beginVoiceCapture(x, y, anchor, options);
   };
 
   document.addEventListener('mousemove', (ev) => {
@@ -4199,15 +4199,15 @@ function bindUi() {
     rememberMousePosition(ev.clientX, ev.clientY);
   }, true);
 
-  if (zenIndicator) {
+  if (indicatorNode) {
     let lastIndicatorTouchAt = 0;
     const isIndicatorArmed = () => (
-      zenIndicator.classList.contains('is-working')
-      || zenIndicator.classList.contains('is-recording')
-      || zenIndicator.classList.contains('is-listening')
+      indicatorNode.classList.contains('is-working')
+      || indicatorNode.classList.contains('is-recording')
+      || indicatorNode.classList.contains('is-listening')
     );
     const pointHitsIndicatorChip = (x, y) => {
-      const chips = zenIndicator.querySelectorAll('.zen-record-dot, .zen-stop-square');
+      const chips = indicatorNode.querySelectorAll('.record-dot, .stop-square');
       for (const chip of chips) {
         if (!(chip instanceof HTMLElement)) continue;
         const style = window.getComputedStyle(chip);
@@ -4224,7 +4224,7 @@ function bindUi() {
       if (!(t instanceof Element)) return false;
       return Boolean(t.closest('button, a, input, textarea, select, #edge-left-tap, #edge-right-tap, #edge-top, #edge-right, #pr-file-pane, #pr-file-drawer-backdrop'));
     };
-    const handleZenIndicatorTap = (ev, x, y, isTouch = false) => {
+    const handleIndicatorTap = (ev, x, y, isTouch = false) => {
       if (!isIndicatorArmed()) return;
       const hitsChip = pointHitsIndicatorChip(x, y);
       if (!hitsChip && isTouch && shouldStopInUiClick() && isTapOnInteractiveUi(ev)) return;
@@ -4233,20 +4233,20 @@ function bindUi() {
       if (isTouch) lastIndicatorTouchAt = Date.now();
       ev.preventDefault();
       ev.stopPropagation();
-      void handleZenStopAction();
+      void handleStopAction();
     };
     document.addEventListener('click', (ev) => {
-      handleZenIndicatorTap(ev, ev.clientX, ev.clientY, false);
+      handleIndicatorTap(ev, ev.clientX, ev.clientY, false);
     }, true);
     document.addEventListener('touchend', (ev) => {
       const touch = ev.changedTouches && ev.changedTouches.length > 0 ? ev.changedTouches[0] : null;
       if (!touch) return;
-      handleZenIndicatorTap(ev, touch.clientX, touch.clientY, true);
+      handleIndicatorTap(ev, touch.clientX, touch.clientY, true);
     }, { passive: false, capture: true });
   }
 
-  // Zen: Left-click/tap on canvas -> toggle voice recording
-  const zenClickTarget = canvasViewport || document.getElementById('workspace');
+  // Left-click/tap on canvas -> toggle voice recording
+  const clickTarget = canvasViewport || document.getElementById('workspace');
   const syncIndicatorOnViewportChange = () => {
     updateAssistantActivityIndicator();
   };
@@ -4301,7 +4301,7 @@ function bindUi() {
   window.addEventListener('scroll', syncIndicatorOnViewportChange, { passive: true });
   window.addEventListener('resize', syncIndicatorOnViewportChange);
 
-  if (zenClickTarget) {
+  if (clickTarget) {
     let mouseHoldTimer = null;
     let mouseHoldActive = false;
     let mouseHoldSuppressClick = false;
@@ -4327,7 +4327,7 @@ function bindUi() {
 
     // Mouse hold behaves as push-to-talk: press to start, release to stop.
     // A short click still uses tap-to-talk via the click handler below.
-    zenClickTarget.addEventListener('pointerdown', (ev) => {
+    clickTarget.addEventListener('pointerdown', (ev) => {
       if (ev.pointerType !== 'mouse' || !ev.isPrimary || ev.button !== 0) return;
       if (isVoiceInteractionTarget(ev.target, ev.clientX, ev.clientY)) return;
       if (isConversationListenActive()) {
@@ -4341,8 +4341,8 @@ function bindUi() {
       mouseHoldPointerId = ev.pointerId;
       mouseHoldX = ev.clientX;
       mouseHoldY = ev.clientY;
-      if (typeof zenClickTarget.setPointerCapture === 'function') {
-        try { zenClickTarget.setPointerCapture(ev.pointerId); } catch (_) {}
+      if (typeof clickTarget.setPointerCapture === 'function') {
+        try { clickTarget.setPointerCapture(ev.pointerId); } catch (_) {}
       }
       mouseHoldTimer = window.setTimeout(() => {
         mouseHoldTimer = null;
@@ -4355,7 +4355,7 @@ function bindUi() {
       }, CHAT_SEND_HOLD_MS);
     }, true);
 
-    zenClickTarget.addEventListener('pointermove', (ev) => {
+    clickTarget.addEventListener('pointermove', (ev) => {
       if (!mouseHoldTimer || mouseHoldPointerId !== ev.pointerId) return;
       const dx = ev.clientX - mouseHoldX;
       const dy = ev.clientY - mouseHoldY;
@@ -4369,13 +4369,13 @@ function bindUi() {
       if (!mouseHoldActive) return;
       mouseHoldActive = false;
       if (isRecording()) {
-        void stopZenVoiceCaptureAndSend();
+        void stopVoiceCaptureAndSend();
       }
     };
     const handleMousePointerRelease = (ev) => {
       if (mouseHoldPointerId !== null && mouseHoldPointerId !== ev.pointerId) return;
-      if (typeof zenClickTarget.releasePointerCapture === 'function') {
-        try { zenClickTarget.releasePointerCapture(ev.pointerId); } catch (_) {}
+      if (typeof clickTarget.releasePointerCapture === 'function') {
+        try { clickTarget.releasePointerCapture(ev.pointerId); } catch (_) {}
       }
       if (mouseHoldTimer) {
         clearMouseHoldTimer();
@@ -4391,7 +4391,7 @@ function bindUi() {
 
     // Some mobile browsers do not consistently synthesize click for canvas taps.
     // Handle tap-to-talk / tap-to-stop directly on touchend.
-    zenClickTarget.addEventListener('touchstart', (ev) => {
+    clickTarget.addEventListener('touchstart', (ev) => {
       if (ev.touches.length !== 1) {
         touchTapTracking = false;
         touchTapMoved = false;
@@ -4404,7 +4404,7 @@ function bindUi() {
       touchTapMoved = false;
     }, { passive: true });
 
-    zenClickTarget.addEventListener('touchmove', (ev) => {
+    clickTarget.addEventListener('touchmove', (ev) => {
       if (!touchTapTracking || touchTapMoved || ev.touches.length !== 1) return;
       const touch = ev.touches[0];
       const dx = touch.clientX - touchTapStartX;
@@ -4414,7 +4414,7 @@ function bindUi() {
       }
     }, { passive: true });
 
-    zenClickTarget.addEventListener('touchend', (ev) => {
+    clickTarget.addEventListener('touchend', (ev) => {
       if (!touchTapTracking) return;
       touchTapTracking = false;
       if (touchTapMoved) {
@@ -4436,7 +4436,7 @@ function bindUi() {
       }
       if (shouldStopInUiClick()) {
         ev.preventDefault();
-        void handleZenStopAction();
+        void handleStopAction();
         return;
       }
 
@@ -4446,18 +4446,18 @@ function bindUi() {
 
       ev.preventDefault();
       if (isRecording()) {
-        void stopZenVoiceCaptureAndSend();
+        void stopVoiceCaptureAndSend();
         return;
       }
       void beginVoiceCaptureFromPoint(x, y);
     }, { passive: false });
 
-    zenClickTarget.addEventListener('touchcancel', () => {
+    clickTarget.addEventListener('touchcancel', () => {
       touchTapTracking = false;
       touchTapMoved = false;
     }, { passive: true });
 
-    zenClickTarget.addEventListener('click', (ev) => {
+    clickTarget.addEventListener('click', (ev) => {
       if (mouseHoldSuppressClick) {
         mouseHoldSuppressClick = false;
         ev.preventDefault();
@@ -4475,7 +4475,7 @@ function bindUi() {
       }
       if (shouldStopInUiClick()) {
         ev.preventDefault();
-        void handleZenStopAction();
+        void handleStopAction();
         return;
       }
 
@@ -4492,7 +4492,7 @@ function bindUi() {
       rememberMousePosition(x, y);
 
       if (isRecording()) {
-        void stopZenVoiceCaptureAndSend();
+        void stopVoiceCaptureAndSend();
         return;
       }
 
@@ -4500,9 +4500,9 @@ function bindUi() {
     });
   }
 
-  // Zen: Right-click -> text input
-  if (zenClickTarget) {
-    zenClickTarget.addEventListener('contextmenu', (ev) => {
+  // Right-click -> text input
+  if (clickTarget) {
+    clickTarget.addEventListener('contextmenu', (ev) => {
       if (ev.target instanceof Element && ev.target.closest('.edge-panel')) return;
       ev.preventDefault();
       cancelConversationListen();
@@ -4514,23 +4514,23 @@ function bindUi() {
     });
   }
 
-  // Zen: Text input Enter -> send
-  const zenInput = document.getElementById('zen-input');
-  if (zenInput instanceof HTMLTextAreaElement) {
-    zenInput.addEventListener('focus', () => {
+  // Text input Enter -> send
+  const floatingInput = document.getElementById('floating-input');
+  if (floatingInput instanceof HTMLTextAreaElement) {
+    floatingInput.addEventListener('focus', () => {
       cancelConversationListen();
     });
-    zenInput.addEventListener('keydown', (ev) => {
+    floatingInput.addEventListener('keydown', (ev) => {
       if (ev.key === 'Enter' && !ev.shiftKey) {
         ev.preventDefault();
-        const text = zenInput.value.trim();
+        const text = floatingInput.value.trim();
         if (text) {
           state.lastInputOrigin = 'text';
-          zenInput.value = '';
-          zenInput.blur();
+          floatingInput.value = '';
+          floatingInput.blur();
           hideTextInput();
           settleKeyboardAfterSubmit();
-          void zenSubmitMessage(text);
+          void submitMessage(text);
         }
       }
       if (ev.key === 'Escape') {
@@ -4538,9 +4538,9 @@ function bindUi() {
         hideTextInput();
       }
     });
-    zenInput.addEventListener('input', () => {
-      zenInput.style.height = 'auto';
-      zenInput.style.height = `${Math.min(zenInput.scrollHeight, 240)}px`;
+    floatingInput.addEventListener('input', () => {
+      floatingInput.style.height = 'auto';
+      floatingInput.style.height = `${Math.min(floatingInput.scrollHeight, 240)}px`;
     });
   }
 
@@ -4560,7 +4560,7 @@ function bindUi() {
           chatPaneInput.style.height = '';
           chatPaneInput.blur();
           settleKeyboardAfterSubmit();
-          void zenSubmitMessage(text);
+          void submitMessage(text);
         }
       }
       if (ev.key === 'Escape') {
@@ -4612,7 +4612,7 @@ function bindUi() {
       if (chatInputHoldTimer) { clearTimeout(chatInputHoldTimer); chatInputHoldTimer = null; return; }
       if (chatInputHoldActive) {
         chatInputHoldActive = false;
-        if (isRecording()) void stopZenVoiceCaptureAndSend();
+        if (isRecording()) void stopVoiceCaptureAndSend();
       }
     }, { passive: true });
 
@@ -4636,32 +4636,32 @@ function bindUi() {
         void beginVoiceCaptureFromPoint(ev.clientX, ev.clientY);
         return;
       }
-      if (shouldStopInUiClick()) { void handleZenStopAction(); return; }
-      if (isRecording()) { void stopZenVoiceCaptureAndSend(); return; }
+      if (shouldStopInUiClick()) { void handleStopAction(); return; }
+      if (isRecording()) { void stopVoiceCaptureAndSend(); return; }
       void beginVoiceCaptureFromPoint(ev.clientX, ev.clientY);
     });
   }
 
-  // Zen: Click outside overlay/input -> dismiss
+  // Click outside overlay/input -> dismiss
   document.addEventListener('mousedown', (ev) => {
     if (!(ev.target instanceof Element)) return;
     // Dismiss overlay on click outside
     if (isOverlayVisible()) {
-      const overlay = document.getElementById('zen-overlay');
+      const overlay = document.getElementById('overlay');
       if (overlay && !overlay.contains(ev.target)) {
         hideOverlay();
       }
     }
     // Dismiss text input on click outside
     if (isTextInputVisible()) {
-      const input = document.getElementById('zen-input');
+      const input = document.getElementById('floating-input');
       if (input && !input.contains(ev.target) && ev.button === 0) {
         hideTextInput();
       }
     }
   });
 
-  // Zen: Keyboard typing auto-activates text input (rasa mode)
+  // Keyboard typing auto-activates text input (rasa mode)
   document.addEventListener('keydown', (ev) => {
     // Escape handling
     if (ev.key === 'Escape' && !ev.metaKey && !ev.ctrlKey && !ev.altKey) {
@@ -4688,14 +4688,14 @@ function bindUi() {
         hideCanvasColumn();
         return;
       }
-      void handleZenStopAction();
+      void handleStopAction();
       return;
     }
 
     // Enter stops recording
     if (ev.key === 'Enter' && isRecording()) {
       ev.preventDefault();
-      void stopZenVoiceCaptureAndSend();
+      void stopVoiceCaptureAndSend();
       return;
     }
 
@@ -4775,7 +4775,7 @@ function bindUi() {
       cancelConversationListen();
       showTextInput(cx, cy, null);
       // Forward the keystroke
-      const input = document.getElementById('zen-input');
+      const input = document.getElementById('floating-input');
       if (input instanceof HTMLTextAreaElement) {
         input.value = ev.key;
         const caret = ev.key.length;
@@ -4800,7 +4800,7 @@ function bindUi() {
       return;
     }
     if (state.chatVoiceCapture) {
-      void stopZenVoiceCaptureAndSend();
+      void stopVoiceCaptureAndSend();
     }
   }, true);
 
@@ -4865,7 +4865,7 @@ function bindUi() {
       if (artHoldTimer) { clearTimeout(artHoldTimer); artHoldTimer = null; return; }
       if (artHoldActive || state.chatVoiceCapture) {
         artHoldActive = false;
-        void stopZenVoiceCaptureAndSend();
+        void stopVoiceCaptureAndSend();
       }
     }, { passive: true });
 
@@ -4883,7 +4883,7 @@ function showSplash() {
   const name = project?.name || '';
   if (!name) return;
   const splash = document.createElement('div');
-  splash.className = 'zen-splash';
+  splash.className = 'splash';
   splash.textContent = name;
   document.getElementById('view-main')?.appendChild(splash);
   window.setTimeout(() => splash.classList.add('fade-out'), 100);

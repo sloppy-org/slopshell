@@ -18,7 +18,7 @@ async function clearLog(page: Page) {
 }
 
 async function waitReady(page: Page) {
-  await page.goto('/tests/playwright/zen-harness.html');
+  await page.goto('/tests/playwright/harness.html');
   await page.waitForFunction(() => {
     const app = (window as any)._taburaApp;
     if (typeof app?.getState !== 'function') return false;
@@ -135,7 +135,7 @@ test('conversation mode shows listening indicator after TTS playback completes',
   }).toBe(true);
 
   await expect.poll(async () => page.evaluate(() => {
-    const indicator = document.getElementById('zen-indicator');
+    const indicator = document.getElementById('indicator');
     return Boolean(indicator?.classList.contains('is-listening'));
   })).toBe(true);
 });
@@ -154,7 +154,7 @@ test('conversation mode off does not open listening indicator after TTS', async 
 
   await page.waitForTimeout(300);
   const isListening = await page.evaluate(() => {
-    const indicator = document.getElementById('zen-indicator');
+    const indicator = document.getElementById('indicator');
     return Boolean(indicator?.classList.contains('is-listening'));
   });
   expect(isListening).toBe(false);
@@ -180,7 +180,7 @@ test('speech onset during conversation listen starts recording', async ({ page }
   }, { timeout: 5_000 }).toBe(true);
 
   await expect.poll(async () => page.evaluate(() => {
-    const indicator = document.getElementById('zen-indicator');
+    const indicator = document.getElementById('indicator');
     return Boolean(indicator?.classList.contains('is-recording'));
   })).toBe(true);
 });
@@ -196,12 +196,12 @@ test('conversation listen timeout hides listening indicator', async ({ page }) =
   await triggerVoiceAssistantTTS(page, 'conv-timeout-1');
 
   await expect.poll(async () => page.evaluate(() => {
-    const indicator = document.getElementById('zen-indicator');
+    const indicator = document.getElementById('indicator');
     return Boolean(indicator?.classList.contains('is-listening'));
   })).toBe(true);
 
   await expect.poll(async () => page.evaluate(() => {
-    const indicator = document.getElementById('zen-indicator');
+    const indicator = document.getElementById('indicator');
     return Boolean(indicator?.classList.contains('is-listening'));
   }), { timeout: 4_000 }).toBe(false);
 });
@@ -217,7 +217,7 @@ test('tap during conversation listen cancels listen and starts recording', async
   await triggerVoiceAssistantTTS(page, 'conv-tap-1');
 
   await expect.poll(async () => page.evaluate(() => {
-    const indicator = document.getElementById('zen-indicator');
+    const indicator = document.getElementById('indicator');
     return Boolean(indicator?.classList.contains('is-listening'));
   })).toBe(true);
 
@@ -229,7 +229,7 @@ test('tap during conversation listen cancels listen and starts recording', async
   }, { timeout: 3_000 }).toBe(true);
 
   const stillListening = await page.evaluate(() => {
-    const indicator = document.getElementById('zen-indicator');
+    const indicator = document.getElementById('indicator');
     return Boolean(indicator?.classList.contains('is-listening'));
   });
   expect(stillListening).toBe(false);
@@ -246,7 +246,7 @@ test('PTT during conversation listen cancels listen and starts push-to-talk', as
   await triggerVoiceAssistantTTS(page, 'conv-ptt-1');
 
   await expect.poll(async () => page.evaluate(() => {
-    const indicator = document.getElementById('zen-indicator');
+    const indicator = document.getElementById('indicator');
     return Boolean(indicator?.classList.contains('is-listening'));
   })).toBe(true);
 
@@ -276,7 +276,7 @@ test('silent mode with conversation enabled does not open conversation listen', 
   expect(log.some((entry) => entry.type === 'tts')).toBe(false);
 
   const isListening = await page.evaluate(() => {
-    const indicator = document.getElementById('zen-indicator');
+    const indicator = document.getElementById('indicator');
     return Boolean(indicator?.classList.contains('is-listening'));
   });
   expect(isListening).toBe(false);

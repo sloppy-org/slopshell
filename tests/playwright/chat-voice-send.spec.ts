@@ -206,7 +206,7 @@ test.beforeEach(async ({ page }) => {
     if (msg.type() === 'error') console.log(`BROWSER [error]: ${msg.text()}`);
   });
   page.on('pageerror', (err) => console.log(`PAGE ERROR: ${err.message}`));
-  await page.goto('/tests/playwright/zen-harness.html');
+  await page.goto('/tests/playwright/harness.html');
   await page.waitForFunction(() => {
     const app = (window as any)._taburaApp;
     if (typeof app?.getState !== 'function') return false;
@@ -222,14 +222,14 @@ test.beforeEach(async ({ page }) => {
 test('click on canvas starts voice recording', async ({ page }) => {
   await clearLog(page);
 
-  // Click on canvas area to start recording (zen mode: tap = voice)
+  // Click on canvas area to start recording (tap = voice)
   await page.mouse.click(400, 400);
   await page.waitForTimeout(500);
 
   await waitForLogEntry(page, 'recorder', 'start');
 
   // Recording indicator should be visible
-  const indicator = page.locator('#zen-indicator');
+  const indicator = page.locator('#indicator');
   await expect(indicator).toBeVisible();
 
   // Click again to stop recording
@@ -254,10 +254,10 @@ test('touch stop indicator routes through shared cancel endpoint', async ({ page
   await page.waitForTimeout(100);
   await expect(page.locator('#chat-history .chat-message.chat-assistant.is-pending')).toHaveCount(1);
 
-  const stopSquare = page.locator('.zen-stop-square');
+  const stopSquare = page.locator('.stop-square');
   await expect(stopSquare).toBeVisible();
 
-  await tapElement(page, '.zen-stop-square');
+  await tapElement(page, '.stop-square');
   await waitForApiCancel(page);
 
   const log = await getLog(page);
@@ -284,7 +284,7 @@ test('touch stop retries cancel when first cancel reports zero but work remains'
 
   await injectChatEvent(page, { type: 'turn_started', turn_id: 'stop-retry-turn' });
   await page.waitForTimeout(100);
-  await tapElement(page, '.zen-stop-square');
+  await tapElement(page, '.stop-square');
 
   await expect.poll(async () => {
     const log = await getLog(page);
@@ -300,9 +300,9 @@ test('touch stop while sending transcript aborts pending message submit', async 
   await waitForLogEntry(page, 'recorder', 'start');
   await page.mouse.click(400, 400);
   await waitForSTTAction(page, 'stop');
-  await expect(page.locator('#zen-status')).toContainText('sending');
+  await expect(page.locator('#status-label')).toContainText('sending');
 
-  await tapElement(page, '.zen-stop-square');
+  await tapElement(page, '.stop-square');
   await waitForApiCancel(page);
   await page.waitForTimeout(1400);
 
@@ -477,7 +477,7 @@ test('Control long-press starts at mouse location and sends artifact line contex
   await waitForLogEntry(page, 'recorder', 'start');
 
   const dotPos = await page.evaluate(() => {
-    const dot = document.querySelector('#zen-indicator .zen-record-dot');
+    const dot = document.querySelector('#indicator .record-dot');
     if (!(dot instanceof HTMLElement)) return null;
     return {
       x: Number.parseFloat(dot.style.left || '0'),
@@ -509,8 +509,8 @@ test('Control long-press on PDF sends page context from cursor position', async 
   const y = Math.floor(box.y + 8);
 
   const anchor = await page.evaluate(async (point) => {
-    const zen = await import('../../internal/web/static/zen.js');
-    return zen.getAnchorFromPoint(point.x, point.y);
+    const ui = await import('../../internal/web/static/ui.js');
+    return ui.getAnchorFromPoint(point.x, point.y);
   }, { x, y });
   expect(anchor).toBeTruthy();
   expect(anchor.page).toBe(2);
@@ -523,14 +523,14 @@ test('Control long-press on PDF sends page context from cursor position', async 
   await waitForLogEntry(page, 'recorder', 'start');
   await expect.poll(async () => page.evaluate(() => (window as any)._taburaApp?.getState?.().hasArtifact)).toBe(true);
   const captureAnchor = await page.evaluate(async () => {
-    const zen = await import('../../internal/web/static/zen.js');
-    return zen.getInputAnchor();
+    const ui = await import('../../internal/web/static/ui.js');
+    return ui.getInputAnchor();
   });
   expect(captureAnchor).toBeTruthy();
   expect(captureAnchor.page).toBe(2);
 
   const dotPos = await page.evaluate(() => {
-    const dot = document.querySelector('#zen-indicator .zen-record-dot');
+    const dot = document.querySelector('#indicator .record-dot');
     if (!(dot instanceof HTMLElement)) return null;
     return {
       x: Number.parseFloat(dot.style.left || '0'),
@@ -571,7 +571,7 @@ test('voice transcription result gets sent as message', async ({ page }) => {
   await page.waitForTimeout(500);
   await waitForLogEntry(page, 'recorder', 'start');
 
-  // Stop recording (will auto-send via zen voice capture)
+  // Stop recording (will auto-send via voice capture)
   await page.mouse.click(400, 400);
   await waitForSTTAction(page, 'stop');
   await page.waitForTimeout(500);
@@ -590,18 +590,18 @@ test('recording indicator shows symbol', async ({ page }) => {
   await page.waitForTimeout(500);
   await waitForLogEntry(page, 'recorder', 'start');
 
-  const indicator = page.locator('#zen-indicator');
+  const indicator = page.locator('#indicator');
   await expect(indicator).toBeVisible();
-  await expect(page.locator('.zen-record-dot')).toBeVisible();
-  await expect(page.locator('.zen-stop-square')).toBeHidden();
+  await expect(page.locator('.record-dot')).toBeVisible();
+  await expect(page.locator('.stop-square')).toBeHidden();
 
   // Stop recording and transition to working/play indicator
   await page.mouse.click(400, 400);
   await waitForSTTAction(page, 'stop');
   await page.waitForTimeout(200);
   await expect(indicator).toBeVisible();
-  await expect(page.locator('.zen-stop-square')).toBeVisible();
-  await expect(page.locator('.zen-record-dot')).toBeHidden();
+  await expect(page.locator('.stop-square')).toBeVisible();
+  await expect(page.locator('.record-dot')).toBeHidden();
 });
 
 test('focus refreshes cached mic stream before next recording', async ({ page }) => {

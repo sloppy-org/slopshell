@@ -46,7 +46,7 @@ async function clearHarnessMessages(page: Page) {
 }
 
 test.beforeEach(async ({ page }) => {
-  await page.goto('/tests/playwright/harness.html');
+  await page.goto('/tests/playwright/review-harness.html');
   await clearHarnessMessages(page);
 });
 

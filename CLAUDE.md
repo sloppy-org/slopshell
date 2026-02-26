@@ -42,10 +42,10 @@ Rules:
 - Ephemeral canvas content is implemented via temporary files.
 - Multi-paragraph assistant output should be promoted to a temp canvas file and not shown/spoken in chat.
 
-## Zen Interaction
+## Interaction
 
 - Tap/left-click toggles voice recording.
-- Right-click opens floating text input (`#zen-input`).
+- Right-click opens floating text input (`#floating-input`).
 - Keyboard typing auto-activates input when nothing is focused.
 - Enter sends and clears input.
 - Ctrl long-press starts push-to-talk; release stops/sends.
@@ -53,7 +53,7 @@ Rules:
 
 Key selectors:
 - `#workspace`, `#canvas-column`, `.canvas-pane`
-- `#zen-input`, `#zen-overlay`, `#zen-indicator`
+- `#floating-input`, `#overlay`, `#indicator`
 - `#edge-top`, `#edge-right`
 
 ## Local Services (systemd --user)
@@ -142,7 +142,7 @@ npx playwright test
 ```
 
 Current core specs include:
-- `tests/playwright/zen-canvas.spec.ts`
+- `tests/playwright/canvas.spec.ts`
 - `tests/playwright/chat-voice-send.spec.ts`
 - `tests/playwright/artifact-context.spec.ts`
 - `tests/playwright/review-mode.spec.ts`

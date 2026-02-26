@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tabura Mail Harness</title>
+  <link rel="stylesheet" href="../../internal/web/static/style.css">
+  <style>
+    body { margin: 0; padding: 0; }
+    #harness-root { width: 100vw; height: 100vh; display: flex; flex-direction: column; }
+    #canvas-viewport { flex: 1; overflow: auto; }
+    .canvas-pane { display: none; height: 100%; }
+    .canvas-pane.is-active { display: flex; flex-direction: column; }
+  </style>
+</head>
+<body>
+  <div id="harness-root">
+    <div id="canvas-viewport">
+      <section id="canvas-text" class="canvas-pane" style="display:none"></section>
+      <section id="canvas-image" class="canvas-pane" style="display:none"><img id="canvas-img" alt="artifact"></section>
+      <section id="canvas-pdf" class="canvas-pane" style="display:none"></section>
+    </div>
+  </div>
+
+  <script type="module">
+    window.__TABURA_UNDO_TIMEOUT_MS = 80;
+    const harnessMessages = [];
+    const harnessState = {
+      sessionId: 'local',
+      canvasWs: {
+        readyState: WebSocket.OPEN,
+        send(payload) {
+          try {
+            harnessMessages.push(JSON.parse(payload));
+          } catch (_) {
+            harnessMessages.push({ raw: String(payload || '') });
+          }
+        },
+      },
+    };
+
+    const sttLog = [];
+    let sttTranscript = 'hello world';
+    let sttFailStop = false;
+    window._taburaApp = {
+      getState() {
+        return harnessState;
+      },
+      sttStart(mimeType) {
+        sttLog.push({ action: 'start', mime_type: mimeType });
+      },
+      sttSendChunk(blob) {
+        sttLog.push({ action: 'append', size: blob?.size || 0 });
+      },
+      sttStop() {
+        sttLog.push({ action: 'stop' });
+        if (sttFailStop) {
+          return Promise.reject(new Error('upstream unavailable'));
+        }
+        return Promise.resolve({ text: sttTranscript });
+      },
+      sttCancel() {
+        sttLog.push({ action: 'cancel' });
+      },
+    };
+    window.__sttLog = sttLog;
+    window.__sttConfigure = (transcript, failStop) => {
+      sttTranscript = transcript;
+      sttFailStop = failStop;
+    };
+
+    const { renderCanvas, clearCanvas } = await import('../../internal/web/static/canvas.js');
+    window.renderHarnessArtifact = (event) => renderCanvas(event);
+    window.clearHarnessCanvas = () => clearCanvas();
+    window.getHarnessMessages = () => harnessMessages.slice();
+    window.clearHarnessMessages = () => {
+      harnessMessages.splice(0, harnessMessages.length);
+    };
+  </script>
+</body>
+</html>

@@ -7,7 +7,7 @@ async function getLog(page: Page): Promise<HarnessLogEntry[]> {
 }
 
 async function waitReady(page: Page) {
-  await page.goto('/tests/playwright/zen-harness.html');
+  await page.goto('/tests/playwright/harness.html');
   await page.waitForFunction(() => {
     const app = (window as any)._taburaApp;
     if (typeof app?.getState !== 'function') return false;
@@ -196,8 +196,8 @@ test.describe('chat pane interactions', () => {
     await chatHistory.click({ position: { x: 50, y: 50 } });
     await page.waitForTimeout(300);
 
-    // zen-indicator should show is-recording
-    const indicator = page.locator('#zen-indicator');
+    // indicator should show is-recording
+    const indicator = page.locator('#indicator');
     await expect(indicator).toHaveClass(/is-recording/);
 
     // Click again to stop

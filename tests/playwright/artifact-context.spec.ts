@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
 async function waitReady(page: Page) {
-  await page.goto('/tests/playwright/zen-harness.html');
+  await page.goto('/tests/playwright/harness.html');
   await page.waitForFunction(() => {
     const app = (window as any)._taburaApp;
     if (typeof app?.getState !== 'function') return false;
@@ -61,7 +61,7 @@ async function getSentBodies(page: Page): Promise<any[]> {
   return page.evaluate(() => (window as any).__sentBodies.slice());
 }
 
-test.describe('zen canvas layout', () => {
+test.describe('canvas layout', () => {
   test.beforeEach(async ({ page }) => {
     await waitReady(page);
     await injectCanvasModuleRef(page);
@@ -129,9 +129,9 @@ test.describe('zen canvas layout', () => {
     await page.mouse.click(box.x + 50, box.y + 50, { button: 'right' });
     await page.waitForTimeout(200);
 
-    // In zen mode, right-click opens text input
-    const zenInput = page.locator('#zen-input');
-    await expect(zenInput).toBeVisible();
+    // Right-click opens text input
+    const floatingInput = page.locator('#floating-input');
+    await expect(floatingInput).toBeVisible();
   });
 
   test('left-click on artifact starts recording, not text input', async ({ page }) => {
@@ -145,8 +145,8 @@ test.describe('zen canvas layout', () => {
     await page.waitForTimeout(500);
 
     // Should show recording indicator, not text input
-    const zenInput = page.locator('#zen-input');
-    const inputVisible = await zenInput.evaluate(el => el.style.display !== 'none');
+    const floatingInput = page.locator('#floating-input');
+    const inputVisible = await floatingInput.evaluate(el => el.style.display !== 'none');
     expect(inputVisible).toBe(false);
   });
 
@@ -199,9 +199,9 @@ test.describe('zen canvas layout', () => {
     await page.mouse.click(300, 300, { button: 'right' });
     await page.waitForTimeout(100);
 
-    const zenInput = page.locator('#zen-input');
-    await expect(zenInput).toBeVisible();
-    await zenInput.fill('hello');
+    const floatingInput = page.locator('#floating-input');
+    await expect(floatingInput).toBeVisible();
+    await floatingInput.fill('hello');
     await page.keyboard.press('Enter');
     await page.waitForTimeout(300);
 

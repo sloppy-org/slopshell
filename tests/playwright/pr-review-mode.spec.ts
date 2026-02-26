@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
 async function waitReady(page: Page) {
-  await page.goto('/tests/playwright/zen-harness.html');
+  await page.goto('/tests/playwright/harness.html');
   await page.waitForFunction(() => {
     const app = (window as any)._taburaApp;
     if (typeof app?.getState !== 'function') return false;

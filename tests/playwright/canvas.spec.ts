@@ -11,7 +11,7 @@ async function clearLog(page: Page) {
 }
 
 async function waitReady(page: Page) {
-  await page.goto('/tests/playwright/zen-harness.html');
+  await page.goto('/tests/playwright/harness.html');
   await page.waitForFunction(() => {
     const app = (window as any)._taburaApp;
     if (typeof app?.getState !== 'function') return false;
@@ -25,8 +25,8 @@ async function injectCanvasModuleRef(page: Page) {
   await page.evaluate(async () => {
     const mod = await import('../../internal/web/static/canvas.js');
     (window as any).__canvasModule = mod;
-    const zen = await import('../../internal/web/static/zen.js');
-    (window as any).__zenModule = zen;
+    const ui = await import('../../internal/web/static/ui.js');
+    (window as any).__uiModule = ui;
   });
 }
 
@@ -116,7 +116,7 @@ async function dispatchTouchSwipe(page: Page, startX: number, startY: number, en
   }, { startX, startY, endX, endY });
 }
 
-test.describe('zen canvas - tabula rasa', () => {
+test.describe('canvas - tabula rasa', () => {
   test.beforeEach(async ({ page }) => {
     await waitReady(page);
     await injectCanvasModuleRef(page);
@@ -141,22 +141,22 @@ test.describe('zen canvas - tabula rasa', () => {
   });
 
   test('keyboard typing activates text input, Enter sends, text cleared', async ({ page }) => {
-    // Type a character - should auto-open zen-input
+    // Type a character - should auto-open floating-input
     await page.keyboard.type('h');
     await page.waitForTimeout(100);
 
-    const zenInput = page.locator('#zen-input');
-    await expect(zenInput).toBeVisible();
-    await expect(zenInput).toHaveValue('h');
+    const floatingInput = page.locator('#floating-input');
+    await expect(floatingInput).toBeVisible();
+    await expect(floatingInput).toHaveValue('h');
 
     // Type more and send
     await page.keyboard.type('ello');
-    await expect(zenInput).toHaveValue('hello');
+    await expect(floatingInput).toHaveValue('hello');
     await page.keyboard.press('Enter');
     await page.waitForTimeout(300);
 
     // Text input should be hidden after send
-    await expect(zenInput).toBeHidden();
+    await expect(floatingInput).toBeHidden();
 
     // Check message was sent
     const log = await getLog(page);
@@ -173,10 +173,10 @@ test.describe('zen canvas - tabula rasa', () => {
     await page.waitForTimeout(500);
 
     // Recording indicator should be visible
-    const indicator = page.locator('#zen-indicator');
+    const indicator = page.locator('#indicator');
     await expect(indicator).toBeVisible();
-    await expect(page.locator('.zen-record-dot')).toBeVisible();
-    await expect(page.locator('.zen-stop-square')).toBeHidden();
+    await expect(page.locator('.record-dot')).toBeVisible();
+    await expect(page.locator('.stop-square')).toBeHidden();
 
     // Wait for recorder to start
     await waitForLogEntry(page, 'recorder', 'start');
@@ -185,31 +185,31 @@ test.describe('zen canvas - tabula rasa', () => {
     await page.mouse.click(400, 400);
     await waitForLogEntry(page, 'stt', 'stop');
     await expect(indicator).toBeVisible();
-    await expect(page.locator('.zen-stop-square')).toBeVisible();
-    await expect(page.locator('.zen-record-dot')).toBeHidden();
+    await expect(page.locator('.stop-square')).toBeVisible();
+    await expect(page.locator('.record-dot')).toBeHidden();
   });
 
   test('right-click opens text input at position', async ({ page }) => {
     await page.mouse.click(300, 300, { button: 'right' });
     await page.waitForTimeout(100);
 
-    const zenInput = page.locator('#zen-input');
-    await expect(zenInput).toBeVisible();
-    await expect(zenInput).toBeFocused();
+    const floatingInput = page.locator('#floating-input');
+    await expect(floatingInput).toBeVisible();
+    await expect(floatingInput).toBeFocused();
   });
 
   test('Escape dismisses text input', async ({ page }) => {
     await page.mouse.click(300, 300, { button: 'right' });
     await page.waitForTimeout(100);
-    await expect(page.locator('#zen-input')).toBeVisible();
+    await expect(page.locator('#floating-input')).toBeVisible();
 
     await page.keyboard.press('Escape');
     await page.waitForTimeout(100);
-    await expect(page.locator('#zen-input')).toBeHidden();
+    await expect(page.locator('#floating-input')).toBeHidden();
   });
 });
 
-test.describe('zen canvas - response overlay', () => {
+test.describe('canvas - response overlay', () => {
   test.beforeEach(async ({ page }) => {
     await waitReady(page);
     await injectCanvasModuleRef(page);
@@ -227,14 +227,14 @@ test.describe('zen canvas - response overlay', () => {
     await page.waitForTimeout(100);
 
     // Overlay should appear
-    const overlay = page.locator('#zen-overlay');
+    const overlay = page.locator('#overlay');
     await expect(overlay).toBeVisible();
 
     // Inject assistant message
     await injectChatEvent(page, { type: 'assistant_message', turn_id: 'turn-1', message: 'Hello back!' });
     await page.waitForTimeout(100);
 
-    const content = page.locator('.zen-overlay-content');
+    const content = page.locator('.overlay-content');
     const text = await content.textContent();
     expect(text).toContain('Hello back!');
 
@@ -292,9 +292,9 @@ test.describe('zen canvas - response overlay', () => {
 
   test('empty canvas switches from text overlay to symbol on first artifact event', async ({ page }) => {
     await page.evaluate(() => {
-      const zenMod = (window as any).__zenModule;
-      if (zenMod?.getZenState) {
-        const zs = zenMod.getZenState();
+      const uiMod = (window as any).__uiModule;
+      if (uiMod?.getUiState) {
+        const zs = uiMod.getUiState();
         zs.lastInputX = 400;
         zs.lastInputY = 300;
       }
@@ -306,8 +306,8 @@ test.describe('zen canvas - response overlay', () => {
 
     await injectChatEvent(page, { type: 'turn_started', turn_id: 'draw-1' });
     await page.waitForTimeout(100);
-    await expect(page.locator('#zen-overlay')).toBeVisible();
-    await expect(page.locator('#zen-indicator')).toBeVisible();
+    await expect(page.locator('#overlay')).toBeVisible();
+    await expect(page.locator('#indicator')).toBeVisible();
 
     // No event_id on purpose: empty->drawn transition must still flip to artifact symbol mode.
     await injectCanvasEvent(page, {
@@ -319,8 +319,8 @@ test.describe('zen canvas - response overlay', () => {
 
     await expect(page.locator('#canvas-text')).toBeVisible();
     await expect(page.locator('#canvas-text')).toContainText('Drawn content');
-    await expect(page.locator('#zen-overlay')).toBeHidden();
-    await expect(page.locator('#zen-indicator')).toBeHidden();
+    await expect(page.locator('#overlay')).toBeHidden();
+    await expect(page.locator('#indicator')).toBeHidden();
 
     const hasArtifact = await page.evaluate(() => Boolean((window as any)._taburaApp?.getState?.().hasArtifact));
     expect(hasArtifact).toBe(true);
@@ -336,9 +336,9 @@ test.describe('zen canvas - response overlay', () => {
     await injectChatEvent(page, { type: 'error', turn_id: 'turn-err', error: 'something broke' });
     await page.waitForTimeout(100);
 
-    const overlay = page.locator('#zen-overlay');
+    const overlay = page.locator('#overlay');
     await expect(overlay).toBeVisible();
-    const content = await page.locator('.zen-overlay-content').textContent();
+    const content = await page.locator('.overlay-content').textContent();
     expect(content).toContain('something broke');
 
     // Auto-dismisses after ~2s
@@ -347,7 +347,7 @@ test.describe('zen canvas - response overlay', () => {
   });
 });
 
-test.describe('zen canvas - artifact mode', () => {
+test.describe('canvas - artifact mode', () => {
   test.beforeEach(async ({ page }) => {
     await waitReady(page);
     await injectCanvasModuleRef(page);
@@ -409,7 +409,7 @@ test.describe('zen canvas - artifact mode', () => {
   });
 });
 
-test.describe('zen canvas - TTS voice output', () => {
+test.describe('canvas - TTS voice output', () => {
   test.beforeEach(async ({ page }) => {
     await waitReady(page);
     await injectCanvasModuleRef(page);
@@ -420,9 +420,9 @@ test.describe('zen canvas - TTS voice output', () => {
       const app = (window as any)._taburaApp;
       if (app?.getState) app.getState().lastInputOrigin = 'voice';
       // Set a valid position so indicators are visible in viewport
-      const zenMod = (window as any).__zenModule;
-      if (zenMod?.getZenState) {
-        const zs = zenMod.getZenState();
+      const uiMod = (window as any).__uiModule;
+      if (uiMod?.getUiState) {
+        const zs = uiMod.getUiState();
         zs.lastInputX = 400;
         zs.lastInputY = 300;
       }
@@ -437,11 +437,11 @@ test.describe('zen canvas - TTS voice output', () => {
     await page.waitForTimeout(100);
 
     // Stop indicator visible, overlay hidden
-    const indicator = page.locator('#zen-indicator');
+    const indicator = page.locator('#indicator');
     await expect(indicator).toBeVisible();
-    await expect(page.locator('.zen-stop-square')).toBeVisible();
+    await expect(page.locator('.stop-square')).toBeVisible();
 
-    const overlay = page.locator('#zen-overlay');
+    const overlay = page.locator('#overlay');
     await expect(overlay).toBeHidden();
   });
 
@@ -455,15 +455,15 @@ test.describe('zen canvas - TTS voice output', () => {
     await injectChatEvent(page, { type: 'turn_started', turn_id: 'text-t1' });
     await page.waitForTimeout(100);
 
-    const overlay = page.locator('#zen-overlay');
+    const overlay = page.locator('#overlay');
     await expect(overlay).toBeVisible();
-    const content = await page.locator('.zen-overlay-content').textContent();
+    const content = await page.locator('.overlay-content').textContent();
     expect(content).toContain('Thinking');
 
     // Indicator stays visible while work is active
-    const indicator = page.locator('#zen-indicator');
+    const indicator = page.locator('#indicator');
     await expect(indicator).toBeVisible();
-    await expect(page.locator('.zen-stop-square')).toBeVisible();
+    await expect(page.locator('.stop-square')).toBeVisible();
   });
 
   test('voice response triggers TTS, no overlay', async ({ page }) => {
@@ -495,7 +495,7 @@ test.describe('zen canvas - TTS voice output', () => {
     expect(ttsCalls[0].text).toBeTruthy();
 
     // Overlay should NOT be visible for voice turns
-    const overlay = page.locator('#zen-overlay');
+    const overlay = page.locator('#overlay');
     await expect(overlay).toBeHidden();
   });
 
@@ -528,7 +528,7 @@ test.describe('zen canvas - TTS voice output', () => {
       message: '',
       delta: '',
     });
-    await expect(page.locator('#zen-indicator')).toBeHidden();
+    await expect(page.locator('#indicator')).toBeHidden();
     await page.waitForTimeout(250);
 
     // auto_canvas empty message should not add extra TTS
@@ -597,7 +597,7 @@ test.describe('zen canvas - TTS voice output', () => {
     await page.waitForTimeout(500);
 
     // Overlay shows markdown
-    const overlay = page.locator('#zen-overlay');
+    const overlay = page.locator('#overlay');
     await expect(overlay).toBeVisible();
 
     await injectChatEvent(page, {
@@ -644,7 +644,7 @@ test.describe('zen canvas - TTS voice output', () => {
   });
 });
 
-test.describe('zen canvas - edge panels', () => {
+test.describe('canvas - edge panels', () => {
   test.beforeEach(async ({ page }) => {
     await waitReady(page);
   });
