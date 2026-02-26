@@ -257,6 +257,7 @@
             is_root: true,
             entries: [
               { name: 'docs', path: 'docs', is_dir: true },
+              { name: 'NOTES.md', path: 'NOTES.md', is_dir: false },
               { name: 'README.md', path: 'README.md', is_dir: false },
             ],
           }), { status: 200 });
@@ -268,6 +269,7 @@
             path: 'docs',
             is_root: false,
             entries: [
+              { name: 'architecture.md', path: 'docs/architecture.md', is_dir: false },
               { name: 'guide.md', path: 'docs/guide.md', is_dir: false },
             ],
           }), { status: 200 });
@@ -365,7 +367,11 @@
         return new Response(JSON.stringify({}), { status: 200 });
       }
       if (u.includes('/api/files/')) {
-        return new Response('# Harness file\n', {
+        const pathPart = u.split('/api/files/')[1] || '';
+        const slash = pathPart.indexOf('/');
+        const encodedPath = slash >= 0 ? pathPart.slice(slash + 1) : '';
+        const filePath = decodeURIComponent(encodedPath || '').trim() || 'file';
+        return new Response(`# Harness file: ${filePath}\n`, {
           status: 200,
           headers: { 'Content-Type': 'text/markdown; charset=utf-8' },
         });

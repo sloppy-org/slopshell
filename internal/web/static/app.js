@@ -88,6 +88,8 @@ const state = {
   workspaceBrowserEntries: [],
   workspaceBrowserLoading: false,
   workspaceBrowserError: '',
+  workspaceOpenFilePath: '',
+  workspaceStepInFlight: false,
   prReviewAwaitingArtifact: false,
 };
 
@@ -1552,6 +1554,8 @@ function showCanvasColumn(paneId) {
 function hideCanvasColumn() {
   exitPrReviewMode();
   state.hasArtifact = false;
+  state.workspaceOpenFilePath = '';
+  state.workspaceStepInFlight = false;
   setZenMode('rasa');
   clearLineHighlight();
   persistLastView({ mode: 'rasa' });
@@ -1832,6 +1836,18 @@ function parentWorkspaceBrowserPath(path) {
   return pieces.join('/');
 }
 
+function workspaceNavigableFilePaths() {
+  const entries = Array.isArray(state.workspaceBrowserEntries) ? state.workspaceBrowserEntries : [];
+  const files = [];
+  entries.forEach((entry) => {
+    if (Boolean(entry?.is_dir)) return;
+    const path = normalizeWorkspaceBrowserPath(entry?.path || '');
+    if (!path) return;
+    files.push(path);
+  });
+  return files;
+}
+
 function sidebarFileKindForPath(path) {
   const lower = String(path || '').toLowerCase();
   if (lower.endsWith('.pdf')) return 'pdf_artifact';
@@ -1899,6 +1915,7 @@ function renderWorkspaceFileList(list) {
     return;
   }
   const currentPath = normalizeWorkspaceBrowserPath(state.workspaceBrowserPath);
+  const activeWorkspaceFilePath = normalizeWorkspaceBrowserPath(state.workspaceOpenFilePath);
   if (currentPath) {
     list.appendChild(renderSidebarRow({
       icon: 'parent',
@@ -1916,6 +1933,7 @@ function renderWorkspaceFileList(list) {
     list.appendChild(renderSidebarRow({
       icon: isDir ? 'folder' : 'file',
       label: entryName,
+      active: !isDir && activeWorkspaceFilePath && entryPath === activeWorkspaceFilePath,
       onClick: () => {
         if (isDir) {
           void loadWorkspaceBrowserPath(entryPath);
@@ -2032,8 +2050,11 @@ async function loadWorkspaceBrowserPath(path = '') {
 async function openWorkspaceSidebarFile(path) {
   const filePath = normalizeWorkspaceBrowserPath(path);
   if (!filePath) return false;
+  state.fileSidebarMode = 'workspace';
   const kind = sidebarFileKindForPath(filePath);
   if (kind === 'image_artifact') {
+    state.workspaceOpenFilePath = filePath;
+    renderPrReviewFileList();
     renderCanvas({
       kind: 'image_artifact',
       event_id: `workspace-file-${Date.now()}`,
@@ -2045,6 +2066,8 @@ async function openWorkspaceSidebarFile(path) {
     return true;
   }
   if (kind === 'pdf_artifact') {
+    state.workspaceOpenFilePath = filePath;
+    renderPrReviewFileList();
     renderCanvas({
       kind: 'pdf_artifact',
       event_id: `workspace-file-${Date.now()}`,
@@ -2065,6 +2088,8 @@ async function openWorkspaceSidebarFile(path) {
     }
     const contentType = String(resp.headers.get('content-type') || '').toLowerCase();
     if (contentType.startsWith('image/')) {
+      state.workspaceOpenFilePath = filePath;
+      renderPrReviewFileList();
       renderCanvas({
         kind: 'image_artifact',
         event_id: `workspace-file-${Date.now()}`,
@@ -2076,6 +2101,8 @@ async function openWorkspaceSidebarFile(path) {
       return true;
     }
     if (contentType.includes('application/pdf')) {
+      state.workspaceOpenFilePath = filePath;
+      renderPrReviewFileList();
       renderCanvas({
         kind: 'pdf_artifact',
         event_id: `workspace-file-${Date.now()}`,
@@ -2087,6 +2114,8 @@ async function openWorkspaceSidebarFile(path) {
       return true;
     }
     const text = await resp.text();
+    state.workspaceOpenFilePath = filePath;
+    renderPrReviewFileList();
     renderCanvas({
       kind: 'text_artifact',
       event_id: `workspace-file-${Date.now()}`,
@@ -2105,6 +2134,28 @@ async function openWorkspaceSidebarFile(path) {
 async function refreshWorkspaceBrowser(resetPath = false) {
   const nextPath = resetPath ? '' : state.workspaceBrowserPath;
   return loadWorkspaceBrowserPath(nextPath);
+}
+
+function stepWorkspaceFile(delta) {
+  if (state.prReviewMode || !state.hasArtifact) return false;
+  if (state.workspaceStepInFlight) return false;
+  const shift = Number(delta);
+  if (!Number.isFinite(shift) || shift === 0) return false;
+  const files = workspaceNavigableFilePaths();
+  if (files.length <= 1) return false;
+  const currentFile = normalizeWorkspaceBrowserPath(state.workspaceOpenFilePath);
+  if (!currentFile) return false;
+  const currentIndex = files.indexOf(currentFile);
+  if (currentIndex < 0) return false;
+  const nextIndex = ((currentIndex + Math.trunc(shift)) % files.length + files.length) % files.length;
+  if (nextIndex === currentIndex) return false;
+  const nextFile = files[nextIndex];
+  if (!nextFile) return false;
+  state.workspaceStepInFlight = true;
+  void openWorkspaceSidebarFile(nextFile).finally(() => {
+    state.workspaceStepInFlight = false;
+  });
+  return true;
 }
 
 function renderActivePrReviewFile() {
@@ -2148,6 +2199,13 @@ function stepPrReviewFile(delta) {
   const shift = Number(delta);
   if (!Number.isFinite(shift) || shift === 0) return false;
   return setPrReviewActiveFile(state.prReviewActiveIndex + shift);
+}
+
+function stepCanvasFile(delta) {
+  if (state.prReviewMode) {
+    return stepPrReviewFile(delta);
+  }
+  return stepWorkspaceFile(delta);
 }
 
 function exitPrReviewMode() {
@@ -3136,6 +3194,8 @@ async function switchProject(projectID) {
   closeCanvasWs();
   clearChatHistory();
   clearCanvas();
+  state.workspaceOpenFilePath = '';
+  state.workspaceStepInFlight = false;
   hideCanvasColumn();
   hideOverlay();
   hideTextInput();
@@ -3377,6 +3437,8 @@ function applyCanvasArtifactEvent(payload) {
   const kind = String(payload?.kind || '').trim().toLowerCase();
   if (kind === 'clear_canvas') {
     state.prReviewAwaitingArtifact = false;
+    state.workspaceOpenFilePath = '';
+    state.workspaceStepInFlight = false;
     exitPrReviewMode();
     renderCanvas(payload);
     hideCanvasColumn();
@@ -3392,6 +3454,8 @@ function applyCanvasArtifactEvent(payload) {
     state.prReviewAwaitingArtifact = false;
   }
   if (!handledByPrReview) {
+    state.workspaceOpenFilePath = '';
+    state.workspaceStepInFlight = false;
     exitPrReviewMode();
   }
 
@@ -3913,33 +3977,51 @@ function bindUi() {
   };
   if (canvasViewport instanceof HTMLElement) {
     canvasViewport.addEventListener('scroll', syncIndicatorOnViewportChange, { passive: true, capture: true });
-    let prSwipeStart = null;
-    let prSwipeHandled = false;
-    const resetPrSwipe = () => {
-      prSwipeStart = null;
-      prSwipeHandled = false;
+    let canvasSwipeStart = null;
+    let canvasSwipeHandled = false;
+    let horizontalWheelAccum = 0;
+    let horizontalWheelLastAt = 0;
+    const resetCanvasSwipe = () => {
+      canvasSwipeStart = null;
+      canvasSwipeHandled = false;
     };
     canvasViewport.addEventListener('touchstart', (ev) => {
-      if (!state.prReviewMode || !isMobileViewport()) return;
+      if (!isMobileViewport()) return;
       if (state.prReviewDrawerOpen || ev.touches.length !== 1) return;
       const touch = ev.touches[0];
-      prSwipeStart = { x: touch.clientX, y: touch.clientY };
-      prSwipeHandled = false;
+      canvasSwipeStart = { x: touch.clientX, y: touch.clientY };
+      canvasSwipeHandled = false;
     }, { passive: true });
     canvasViewport.addEventListener('touchmove', (ev) => {
-      if (!prSwipeStart || prSwipeHandled || !state.prReviewMode || ev.touches.length !== 1) return;
+      if (!canvasSwipeStart || canvasSwipeHandled || ev.touches.length !== 1) return;
       const touch = ev.touches[0];
-      const dx = touch.clientX - prSwipeStart.x;
-      const dy = touch.clientY - prSwipeStart.y;
+      const dx = touch.clientX - canvasSwipeStart.x;
+      const dy = touch.clientY - canvasSwipeStart.y;
       if (Math.abs(dx) < 48) return;
       if (Math.abs(dx) <= Math.abs(dy) * 1.25) return;
-      const moved = stepPrReviewFile(dx < 0 ? 1 : -1);
-      if (!moved) return;
-      prSwipeHandled = true;
+      stepCanvasFile(dx < 0 ? 1 : -1);
+      canvasSwipeHandled = true;
       ev.preventDefault();
     }, { passive: false });
-    canvasViewport.addEventListener('touchend', resetPrSwipe, { passive: true });
-    canvasViewport.addEventListener('touchcancel', resetPrSwipe, { passive: true });
+    canvasViewport.addEventListener('touchend', resetCanvasSwipe, { passive: true });
+    canvasViewport.addEventListener('touchcancel', resetCanvasSwipe, { passive: true });
+    canvasViewport.addEventListener('wheel', (ev) => {
+      if (!state.hasArtifact) return;
+      const absX = Math.abs(ev.deltaX);
+      const absY = Math.abs(ev.deltaY);
+      if (absX < 0.8) return;
+      if (absX <= absY * 1.15) return;
+      ev.preventDefault();
+      const now = Date.now();
+      if (now - horizontalWheelLastAt > 260) {
+        horizontalWheelAccum = 0;
+      }
+      horizontalWheelAccum += ev.deltaX;
+      if (Math.abs(horizontalWheelAccum) < 48) return;
+      stepCanvasFile(horizontalWheelAccum > 0 ? 1 : -1);
+      horizontalWheelAccum = 0;
+      horizontalWheelLastAt = now;
+    }, { passive: false });
   }
   window.addEventListener('scroll', syncIndicatorOnViewportChange, { passive: true });
   window.addEventListener('resize', syncIndicatorOnViewportChange);
@@ -4305,13 +4387,26 @@ function bindUi() {
     if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
     if (isEditableTarget(ev.target)) return;
 
+    if (ev.key === 'ArrowRight') {
+      if (stepCanvasFile(1)) {
+        ev.preventDefault();
+      }
+      return;
+    }
+    if (ev.key === 'ArrowLeft') {
+      if (stepCanvasFile(-1)) {
+        ev.preventDefault();
+      }
+      return;
+    }
+
     if (state.prReviewMode) {
-      if (ev.key === 'ArrowRight' || ev.key === 'j' || ev.key === 'J') {
+      if (ev.key === 'j' || ev.key === 'J') {
         ev.preventDefault();
         stepPrReviewFile(1);
         return;
       }
-      if (ev.key === 'ArrowLeft' || ev.key === 'k' || ev.key === 'K') {
+      if (ev.key === 'k' || ev.key === 'K') {
         ev.preventDefault();
         stepPrReviewFile(-1);
         return;
