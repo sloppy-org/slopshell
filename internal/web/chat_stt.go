@@ -115,6 +115,9 @@ func handleChatWSTextMessage(a *App, conn *chatWSConn, sessionID string, data []
 	case "stt_cancel":
 		handleSTTCancel(conn)
 	case "tts_speak":
-		go a.handleTTSSpeak(conn, msg.Text, msg.Lang)
+		trimmedText := strings.TrimSpace(msg.Text)
+		seq := conn.reserveTTSSeq()
+		log.Printf("tts_speak received: session=%s seq=%d chars=%d lang=%q", sessionID, seq, len([]rune(trimmedText)), strings.TrimSpace(msg.Lang))
+		go a.handleTTSSpeak(sessionID, conn, seq, msg.Text, msg.Lang)
 	}
 }

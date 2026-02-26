@@ -162,22 +162,22 @@ func TestBuildPromptFromHistory_IncludesSystemPrompt(t *testing.T) {
 	if !strings.Contains(prompt, "You are Tabura") {
 		t.Error("prompt should contain system identity")
 	}
-	if !strings.Contains(prompt, ":::file{") {
-		t.Error("prompt should mention :::file{ markers")
+	if !strings.Contains(prompt, "Voice mode is chat-only") {
+		t.Error("prompt should define chat-only voice mode")
 	}
-	if !strings.Contains(prompt, "Do not use :::canvas blocks.") {
+	if !strings.Contains(prompt, "Do not emit :::file blocks.") {
+		t.Error("prompt should explicitly disallow :::file blocks")
+	}
+	if !strings.Contains(prompt, "Do not emit :::canvas blocks.") {
 		t.Error("prompt should explicitly disallow :::canvas blocks")
 	}
-	if !strings.Contains(prompt, "Spoken chat must be one paragraph max.") {
-		t.Error("prompt should enforce one-paragraph spoken chat limit")
-	}
-	if !strings.Contains(prompt, "respond with :::file block content (no chat prose)") {
-		t.Error("prompt should enforce file-only mode for long responses")
+	if !strings.Contains(prompt, "Do not render chat output on canvas.") {
+		t.Error("prompt should explicitly disallow rendering chat output on canvas")
 	}
 	if !strings.Contains(prompt, "show/open an existing file") {
 		t.Error("prompt should define existing-file canvas behavior")
 	}
-	if !strings.Contains(prompt, "do NOT paste that file body") {
+	if !strings.Contains(prompt, "do NOT paste that file body into chat") {
 		t.Error("prompt should forbid inlining existing file bodies")
 	}
 	if !strings.Contains(prompt, "[lang:") {
@@ -276,11 +276,11 @@ func TestAssistantFinalChatContent_AutoCanvasRetainsCompanionChat(t *testing.T) 
 func TestAssistantRenderPlan_AutoCanvasForMultiParagraph(t *testing.T) {
 	text := "Paragraph one.\n\nParagraph two."
 	plan := assistantRenderPlan(text)
-	if !plan.RenderOnCanvas {
-		t.Fatal("expected renderOnCanvas=true")
+	if plan.RenderOnCanvas {
+		t.Fatal("expected renderOnCanvas=false")
 	}
-	if !plan.AutoCanvas {
-		t.Fatal("expected autoCanvas=true")
+	if plan.AutoCanvas {
+		t.Fatal("expected autoCanvas=false")
 	}
 }
 
@@ -302,8 +302,8 @@ Paragraph one in file body.
 Paragraph two in file body.
 :::`
 	plan := assistantRenderPlan(text)
-	if !plan.RenderOnCanvas {
-		t.Fatal("expected renderOnCanvas=true for file block")
+	if plan.RenderOnCanvas {
+		t.Fatal("expected renderOnCanvas=false for file block")
 	}
 	if plan.AutoCanvas {
 		t.Fatal("expected autoCanvas=false for file-only block content")
@@ -319,11 +319,11 @@ Second paragraph.
 File body.
 :::`
 	plan := assistantRenderPlan(text)
-	if !plan.RenderOnCanvas {
-		t.Fatal("expected renderOnCanvas=true")
+	if plan.RenderOnCanvas {
+		t.Fatal("expected renderOnCanvas=false")
 	}
-	if !plan.AutoCanvas {
-		t.Fatal("expected autoCanvas=true for long spoken companion")
+	if plan.AutoCanvas {
+		t.Fatal("expected autoCanvas=false for long spoken companion")
 	}
 }
 

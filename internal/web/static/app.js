@@ -69,6 +69,7 @@ const state = {
   hotwordPhrase: 'tabura',
   voiceAwaitingTurn: false,
   voiceTurns: new Set(),
+  stopIndicatorSuppressed: false,
   indicatorSuppressedByCanvasUpdate: false,
   chatCtrlHoldTimer: null,
   chatVoiceCapture: null,
@@ -144,6 +145,8 @@ const VOICE_VAD_SPEECH_START_FRAMES = 4;
 const VOICE_VAD_NOISE_FLOOR_MIN_DB = -60;
 const VOICE_VAD_NOISE_FLOOR_MAX_DB = -18;
 const VOICE_CAPTURE_STOP_FLUSH_TIMEOUT_MS = 1500;
+const STT_STOP_TIMEOUT_MS = 8000;
+const STOP_REQUEST_TIMEOUT_MS = 3500;
 const HOTWORD_POLL_INTERVAL_MS = 1500;
 let devReloadBootID = '';
 let devReloadTimer = null;
@@ -227,12 +230,37 @@ function cleanForOverlay(markdown) {
   return stripBlocks(markdown).replace(_langTagRe, '').trim();
 }
 
+function inferTTSLanguage(text) {
+  const sample = String(text || '').trim();
+  if (!sample) return '';
+  if (/[äöüßÄÖÜ]/.test(sample)) return 'de';
+  const tokens = sample
+    .toLowerCase()
+    .replace(/[^a-zA-Z\u00c0-\u017f\s]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean);
+  if (tokens.length === 0) return '';
+  const germanHints = new Set([
+    'und', 'ist', 'nicht', 'ich', 'du', 'wir', 'sie', 'mit', 'fuer', 'für',
+    'auf', 'das', 'der', 'die', 'den', 'dem', 'ein', 'eine', 'bitte', 'danke',
+  ]);
+  let hits = 0;
+  for (const token of tokens) {
+    if (germanHints.has(token)) hits += 1;
+  }
+  if (hits >= 2 && hits / tokens.length >= 0.08) return 'de';
+  return '';
+}
+
 // Extract speakable text for TTS (everything except blocks).
 function extractTTSText(markdown) {
   let text = stripBlocks(markdown);
   let lang = '';
   text = text.replace(_langTagRe, (_, l) => { if (!lang) lang = l.toLowerCase(); return ''; });
   text = stripMarkdownForSpeech(text);
+  if (!lang) {
+    lang = inferTTSLanguage(text);
+  }
   text = text.trim();
   return { ttsText: text, ttsLang: lang };
 }
@@ -945,8 +973,10 @@ configureConversation({
 applyConversationStateSnapshot();
 
 function ensureTTSChunker() {
+  if (!ttsPlayer) {
+    ttsPlayer = new TTSPlayer();
+  }
   if (ttsSentenceChunker) return;
-  ttsPlayer = new TTSPlayer();
   ttsSentenceChunker = new SentenceChunker((sentence) => {
     const ws = state.chatWs;
     if (ws && ws.readyState === WebSocket.OPEN) {
@@ -1428,12 +1458,23 @@ function isVoiceVADAutoSendEnabled() {
 let _sttResolve = null;
 let _sttReject = null;
 let _sttActive = false;
+let _sttStopTimer = null;
+
+function clearSTTStopWait() {
+  if (_sttStopTimer !== null) {
+    window.clearTimeout(_sttStopTimer);
+    _sttStopTimer = null;
+  }
+}
 
 function sttStart(mimeType) {
   const ws = state.chatWs;
   if (!ws || ws.readyState !== WebSocket.OPEN) {
     return Promise.reject(new Error('chat WebSocket not connected'));
   }
+  clearSTTStopWait();
+  _sttResolve = null;
+  _sttReject = null;
   _sttActive = true;
   ws.send(JSON.stringify({ type: 'stt_start', mime_type: mimeType || 'audio/webm' }));
 }
@@ -1453,18 +1494,29 @@ function sttStop() {
   const ws = state.chatWs;
   if (!ws || ws.readyState !== WebSocket.OPEN) {
     _sttActive = false;
+    clearSTTStopWait();
     return Promise.reject(new Error('chat WebSocket not connected'));
   }
   _sttActive = false;
+  clearSTTStopWait();
   return new Promise((resolve, reject) => {
     _sttResolve = resolve;
     _sttReject = reject;
+    _sttStopTimer = window.setTimeout(() => {
+      if (_sttReject) {
+        _sttReject(new Error('STT stop timed out'));
+      }
+      _sttResolve = null;
+      _sttReject = null;
+      _sttStopTimer = null;
+    }, STT_STOP_TIMEOUT_MS);
     ws.send(JSON.stringify({ type: 'stt_stop' }));
   });
 }
 
 function sttCancel() {
   _sttActive = false;
+  clearSTTStopWait();
   if (_sttReject) {
     _sttReject(new Error('STT cancelled'));
     _sttResolve = null;
@@ -1482,6 +1534,7 @@ function sttCancel() {
 function handleSTTWSMessage(payload) {
   const type = String(payload?.type || '');
   if (type === 'stt_result') {
+    clearSTTStopWait();
     if (_sttResolve) {
       _sttResolve({ text: payload.text || '' });
       _sttResolve = null;
@@ -1490,6 +1543,7 @@ function handleSTTWSMessage(payload) {
     return true;
   }
   if (type === 'stt_error') {
+    clearSTTStopWait();
     if (_sttReject) {
       _sttReject(new Error(payload.error || 'STT failed'));
       _sttResolve = null;
@@ -1793,6 +1847,9 @@ function stopChatVoiceMediaAndFlush(capture) {
     recorder.addEventListener('stop', onStop, { once: true });
     recorder.addEventListener('error', onError, { once: true });
     try {
+      if (typeof recorder.requestData === 'function') {
+        try { recorder.requestData(); } catch (_) {}
+      }
       recorder.stop();
     } catch (_) {
       finish();
@@ -1821,6 +1878,7 @@ async function beginVoiceCapture(x, y, anchor, options = null) {
   };
   state.chatVoiceCapture = capture;
   state.lastInputOrigin = 'voice';
+  state.stopIndicatorSuppressed = false;
   state.voiceAwaitingTurn = false;
   state.indicatorSuppressedByCanvasUpdate = false;
   setLastInputPosition(x, y);
@@ -2035,6 +2093,7 @@ function currentIndicatorMode() {
   if (isRecording()) return 'recording';
   if (state.voiceAwaitingTurn) return 'play';
   if (isConversationListenActive()) return 'listening';
+  if (state.stopIndicatorSuppressed) return '';
   if (state.indicatorSuppressedByCanvasUpdate) return '';
   if (isAssistantWorking() || isTTSSpeaking()) return 'play';
   return '';
@@ -2661,6 +2720,7 @@ function isLikelyPrReviewArtifact(payload) {
 
 function trackAssistantTurnStarted(turnID) {
   state.assistantLastError = '';
+  state.stopIndicatorSuppressed = false;
   const key = String(turnID || '').trim();
   if (key) {
     state.assistantActiveTurns.add(key);
@@ -2679,6 +2739,14 @@ function trackAssistantTurnFinished(turnID) {
     }
   } else if (state.assistantUnknownTurns > 0) {
     state.assistantUnknownTurns -= 1;
+  } else if (state.assistantActiveTurns.size > 0) {
+    // Some cancel/error events can arrive without turn_id. In that case, clear
+    // one active local turn so the stop indicator cannot get stuck indefinitely.
+    const firstActiveTurn = state.assistantActiveTurns.values().next().value;
+    if (firstActiveTurn) {
+      state.voiceTurns.delete(firstActiveTurn);
+      state.assistantActiveTurns.delete(firstActiveTurn);
+    }
   }
   updateAssistantActivityIndicator();
 }
@@ -2690,6 +2758,22 @@ function takePendingRow(turnID) {
     state.pendingByTurn.delete(key);
     updateAssistantActivityIndicator();
     return row;
+  }
+  const row = state.pendingQueue.shift() || null;
+  updateAssistantActivityIndicator();
+  return row;
+}
+
+function takeAnyPendingRow() {
+  if (state.pendingByTurn.size > 0) {
+    const first = state.pendingByTurn.entries().next().value;
+    if (Array.isArray(first) && first.length >= 2) {
+      const key = String(first[0] || '').trim();
+      const row = first[1] || null;
+      if (key) state.pendingByTurn.delete(key);
+      updateAssistantActivityIndicator();
+      return row;
+    }
   }
   const row = state.pendingQueue.shift() || null;
   updateAssistantActivityIndicator();
@@ -3153,7 +3237,15 @@ async function refreshAssistantActivity() {
   assistantActivityInFlight = true;
   try {
     const resp = await fetch(`/api/chat/sessions/${encodeURIComponent(targetSessionID)}/activity`, { cache: 'no-store' });
-    if (!resp.ok) return;
+    if (!resp.ok) {
+      if (!hasLocalAssistantWork() && !state.assistantCancelInFlight) {
+        state.assistantRemoteActiveCount = 0;
+        state.assistantRemoteQueuedCount = 0;
+        state.assistantRemoteDelegateActiveCount = 0;
+        updateAssistantActivityIndicator();
+      }
+      return;
+    }
     if (targetSessionID !== state.chatSessionId) return;
     const payload = await resp.json();
     const activeTurns = Number(payload?.active_turns || 0);
@@ -3162,11 +3254,20 @@ async function refreshAssistantActivity() {
     if (!Number.isFinite(activeTurns) || activeTurns < 0) return;
     if (!Number.isFinite(queuedTurns) || queuedTurns < 0) return;
     if (!Number.isFinite(delegateActive) || delegateActive < 0) return;
+    if (activeTurns > 0 || queuedTurns > 0 || delegateActive > 0) {
+      state.stopIndicatorSuppressed = false;
+    }
     state.assistantRemoteActiveCount = activeTurns;
     state.assistantRemoteQueuedCount = queuedTurns;
     state.assistantRemoteDelegateActiveCount = delegateActive;
     updateAssistantActivityIndicator();
   } catch (_) {
+    if (!hasLocalAssistantWork() && !state.assistantCancelInFlight) {
+      state.assistantRemoteActiveCount = 0;
+      state.assistantRemoteQueuedCount = 0;
+      state.assistantRemoteDelegateActiveCount = 0;
+      updateAssistantActivityIndicator();
+    }
   } finally {
     assistantActivityInFlight = false;
   }
@@ -3266,7 +3367,22 @@ function openChatWs() {
     if (turnToken !== state.chatWsToken || targetSessionID !== state.chatSessionId) return;
     if (event.data instanceof ArrayBuffer) {
       if (!canSpeakTTS()) return;
-      if (ttsPlayer) ttsPlayer.enqueue(event.data);
+      if (!ttsPlayer) ttsPlayer = new TTSPlayer();
+      ttsPlayer.enqueue(event.data);
+      return;
+    }
+    if (event.data instanceof Blob) {
+      if (!canSpeakTTS()) return;
+      event.data.arrayBuffer()
+        .then((audioBuffer) => {
+          if (turnToken !== state.chatWsToken || targetSessionID !== state.chatSessionId) return;
+          if (!canSpeakTTS()) return;
+          if (!ttsPlayer) ttsPlayer = new TTSPlayer();
+          ttsPlayer.enqueue(audioBuffer);
+        })
+        .catch((err) => {
+          console.warn('TTS blob decode error:', err);
+        });
       return;
     }
     if (typeof event.data !== 'string') return;
@@ -3309,6 +3425,10 @@ function assistantMessageUsesCanvasBlocks(text) {
 
 function shouldRenderAssistantHistoryInChat(_renderFormat, markdown, plain) {
   return Boolean(String(markdown || plain || '').trim());
+}
+
+function isVoiceOutputModePayload(payload) {
+  return String(payload?.output_mode || '').trim().toLowerCase() === 'voice';
 }
 
 function handleChatEvent(payload) {
@@ -3394,7 +3514,7 @@ function handleChatEvent(payload) {
 
   if (type === 'turn_started') {
     const turnID = String(payload.turn_id || '').trim();
-    const turnIsVoice = state.voiceAwaitingTurn || isVoiceTurn();
+    const turnIsVoice = isVoiceOutputModePayload(payload) || state.voiceAwaitingTurn || isVoiceTurn();
     if (turnID) {
       if (turnIsVoice) state.voiceTurns.add(turnID);
       else state.voiceTurns.delete(turnID);
@@ -3443,17 +3563,17 @@ function handleChatEvent(payload) {
       if (!isVoiceTurn()) {
         hideOverlay();
       }
-      return;
     }
 
     // First non-empty response: show on canvas (silent) / speak (voice)
     const trimmedMd = String(md || '').trim();
+    const shouldSpeakStreaming = isVoiceOutputModePayload(payload) || (turnID ? state.voiceTurns.has(turnID) : false) || isVoiceTurn();
     if (trimmedMd && !state.turnFirstResponseShown) {
       state.turnFirstResponseShown = true;
       if (isMobileSilent()) {
         renderCanvas({ kind: 'text_artifact', title: '', text: md });
       }
-      if (isVoiceTurn() && canSpeakTTS()) {
+      if (shouldSpeakStreaming && canSpeakTTS()) {
         const { ttsText, ttsLang } = extractTTSText(md);
         if (ttsLang) ttsSpeakLang = ttsLang;
         const diff = computeTTSDiff(ttsText);
@@ -3489,14 +3609,14 @@ function handleChatEvent(payload) {
     } else if (hasDisplayMd) {
       appendRenderedAssistant(displayMd);
     }
-    const shouldSpeakTurn = turnID ? state.voiceTurns.has(turnID) : false;
+    const shouldSpeakTurn = isVoiceOutputModePayload(payload) || (turnID ? state.voiceTurns.has(turnID) : false) || isVoiceTurn();
     trackAssistantTurnFinished(turnID);
     state.assistantLastError = '';
     showStatus('ready');
     updateAssistantActivityIndicator();
     void refreshAssistantActivity();
 
-    if (shouldSpeakTurn && !autoCanvas && canSpeakTTS() && md.trim()) {
+    if (shouldSpeakTurn && canSpeakTTS() && md.trim()) {
       const { ttsText, ttsLang } = extractTTSText(md);
       if (ttsLang) ttsSpeakLang = ttsLang;
       const diff = computeTTSDiff(ttsText);
@@ -3555,15 +3675,22 @@ function handleChatEvent(payload) {
   if (type === 'turn_cancelled') {
     state.voiceAwaitingTurn = false;
     const turnID = String(payload.turn_id || '').trim();
-    const row = takePendingRow(turnID);
+    let row = takePendingRow(turnID);
+    if (!row && !turnID) {
+      row = takeAnyPendingRow();
+    }
     if (row) updateAssistantRow(row, '_Stopped._', false);
     trackAssistantTurnFinished(turnID);
+    state.indicatorSuppressedByCanvasUpdate = false;
     state.assistantLastError = '';
     showStatus('stopped');
     updateAssistantActivityIndicator();
     void refreshAssistantActivity();
-    updateOverlay('_Stopped._');
-    window.setTimeout(() => hideOverlay(), 1000);
+    hideOverlay();
+    window.setTimeout(() => {
+      hideOverlay();
+      void refreshAssistantActivity();
+    }, 180);
     return;
   }
 
@@ -3703,6 +3830,7 @@ async function submitMessage(text, options = {}) {
   const trimmed = String(text || '').trim();
   if (!trimmed || !state.chatSessionId) return;
   cancelConversationListen();
+  state.stopIndicatorSuppressed = false;
   const submitKind = String(options?.kind || '').trim();
   let submitController = null;
   if (submitKind) {
@@ -3785,6 +3913,39 @@ async function submitMessage(text, options = {}) {
   }
 }
 
+function clearLocalStopState(statusText = 'stopped') {
+  cancelConversationListen();
+  abortPendingSubmit('voice_transcript');
+  sttCancel();
+  stopTTSPlayback();
+  if (state.chatVoiceCapture) {
+    stopChatVoiceMedia(state.chatVoiceCapture);
+    state.chatVoiceCapture = null;
+  }
+  setRecording(false);
+  state.voiceAwaitingTurn = false;
+  state.stopIndicatorSuppressed = true;
+  state.indicatorSuppressedByCanvasUpdate = false;
+  state.assistantCancelInFlight = false;
+  state.assistantActiveTurns.clear();
+  state.assistantUnknownTurns = 0;
+  state.voiceTurns.clear();
+  state.assistantRemoteActiveCount = 0;
+  state.assistantRemoteQueuedCount = 0;
+  state.assistantRemoteDelegateActiveCount = 0;
+  for (const row of state.pendingByTurn.values()) {
+    if (row instanceof HTMLElement) updateAssistantRow(row, '_Stopped._', false);
+  }
+  for (const row of state.pendingQueue) {
+    if (row instanceof HTMLElement) updateAssistantRow(row, '_Stopped._', false);
+  }
+  state.pendingByTurn.clear();
+  state.pendingQueue = [];
+  hideOverlay();
+  showStatus(statusText);
+  updateAssistantActivityIndicator();
+}
+
 async function cancelActiveAssistantTurn(options = null) {
   const force = Boolean(options && options.force);
   if (!state.chatSessionId || state.assistantCancelInFlight) return false;
@@ -3800,8 +3961,16 @@ async function cancelActiveAssistantTurn(options = null) {
   updateAssistantActivityIndicator();
   showStatus('stopping...');
   let canceled = 0;
+  let timeoutId = null;
   try {
-    const resp = await fetch(`/api/chat/sessions/${encodeURIComponent(state.chatSessionId)}/cancel`, { method: 'POST' });
+    const controller = new AbortController();
+    timeoutId = window.setTimeout(() => {
+      controller.abort();
+    }, STOP_REQUEST_TIMEOUT_MS);
+    const resp = await fetch(`/api/chat/sessions/${encodeURIComponent(state.chatSessionId)}/cancel`, {
+      method: 'POST',
+      signal: controller.signal,
+    });
     if (!resp.ok) {
       const detail = (await resp.text()).trim() || `HTTP ${resp.status}`;
       showStatus(`stop failed: ${detail}`);
@@ -3816,9 +3985,17 @@ async function cancelActiveAssistantTurn(options = null) {
       }
     }
   } catch (err) {
-    showStatus(`stop failed: ${String(err?.message || err)}`);
+    if (String(err?.name || '') === 'AbortError') {
+      showStatus('stop request timed out');
+    } else {
+      showStatus(`stop failed: ${String(err?.message || err)}`);
+    }
     return false;
   } finally {
+    if (timeoutId !== null) {
+      window.clearTimeout(timeoutId);
+      timeoutId = null;
+    }
     state.assistantCancelInFlight = false;
     updateAssistantActivityIndicator();
     window.setTimeout(() => { void refreshAssistantActivity(); }, 120);
@@ -3843,9 +4020,7 @@ async function cancelActiveAssistantTurnWithRetry(maxAttempts = 3) {
 async function handleStopAction() {
   if (isConversationListenActive()) {
     cancelConversationListen();
-    if (!state.chatVoiceCapture && !state.voiceAwaitingTurn && !isAssistantWorking() && !isTTSSpeaking()) {
-      showStatus('ready');
-    }
+    clearLocalStopState('ready');
     return;
   }
 
@@ -3873,14 +4048,12 @@ async function handleStopAction() {
   }
 
   const canceled = await cancelActiveAssistantTurnWithRetry(3);
-  if (canceled) return;
-
-  if (hadVoiceAwaitingTurn) return;
-
-  if (capture) {
+  if (!canceled && capture) {
     sttCancel();
-    updateAssistantActivityIndicator();
   }
+  if (hadVoiceAwaitingTurn && !canceled) sttCancel();
+  clearLocalStopState('stopped');
+  void refreshAssistantActivity();
 }
 
 function applyCanvasArtifactEvent(payload) {

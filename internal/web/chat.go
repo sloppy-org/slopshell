@@ -32,47 +32,31 @@ const (
 )
 
 const defaultVoiceHistoryPrompt = `You are Tabura, an AI assistant.
-Chat text is always spoken via TTS. Canvas content is never spoken and must be file-backed.
-
-Use exactly one response shape:
-1) Chat-only: write only spoken chat text (no blocks).
-2) Chat + file-canvas: write a brief spoken chat line, then one or more :::file blocks.
+Chat text is always spoken via TTS.
 
 ## Response Format
 
-Write naturally. Your text is read aloud, so avoid raw paths, URLs, or code in prose.
+Write naturally for speech. Avoid raw paths, URLs, or code in prose.
 Use [lang:de] at the start of your answer when responding in German. Default is English.
 
-Canvas/file rules:
-- Spoken chat must be one paragraph max.
-- If your response needs more than one paragraph, write that long content to a temp file and respond with :::file block content (no chat prose).
-- Canvas content must appear only inside :::file blocks; do not duplicate it in chat prose.
-- Use :::file{path="relative/or/absolute/path"}...::: for all canvas content.
-- For temporary canvas files, create/remove paths via temp_file_create and temp_file_remove tools.
-- When user asks to show/open an existing file, do NOT paste that file body into chat markdown or :::file blocks.
-- For existing files, use canvas_artifact_show (title=path, markdown_or_text=file content) and keep chat text brief.
-- Do not use :::canvas blocks.
-- Line references: when the user mentions [Line N of "file"], apply at that location.
+Voice mode is chat-only:
+- Do not emit :::file blocks.
+- Do not emit :::canvas blocks.
+- Do not render chat output on canvas.
+- Keep spoken responses concise.
 
-PR review fast path:
-- Trigger on explicit intents like "open PR view", "open PR review", "open PR canvas", "show PR view", or "reload PR review".
-- If triggered, act immediately with no clarification and no metadata-only chat reply.
-- Resolve PR number via gh pr view --json number (or use the number user gave).
-- Fetch cumulative diff via gh pr diff <number>.
-- Publish exactly one file block at path .tabura/artifacts/pr/pr-<number>.diff with the patch content.
-- Keep spoken chat to one short confirmation sentence.
+When user asks to show/open an existing file, do NOT paste that file body into chat. Use canvas_artifact_show with a brief spoken confirmation.
+
+Line references: when the user mentions [Line N of "file"], apply changes at that location.
 `
 
-const defaultVoiceTurnPrompt = `Use one response shape only:
-- Chat-only (spoken text only), or
-- Chat + file-canvas: short spoken chat text plus :::file blocks for canvas content.
-Spoken chat must be one paragraph max.
-If output needs more than one paragraph, put it in a temp file with temp_file_create and respond with :::file block(s) only (no chat prose).
-Canvas content must be in :::file blocks only. Use temp_file_create/temp_file_remove for temporary files. Do not use :::canvas blocks.
+const defaultVoiceTurnPrompt = `Voice mode is chat-only:
+- Reply with spoken chat text only.
+- Do not emit :::file blocks.
+- Do not emit :::canvas blocks.
+- Do not render chat output on canvas.
 
-When user asks to show/open an existing file, do NOT paste file body into chat markdown or :::file blocks; use canvas_artifact_show and keep chat text brief.
-
-PR review fast path: for explicit intents like "open PR view/review/canvas", "show PR view", or "reload PR review", immediately run gh PR view and gh PR diff <number> (cumulative diff) and return one .tabura/artifacts/pr/pr-<number>.diff :::file block plus a short confirmation line. Do not return metadata-only chat.
+When user asks to show/open an existing file, do NOT paste file body into chat; use canvas_artifact_show and keep chat text brief.
 
 `
 
@@ -961,9 +945,10 @@ func (a *App) runAssistantTurn(sessionID string, outputMode string) {
 
 	appResp, err := appSess.SendTurnWithParams(ctx, prompt, "", profile.TurnParams, func(ev appserver.StreamEvent) {
 		payload := map[string]interface{}{
-			"type":      ev.Type,
-			"thread_id": ev.ThreadID,
-			"turn_id":   ev.TurnID,
+			"type":        ev.Type,
+			"thread_id":   ev.ThreadID,
+			"turn_id":     ev.TurnID,
+			"output_mode": outputMode,
 		}
 		shouldBroadcast := true
 		switch ev.Type {
@@ -1147,9 +1132,10 @@ func (a *App) runAssistantTurnLegacy(sessionID string, session store.ChatSession
 		Timeout:      assistantTurnTimeout,
 	}, func(ev appserver.StreamEvent) {
 		payload := map[string]interface{}{
-			"type":      ev.Type,
-			"thread_id": ev.ThreadID,
-			"turn_id":   ev.TurnID,
+			"type":        ev.Type,
+			"thread_id":   ev.ThreadID,
+			"turn_id":     ev.TurnID,
+			"output_mode": outputMode,
 		}
 		shouldBroadcast := true
 		switch ev.Type {
@@ -1233,8 +1219,8 @@ func (a *App) runAssistantTurnLegacy(sessionID string, session store.ChatSession
 }
 
 // finalizeAssistantResponse handles post-processing shared by both turn paths:
-// parse visual blocks, normalize them to file-backed canvas artifacts, keep the
-// spoken chat companion text, persist final content, and broadcast assistant_output.
+// voice mode stays chat-only, while silent mode mirrors assistant text to canvas,
+// then persists final content and broadcasts assistant_output.
 func (a *App) finalizeAssistantResponse(
 	sessionID, projectKey, text string,
 	persistedID *int64, persistedText *string,
@@ -1243,25 +1229,12 @@ func (a *App) finalizeAssistantResponse(
 ) string {
 	outputMode = normalizeTurnOutputMode(outputMode)
 	canvasSessionID := a.resolveCanvasSessionID(projectKey)
-	fileBlocks := make([]fileBlock, 0)
 	autoCanvas := false
+	renderOnCanvas := false
 	if isVoiceOutputMode(outputMode) {
-		if fBlocks, cleaned := parseFileBlocks(text); len(fBlocks) > 0 {
-			fileBlocks = append(fileBlocks, fBlocks...)
-			text = cleaned
-		}
-		autoCanvas = assistantNeedsAutoCanvas(text)
-		if autoCanvas && len(fileBlocks) == 0 && canvasSessionID != "" {
-			longForm := assistantCompanionText(text)
-			if longForm != "" {
-				autoCanvas = a.writeCanvasFileBlock(projectKey, canvasSessionID, fileBlock{
-					Path:    "",
-					Content: longForm,
-				})
-			} else {
-				autoCanvas = false
-			}
-		}
+		// Voice mode is chat-only; drop file blocks instead of mirroring chat output to canvas.
+		_, cleaned := parseFileBlocks(text)
+		text = cleaned
 	} else {
 		canvasCtx := a.resolveCanvasContext(projectKey)
 		content := strings.TrimSpace(text)
@@ -1281,10 +1254,7 @@ func (a *App) finalizeAssistantResponse(
 				autoCanvas = a.writeCanvasFileBlock(projectKey, canvasSessionID, block)
 			}
 		}
-	}
-	renderOnCanvas := len(fileBlocks) > 0 || autoCanvas
-	if len(fileBlocks) > 0 && canvasSessionID != "" {
-		a.executeFileBlocks(projectKey, canvasSessionID, fileBlocks)
+		renderOnCanvas = autoCanvas
 	}
 	text = stripLangTags(text)
 	chatMarkdown, chatPlain, renderFormat := assistantFinalChatContent(text, renderOnCanvas, autoCanvas)
@@ -1316,6 +1286,7 @@ func (a *App) finalizeAssistantResponse(
 		"id":               *persistedID,
 		"turn_id":          tid,
 		"thread_id":        threadID,
+		"output_mode":      outputMode,
 		"message":          chatMarkdown,
 		"render_on_canvas": renderOnCanvas,
 	}
@@ -1385,16 +1356,10 @@ func assistantRenderPlan(text string) assistantRenderDecision {
 }
 
 func assistantRenderPlanForMode(text string, outputMode string) assistantRenderDecision {
-	outputMode = normalizeTurnOutputMode(outputMode)
-	if !isVoiceOutputMode(outputMode) {
-		return assistantRenderDecision{RenderOnCanvas: false, AutoCanvas: false}
-	}
-	hasFileBlocks := assistantMessageUsesCanvasBlocks(text)
-	autoCanvas := assistantNeedsAutoCanvas(text)
-	return assistantRenderDecision{
-		RenderOnCanvas: hasFileBlocks || autoCanvas,
-		AutoCanvas:     autoCanvas,
-	}
+	_ = text
+	_ = outputMode
+	// Chat output no longer requests canvas rendering in either mode.
+	return assistantRenderDecision{RenderOnCanvas: false, AutoCanvas: false}
 }
 
 func assistantSnapshotContent(text string, renderOnCanvas bool, _ bool) (string, string, string) {
