@@ -1953,8 +1953,8 @@ function renderPrReviewFileList() {
 }
 
 async function loadWorkspaceBrowserPath(path = '') {
-  const project = activeProject();
-  if (!project || !project.id) {
+  const projectID = String(state.activeProjectId || '').trim();
+  if (!projectID) {
     state.workspaceBrowserPath = '';
     state.workspaceBrowserEntries = [];
     state.workspaceBrowserLoading = false;
@@ -1963,7 +1963,6 @@ async function loadWorkspaceBrowserPath(path = '') {
     return false;
   }
   const requestedPath = normalizeWorkspaceBrowserPath(path);
-  const projectID = String(project.id);
   state.workspaceBrowserLoading = true;
   state.workspaceBrowserError = '';
   if (!state.prReviewMode) {
@@ -1971,7 +1970,7 @@ async function loadWorkspaceBrowserPath(path = '') {
   }
   renderPrReviewFileList();
   try {
-    const url = `/api/projects/${encodeURIComponent(projectID)}/files?path=${encodeURIComponent(requestedPath)}`;
+    const url = `/api/projects/active/files?path=${encodeURIComponent(requestedPath)}`;
     const resp = await fetch(url, { cache: 'no-store' });
     if (!resp.ok) {
       const detail = (await resp.text()).trim() || `HTTP ${resp.status}`;

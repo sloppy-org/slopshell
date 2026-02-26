@@ -242,16 +242,17 @@
       if (u.includes('/api/projects/') && u.includes('/files')) {
         const pathPart = u.split('/api/projects/')[1] || '';
         const projectId = decodeURIComponent(pathPart.split('/files')[0] || '').trim();
+        const effectiveProjectId = projectId.toLowerCase() === 'active' ? activeProjectId : projectId;
         const query = new URL(u, window.location.href).searchParams;
         const path = String(query.get('path') || '').trim();
         const cleanedPath = path.replace(/^\/+|\/+$/g, '');
-        if (projectId !== activeProjectId && !harnessProjects.some((project) => project.id === projectId)) {
+        if (effectiveProjectId !== activeProjectId && !harnessProjects.some((project) => project.id === effectiveProjectId)) {
           return new Response('project not found', { status: 404 });
         }
         if (!cleanedPath) {
           return new Response(JSON.stringify({
             ok: true,
-            project_id: projectId || activeProjectId,
+            project_id: effectiveProjectId || activeProjectId,
             path: '',
             is_root: true,
             entries: [
@@ -263,7 +264,7 @@
         if (cleanedPath === 'docs') {
           return new Response(JSON.stringify({
             ok: true,
-            project_id: projectId || activeProjectId,
+            project_id: effectiveProjectId || activeProjectId,
             path: 'docs',
             is_root: false,
             entries: [
@@ -273,7 +274,7 @@
         }
         return new Response(JSON.stringify({
           ok: true,
-          project_id: projectId || activeProjectId,
+          project_id: effectiveProjectId || activeProjectId,
           path: cleanedPath,
           is_root: false,
           entries: [],
