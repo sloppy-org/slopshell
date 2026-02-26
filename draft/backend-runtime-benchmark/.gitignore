@@ -1,7 +1,11 @@
 node_modules/
 build/
 __pycache__/
+.venv/
 rust_bench/target/
+cs_bench/bin/
+cs_bench/obj/
+java_bench/*.class
 results/*.json
 results/*.md
 !results/.gitkeep

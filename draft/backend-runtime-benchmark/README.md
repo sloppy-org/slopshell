@@ -1,6 +1,6 @@
 # Backend Runtime Benchmark Draft
 
-This draft compares Go, Python, TypeScript/Node.js, and Rust for a backend-like CPU workload to inform a possible port away from Go.
+This draft compares Go, Python, TypeScript/Node.js, Java, C#, and Rust for a backend-like CPU workload to inform a possible port away from Go.
 
 ## Workload
 
@@ -23,6 +23,8 @@ Dataset and run sizes:
 - Compile/build time (seconds)
 - Throughput (operations/second)
 - Latency (`p50`, `p95`, `p99`) in microseconds
+- Code size (`Raw LOC`, `NCSS`)
+- Cyclomatic complexity (`Avg CCN`, `Total CCN`)
 
 ## Run
 
