@@ -3866,16 +3866,33 @@ function initEdgePanels() {
       const dx = Math.abs(touch.clientX - edgeTouchStart.x);
       const dy = Math.abs(touch.clientY - edgeTouchStart.y);
       if (dx < 20 && dy < 20) {
+        let handledTapAction = false;
         switch (edgeTouchStart.edge) {
-          case 'left': toggleFileSidebarFromEdge(); break;
-          case 'bottom': handleRasaEdgeTap(); break;
-          case 'right': toggleRightEdgeDrawer(edgeRight); break;
-          case 'top': if (edgeTop) edgeTop.classList.add('edge-pinned'); break;
+          case 'left':
+            toggleFileSidebarFromEdge();
+            handledTapAction = true;
+            break;
+          case 'bottom':
+            handleRasaEdgeTap();
+            handledTapAction = true;
+            break;
+          case 'right':
+            toggleRightEdgeDrawer(edgeRight);
+            handledTapAction = true;
+            break;
+          case 'top':
+            if (edgeTop) {
+              edgeTop.classList.add('edge-pinned');
+              handledTapAction = true;
+            }
+            break;
         }
-        // Prevent iOS from synthesizing a click after edge tap — the
-        // panel pin above can cause the click to land inside the
-        // newly-visible panel (e.g. chatHistory) and start recording.
-        ev.preventDefault();
+        if (handledTapAction) {
+          // Prevent iOS from synthesizing a click after edge tap — the
+          // panel pin above can cause the click to land inside the
+          // newly-visible panel (e.g. chatHistory) and start recording.
+          ev.preventDefault();
+        }
       }
     }
     edgeTouchStart = null;

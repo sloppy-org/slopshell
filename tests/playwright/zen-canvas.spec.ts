@@ -765,6 +765,48 @@ test.describe('zen canvas - edge panels', () => {
     expect(sttStart).toBeFalsy();
   });
 
+  test('touch tap inside pinned chat panel does not cancel default focus flow', async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 667 });
+    const edgeRight = page.locator('#edge-right');
+    await dispatchTouchTap(page, 372, 333);
+    await page.waitForTimeout(200);
+    await expect(edgeRight).toHaveClass(/edge-pinned/);
+
+    const result = await page.evaluate(() => {
+      const input = document.getElementById('chat-pane-input');
+      if (!(input instanceof HTMLTextAreaElement)) return null;
+      if (typeof Touch === 'undefined') return null;
+      const rect = input.getBoundingClientRect();
+      const x = Math.floor(rect.left + Math.max(8, Math.min(40, rect.width / 3)));
+      const y = Math.floor(rect.top + Math.max(8, Math.min(24, rect.height / 2)));
+      const target = document.elementFromPoint(x, y) || input;
+      const touch = new Touch({
+        clientX: x,
+        clientY: y,
+        pageX: x,
+        pageY: y,
+        identifier: 1,
+        target,
+      });
+      target.dispatchEvent(new TouchEvent('touchstart', {
+        touches: [touch],
+        changedTouches: [touch],
+        bubbles: true,
+        cancelable: true,
+      }));
+      const touchEndAllowed = target.dispatchEvent(new TouchEvent('touchend', {
+        touches: [],
+        changedTouches: [touch],
+        bubbles: true,
+        cancelable: true,
+      }));
+      return { touchEndAllowed };
+    });
+
+    expect(result).not.toBeNull();
+    expect(result?.touchEndAllowed).toBe(true);
+  });
+
   test('touch swipe right hides pinned chat panel', async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 667 });
     const edgeRight = page.locator('#edge-right');
