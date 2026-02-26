@@ -126,7 +126,7 @@ test.describe('zen canvas layout', () => {
 
     const box = await canvasText.boundingBox();
     if (!box) throw new Error('canvas-text not visible');
-    await page.mouse.click(box.x + 20, box.y + 20, { button: 'right' });
+    await page.mouse.click(box.x + 50, box.y + 50, { button: 'right' });
     await page.waitForTimeout(200);
 
     // In zen mode, right-click opens text input

@@ -4207,7 +4207,7 @@ function bindUi() {
       || zenIndicator.classList.contains('is-listening')
     );
     const pointHitsIndicatorChip = (x, y) => {
-      const chips = zenIndicator.querySelectorAll('.zen-record-dot, .zen-play-icon');
+      const chips = zenIndicator.querySelectorAll('.zen-record-dot, .zen-stop-square');
       for (const chip of chips) {
         if (!(chip instanceof HTMLElement)) continue;
         const style = window.getComputedStyle(chip);

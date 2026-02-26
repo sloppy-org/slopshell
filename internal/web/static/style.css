@@ -602,7 +602,7 @@ body.keyboard-open .zen-indicator.is-listening {
 }
 
 .zen-indicator.is-recording { --cue-frame-color: #d92d20; }
-.zen-indicator.is-working  { --cue-frame-color: #22a846; }
+.zen-indicator.is-working  { --cue-frame-color: #111111; }
 .zen-indicator.is-listening { --cue-frame-color: #2563eb; }
 
 .zen-indicator.is-recording::before,
@@ -619,7 +619,7 @@ body.keyboard-open .zen-indicator.is-listening {
 }
 
 .zen-indicator .zen-record-dot,
-.zen-indicator .zen-play-icon {
+.zen-indicator .zen-stop-square {
   display: none;
   position: absolute;
   top: max(18px, var(--zen-safe-area-top));
@@ -655,20 +655,17 @@ body.keyboard-open .zen-indicator.is-listening {
   animation: zen-listen-pulse 1s ease-out infinite;
 }
 
-.zen-indicator.is-working .zen-play-icon {
+.zen-indicator.is-working .zen-stop-square {
   display: inline-flex;
-  background: transparent;
-  border: none;
-  width: 0;
-  height: 0;
-  border-left: calc(var(--cue-chip-size) * 1.0) solid #22a846;
-  border-top: calc(var(--cue-chip-size) * 0.6) solid transparent;
-  border-bottom: calc(var(--cue-chip-size) * 0.6) solid transparent;
+  width: calc(var(--cue-chip-size) * 0.75);
+  height: calc(var(--cue-chip-size) * 0.75);
+  border-radius: 1px;
+  background: #111111;
 }
 
 @media (max-width: 767px) {
   .zen-indicator .zen-record-dot,
-  .zen-indicator .zen-play-icon {
+  .zen-indicator .zen-stop-square {
     --cue-chip-size: 16px;
     top: max(14px, var(--zen-safe-area-top));
     right: max(14px, var(--zen-safe-area-right));
@@ -682,15 +679,8 @@ body.keyboard-open .zen-indicator.is-listening {
     --cue-frame-color: #111111;
   }
   .zen-indicator .zen-record-dot,
-  .zen-indicator .zen-play-icon {
+  .zen-indicator .zen-stop-square {
     background: #111111;
-    border-color: #111111;
-  }
-  .zen-indicator.is-working .zen-play-icon {
-    background: transparent;
-    border-left-color: #111111;
-    border-top-color: transparent;
-    border-bottom-color: transparent;
   }
   .zen-indicator.is-listening .zen-record-dot {
     box-shadow: 0 0 0 0 rgba(17, 17, 17, 0.65);

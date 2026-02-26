@@ -150,7 +150,7 @@ export function showIndicatorMode(mode, x, y) {
   el.style.maxHeight = '';
   el.style.transform = '';
   el.style.translate = '';
-  // Recording dot appears at tap point; play icon stays in top-right (CSS default).
+  // Recording dot appears at tap point; stop square stays in top-right (CSS default).
   const dot = el.querySelector('.zen-record-dot');
   if (dot) {
     if (nextMode === 'recording' && Number.isFinite(x) && Number.isFinite(y)) {

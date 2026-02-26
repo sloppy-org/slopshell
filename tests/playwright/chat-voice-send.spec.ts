@@ -254,10 +254,10 @@ test('touch stop indicator routes through shared cancel endpoint', async ({ page
   await page.waitForTimeout(100);
   await expect(page.locator('#chat-history .chat-message.chat-assistant.is-pending')).toHaveCount(1);
 
-  const playIcon = page.locator('.zen-play-icon');
-  await expect(playIcon).toBeVisible();
+  const stopSquare = page.locator('.zen-stop-square');
+  await expect(stopSquare).toBeVisible();
 
-  await tapElement(page, '.zen-play-icon');
+  await tapElement(page, '.zen-stop-square');
   await waitForApiCancel(page);
 
   const log = await getLog(page);
@@ -284,7 +284,7 @@ test('touch stop retries cancel when first cancel reports zero but work remains'
 
   await injectChatEvent(page, { type: 'turn_started', turn_id: 'stop-retry-turn' });
   await page.waitForTimeout(100);
-  await tapElement(page, '.zen-play-icon');
+  await tapElement(page, '.zen-stop-square');
 
   await expect.poll(async () => {
     const log = await getLog(page);
@@ -302,7 +302,7 @@ test('touch stop while sending transcript aborts pending message submit', async 
   await waitForSTTAction(page, 'stop');
   await expect(page.locator('#zen-status')).toContainText('sending');
 
-  await tapElement(page, '.zen-play-icon');
+  await tapElement(page, '.zen-stop-square');
   await waitForApiCancel(page);
   await page.waitForTimeout(1400);
 
@@ -468,8 +468,8 @@ test('Control long-press starts at mouse location and sends artifact line contex
   const canvasText = page.locator('#canvas-text');
   const box = await canvasText.boundingBox();
   if (!box) throw new Error('canvas-text not visible');
-  const x = Math.floor(box.x + 40);
-  const y = Math.floor(box.y + 20);
+  const x = Math.floor(box.x + 50);
+  const y = Math.floor(box.y + 50);
 
   await page.mouse.move(x, y);
   await page.keyboard.down('Control');
@@ -593,14 +593,14 @@ test('recording indicator shows symbol', async ({ page }) => {
   const indicator = page.locator('#zen-indicator');
   await expect(indicator).toBeVisible();
   await expect(page.locator('.zen-record-dot')).toBeVisible();
-  await expect(page.locator('.zen-play-icon')).toBeHidden();
+  await expect(page.locator('.zen-stop-square')).toBeHidden();
 
   // Stop recording and transition to working/play indicator
   await page.mouse.click(400, 400);
   await waitForSTTAction(page, 'stop');
   await page.waitForTimeout(200);
   await expect(indicator).toBeVisible();
-  await expect(page.locator('.zen-play-icon')).toBeVisible();
+  await expect(page.locator('.zen-stop-square')).toBeVisible();
   await expect(page.locator('.zen-record-dot')).toBeHidden();
 });
 
