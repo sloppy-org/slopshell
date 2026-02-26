@@ -15,6 +15,13 @@ import (
 // MaxAudioBytes is the upper limit for a single STT audio payload.
 const MaxAudioBytes = 10 * 1024 * 1024
 
+var (
+	// ErrNoTranscriptOutput means the STT backend produced no usable text.
+	ErrNoTranscriptOutput = errors.New("voxtype produced no transcript output")
+	// ErrLikelyHallucination means Whisper returned a known silent-audio phantom.
+	ErrLikelyHallucination = errors.New("rejected likely hallucination on silent audio")
+)
+
 // TranscribeWithVoxType converts audio to WAV via ffmpeg, then transcribes
 // it with the voxtype CLI. It returns the transcript text or an error.
 func TranscribeWithVoxType(mimeType string, data []byte) (string, error) {
@@ -75,12 +82,18 @@ func TranscribeWithVoxType(mimeType string, data []byte) (string, error) {
 		text = ParseVoxTypeTranscript(string(errBytes))
 	}
 	if text == "" {
-		return "", errors.New("voxtype produced no transcript output")
+		return "", ErrNoTranscriptOutput
 	}
 	if IsWhisperHallucination(text) {
-		return "", errors.New("rejected likely hallucination on silent audio")
+		return "", ErrLikelyHallucination
 	}
 	return text, nil
+}
+
+// IsRetryableNoSpeechError reports whether err means "no usable speech yet"
+// and the caller should keep listening instead of failing hard.
+func IsRetryableNoSpeechError(err error) bool {
+	return errors.Is(err, ErrNoTranscriptOutput) || errors.Is(err, ErrLikelyHallucination)
 }
 
 // ParseVoxTypeTranscript extracts the transcript line from voxtype output,

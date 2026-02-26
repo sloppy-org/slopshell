@@ -14,6 +14,7 @@ type sttMessage struct {
 	MimeType string `json:"mime_type,omitempty"`
 	Text     string `json:"text,omitempty"`
 	Error    string `json:"error,omitempty"`
+	Reason   string `json:"reason,omitempty"`
 }
 
 func handleSTTStart(conn *chatWSConn, mimeType string) {
@@ -64,19 +65,23 @@ func handleSTTStop(conn *chatWSConn) {
 	conn.sttMu.Unlock()
 
 	if len(buf) < 1024 {
-		_ = conn.writeJSON(sttMessage{Type: "stt_error", Error: "recording too short"})
+		_ = conn.writeJSON(sttMessage{Type: "stt_empty", Reason: "recording_too_short"})
 		return
 	}
 
 	text, err := stt.TranscribeWithVoxType(mimeType, buf)
 	if err != nil {
+		if stt.IsRetryableNoSpeechError(err) {
+			_ = conn.writeJSON(sttMessage{Type: "stt_empty", Reason: "no_speech_detected"})
+			return
+		}
 		log.Printf("stt transcribe error: %v", err)
 		_ = conn.writeJSON(sttMessage{Type: "stt_error", Error: fmt.Sprintf("transcription failed: %v", err)})
 		return
 	}
 	text = strings.TrimSpace(text)
 	if text == "" {
-		_ = conn.writeJSON(sttMessage{Type: "stt_error", Error: "speech recognizer returned empty text"})
+		_ = conn.writeJSON(sttMessage{Type: "stt_empty", Reason: "empty_transcript"})
 		return
 	}
 	_ = conn.writeJSON(sttMessage{Type: "stt_result", Text: text})

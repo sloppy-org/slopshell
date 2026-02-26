@@ -51,10 +51,7 @@ func (a *App) ensureHubProject() (store.Project, error) {
 		return existing, nil
 	}
 
-	rootPath := strings.TrimSpace(a.localProjectDir)
-	if rootPath == "" {
-		rootPath = filepath.Join(a.dataDir, "projects", "hub")
-	}
+	rootPath := filepath.Join(a.dataDir, "projects", "hub")
 	absRoot, err := filepath.Abs(rootPath)
 	if err != nil {
 		return store.Project{}, err
@@ -80,6 +77,12 @@ func (a *App) ensureHubProject() (store.Project, error) {
 				_ = a.store.UpdateProjectChatModel(existing.ID, modelprofile.AliasSpark)
 				_ = a.store.UpdateProjectChatModelReasoningEffort(existing.ID, modelprofile.ReasoningLow)
 				return existing, nil
+			}
+			existingByPath, lookupByPathErr := a.store.GetProjectByRootPath(absRoot)
+			if lookupByPathErr == nil && isHubProject(existingByPath) {
+				_ = a.store.UpdateProjectChatModel(existingByPath.ID, modelprofile.AliasSpark)
+				_ = a.store.UpdateProjectChatModelReasoningEffort(existingByPath.ID, modelprofile.ReasoningLow)
+				return existingByPath, nil
 			}
 		}
 		return store.Project{}, err

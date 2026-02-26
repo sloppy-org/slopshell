@@ -1264,13 +1264,21 @@ func (a *App) finalizeAssistantResponse(
 		}
 	} else {
 		canvasCtx := a.resolveCanvasContext(projectKey)
-		if canvasCtx == nil || !canvasCtx.HasArtifact {
-			content := strings.TrimSpace(text)
-			if content != "" && canvasSessionID != "" {
-				autoCanvas = a.writeCanvasFileBlock(projectKey, canvasSessionID, fileBlock{
-					Path:    "",
-					Content: content,
-				})
+		content := strings.TrimSpace(text)
+		if content != "" && canvasSessionID != "" {
+			block := fileBlock{
+				Path:    "",
+				Content: content,
+			}
+			if canOverwriteSilentAutoCanvasArtifact(canvasCtx) {
+				block.Path = canvasCtx.ArtifactTitle
+			}
+			autoCanvas = a.writeCanvasFileBlock(projectKey, canvasSessionID, block)
+			if !autoCanvas && strings.TrimSpace(block.Path) != "" {
+				// If the current artifact path is stale or outside the active project
+				// root, fall back to a fresh scratch artifact for this response.
+				block.Path = ""
+				autoCanvas = a.writeCanvasFileBlock(projectKey, canvasSessionID, block)
 			}
 		}
 	}

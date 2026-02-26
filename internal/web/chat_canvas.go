@@ -23,6 +23,7 @@ var canvasFileMarkerRe = regexp.MustCompile(`\[file:[^\]]*\]`)
 var canvasFileDirectiveOpenRe = regexp.MustCompile(`(?m)^\s*:::file\{[^}]*\}\s*$`)
 var canvasFileDirectiveCloseRe = regexp.MustCompile(`(?m)^\s*:::\s*$`)
 var canvasTempFileStemRe = regexp.MustCompile(`[^a-zA-Z0-9._-]+`)
+var canvasScratchTitlePrefix = filepath.ToSlash(filepath.Join(".tabura", "artifacts", "tmp")) + "/"
 
 var attrRe = regexp.MustCompile(`(\w+)="([^"]*)"`)
 
@@ -82,6 +83,29 @@ func defaultCanvasTempFilePath(seed string) string {
 	}
 	name := fmt.Sprintf("%s-%d.md", stem, time.Now().UnixNano())
 	return filepath.ToSlash(filepath.Join(".tabura", "artifacts", "tmp", name))
+}
+
+func isCanvasScratchArtifactTitle(title string) bool {
+	t := filepath.ToSlash(strings.TrimSpace(title))
+	if t == "" {
+		return false
+	}
+	t = strings.TrimPrefix(t, "./")
+	if strings.HasPrefix(t, canvasScratchTitlePrefix) {
+		return true
+	}
+	return strings.Contains(t, "/"+canvasScratchTitlePrefix)
+}
+
+func canOverwriteSilentAutoCanvasArtifact(ctx *canvasContext) bool {
+	if ctx == nil || !ctx.HasArtifact {
+		return false
+	}
+	kind := strings.TrimSpace(ctx.ArtifactKind)
+	if kind != "text" && kind != "text_artifact" {
+		return false
+	}
+	return isCanvasScratchArtifactTitle(ctx.ArtifactTitle)
 }
 
 func resolveCanvasFilePath(cwd, requested string) (absolutePath, canvasTitle string, err error) {

@@ -651,3 +651,36 @@ func TestHubProjectProfileUsesSparkLow(t *testing.T) {
 		t.Fatalf("hub turn reasoning = %q, want %q", got, modelprofile.ReasoningLow)
 	}
 }
+
+func TestEnsureHubProjectUsesDedicatedRootWhenLocalProjectConfigured(t *testing.T) {
+	dataDir := t.TempDir()
+	localProjectDir := t.TempDir()
+	app, err := New(dataDir, localProjectDir, "", "", "", "", "", false)
+	if err != nil {
+		t.Fatalf("new app: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = app.Shutdown(context.Background())
+	})
+
+	defaultProject, err := app.ensureDefaultProjectRecord()
+	if err != nil {
+		t.Fatalf("ensure default project: %v", err)
+	}
+	hub, err := app.ensureHubProject()
+	if err != nil {
+		t.Fatalf("ensure hub project: %v", err)
+	}
+
+	if strings.TrimSpace(hub.ProjectKey) != HubProjectKey {
+		t.Fatalf("hub key = %q, want %q", hub.ProjectKey, HubProjectKey)
+	}
+	if filepath.Clean(hub.RootPath) == filepath.Clean(defaultProject.RootPath) {
+		t.Fatalf("hub root path collides with default project root: %q", hub.RootPath)
+	}
+
+	expectedHubRoot := filepath.Join(dataDir, "projects", "hub")
+	if filepath.Clean(hub.RootPath) != filepath.Clean(expectedHubRoot) {
+		t.Fatalf("hub root path = %q, want %q", hub.RootPath, expectedHubRoot)
+	}
+}
