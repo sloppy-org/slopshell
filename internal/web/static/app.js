@@ -3254,9 +3254,6 @@ async function refreshAssistantActivity() {
     if (!Number.isFinite(activeTurns) || activeTurns < 0) return;
     if (!Number.isFinite(queuedTurns) || queuedTurns < 0) return;
     if (!Number.isFinite(delegateActive) || delegateActive < 0) return;
-    if (activeTurns > 0 || queuedTurns > 0 || delegateActive > 0) {
-      state.stopIndicatorSuppressed = false;
-    }
     state.assistantRemoteActiveCount = activeTurns;
     state.assistantRemoteQueuedCount = queuedTurns;
     state.assistantRemoteDelegateActiveCount = delegateActive;

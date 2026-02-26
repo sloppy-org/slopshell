@@ -292,6 +292,31 @@ test('touch stop retries cancel when first cancel reports zero but work remains'
   }, { timeout: 5_000 }).toBeGreaterThanOrEqual(2);
 });
 
+test('stop indicator auto-hides after stop even when activity poll stays active', async ({ page }) => {
+  await clearLog(page);
+  // Simulate stale backend activity that can keep stop UI stuck in Safari.
+  await setHarnessActivityResponse(page, { active_turns: 1, queued_turns: 0, delegate_active: 0 });
+  await setHarnessCancelResponses(page, [
+    { ok: true, canceled: 2, active_canceled: 1, queued_canceled: 1, delegate_canceled: 0 },
+  ]);
+
+  await injectChatEvent(page, { type: 'turn_started', turn_id: 'stop-stale-activity-turn' });
+  await page.waitForTimeout(120);
+  await expect(page.locator('.stop-square')).toBeVisible();
+
+  await tapElement(page, '.stop-square');
+  await waitForApiCancel(page);
+
+  // Wait beyond one activity poll cycle to ensure stale active count is observed.
+  await page.waitForTimeout(1500);
+  await expect(page.locator('#indicator')).toBeHidden();
+
+  // New turn should clear suppression and show indicator again.
+  await injectChatEvent(page, { type: 'turn_started', turn_id: 'stop-stale-activity-turn-2' });
+  await page.waitForTimeout(120);
+  await expect(page.locator('.stop-square')).toBeVisible();
+});
+
 test('touch stop while sending transcript aborts pending message submit', async ({ page }) => {
   await clearLog(page);
   await setHarnessMessagePostDelay(page, 1200);
