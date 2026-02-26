@@ -6,6 +6,24 @@ async function getLog(page: Page): Promise<HarnessLogEntry[]> {
   return page.evaluate(() => (window as any).__harnessLog.slice());
 }
 
+async function clearLog(page: Page) {
+  await page.evaluate(() => { (window as any).__harnessLog = []; });
+}
+
+async function setHarnessActivityResponse(page: Page, response: { active_turns?: number; queued_turns?: number; delegate_active?: number }) {
+  await page.evaluate((next) => {
+    const fn = (window as any).__setActivityResponse;
+    if (typeof fn === 'function') fn(next);
+  }, response);
+}
+
+async function waitForApiCancel(page: Page) {
+  await expect.poll(async () => {
+    const log = await getLog(page);
+    return log.some((entry) => entry.type === 'api_fetch' && entry.action === 'cancel');
+  }, { timeout: 5_000 }).toBe(true);
+}
+
 async function waitReady(page: Page) {
   await page.goto('/tests/playwright/harness.html');
   await page.waitForFunction(() => {
@@ -210,6 +228,21 @@ test.describe('chat pane interactions', () => {
     expect(sttStop).toBeTruthy();
   });
 
+  test('stop indicator auto-hides after stop with stale activity in silent mode', async ({ page }) => {
+    await clearLog(page);
+    await setHarnessActivityResponse(page, { active_turns: 1, queued_turns: 0, delegate_active: 0 });
+
+    await injectChatEvent(page, { type: 'turn_started', turn_id: 'silent-stop-stale-1' });
+    await expect(page.locator('.stop-square')).toBeVisible();
+
+    const chatHistory = page.locator('#chat-history');
+    await chatHistory.click({ position: { x: 50, y: 50 } });
+    await waitForApiCancel(page);
+
+    await page.waitForTimeout(1500);
+    await expect(page.locator('#indicator')).toBeHidden();
+  });
+
   test('chat-pane-input sends on Enter', async ({ page }) => {
     const input = page.locator('#chat-pane-input');
     await input.focus();
@@ -238,7 +271,7 @@ test.describe('chat pane interactions', () => {
     });
 
     // Clear harness log
-    await page.evaluate(() => { (window as any).__harnessLog = []; });
+    await clearLog(page);
 
     // Click the link
     await page.locator('#test-anchor').click();

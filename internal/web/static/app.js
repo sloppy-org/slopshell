@@ -69,7 +69,9 @@ const state = {
   hotwordPhrase: 'tabura',
   voiceAwaitingTurn: false,
   voiceTurns: new Set(),
-  stopIndicatorSuppressed: false,
+  voiceLifecycle: 'idle',
+  voiceLifecycleSeq: 0,
+  voiceLifecycleReason: '',
   indicatorSuppressedByCanvasUpdate: false,
   chatCtrlHoldTimer: null,
   chatVoiceCapture: null,
@@ -148,12 +150,22 @@ const VOICE_CAPTURE_STOP_FLUSH_TIMEOUT_MS = 1500;
 const STT_STOP_TIMEOUT_MS = 8000;
 const STOP_REQUEST_TIMEOUT_MS = 3500;
 const HOTWORD_POLL_INTERVAL_MS = 1500;
+const VOICE_LIFECYCLE = Object.freeze({
+  IDLE: 'idle',
+  LISTENING: 'listening',
+  RECORDING: 'recording',
+  STOPPING_RECORDING: 'stopping_recording',
+  AWAITING_TURN: 'awaiting_turn',
+  ASSISTANT_WORKING: 'assistant_working',
+  TTS_PLAYING: 'tts_playing',
+});
 let devReloadBootID = '';
 let devReloadTimer = null;
 let devReloadInFlight = false;
 let devReloadRequested = false;
 let assistantActivityTimer = null;
 let assistantActivityInFlight = false;
+let assistantSilentCancelInFlight = false;
 
 const ACTIVE_PROJECT_STORAGE_KEY = 'tabura.activeProjectId';
 const LAST_VIEW_STORAGE_KEY = 'tabura.lastView';
@@ -425,17 +437,15 @@ function canSpeakTTS() {
 }
 
 function canStartHotwordMonitor() {
+  const mode = syncVoiceLifecycle('can-start-hotword');
   if (!state.hotwordEnabled) return false;
   if (state.hotwordNeedsTraining) return false;
   if (state.hotwordTrainingInProgress) return false;
   if (!state.conversationMode) return false;
   if (!canSpeakTTS()) return false;
-  if (isRecording()) return false;
+  if (mode === VOICE_LIFECYCLE.RECORDING || mode === VOICE_LIFECYCLE.STOPPING_RECORDING) return false;
   if (state.chatVoiceCapture) return false;
-  if (state.voiceAwaitingTurn) return false;
-  if (isAssistantWorking()) return false;
-  if (isTTSSpeaking()) return false;
-  if (isConversationListenActive()) return false;
+  if (isStopCapableLifecycle(mode)) return false;
   return true;
 }
 
@@ -954,7 +964,7 @@ configureConversation({
     updateAssistantActivityIndicator();
   },
   onConversationListenTimeout: () => {
-    if (!state.chatVoiceCapture && !state.voiceAwaitingTurn && !isAssistantWorking() && !isTTSSpeaking()) {
+    if (isUiReadyForStatus()) {
       showStatus('ready');
     }
   },
@@ -962,7 +972,7 @@ configureConversation({
     beginConversationVoiceCapture();
   },
   onConversationListenCancelled: () => {
-    if (!state.chatVoiceCapture && !state.voiceAwaitingTurn && !isAssistantWorking() && !isTTSSpeaking()) {
+    if (isUiReadyForStatus()) {
       showStatus('ready');
     }
   },
@@ -1623,6 +1633,7 @@ function startVADMonitor(capture) {
     state.indicatorSuppressedByCanvasUpdate = false;
     showStatus('no speech detected');
     setRecording(false);
+    setVoiceLifecycle(VOICE_LIFECYCLE.IDLE, 'voice-vad-no-speech');
     sttCancel();
     stopChatVoiceMedia(capture);
     if (state.chatVoiceCapture === capture) {
@@ -1630,7 +1641,7 @@ function startVADMonitor(capture) {
     }
     updateAssistantActivityIndicator();
     window.setTimeout(() => {
-      if (!state.chatVoiceCapture && !isAssistantWorking() && !isTTSSpeaking()) {
+      if (isUiReadyForStatus()) {
         showStatus('ready');
       }
     }, 800);
@@ -1878,9 +1889,10 @@ async function beginVoiceCapture(x, y, anchor, options = null) {
   };
   state.chatVoiceCapture = capture;
   state.lastInputOrigin = 'voice';
-  state.stopIndicatorSuppressed = false;
   state.voiceAwaitingTurn = false;
   state.indicatorSuppressedByCanvasUpdate = false;
+  startVoiceLifecycleOp('voice-capture-begin');
+  setVoiceLifecycle(VOICE_LIFECYCLE.RECORDING, 'voice-capture-begin');
   setLastInputPosition(x, y);
   setRecording(true);
   setInputAnchor(anchor || null);
@@ -1908,6 +1920,7 @@ async function beginVoiceCapture(x, y, anchor, options = null) {
     }
   } catch (err) {
     setRecording(false);
+    setVoiceLifecycle(VOICE_LIFECYCLE.IDLE, 'voice-capture-start-failed');
     updateAssistantActivityIndicator();
     const message = String(err?.message || err || 'voice capture failed');
     showStatus(`voice capture failed: ${message}`);
@@ -1922,11 +1935,14 @@ async function beginVoiceCapture(x, y, anchor, options = null) {
 async function stopVoiceCaptureAndSend() {
   const capture = state.chatVoiceCapture;
   if (!capture || capture.stopping) return;
+  const opSeq = startVoiceLifecycleOp('voice-capture-stop-send');
   capture.stopRequested = true;
   if (!capture.active) return;
   capture.stopping = true;
   setRecording(false);
+  setVoiceLifecycle(VOICE_LIFECYCLE.STOPPING_RECORDING, 'voice-capture-stop-send');
   state.voiceAwaitingTurn = true;
+  setVoiceLifecycle(VOICE_LIFECYCLE.AWAITING_TURN, 'voice-awaiting-turn');
   state.indicatorSuppressedByCanvasUpdate = false;
   updateAssistantActivityIndicator();
   showStatus('transcribing...');
@@ -1949,7 +1965,9 @@ async function stopVoiceCaptureAndSend() {
     showStatus('sending...');
     void submitMessage(transcript, { kind: 'voice_transcript' });
   } catch (err) {
+    if (opSeq !== state.voiceLifecycleSeq) return;
     state.voiceAwaitingTurn = false;
+    setVoiceLifecycle(VOICE_LIFECYCLE.IDLE, 'voice-capture-stop-failed');
     updateAssistantActivityIndicator();
     const message = String(err?.message || err || 'voice capture failed');
     showStatus(`voice capture failed: ${message}`);
@@ -1960,6 +1978,9 @@ async function stopVoiceCaptureAndSend() {
     stopChatVoiceMedia(capture);
     if (state.chatVoiceCapture === capture) {
       state.chatVoiceCapture = null;
+    }
+    if (opSeq === state.voiceLifecycleSeq) {
+      syncVoiceLifecycle('voice-capture-stop-finished');
     }
     updateAssistantActivityIndicator();
   }
@@ -1974,6 +1995,7 @@ function cancelChatVoiceCapture() {
   sttCancel();
   stopChatVoiceMedia(capture);
   state.chatVoiceCapture = null;
+  setVoiceLifecycle(VOICE_LIFECYCLE.IDLE, 'voice-capture-cancelled');
   updateAssistantActivityIndicator();
 }
 
@@ -2054,11 +2076,20 @@ function hasLocalAssistantWork() {
     || state.assistantUnknownTurns > 0;
 }
 
-function isDirectAssistantWorking() {
-  return hasLocalAssistantWork()
-    || state.assistantRemoteActiveCount > 0
+function hasRemoteAssistantWork() {
+  return state.assistantRemoteActiveCount > 0
     || state.assistantRemoteQueuedCount > 0
-    || state.assistantCancelInFlight;
+    || state.assistantRemoteDelegateActiveCount > 0;
+}
+
+function hasLocalStopCapableWork() {
+  return hasLocalAssistantWork() || state.assistantCancelInFlight;
+}
+
+function isDirectAssistantWorking() {
+  return hasLocalStopCapableWork()
+    || state.assistantRemoteActiveCount > 0
+    || state.assistantRemoteQueuedCount > 0;
 }
 
 function isDelegateAssistantWorking() {
@@ -2073,13 +2104,56 @@ function isTTSSpeaking() {
   return state.ttsPlaying;
 }
 
+function startVoiceLifecycleOp(reason = '') {
+  state.voiceLifecycleSeq += 1;
+  state.voiceLifecycleReason = String(reason || '');
+  return state.voiceLifecycleSeq;
+}
+
+function setVoiceLifecycle(next, reason = '') {
+  const normalized = Object.values(VOICE_LIFECYCLE).includes(next)
+    ? next
+    : VOICE_LIFECYCLE.IDLE;
+  state.voiceLifecycle = normalized;
+  if (reason) {
+    state.voiceLifecycleReason = String(reason);
+  }
+  return state.voiceLifecycle;
+}
+
+function deriveVoiceLifecycle() {
+  if (isRecording()) return VOICE_LIFECYCLE.RECORDING;
+  if (state.chatVoiceCapture?.stopping) return VOICE_LIFECYCLE.STOPPING_RECORDING;
+  if (state.voiceAwaitingTurn) return VOICE_LIFECYCLE.AWAITING_TURN;
+  if (isConversationListenActive()) return VOICE_LIFECYCLE.LISTENING;
+  if (hasLocalStopCapableWork()) return VOICE_LIFECYCLE.ASSISTANT_WORKING;
+  if (isTTSSpeaking()) return VOICE_LIFECYCLE.TTS_PLAYING;
+  return VOICE_LIFECYCLE.IDLE;
+}
+
+function syncVoiceLifecycle(reason = '') {
+  return setVoiceLifecycle(deriveVoiceLifecycle(), reason);
+}
+
+function isStopCapableLifecycle(mode = state.voiceLifecycle) {
+  return mode === VOICE_LIFECYCLE.LISTENING
+    || mode === VOICE_LIFECYCLE.STOPPING_RECORDING
+    || mode === VOICE_LIFECYCLE.AWAITING_TURN
+    || mode === VOICE_LIFECYCLE.ASSISTANT_WORKING
+    || mode === VOICE_LIFECYCLE.TTS_PLAYING;
+}
+
+function isUiReadyForStatus() {
+  const mode = syncVoiceLifecycle('ready-check');
+  return mode === VOICE_LIFECYCLE.IDLE;
+}
+
 function canStartConversationListen() {
   if (!canSpeakTTS()) return false;
-  if (isRecording()) return false;
+  const mode = syncVoiceLifecycle('can-start-conversation');
+  if (mode === VOICE_LIFECYCLE.RECORDING || mode === VOICE_LIFECYCLE.STOPPING_RECORDING) return false;
   if (state.chatVoiceCapture) return false;
-  if (state.voiceAwaitingTurn) return false;
-  if (isAssistantWorking()) return false;
-  if (isTTSSpeaking()) return false;
+  if (isStopCapableLifecycle(mode)) return false;
   return true;
 }
 
@@ -2090,17 +2164,16 @@ function beginConversationVoiceCapture() {
 }
 
 function currentIndicatorMode() {
-  if (isRecording()) return 'recording';
-  if (state.voiceAwaitingTurn) return 'play';
-  if (isConversationListenActive()) return 'listening';
-  if (state.stopIndicatorSuppressed) return '';
+  const mode = state.voiceLifecycle;
+  if (mode === VOICE_LIFECYCLE.RECORDING) return 'recording';
+  if (mode === VOICE_LIFECYCLE.LISTENING) return 'listening';
+  if (isStopCapableLifecycle(mode)) return 'play';
   if (state.indicatorSuppressedByCanvasUpdate) return '';
-  if (isAssistantWorking() || isTTSSpeaking()) return 'play';
   return '';
 }
 
 function shouldStopInUiClick() {
-  return state.voiceAwaitingTurn || isAssistantWorking() || isTTSSpeaking() || isConversationListenActive();
+  return isStopCapableLifecycle(syncVoiceLifecycle('ui-stop-check'));
 }
 
 function updateAssistantActivityIndicator() {
@@ -2108,6 +2181,7 @@ function updateAssistantActivityIndicator() {
     state.assistantUnknownTurns = 0;
     state.assistantActiveTurns.clear();
   }
+  syncVoiceLifecycle('indicator-update');
   state.hotwordActive = isHotwordActive();
   const pos = getLastInputPosition();
   const px = Number.isFinite(pos?.x) && pos.x > 0 ? pos.x : Math.floor(window.innerWidth / 2);
@@ -2720,7 +2794,6 @@ function isLikelyPrReviewArtifact(payload) {
 
 function trackAssistantTurnStarted(turnID) {
   state.assistantLastError = '';
-  state.stopIndicatorSuppressed = false;
   const key = String(turnID || '').trim();
   if (key) {
     state.assistantActiveTurns.add(key);
@@ -3827,7 +3900,7 @@ async function submitMessage(text, options = {}) {
   const trimmed = String(text || '').trim();
   if (!trimmed || !state.chatSessionId) return;
   cancelConversationListen();
-  state.stopIndicatorSuppressed = false;
+  startVoiceLifecycleOp('submit-message');
   const submitKind = String(options?.kind || '').trim();
   let submitController = null;
   if (submitKind) {
@@ -3910,7 +3983,7 @@ async function submitMessage(text, options = {}) {
   }
 }
 
-function clearLocalStopState(statusText = 'stopped') {
+function forceVoiceLifecycleIdle(statusText = 'stopped') {
   cancelConversationListen();
   abortPendingSubmit('voice_transcript');
   sttCancel();
@@ -3921,15 +3994,11 @@ function clearLocalStopState(statusText = 'stopped') {
   }
   setRecording(false);
   state.voiceAwaitingTurn = false;
-  state.stopIndicatorSuppressed = true;
   state.indicatorSuppressedByCanvasUpdate = false;
   state.assistantCancelInFlight = false;
   state.assistantActiveTurns.clear();
   state.assistantUnknownTurns = 0;
   state.voiceTurns.clear();
-  state.assistantRemoteActiveCount = 0;
-  state.assistantRemoteQueuedCount = 0;
-  state.assistantRemoteDelegateActiveCount = 0;
   for (const row of state.pendingByTurn.values()) {
     if (row instanceof HTMLElement) updateAssistantRow(row, '_Stopped._', false);
   }
@@ -3940,23 +4009,31 @@ function clearLocalStopState(statusText = 'stopped') {
   state.pendingQueue = [];
   hideOverlay();
   showStatus(statusText);
+  setVoiceLifecycle(VOICE_LIFECYCLE.IDLE, 'force-idle');
   updateAssistantActivityIndicator();
 }
 
 async function cancelActiveAssistantTurn(options = null) {
   const force = Boolean(options && options.force);
-  if (!state.chatSessionId || state.assistantCancelInFlight) return false;
+  const silent = Boolean(options && options.silent);
+  if (!state.chatSessionId || state.assistantCancelInFlight || (silent && assistantSilentCancelInFlight)) return false;
   if (!force) {
     await refreshAssistantActivity();
     if (!isAssistantWorking()) {
-      showStatus(state.assistantLastError ? state.assistantLastError : 'idle');
-      updateAssistantActivityIndicator();
+      if (!silent) {
+        showStatus(state.assistantLastError ? state.assistantLastError : 'idle');
+        updateAssistantActivityIndicator();
+      }
       return false;
     }
   }
-  state.assistantCancelInFlight = true;
-  updateAssistantActivityIndicator();
-  showStatus('stopping...');
+  if (!silent) {
+    state.assistantCancelInFlight = true;
+    updateAssistantActivityIndicator();
+    showStatus('stopping...');
+  } else {
+    assistantSilentCancelInFlight = true;
+  }
   let canceled = 0;
   let timeoutId = null;
   try {
@@ -3970,22 +4047,24 @@ async function cancelActiveAssistantTurn(options = null) {
     });
     if (!resp.ok) {
       const detail = (await resp.text()).trim() || `HTTP ${resp.status}`;
-      showStatus(`stop failed: ${detail}`);
+      if (!silent) showStatus(`stop failed: ${detail}`);
       return false;
     }
     const payload = await resp.json();
     canceled = Number(payload?.canceled || 0);
     if (canceled <= 0) {
       await refreshAssistantActivity();
-      if (!isAssistantWorking()) {
+      if (!silent && !isAssistantWorking()) {
         showStatus(state.assistantLastError ? state.assistantLastError : 'idle');
       }
     }
   } catch (err) {
-    if (String(err?.name || '') === 'AbortError') {
-      showStatus('stop request timed out');
-    } else {
-      showStatus(`stop failed: ${String(err?.message || err)}`);
+    if (!silent) {
+      if (String(err?.name || '') === 'AbortError') {
+        showStatus('stop request timed out');
+      } else {
+        showStatus(`stop failed: ${String(err?.message || err)}`);
+      }
     }
     return false;
   } finally {
@@ -3993,17 +4072,22 @@ async function cancelActiveAssistantTurn(options = null) {
       window.clearTimeout(timeoutId);
       timeoutId = null;
     }
-    state.assistantCancelInFlight = false;
-    updateAssistantActivityIndicator();
+    if (!silent) {
+      state.assistantCancelInFlight = false;
+      updateAssistantActivityIndicator();
+    } else {
+      assistantSilentCancelInFlight = false;
+    }
     window.setTimeout(() => { void refreshAssistantActivity(); }, 120);
   }
   return canceled > 0;
 }
 
-async function cancelActiveAssistantTurnWithRetry(maxAttempts = 3) {
+async function cancelActiveAssistantTurnWithRetry(maxAttempts = 3, options = null) {
+  const silent = Boolean(options && options.silent);
   const attempts = Number.isFinite(maxAttempts) ? Math.max(1, Math.floor(maxAttempts)) : 1;
   for (let i = 0; i < attempts; i += 1) {
-    const canceled = await cancelActiveAssistantTurn({ force: true });
+    const canceled = await cancelActiveAssistantTurn({ force: true, silent });
     if (canceled) return true;
     await refreshAssistantActivity();
     if (!isAssistantWorking()) return false;
@@ -4015,9 +4099,12 @@ async function cancelActiveAssistantTurnWithRetry(maxAttempts = 3) {
 }
 
 async function handleStopAction() {
+  startVoiceLifecycleOp('stop-action');
   if (isConversationListenActive()) {
     cancelConversationListen();
-    clearLocalStopState('ready');
+    setVoiceLifecycle(VOICE_LIFECYCLE.IDLE, 'stop-listening');
+    showStatus('ready');
+    updateAssistantActivityIndicator();
     return;
   }
 
@@ -4036,21 +4123,12 @@ async function handleStopAction() {
     stopTTSPlayback();
   }
 
-  const hadVoiceAwaitingTurn = state.voiceAwaitingTurn;
-  if (hadVoiceAwaitingTurn) {
-    abortPendingSubmit('voice_transcript');
-    state.voiceAwaitingTurn = false;
-    sttCancel();
-    updateAssistantActivityIndicator();
-  }
-
-  const canceled = await cancelActiveAssistantTurnWithRetry(3);
-  if (!canceled && capture) {
-    sttCancel();
-  }
-  if (hadVoiceAwaitingTurn && !canceled) sttCancel();
-  clearLocalStopState('stopped');
-  void refreshAssistantActivity();
+  const localStopCapable = shouldStopInUiClick() || hasLocalStopCapableWork() || state.voiceAwaitingTurn;
+  forceVoiceLifecycleIdle('stopped');
+  if (!localStopCapable && !hasRemoteAssistantWork()) return;
+  void cancelActiveAssistantTurnWithRetry(3, { silent: true }).finally(() => {
+    void refreshAssistantActivity();
+  });
 }
 
 function applyCanvasArtifactEvent(payload) {
