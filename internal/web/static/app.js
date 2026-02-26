@@ -4301,7 +4301,12 @@ function bindUi() {
     let mouseHoldPointerId = null;
     let mouseHoldX = 0;
     let mouseHoldY = 0;
+    let touchTapStartX = 0;
+    let touchTapStartY = 0;
+    let touchTapTracking = false;
+    let touchTapMoved = false;
     const MOUSE_HOLD_MOVE_THRESHOLD = 5;
+    const TOUCH_TAP_MOVE_THRESHOLD = 10;
     const clearMouseHoldTimer = () => {
       if (!mouseHoldTimer) return;
       clearTimeout(mouseHoldTimer);
@@ -4376,6 +4381,74 @@ function bindUi() {
     window.addEventListener('pointerup', handleMousePointerRelease, true);
     window.addEventListener('pointercancel', handleMousePointerRelease, true);
     window.addEventListener('blur', clearMouseHoldState);
+
+    // Some mobile browsers do not consistently synthesize click for canvas taps.
+    // Handle tap-to-talk / tap-to-stop directly on touchend.
+    zenClickTarget.addEventListener('touchstart', (ev) => {
+      if (ev.touches.length !== 1) {
+        touchTapTracking = false;
+        touchTapMoved = false;
+        return;
+      }
+      const touch = ev.touches[0];
+      touchTapStartX = touch.clientX;
+      touchTapStartY = touch.clientY;
+      touchTapTracking = true;
+      touchTapMoved = false;
+    }, { passive: true });
+
+    zenClickTarget.addEventListener('touchmove', (ev) => {
+      if (!touchTapTracking || touchTapMoved || ev.touches.length !== 1) return;
+      const touch = ev.touches[0];
+      const dx = touch.clientX - touchTapStartX;
+      const dy = touch.clientY - touchTapStartY;
+      if (Math.hypot(dx, dy) > TOUCH_TAP_MOVE_THRESHOLD) {
+        touchTapMoved = true;
+      }
+    }, { passive: true });
+
+    zenClickTarget.addEventListener('touchend', (ev) => {
+      if (!touchTapTracking) return;
+      touchTapTracking = false;
+      if (touchTapMoved) {
+        touchTapMoved = false;
+        return;
+      }
+      const touch = ev.changedTouches && ev.changedTouches.length > 0 ? ev.changedTouches[0] : null;
+      if (!touch) return;
+      const x = touch.clientX;
+      const y = touch.clientY;
+      rememberMousePosition(x, y);
+
+      if (isConversationListenActive()) {
+        if (isVoiceInteractionTarget(ev.target, x, y)) return;
+        ev.preventDefault();
+        cancelConversationListen();
+        void beginVoiceCaptureFromPoint(x, y);
+        return;
+      }
+      if (shouldStopInUiClick()) {
+        ev.preventDefault();
+        void handleZenStopAction();
+        return;
+      }
+
+      if (isVoiceInteractionTarget(ev.target, x, y)) return;
+      const sel = window.getSelection();
+      if (sel && !sel.isCollapsed) return;
+
+      ev.preventDefault();
+      if (isRecording()) {
+        void stopZenVoiceCaptureAndSend();
+        return;
+      }
+      void beginVoiceCaptureFromPoint(x, y);
+    }, { passive: false });
+
+    zenClickTarget.addEventListener('touchcancel', () => {
+      touchTapTracking = false;
+      touchTapMoved = false;
+    }, { passive: true });
 
     zenClickTarget.addEventListener('click', (ev) => {
       if (mouseHoldSuppressClick) {
