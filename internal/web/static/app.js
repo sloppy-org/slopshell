@@ -1924,7 +1924,6 @@ function resetPrReviewUi() {
 function renderPrReviewFileList() {
   const list = document.getElementById('pr-file-list');
   if (!(list instanceof HTMLElement)) return;
-  const title = document.getElementById('pr-file-pane-title');
   setFileSidebarAvailability();
   if (state.prReviewMode) {
     state.fileSidebarMode = 'pr';
@@ -1933,14 +1932,6 @@ function renderPrReviewFileList() {
   list.innerHTML = '';
   if (mode === 'pr') {
     const files = Array.isArray(state.prReviewFiles) ? state.prReviewFiles : [];
-    if (title) {
-      if (files.length > 0) {
-        const prefix = state.prReviewPRNumber ? `PR #${state.prReviewPRNumber}` : 'PR Review';
-        title.textContent = `${prefix} (${state.prReviewActiveIndex + 1}/${files.length})`;
-      } else {
-        title.textContent = 'PR Review';
-      }
-    }
     files.forEach((file, index) => {
       const statusName = String(file?.status || 'modified').toLowerCase();
       list.appendChild(renderSidebarRow({
@@ -1957,10 +1948,6 @@ function renderPrReviewFileList() {
       }));
     });
     return;
-  }
-  if (title) {
-    const cleanedPath = normalizeWorkspaceBrowserPath(state.workspaceBrowserPath);
-    title.textContent = cleanedPath ? `Files /${cleanedPath}` : 'Files /';
   }
   renderWorkspaceFileList(list);
 }
@@ -3597,20 +3584,25 @@ function initEdgePanels() {
 
   // Desktop: button clicks for left/right/bottom edge taps
   if (edgeLeftTap) {
+    let edgeLeftLastTouchAt = 0;
     edgeLeftTap.addEventListener('click', (ev) => {
       ev.preventDefault();
+      if (Date.now() - edgeLeftLastTouchAt < 700) return;
       toggleFileSidebarFromEdge();
     });
     edgeLeftTap.addEventListener('touchend', (ev) => {
       ev.preventDefault();
+      edgeLeftLastTouchAt = Date.now();
       toggleFileSidebarFromEdge();
     }, { passive: false });
   }
 
   const edgeRightTap = document.getElementById('edge-right-tap');
   if (edgeRightTap) {
+    let edgeRightLastTouchAt = 0;
     edgeRightTap.addEventListener('click', (ev) => {
       ev.preventDefault();
+      if (Date.now() - edgeRightLastTouchAt < 700) return;
       toggleRightEdgeDrawer(edgeRight);
     });
     // Direct touch handler: iOS system gesture recognizer can intercept
@@ -3618,6 +3610,7 @@ function initEdgePanels() {
     // itself with touch-action:manipulation to bypass system gestures.
     edgeRightTap.addEventListener('touchend', (ev) => {
       ev.preventDefault();
+      edgeRightLastTouchAt = Date.now();
       toggleRightEdgeDrawer(edgeRight);
     }, { passive: false });
   }
@@ -3628,13 +3621,6 @@ function initEdgePanels() {
       setPrReviewDrawerOpen(false);
     });
   }
-  const prPaneClose = document.getElementById('pr-file-pane-close');
-  if (prPaneClose) {
-    prPaneClose.addEventListener('click', () => {
-      setPrReviewDrawerOpen(false);
-    });
-  }
-
   // Mobile: touch tap and swipe from edges.
   // Buttons don't reliably fire click on iOS, so handle everything here.
   let edgeTouchHandled = false;

@@ -114,29 +114,6 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
   transform: translateX(0);
 }
 
-.pr-file-pane-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  padding: 0.45rem 0.6rem;
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
-
-#pr-file-pane-title {
-  font-size: 0.78rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-#pr-file-pane-close {
-  display: inline-block;
-}
-
 .pr-file-list {
   flex: 1;
   min-height: 0;
