@@ -88,6 +88,59 @@ func New(path string) (*Store, error) {
 
 func (s *Store) Close() error { return s.db.Close() }
 
+// tableColumnNames returns the lowercased column names for a single table.
+func (s *Store) tableColumnNames(table string) ([]string, error) {
+	rows, err := s.db.Query(fmt.Sprintf(`PRAGMA table_info("%s")`, table))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var cols []string
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notNull int
+		var dflt sql.NullString
+		var pk int
+		if err := rows.Scan(&cid, &name, &ctype, &notNull, &dflt, &pk); err != nil {
+			return nil, err
+		}
+		cols = append(cols, strings.ToLower(strings.TrimSpace(name)))
+	}
+	return cols, rows.Err()
+}
+
+// TableColumns returns a map from table name to the list of column names
+// for every user table in the database.
+func (s *Store) TableColumns() (map[string][]string, error) {
+	rows, err := s.db.Query(`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var tables []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		tables = append(tables, name)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	result := make(map[string][]string, len(tables))
+	for _, table := range tables {
+		cols, err := s.tableColumnNames(table)
+		if err != nil {
+			return nil, err
+		}
+		result[table] = cols
+	}
+	return result, nil
+}
+
 func (s *Store) migrate() error {
 	schema := `
 CREATE TABLE IF NOT EXISTS hosts (
@@ -198,24 +251,14 @@ func (s *Store) migrateProjectColumns() error {
 
 	tableColumns := map[string]map[string]bool{}
 	for _, table := range []string{"projects", "chat_messages"} {
-		existing := map[string]bool{}
-		rows, err := s.db.Query(fmt.Sprintf(`PRAGMA table_info(%s)`, table))
+		cols, err := s.tableColumnNames(table)
 		if err != nil {
 			return err
 		}
-		for rows.Next() {
-			var cid int
-			var name, ctype string
-			var notNull int
-			var dflt sql.NullString
-			var pk int
-			if err := rows.Scan(&cid, &name, &ctype, &notNull, &dflt, &pk); err != nil {
-				rows.Close()
-				return err
-			}
-			existing[strings.ToLower(strings.TrimSpace(name))] = true
+		existing := make(map[string]bool, len(cols))
+		for _, c := range cols {
+			existing[c] = true
 		}
-		rows.Close()
 		tableColumns[table] = existing
 	}
 

@@ -1,74 +1,156 @@
 package stt
 
 import (
-	"errors"
-	"fmt"
-	"os/exec"
-	"strings"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
-func TestParseVoxTypeTranscript(t *testing.T) {
-	tests := []struct {
-		name string
-		raw  string
-		want string
-	}{
-		{
-			name: "single transcript line",
-			raw:  "Hello world",
-			want: "Hello world",
-		},
-		{
-			name: "filters diagnostic lines",
-			raw: "Loading audio file: /tmp/input.wav\n" +
-				"Audio format: 16000 Hz, mono\n" +
-				"Resampling from 48000 to 16000\n" +
-				"Processing audio...\n" +
-				"VAD: detected speech\n" +
-				"This is the transcript",
-			want: "This is the transcript",
-		},
-		{
-			name: "empty input",
-			raw:  "",
-			want: "",
-		},
-		{
-			name: "only diagnostic lines",
-			raw:  "Loading audio file: /tmp/input.wav\nAudio format: 16000 Hz",
-			want: "",
-		},
-		{
-			name: "whitespace only",
-			raw:  "   \n\n   ",
-			want: "",
-		},
-		{
-			name: "windows line endings",
-			raw:  "Loading audio file: foo\r\nThe quick brown fox",
-			want: "The quick brown fox",
-		},
-		{
-			name: "returns last non-diagnostic line",
-			raw:  "first line\nsecond line\nthird line",
-			want: "third line",
-		},
-		{
-			name: "trims surrounding whitespace",
-			raw:  "  some text  ",
-			want: "some text",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := ParseVoxTypeTranscript(tt.raw)
-			if got != tt.want {
-				t.Errorf("ParseVoxTypeTranscript(%q) = %q, want %q", tt.raw, got, tt.want)
+func TestTranscribe(t *testing.T) {
+	t.Run("successful transcription", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodPost {
+				t.Errorf("expected POST, got %s", r.Method)
 			}
-		})
-	}
+			if r.URL.Path != "/inference" {
+				t.Errorf("expected /inference, got %s", r.URL.Path)
+			}
+			ct := r.Header.Get("Content-Type")
+			if ct == "" {
+				t.Error("missing Content-Type header")
+			}
+			if err := r.ParseMultipartForm(32 << 20); err != nil {
+				t.Fatalf("parse multipart: %v", err)
+			}
+			if r.FormValue("response_format") != "json" {
+				t.Errorf("expected response_format=json, got %q", r.FormValue("response_format"))
+			}
+			_, fh, err := r.FormFile("file")
+			if err != nil {
+				t.Fatalf("form file: %v", err)
+			}
+			if fh.Filename != "audio.webm" {
+				t.Errorf("expected audio.webm, got %q", fh.Filename)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(whisperResponse{Text: "Hello world"})
+		}))
+		defer srv.Close()
+
+		text, err := Transcribe(srv.URL, "audio/webm", []byte("fake-audio-data"), nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if text != "Hello world" {
+			t.Errorf("got %q, want %q", text, "Hello world")
+		}
+	})
+
+	t.Run("correct file extension per mime type", func(t *testing.T) {
+		var gotFilename string
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if err := r.ParseMultipartForm(32 << 20); err != nil {
+				t.Fatalf("parse multipart: %v", err)
+			}
+			_, fh, _ := r.FormFile("file")
+			gotFilename = fh.Filename
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(whisperResponse{Text: "Some speech"})
+		}))
+		defer srv.Close()
+
+		Transcribe(srv.URL, "audio/wav", []byte("fake"), nil)
+		if gotFilename != "audio.wav" {
+			t.Errorf("wav: got filename %q, want audio.wav", gotFilename)
+		}
+
+		Transcribe(srv.URL, "audio/ogg", []byte("fake"), nil)
+		if gotFilename != "audio.ogg" {
+			t.Errorf("ogg: got filename %q, want audio.ogg", gotFilename)
+		}
+	})
+
+	t.Run("hallucination rejected", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(whisperResponse{Text: "Thank you."})
+		}))
+		defer srv.Close()
+
+		_, err := Transcribe(srv.URL, "audio/webm", []byte("fake"), nil)
+		if err != ErrLikelyHallucination {
+			t.Errorf("expected ErrLikelyHallucination, got %v", err)
+		}
+	})
+
+	t.Run("noise rejected", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(whisperResponse{Text: "um"})
+		}))
+		defer srv.Close()
+
+		_, err := Transcribe(srv.URL, "audio/webm", []byte("fake"), nil)
+		if err != ErrLikelyNoise {
+			t.Errorf("expected ErrLikelyNoise, got %v", err)
+		}
+	})
+
+	t.Run("empty transcript", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(whisperResponse{Text: ""})
+		}))
+		defer srv.Close()
+
+		_, err := Transcribe(srv.URL, "audio/webm", []byte("fake"), nil)
+		if err != ErrNoTranscriptOutput {
+			t.Errorf("expected ErrNoTranscriptOutput, got %v", err)
+		}
+	})
+
+	t.Run("server error", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+		}))
+		defer srv.Close()
+
+		_, err := Transcribe(srv.URL, "audio/webm", []byte("fake"), nil)
+		if err == nil {
+			t.Fatal("expected error for server error response")
+		}
+	})
+
+	t.Run("disabled when URL empty", func(t *testing.T) {
+		_, err := Transcribe("", "audio/webm", []byte("fake"), nil)
+		if err != ErrSTTDisabled {
+			t.Errorf("expected ErrSTTDisabled, got %v", err)
+		}
+	})
+
+	t.Run("applies text replacements", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(whisperResponse{Text: "The stelorators use rungicata methods"})
+		}))
+		defer srv.Close()
+
+		replacements := []Replacement{
+			{From: "stelorators", To: "stellarators"},
+			{From: "rungicata", To: "Runge-Kutta"},
+		}
+		text, err := Transcribe(srv.URL, "audio/webm", []byte("fake"), replacements)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		want := "The stellarators use Runge-Kutta methods"
+		if text != want {
+			t.Errorf("got %q, want %q", text, want)
+		}
+	})
 }
 
 func TestFileExtFromMime(t *testing.T) {
@@ -218,23 +300,102 @@ func TestIsLikelyNoise(t *testing.T) {
 	}
 }
 
-func TestWrapVoxTypeStartError(t *testing.T) {
-	t.Run("not found returns install hint", func(t *testing.T) {
-		err := wrapVoxTypeStartError(fmt.Errorf("exec: %w", exec.ErrNotFound))
-		want := "STT requires voxtype; install from https://github.com/pbizopoulos/voxtype"
-		if err == nil || err.Error() != want {
-			t.Fatalf("wrapVoxTypeStartError(not found) = %v, want %q", err, want)
+func TestApplyReplacements(t *testing.T) {
+	t.Run("empty replacements", func(t *testing.T) {
+		got := ApplyReplacements("hello world", nil)
+		if got != "hello world" {
+			t.Errorf("got %q, want %q", got, "hello world")
 		}
 	})
 
-	t.Run("other startup error is wrapped", func(t *testing.T) {
-		base := errors.New("permission denied")
-		err := wrapVoxTypeStartError(base)
-		if err == nil {
-			t.Fatal("wrapVoxTypeStartError returned nil")
-		}
-		if !strings.Contains(err.Error(), "failed to start voxtype: permission denied") {
-			t.Fatalf("unexpected error text: %q", err.Error())
+	t.Run("case insensitive", func(t *testing.T) {
+		rs := []Replacement{{From: "HELLO", To: "hi"}}
+		got := ApplyReplacements("Hello World", rs)
+		if got != "hi World" {
+			t.Errorf("got %q, want %q", got, "hi World")
 		}
 	})
+
+	t.Run("multiple occurrences", func(t *testing.T) {
+		rs := []Replacement{{From: "foo", To: "bar"}}
+		got := ApplyReplacements("foo and foo", rs)
+		if got != "bar and bar" {
+			t.Errorf("got %q, want %q", got, "bar and bar")
+		}
+	})
+
+	t.Run("empty from is skipped", func(t *testing.T) {
+		rs := []Replacement{{From: "", To: "bar"}}
+		got := ApplyReplacements("hello", rs)
+		if got != "hello" {
+			t.Errorf("got %q, want %q", got, "hello")
+		}
+	})
+
+	t.Run("sequential application", func(t *testing.T) {
+		rs := []Replacement{
+			{From: "stelorators", To: "stellarators"},
+			{From: "idiopatic", To: "adiabatic"},
+		}
+		got := ApplyReplacements("stelorators and idiopatic", rs)
+		if got != "stellarators and adiabatic" {
+			t.Errorf("got %q, want %q", got, "stellarators and adiabatic")
+		}
+	})
+}
+
+// Privacy: docs/meeting-notes-privacy.md
+
+func TestPrivacyTranscribeNoTempFiles(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(whisperResponse{Text: "Hello world"})
+	}))
+	defer srv.Close()
+
+	// Use a dedicated temp directory so parallel tests don't cause false positives.
+	scopedTmp := t.TempDir()
+	t.Setenv("TMPDIR", scopedTmp)
+
+	before, err := listDirEntries(scopedTmp)
+	if err != nil {
+		t.Fatalf("list temp dir before: %v", err)
+	}
+
+	_, err = Transcribe(srv.URL, "audio/webm", make([]byte, 2048), nil)
+	if err != nil {
+		t.Fatalf("Transcribe: %v", err)
+	}
+
+	after, err := listDirEntries(scopedTmp)
+	if err != nil {
+		t.Fatalf("list temp dir after: %v", err)
+	}
+
+	newFiles := diffEntries(before, after)
+	for _, f := range newFiles {
+		t.Errorf("Transcribe created unexpected temp file: %s", f)
+	}
+}
+
+func listDirEntries(dir string) (map[string]struct{}, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	m := make(map[string]struct{}, len(entries))
+	for _, e := range entries {
+		m[filepath.Join(dir, e.Name())] = struct{}{}
+	}
+	return m, nil
+}
+
+func diffEntries(before, after map[string]struct{}) []string {
+	var added []string
+	for k := range after {
+		if _, ok := before[k]; !ok {
+			added = append(added, k)
+		}
+	}
+	return added
 }

@@ -36,6 +36,17 @@ Chat text is always spoken via TTS.
 
 ## Response Format
 
+Use exactly one response shape:
+
+1. Spoken chat must be one paragraph max.
+   If your response needs more than one paragraph, write that long content to a temp file and show it on canvas.
+2. Canvas content must appear only inside :::file blocks with a file path.
+   For temporary canvas files, create/remove paths via temp_file_create and temp_file_remove tools.
+   Do not use :::canvas blocks.
+
+If output needs more than one paragraph, put it in a temp file with temp_file_create and render on canvas.
+Do not return metadata-only chat.
+
 Write naturally for speech. Avoid raw paths, URLs, or code in prose.
 Use [lang:de] at the start of your answer when responding in German. Default is English.
 
@@ -48,6 +59,10 @@ Voice mode is chat-only:
 When user asks to show/open an existing file, do NOT paste that file body into chat. Use canvas_artifact_show with a brief spoken confirmation.
 
 Line references: when the user mentions [Line N of "file"], apply changes at that location.
+
+## PR review fast path:
+When asked to review a PR, open PR view via gh CLI, read the diff, and respond with analysis.
+Publish exactly one file block at path .tabura/artifacts/pr/pr-<number>.diff with the patch content.
 `
 
 const defaultVoiceTurnPrompt = `Voice mode is chat-only:

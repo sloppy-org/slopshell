@@ -45,13 +45,15 @@ func handleSTTBinaryChunk(conn *chatWSConn, data []byte) {
 	if len(conn.sttBuf)+len(data) > stt.MaxAudioBytes {
 		conn.sttActive = false
 		conn.sttBuf = nil
+		conn.sttMimeType = ""
 		_ = conn.writeJSON(sttMessage{Type: "stt_error", Error: "audio payload exceeds max size"})
 		return
 	}
 	conn.sttBuf = append(conn.sttBuf, data...)
 }
 
-func handleSTTStop(conn *chatWSConn) {
+// Privacy: buffer is set to nil after transcription or on error. See docs/meeting-notes-privacy.md.
+func handleSTTStop(a *App, conn *chatWSConn) {
 	conn.sttMu.Lock()
 	if !conn.sttActive {
 		conn.sttMu.Unlock()
@@ -70,7 +72,13 @@ func handleSTTStop(conn *chatWSConn) {
 		return
 	}
 
-	text, err := stt.TranscribeWithVoxType(mimeType, buf)
+	if a.sttURL == "" {
+		_ = conn.writeJSON(sttMessage{Type: "stt_error", Error: "STT sidecar is not configured"})
+		return
+	}
+
+	replacements := a.loadSTTReplacements()
+	text, err := stt.Transcribe(a.sttURL, mimeType, buf, replacements)
 	if err != nil {
 		if errors.Is(err, stt.ErrLikelyNoise) {
 			_ = conn.writeJSON(sttMessage{Type: "stt_empty", Reason: "likely_noise"})
@@ -92,6 +100,7 @@ func handleSTTStop(conn *chatWSConn) {
 	_ = conn.writeJSON(sttMessage{Type: "stt_result", Text: text})
 }
 
+// Privacy: buffer is discarded immediately on cancel. See docs/meeting-notes-privacy.md.
 func handleSTTCancel(conn *chatWSConn) {
 	conn.sttMu.Lock()
 	conn.sttActive = false
@@ -116,7 +125,7 @@ func handleChatWSTextMessage(a *App, conn *chatWSConn, sessionID string, data []
 	case "stt_start":
 		handleSTTStart(conn, msg.MimeType)
 	case "stt_stop":
-		handleSTTStop(conn)
+		handleSTTStop(a, conn)
 	case "stt_cancel":
 		handleSTTCancel(conn)
 	case "tts_speak":

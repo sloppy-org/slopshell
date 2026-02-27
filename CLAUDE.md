@@ -14,13 +14,14 @@ Tabura uses one monolithic runtime command for app operation:
   - MCP listener (local-only by default)
 - `tabura mcp-server` remains available for stdio MCP use.
 
-No separate `tabura-mcp.service` or `tabura-voxtype-mcp.service` sidecars are used.
+No separate `tabura-mcp.service` sidecars are used.
 No Helpy integration/runtime is active in Tabura.
-Tabura keeps four local sidecars:
+Tabura keeps five local sidecars:
 - `tabura-codex-app-server.service` for Codex app-server
 - `tabura-piper-tts.service` for Piper TTS over loopback HTTP
 - `tabura-intent.service` for local intent classification (`/classify` on `127.0.0.1:8425`)
 - `tabura-llm.service` for Qwen3 0.6B via llama.cpp (`/v1/chat/completions` on `127.0.0.1:8426`)
+- `tabura-stt.service` for whisper.cpp STT (`/inference` on `127.0.0.1:8427`)
 
 ## Security Boundary
 
@@ -62,19 +63,20 @@ Primary units:
 - `tabura-web.service`
 - `tabura-codex-app-server.service`
 - `tabura-piper-tts.service`
+- `tabura-stt.service` (whisper.cpp STT sidecar)
 - `tabura-intent.service` (optional but recommended)
 - `tabura-llm.service` (optional for ambiguous-intent fallback)
 
 Quick status:
 
 ```bash
-systemctl --user status tabura-web.service tabura-codex-app-server.service tabura-piper-tts.service tabura-intent.service tabura-llm.service --no-pager -n 40
+systemctl --user status tabura-web.service tabura-codex-app-server.service tabura-piper-tts.service tabura-stt.service tabura-intent.service tabura-llm.service --no-pager -n 40
 ```
 
 Restart core stack:
 
 ```bash
-systemctl --user restart tabura-codex-app-server.service tabura-piper-tts.service tabura-intent.service tabura-llm.service tabura-web.service
+systemctl --user restart tabura-codex-app-server.service tabura-piper-tts.service tabura-stt.service tabura-intent.service tabura-llm.service tabura-web.service
 ```
 
 ## Endpoints
@@ -86,6 +88,7 @@ systemctl --user restart tabura-codex-app-server.service tabura-piper-tts.servic
 - TTS (Piper): `http://127.0.0.1:8424`
 - Intent classifier: `http://127.0.0.1:8425/classify` (`TABURA_INTENT_CLASSIFIER_URL`, use `off` to disable)
 - Intent LLM fallback: `http://127.0.0.1:8426/v1/chat/completions` (`TABURA_INTENT_LLM_URL`, use `off` to disable)
+- STT (whisper.cpp): `http://127.0.0.1:8427/inference` (`TABURA_STT_URL`, use `off` to disable)
 - Local canvas session: `local`
 
 ## Start Local Web UI In Temporary Directory
@@ -111,6 +114,12 @@ Stop:
 ```bash
 kill "$PID"
 ```
+
+## Meeting Notes Privacy
+
+Audio may exist in RAM for processing but is never persisted to disk or database.
+Full contract: `docs/meeting-notes-privacy.md`.
+Enforcement tests: `TestPrivacySchema*` and `TestPrivacySTT*` in `internal/web/server_security_test.go` and `internal/stt/transcribe_test.go`.
 
 ## Version Bump Policy
 

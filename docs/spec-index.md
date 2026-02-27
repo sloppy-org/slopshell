@@ -6,6 +6,7 @@ Current runtime baseline:
 - `tabura-web.service`
 - `tabura-codex-app-server.service`
 - `tabura-piper-tts.service`
+- `tabura-stt.service`
 - `tabura-intent.service`
 - `tabura-llm.service`
 
@@ -27,6 +28,10 @@ Release notes:
 - Previous release: `release-v0.1.3.md`
 - Published baseline: `release-v0.0.1.md`
 - Older release notes are historical and may mention retired runtime paths.
+
+Privacy and security specs:
+
+- `meeting-notes-privacy.md`
 
 Migration/support docs:
 

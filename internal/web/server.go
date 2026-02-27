@@ -31,6 +31,7 @@ const (
 	DefaultHost                 = "127.0.0.1"
 	DefaultPort                 = 8420
 	DefaultAppServerURL         = "ws://127.0.0.1:8787"
+	DefaultSTTURL               = "http://127.0.0.1:8427"
 	SessionCookie               = "tabura_session"
 	cookieMaxAgeSec             = 60 * 60 * 24 * 365
 	DaemonPort                  = 9420
@@ -53,6 +54,7 @@ type App struct {
 	appServerSparkReasoningEffort string
 	intentClassifierURL           string
 	intentLLMURL                  string
+	sttURL                        string
 	ttsURL                        string
 	devRuntime                    bool
 
@@ -121,16 +123,20 @@ func New(dataDir, localProjectDir, localMCPURL, appServerURL, model, ttsURL, spa
 	resolvedIntentClassifierURL := strings.TrimSpace(os.Getenv("TABURA_INTENT_CLASSIFIER_URL"))
 	if strings.EqualFold(resolvedIntentClassifierURL, "off") {
 		resolvedIntentClassifierURL = ""
-	}
-	if resolvedIntentClassifierURL == "" {
+	} else if resolvedIntentClassifierURL == "" {
 		resolvedIntentClassifierURL = DefaultIntentClassifierURL
 	}
 	resolvedIntentLLMURL := strings.TrimSpace(os.Getenv("TABURA_INTENT_LLM_URL"))
 	if strings.EqualFold(resolvedIntentLLMURL, "off") {
 		resolvedIntentLLMURL = ""
-	}
-	if resolvedIntentLLMURL == "" {
+	} else if resolvedIntentLLMURL == "" {
 		resolvedIntentLLMURL = DefaultIntentLLMURL
+	}
+	resolvedSTTURL := strings.TrimSpace(os.Getenv("TABURA_STT_URL"))
+	if strings.EqualFold(resolvedSTTURL, "off") {
+		resolvedSTTURL = ""
+	} else if resolvedSTTURL == "" {
+		resolvedSTTURL = DefaultSTTURL
 	}
 	if err := s.SetAppState(appStateDefaultChatModelKey, modelprofile.AliasSpark); err != nil {
 		_ = s.Close()
@@ -145,6 +151,7 @@ func New(dataDir, localProjectDir, localMCPURL, appServerURL, model, ttsURL, spa
 		appServerSparkReasoningEffort: resolvedSparkReasoningEffort,
 		intentClassifierURL:           resolvedIntentClassifierURL,
 		intentLLMURL:                  resolvedIntentLLMURL,
+		sttURL:                        resolvedSTTURL,
 		ttsURL:                        resolvedTTSURL,
 		devRuntime:                    devRuntime,
 		store:                         s,
@@ -255,6 +262,8 @@ func (a *App) Router() http.Handler {
 	r.Post("/api/chat/sessions/{session_id}/cancel", a.handleChatSessionCancel)
 	r.Post("/api/chat/sessions/{session_id}/cancel-delegates", a.handleChatSessionCancelDelegates)
 	r.Get("/api/hotword/status", a.handleHotwordStatus)
+	r.Get("/api/stt/replacements", a.handleSTTReplacementsGet)
+	r.Put("/api/stt/replacements", a.handleSTTReplacementsPut)
 
 	// canvas/file proxy
 	r.Get("/api/canvas/{session_id}/snapshot", a.handleCanvasSnapshot)
@@ -408,6 +417,7 @@ func (a *App) handleRuntime(w http.ResponseWriter, r *http.Request) {
 		"intent_llm_url":              a.intentLLMURL,
 		"available_models":            modelprofile.SupportedModels(),
 		"available_reasoning_efforts": modelprofile.AvailableReasoningEffortsByAlias(),
+		"stt_url":                     a.sttURL,
 		"tts_enabled":                 a.ttsURL != "",
 	})
 }

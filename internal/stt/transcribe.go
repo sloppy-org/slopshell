@@ -1,13 +1,14 @@
 package stt
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"os"
-	"os/exec"
-	"path/filepath"
+	"mime/multipart"
+	"net/http"
 	"strings"
 	"time"
 )
@@ -17,72 +18,75 @@ const MaxAudioBytes = 10 * 1024 * 1024
 
 var (
 	// ErrNoTranscriptOutput means the STT backend produced no usable text.
-	ErrNoTranscriptOutput = errors.New("voxtype produced no transcript output")
+	ErrNoTranscriptOutput = errors.New("stt produced no transcript output")
 	// ErrLikelyHallucination means Whisper returned a known silent-audio phantom.
 	ErrLikelyHallucination = errors.New("rejected likely hallucination on silent audio")
 	// ErrLikelyNoise means the transcript looks like background noise, not directed speech.
 	ErrLikelyNoise = errors.New("rejected likely background noise")
+	// ErrSTTDisabled means the STT sidecar URL is not configured.
+	ErrSTTDisabled = errors.New("stt sidecar is not configured")
 )
 
-// TranscribeWithVoxType converts audio to WAV via ffmpeg, then transcribes
-// it with the voxtype CLI. It returns the transcript text or an error.
-func TranscribeWithVoxType(mimeType string, data []byte) (string, error) {
-	tmpDir, err := os.MkdirTemp("", "tabura-voxtype-*")
-	if err != nil {
-		return "", fmt.Errorf("failed to create temp dir: %w", err)
-	}
-	defer os.RemoveAll(tmpDir)
+// whisperResponse is the JSON envelope returned by whisper-server /inference.
+type whisperResponse struct {
+	Text string `json:"text"`
+}
 
-	inExt := FileExtFromMime(mimeType)
-	inputPath := filepath.Join(tmpDir, "input"+inExt)
-	if err := os.WriteFile(inputPath, data, 0o600); err != nil {
-		return "", fmt.Errorf("failed to write input audio: %w", err)
-	}
-
-	wavPath := filepath.Join(tmpDir, "input.wav")
-	ffmpegCtx, ffmpegCancel := context.WithTimeout(context.Background(), 25*time.Second)
-	defer ffmpegCancel()
-	ffmpegCmd := exec.CommandContext(
-		ffmpegCtx,
-		"ffmpeg",
-		"-hide_banner",
-		"-loglevel", "error",
-		"-y",
-		"-i", inputPath,
-		"-ac", "1",
-		"-ar", "16000",
-		"-f", "wav",
-		wavPath,
-	)
-	ffmpegOut, ffmpegErr := ffmpegCmd.CombinedOutput()
-	if ffmpegErr != nil {
-		return "", fmt.Errorf("ffmpeg conversion failed: %v: %s", ffmpegErr, strings.TrimSpace(string(ffmpegOut)))
+// Transcribe sends audio data to a whisper.cpp server's /inference endpoint
+// and returns the transcript text. serverURL is the base URL of the whisper
+// sidecar (e.g. "http://127.0.0.1:8427").
+// Privacy: audio is transmitted only via HTTP POST; no temp files are created.
+// See docs/meeting-notes-privacy.md.
+func Transcribe(serverURL, mimeType string, data []byte, replacements []Replacement) (string, error) {
+	if strings.TrimSpace(serverURL) == "" {
+		return "", ErrSTTDisabled
 	}
 
-	voxCtx, voxCancel := context.WithTimeout(context.Background(), 90*time.Second)
-	defer voxCancel()
-	voxCmd := exec.CommandContext(voxCtx, "voxtype", "-q", "transcribe", wavPath)
-	stdout, err := voxCmd.StdoutPipe()
+	ext := FileExtFromMime(mimeType)
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", "audio"+ext)
 	if err != nil {
-		return "", fmt.Errorf("voxtype stdout pipe: %w", err)
+		return "", fmt.Errorf("stt multipart create: %w", err)
 	}
-	stderr, err := voxCmd.StderrPipe()
+	if _, err := part.Write(data); err != nil {
+		return "", fmt.Errorf("stt multipart write: %w", err)
+	}
+	if err := writer.WriteField("response_format", "json"); err != nil {
+		return "", fmt.Errorf("stt multipart field: %w", err)
+	}
+	if err := writer.Close(); err != nil {
+		return "", fmt.Errorf("stt multipart close: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	endpoint := strings.TrimRight(strings.TrimSpace(serverURL), "/") + "/inference"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, &body)
 	if err != nil {
-		return "", fmt.Errorf("voxtype stderr pipe: %w", err)
+		return "", fmt.Errorf("stt request: %w", err)
 	}
-	if err := voxCmd.Start(); err != nil {
-		return "", wrapVoxTypeStartError(err)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("stt request failed: %w", err)
 	}
-	outBytes, _ := io.ReadAll(stdout)
-	errBytes, _ := io.ReadAll(stderr)
-	waitErr := voxCmd.Wait()
-	if waitErr != nil {
-		return "", fmt.Errorf("voxtype transcribe failed: %v: %s", waitErr, strings.TrimSpace(string(errBytes)))
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return "", fmt.Errorf("stt HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
 	}
-	text := ParseVoxTypeTranscript(string(outBytes))
-	if text == "" {
-		text = ParseVoxTypeTranscript(string(errBytes))
+
+	var result whisperResponse
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1024*1024)).Decode(&result); err != nil {
+		return "", fmt.Errorf("stt response decode: %w", err)
 	}
+
+	text := strings.TrimSpace(result.Text)
 	if text == "" {
 		return "", ErrNoTranscriptOutput
 	}
@@ -92,6 +96,8 @@ func TranscribeWithVoxType(mimeType string, data []byte) (string, error) {
 	if IsLikelyNoise(text) {
 		return "", ErrLikelyNoise
 	}
+
+	text = ApplyReplacements(text, replacements)
 	return text, nil
 }
 
@@ -101,36 +107,10 @@ func IsRetryableNoSpeechError(err error) bool {
 	return errors.Is(err, ErrNoTranscriptOutput) || errors.Is(err, ErrLikelyHallucination) || errors.Is(err, ErrLikelyNoise)
 }
 
-// ParseVoxTypeTranscript extracts the transcript line from voxtype output,
-// filtering out diagnostic lines (audio format, resampling, VAD, etc.).
-func ParseVoxTypeTranscript(raw string) string {
-	lines := strings.Split(strings.ReplaceAll(raw, "\r\n", "\n"), "\n")
-	parts := make([]string, 0, len(lines))
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		if strings.HasPrefix(line, "Loading audio file:") ||
-			strings.HasPrefix(line, "Audio format:") ||
-			strings.HasPrefix(line, "Resampling from") ||
-			strings.HasPrefix(line, "Processing ") ||
-			strings.HasPrefix(line, "VAD:") {
-			continue
-		}
-		parts = append(parts, line)
-	}
-	if len(parts) == 0 {
-		return ""
-	}
-	return strings.TrimSpace(parts[len(parts)-1])
-}
-
 // IsWhisperHallucination returns true if the text matches a known Whisper
 // phantom output produced on silent or near-silent audio.
 func IsWhisperHallucination(text string) bool {
 	t := strings.ToLower(strings.TrimSpace(text))
-	// Strip trailing punctuation for matching.
 	t = strings.TrimRight(t, ".!?,;: ")
 	for _, h := range whisperHallucinations {
 		if t == h {
@@ -249,9 +229,42 @@ func IsAllowedMimeType(mimeType string) bool {
 	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(mimeType)), "audio/")
 }
 
-func wrapVoxTypeStartError(err error) error {
-	if errors.Is(err, exec.ErrNotFound) {
-		return errors.New("STT requires voxtype; install from https://github.com/pbizopoulos/voxtype")
+// Replacement is a single find/replace pair applied to transcription output.
+type Replacement struct {
+	From string
+	To   string
+}
+
+// ApplyReplacements applies text replacements case-insensitively to the
+// transcript. Each replacement is applied sequentially.
+func ApplyReplacements(text string, replacements []Replacement) string {
+	if len(replacements) == 0 {
+		return text
 	}
-	return fmt.Errorf("failed to start voxtype: %w", err)
+	for _, r := range replacements {
+		if r.From == "" {
+			continue
+		}
+		text = replaceAllCaseInsensitive(text, r.From, r.To)
+	}
+	return text
+}
+
+func replaceAllCaseInsensitive(text, from, to string) string {
+	lower := strings.ToLower(text)
+	lowerFrom := strings.ToLower(from)
+	var result strings.Builder
+	result.Grow(len(text))
+	pos := 0
+	for {
+		idx := strings.Index(lower[pos:], lowerFrom)
+		if idx < 0 {
+			result.WriteString(text[pos:])
+			break
+		}
+		result.WriteString(text[pos : pos+idx])
+		result.WriteString(to)
+		pos += idx + len(from)
+	}
+	return result.String()
 }

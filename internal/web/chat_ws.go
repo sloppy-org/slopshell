@@ -6,6 +6,8 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+// Privacy: sttBuf is RAM-only and never persisted to disk or database.
+// See docs/meeting-notes-privacy.md.
 type chatWSConn struct {
 	conn        *websocket.Conn
 	writeMu     sync.Mutex

@@ -39,6 +39,7 @@ Runtime stack:
 - Piper TTS remains a separate local HTTP service on `http://127.0.0.1:8424`.
 - Intent classifier remains a separate local HTTP service on `http://127.0.0.1:8425/classify`.
 - Intent LLM fallback remains a separate local HTTP service on `http://127.0.0.1:8426/v1/chat/completions`.
+- Whisper STT remains a separate local HTTP service on `http://127.0.0.1:8427/inference`.
 - Piper is intentionally not linked into the Go binary (`libpiper`) to avoid GPL-linked distribution coupling.
 
 ## UI Layout (Zen Canvas)
@@ -102,6 +103,12 @@ Utterance filtering (server-side in `internal/stt/transcribe.go`):
 - Whisper hallucination blocklist (13 phrases).
 - Noise rejection: filler-only transcripts (<3 words), TV/radio background patterns.
 - Minimum audio buffer size (1024 bytes).
+
+## STT Sidecar
+
+- `tabura-stt.service` runs whisper.cpp on loopback (`http://127.0.0.1:8427/inference`).
+- Audio flows: browser WebSocket -> RAM buffer -> HTTP POST to sidecar -> transcript text returned.
+- No audio is persisted to disk or database. See `docs/meeting-notes-privacy.md`.
 
 ## Trust and Access Boundaries
 
