@@ -291,6 +291,7 @@ func securityHeaders(next http.Handler) http.Handler {
 			"default-src 'self'; "+
 				"script-src 'self' 'wasm-unsafe-eval'; "+
 				"style-src 'self' 'unsafe-inline'; "+
+				"worker-src 'self'; "+
 				"img-src 'self' data:; "+
 				"connect-src 'self' ws: wss:; "+
 				"frame-ancestors 'none'; "+
@@ -299,6 +300,8 @@ func securityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		w.Header().Set("Permissions-Policy", "camera=(), geolocation=()")
+		w.Header().Set("Cross-Origin-Opener-Policy", "same-origin")
+		w.Header().Set("Cross-Origin-Embedder-Policy", "require-corp")
 		next.ServeHTTP(w, r)
 	})
 }
