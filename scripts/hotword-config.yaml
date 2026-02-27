@@ -15,6 +15,7 @@ n_samples_val: 500
 tts_batch_size: 25
 augmentation_batch_size: 16
 augmentation_rounds: 3
+total_length: 32000
 
 piper_sample_generator_path: "data/piper-sample-generator"
 output_dir: "output"

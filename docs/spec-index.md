@@ -6,6 +6,8 @@ Current runtime baseline:
 - `tabura-web.service`
 - `tabura-codex-app-server.service`
 - `tabura-piper-tts.service`
+- `tabura-intent.service`
+- `tabura-llm.service`
 
 ## Product and Behavior Specs
 
@@ -48,6 +50,8 @@ Migration/support docs:
 
 - `internal/web/static/index.html`
 - `internal/web/static/app.js`
+- `internal/web/static/conversation.js`
+- `internal/web/static/hotword.js`
 - `internal/web/static/zen.js`
 - `internal/web/static/canvas.js`
 - `internal/web/static/style.css`

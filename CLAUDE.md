@@ -147,3 +147,5 @@ Current core specs include:
 - `tests/playwright/artifact-context.spec.ts`
 - `tests/playwright/review-mode.spec.ts`
 - `tests/playwright/canvas-refresh.spec.ts`
+- `tests/playwright/hotword.spec.ts`
+- `tests/playwright/conversation-mode.spec.ts`

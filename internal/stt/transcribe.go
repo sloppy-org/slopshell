@@ -20,6 +20,8 @@ var (
 	ErrNoTranscriptOutput = errors.New("voxtype produced no transcript output")
 	// ErrLikelyHallucination means Whisper returned a known silent-audio phantom.
 	ErrLikelyHallucination = errors.New("rejected likely hallucination on silent audio")
+	// ErrLikelyNoise means the transcript looks like background noise, not directed speech.
+	ErrLikelyNoise = errors.New("rejected likely background noise")
 )
 
 // TranscribeWithVoxType converts audio to WAV via ffmpeg, then transcribes
@@ -87,13 +89,16 @@ func TranscribeWithVoxType(mimeType string, data []byte) (string, error) {
 	if IsWhisperHallucination(text) {
 		return "", ErrLikelyHallucination
 	}
+	if IsLikelyNoise(text) {
+		return "", ErrLikelyNoise
+	}
 	return text, nil
 }
 
 // IsRetryableNoSpeechError reports whether err means "no usable speech yet"
 // and the caller should keep listening instead of failing hard.
 func IsRetryableNoSpeechError(err error) bool {
-	return errors.Is(err, ErrNoTranscriptOutput) || errors.Is(err, ErrLikelyHallucination)
+	return errors.Is(err, ErrNoTranscriptOutput) || errors.Is(err, ErrLikelyHallucination) || errors.Is(err, ErrLikelyNoise)
 }
 
 // ParseVoxTypeTranscript extracts the transcript line from voxtype output,
@@ -133,6 +138,54 @@ func IsWhisperHallucination(text string) bool {
 		}
 	}
 	return false
+}
+
+// IsLikelyNoise returns true when the transcript looks like background noise
+// rather than directed speech: too short, filler-only, or matching common
+// TV/radio patterns.
+func IsLikelyNoise(text string) bool {
+	t := strings.TrimSpace(text)
+	if t == "" {
+		return true
+	}
+	words := strings.Fields(t)
+	if len(words) < 3 {
+		allFiller := true
+		for _, w := range words {
+			if !isFillerWord(strings.ToLower(w)) {
+				allFiller = false
+				break
+			}
+		}
+		if allFiller {
+			return true
+		}
+	}
+	lower := strings.ToLower(t)
+	lower = strings.TrimRight(lower, ".!?,;: ")
+	for _, p := range backgroundPatterns {
+		if lower == p {
+			return true
+		}
+	}
+	return false
+}
+
+func isFillerWord(w string) bool {
+	switch w {
+	case "um", "uh", "hmm", "mm", "okay", "ok", "yeah", "yep", "right", "ah", "oh", "hm", "mhm":
+		return true
+	}
+	return false
+}
+
+var backgroundPatterns = []string{
+	"coming up next",
+	"brought to you by",
+	"stay tuned",
+	"we'll be right back",
+	"and now a word from",
+	"breaking news",
 }
 
 var whisperHallucinations = []string{

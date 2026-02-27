@@ -77,11 +77,7 @@ type App struct {
 	localServeCancel   context.CancelFunc
 	projectServes      map[string]*serve.App
 	projectServeStop   map[string]context.CancelFunc
-	ghCommandRunner    ghCommandRunner
-	hotwordTrainRunner hotwordTrainRunner
-	hotwordTrainJobs   map[string]*hotwordTrainJob
-	hotwordTrainActive string
-	hotwordTrainCancel context.CancelFunc
+	ghCommandRunner ghCommandRunner
 
 	bootID    string
 	startedAt string
@@ -166,9 +162,7 @@ func New(dataDir, localProjectDir, localMCPURL, appServerURL, model, ttsURL, spa
 		relayCancel:                   map[string]context.CancelFunc{},
 		projectServes:                 map[string]*serve.App{},
 		projectServeStop:              map[string]context.CancelFunc{},
-		ghCommandRunner:               runGitHubCLI,
-		hotwordTrainRunner:            runHotwordTrainer,
-		hotwordTrainJobs:              map[string]*hotwordTrainJob{},
+		ghCommandRunner: runGitHubCLI,
 		bootID:                        strconv.FormatInt(time.Now().UnixNano(), 16),
 		startedAt:                     time.Now().UTC().Format(time.RFC3339Nano),
 	}
@@ -261,8 +255,6 @@ func (a *App) Router() http.Handler {
 	r.Post("/api/chat/sessions/{session_id}/cancel", a.handleChatSessionCancel)
 	r.Post("/api/chat/sessions/{session_id}/cancel-delegates", a.handleChatSessionCancelDelegates)
 	r.Get("/api/hotword/status", a.handleHotwordStatus)
-	r.Post("/api/hotword/train", a.handleHotwordTrainStart)
-	r.Get("/api/hotword/train/{job_id}", a.handleHotwordTrainStatus)
 
 	// canvas/file proxy
 	r.Get("/api/canvas/{session_id}/snapshot", a.handleCanvasSnapshot)
@@ -891,9 +883,6 @@ func (a *App) Shutdown(ctx context.Context) error {
 		for conn := range set {
 			_ = conn.conn.Close()
 		}
-	}
-	if a.hotwordTrainCancel != nil {
-		a.hotwordTrainCancel()
 	}
 	for sid, cancel := range a.projectServeStop {
 		projectStops[sid] = cancel

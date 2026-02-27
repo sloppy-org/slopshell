@@ -44,15 +44,6 @@ async function setConversationListenWindowMs(page: Page, ms: number) {
   }, ms);
 }
 
-async function setHotwordStatus(page: Page, status: Record<string, unknown>) {
-  await page.evaluate((payload) => {
-    const setter = (window as any).__setHotwordStatus;
-    if (typeof setter === 'function') {
-      setter(payload);
-    }
-  }, status);
-}
-
 async function waitForEdgeButtons(page: Page) {
   await expect.poll(async () => page.evaluate(() => {
     const conv = document.querySelector('#edge-top-models .edge-conv-btn');
@@ -291,19 +282,23 @@ test('silent mode with conversation enabled does not open conversation listen', 
   expect(isListening).toBe(false);
 });
 
-test('conversation mode on with untrained hotword shows training prompt in canvas', async ({ page }) => {
-  await setHotwordStatus(page, {
-    ready: false,
-    trained: false,
-    runtime_assets_ready: false,
-    missing: ['tabura.onnx'],
-  });
+test('conversation listen timeout returns to pause indicator when hotword is active', async ({ page }) => {
+  await setConversationListenWindowMs(page, 500);
   await setConversationMode(page, true);
+  await page.evaluate(() => {
+    (window as any).__setVadDbFrames(Array.from({ length: 120 }, () => -80));
+  });
+  await clearLog(page);
+
+  await triggerVoiceAssistantTTS(page, 'conv-pause-1');
 
   await expect.poll(async () => page.evaluate(() => {
-    const pane = document.getElementById('canvas-text');
-    if (!(pane instanceof HTMLElement) || !pane.classList.contains('is-active')) return false;
-    return Boolean(pane.querySelector('[data-hotword-action="train"]'));
+    const indicator = document.getElementById('indicator');
+    return Boolean(indicator?.classList.contains('is-listening'));
   })).toBe(true);
-  await expect(page.locator('#canvas-text')).toContainText('Assistant setup');
+
+  await expect.poll(async () => page.evaluate(() => {
+    const indicator = document.getElementById('indicator');
+    return Boolean(indicator?.classList.contains('is-paused'));
+  }), { timeout: 4_000 }).toBe(true);
 });

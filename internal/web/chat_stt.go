@@ -2,6 +2,7 @@ package web
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -71,6 +72,10 @@ func handleSTTStop(conn *chatWSConn) {
 
 	text, err := stt.TranscribeWithVoxType(mimeType, buf)
 	if err != nil {
+		if errors.Is(err, stt.ErrLikelyNoise) {
+			_ = conn.writeJSON(sttMessage{Type: "stt_empty", Reason: "likely_noise"})
+			return
+		}
 		if stt.IsRetryableNoSpeechError(err) {
 			_ = conn.writeJSON(sttMessage{Type: "stt_empty", Reason: "no_speech_detected"})
 			return

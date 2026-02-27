@@ -75,6 +75,34 @@ The browser UI is a full-viewport canvas with no visible chrome:
 2. Tabura receives `canvas_import_handoff` with `handoff_id`.
 3. Tabura peeks/consumes producer handoff payload and renders artifact.
 
+## Conversation Mode and Wake Word
+
+Conversation mode enables hands-free voice interaction via a wake word ("alexa" using openWakeWord's `alexa_v0.1.onnx` model).
+
+Wake-word detection runs entirely in the browser using ONNX Runtime Web:
+- `melspectrogram.onnx` extracts mel features from raw audio.
+- `embedding_model.onnx` produces frame-level embeddings.
+- `alexa.onnx` is the keyword classifier (16-frame input, ~1.28s detection latency).
+
+All three models live in `internal/web/static/vendor/openwakeword/`.
+
+Audio pipeline in `hotword.js`:
+- Mic audio is downsampled to 16 kHz mono via a ScriptProcessorNode.
+- Each audio frame is written to a 2-second ring buffer (32,000 samples) for pre-roll capture.
+- Mel and embedding stages feed into the keyword classifier per frame.
+- On wake-word detection, the app begins voice recording immediately (no intermediate listen window).
+
+State transitions:
+- **Paused** (black border + pause bars): conversation mode on, waiting for wake word.
+- **Recording** (red border + red dot): wake word detected or user tapped, capturing speech.
+- **Listening** (blue border + pulse): follow-up window after TTS response (6s).
+- Follow-up timeout returns to **Paused** and restarts hotword monitoring.
+
+Utterance filtering (server-side in `internal/stt/transcribe.go`):
+- Whisper hallucination blocklist (13 phrases).
+- Noise rejection: filler-only transcripts (<3 words), TV/radio background patterns.
+- Minimum audio buffer size (1024 bytes).
+
 ## Trust and Access Boundaries
 
 - Tabura does not require direct credentials to producer systems.

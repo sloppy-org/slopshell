@@ -2,7 +2,7 @@ const HOTWORD_VENDOR_BASE = '/static/vendor/openwakeword';
 const HOTWORD_MODEL_FILES = {
   mel: `${HOTWORD_VENDOR_BASE}/melspectrogram.onnx`,
   embedding: `${HOTWORD_VENDOR_BASE}/embedding_model.onnx`,
-  keyword: `${HOTWORD_VENDOR_BASE}/tabura.onnx`,
+  keyword: `${HOTWORD_VENDOR_BASE}/alexa.onnx`,
 };
 const HOTWORD_DEFAULT_THRESHOLD = 0.5;
 const HOTWORD_DETECTION_COOLDOWN_MS = 1500;
@@ -13,10 +13,11 @@ const HOTWORD_MEL_CONTEXT_SAMPLES = 160 * 3;
 const HOTWORD_MEL_BANDS = 32;
 const HOTWORD_MEL_WINDOW = 76;
 const HOTWORD_EMBEDDING_DIM = 96;
-const HOTWORD_KEYWORD_FRAMES = 108;
+const HOTWORD_KEYWORD_FRAMES = 16;
 const HOTWORD_RAW_BUFFER_MAX = HOTWORD_TARGET_SAMPLE_RATE * 10;
 const HOTWORD_MEL_BUFFER_MAX = 10 * 97;
 const HOTWORD_FEATURE_BUFFER_MAX = 120;
+const HOTWORD_RING_BUFFER_SIZE = HOTWORD_TARGET_SAMPLE_RATE * 2;
 
 const listeners = new Set();
 
@@ -32,11 +33,34 @@ const state = {
   sourceNode: null,
   processorNode: null,
   sinkNode: null,
+  micStream: null,
   targetSampleBuffer: new Float32Array(0),
   pendingFrames: [],
   processingFrames: false,
   lastDetectionAt: 0,
 };
+
+const ringBuffer = {
+  buffer: new Float32Array(HOTWORD_RING_BUFFER_SIZE),
+  writePos: 0,
+  filled: 0,
+};
+
+function resetRingBuffer() {
+  ringBuffer.buffer = new Float32Array(HOTWORD_RING_BUFFER_SIZE);
+  ringBuffer.writePos = 0;
+  ringBuffer.filled = 0;
+}
+
+function writeRingBuffer(samples) {
+  const buf = ringBuffer.buffer;
+  const size = buf.length;
+  for (let i = 0; i < samples.length; i += 1) {
+    buf[ringBuffer.writePos] = samples[i];
+    ringBuffer.writePos = (ringBuffer.writePos + 1) % size;
+  }
+  ringBuffer.filled = Math.min(ringBuffer.filled + samples.length, size);
+}
 
 const pipeline = {
   rawBuffer: null,
@@ -308,6 +332,7 @@ function onAudioProcess(event) {
   const resampled = resampleToTargetRate(channel, inputBuffer.sampleRate);
   if (resampled.length === 0) return;
 
+  writeRingBuffer(resampled);
   state.targetSampleBuffer = concatFloat32(state.targetSampleBuffer, resampled);
 
   while (state.targetSampleBuffer.length >= HOTWORD_TARGET_FRAME_SAMPLES) {
@@ -340,7 +365,9 @@ function stopOnnxNodes() {
   state.targetSampleBuffer = new Float32Array(0);
   state.pendingFrames = [];
   state.processingFrames = false;
+  state.micStream = null;
   resetPipeline();
+  resetRingBuffer();
 }
 
 async function startOnnxMonitor(stream) {
@@ -348,6 +375,8 @@ async function startOnnxMonitor(stream) {
   if (!AudioContextCtor) return false;
 
   resetPipeline();
+  resetRingBuffer();
+  state.micStream = stream;
 
   const audioCtx = new AudioContextCtor();
   const sourceNode = audioCtx.createMediaStreamSource(stream);
@@ -527,4 +556,24 @@ export function setHotwordThreshold(value) {
     } catch (_) {}
   }
   return state.threshold;
+}
+
+export function getPreRollAudio() {
+  if (ringBuffer.filled === 0) return new Float32Array(0);
+  const size = ringBuffer.buffer.length;
+  const len = Math.min(ringBuffer.filled, size);
+  const out = new Float32Array(len);
+  const startPos = (ringBuffer.writePos - len + size) % size;
+  if (startPos + len <= size) {
+    out.set(ringBuffer.buffer.subarray(startPos, startPos + len));
+  } else {
+    const firstPart = size - startPos;
+    out.set(ringBuffer.buffer.subarray(startPos, size), 0);
+    out.set(ringBuffer.buffer.subarray(0, len - firstPart), firstPart);
+  }
+  return out;
+}
+
+export function getHotwordMicStream() {
+  return state.micStream || null;
 }

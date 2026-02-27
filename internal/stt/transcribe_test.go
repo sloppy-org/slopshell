@@ -185,6 +185,39 @@ func TestIsWhisperHallucination(t *testing.T) {
 	}
 }
 
+func TestIsLikelyNoise(t *testing.T) {
+	noise := []string{
+		"um",
+		"uh hmm",
+		"okay",
+		"yeah",
+		"",
+		"  ",
+		"coming up next",
+		"Brought to you by.",
+		"Stay tuned!",
+		"mhm",
+		"oh ok",
+	}
+	for _, s := range noise {
+		if !IsLikelyNoise(s) {
+			t.Errorf("IsLikelyNoise(%q) = false, want true", s)
+		}
+	}
+	legitimate := []string{
+		"turn off the lights",
+		"what time is it",
+		"set a timer for five minutes",
+		"switch to the other project",
+		"um I think we should fix the login form",
+	}
+	for _, s := range legitimate {
+		if IsLikelyNoise(s) {
+			t.Errorf("IsLikelyNoise(%q) = true, want false", s)
+		}
+	}
+}
+
 func TestWrapVoxTypeStartError(t *testing.T) {
 	t.Run("not found returns install hint", func(t *testing.T) {
 		err := wrapVoxTypeStartError(fmt.Errorf("exec: %w", exec.ErrNotFound))

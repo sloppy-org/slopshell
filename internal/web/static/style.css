@@ -363,34 +363,6 @@ body.file-sidebar-enabled #pr-file-drawer-backdrop.is-open {
   margin: 0.85em 0;
 }
 
-.hotword-training-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-top: 0.75rem;
-}
-
-.hotword-training-btn {
-  border: 1px solid #000000;
-  border-radius: 4px;
-  background: #000000;
-  color: #ffffff;
-  padding: 0.38rem 0.72rem;
-  font-size: 0.95rem;
-  line-height: 1.2;
-  cursor: pointer;
-}
-
-.hotword-training-btn.is-secondary {
-  background: #ffffff;
-  color: #000000;
-}
-
-.hotword-training-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
 #canvas-pdf {
   position: relative;
   min-height: 0;
@@ -598,7 +570,8 @@ body.file-sidebar-enabled #pr-file-drawer-backdrop.is-open {
 
 .indicator.is-recording,
 .indicator.is-working,
-.indicator.is-listening {
+.indicator.is-listening,
+.indicator.is-paused {
   --cue-chip-size: 14px;
   --cue-frame-color: #000000;
   display: block;
@@ -624,7 +597,8 @@ body.file-sidebar-enabled #pr-file-drawer-backdrop.is-open {
 
 body.keyboard-open .indicator.is-recording,
 body.keyboard-open .indicator.is-working,
-body.keyboard-open .indicator.is-listening {
+body.keyboard-open .indicator.is-listening,
+body.keyboard-open .indicator.is-paused {
   width: 100lvw;
   height: 100lvh;
 }
@@ -632,10 +606,12 @@ body.keyboard-open .indicator.is-listening {
 .indicator.is-recording { --cue-frame-color: #d92d20; }
 .indicator.is-working  { --cue-frame-color: #111111; }
 .indicator.is-listening { --cue-frame-color: #2563eb; }
+.indicator.is-paused   { --cue-frame-color: #111111; }
 
 .indicator.is-recording::before,
 .indicator.is-working::before,
-.indicator.is-listening::before {
+.indicator.is-listening::before,
+.indicator.is-paused::before {
   content: '';
   position: absolute;
   inset: 0;
@@ -647,7 +623,8 @@ body.keyboard-open .indicator.is-listening {
 }
 
 .indicator .record-dot,
-.indicator .stop-square {
+.indicator .stop-square,
+.indicator .pause-bars {
   display: none;
   position: absolute;
   top: max(18px, var(--safe-area-top));
@@ -691,9 +668,27 @@ body.keyboard-open .indicator.is-listening {
   background: #111111;
 }
 
+.indicator.is-paused .pause-bars {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.indicator.is-paused .pause-bars::before,
+.indicator.is-paused .pause-bars::after {
+  content: '';
+  display: block;
+  width: 4px;
+  height: 14px;
+  background: #111111;
+  border-radius: 1px;
+}
+
 @media (max-width: 767px) {
   .indicator .record-dot,
-  .indicator .stop-square {
+  .indicator .stop-square,
+  .indicator .pause-bars {
     --cue-chip-size: 16px;
     top: max(14px, var(--safe-area-top));
     right: max(14px, var(--safe-area-right));
@@ -703,11 +698,16 @@ body.keyboard-open .indicator.is-listening {
 @media (monochrome) {
   .indicator.is-recording,
   .indicator.is-working,
-  .indicator.is-listening {
+  .indicator.is-listening,
+  .indicator.is-paused {
     --cue-frame-color: #111111;
   }
   .indicator .record-dot,
   .indicator .stop-square {
+    background: #111111;
+  }
+  .indicator.is-paused .pause-bars::before,
+  .indicator.is-paused .pause-bars::after {
     background: #111111;
   }
   .indicator.is-listening .record-dot {

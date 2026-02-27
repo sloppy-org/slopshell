@@ -30,6 +30,7 @@
       <div id="indicator" class="indicator" style="display:none">
         <span class="record-dot"></span>
         <span class="stop-square"></span>
+        <span class="pause-bars"></span>
       </div>
 
       <textarea id="floating-input" class="floating-input" style="display:none" rows="1" placeholder=""></textarea>
@@ -108,17 +109,9 @@
     let ttsPlaybackDelayMs = 10;
     let hotwordStatus = {
       ok: true,
-      phrase: 'tabura',
-      trained: true,
-      runtime_assets_ready: true,
       ready: true,
-      model_path: '/tmp/tabura.onnx',
       missing: [],
-      train_in_progress: false,
-      last_error: '',
     };
-    let hotwordTrainSeq = 0;
-    const hotwordTrainJobs = new Map();
     window.__setHotwordStatus = (next) => {
       const incoming = next && typeof next === 'object' ? next : {};
       hotwordStatus = { ...hotwordStatus, ...incoming };
@@ -126,9 +119,6 @@
         hotwordStatus.missing = [];
       }
       hotwordStatus.ready = Boolean(hotwordStatus.ready);
-      hotwordStatus.trained = Boolean(hotwordStatus.trained);
-      hotwordStatus.runtime_assets_ready = Boolean(hotwordStatus.runtime_assets_ready);
-      hotwordStatus.train_in_progress = Boolean(hotwordStatus.train_in_progress);
     };
     window.__setHotwordInitEnabled = (enabled) => {
       hotwordInitEnabled = Boolean(enabled);
@@ -236,64 +226,6 @@
       if (u.includes('/api/hotword/status')) {
         return new Response(JSON.stringify({
           ...hotwordStatus,
-        }), { status: 200 });
-      }
-      if (u.includes('/api/hotword/train/') && (!opts || opts.method === 'GET')) {
-        const raw = u.split('/api/hotword/train/')[1] || '';
-        const jobId = decodeURIComponent(raw.split('?')[0] || '').trim();
-        const job = hotwordTrainJobs.get(jobId);
-        if (!job) {
-          return new Response('job not found', { status: 404 });
-        }
-        if (job.status === 'running') {
-          job.status = 'succeeded';
-          job.progress_text = `${job.progress_text}\ntraining completed`;
-          hotwordStatus = {
-            ...hotwordStatus,
-            trained: true,
-            ready: true,
-            runtime_assets_ready: true,
-            missing: [],
-            train_in_progress: false,
-            last_error: '',
-          };
-        }
-        return new Response(JSON.stringify({
-          ok: true,
-          job_id: job.id,
-          status: job.status,
-          progress_text: job.progress_text,
-          error: job.error || '',
-        }), { status: 200 });
-      }
-      if (u.endsWith('/api/hotword/train') && opts?.method === 'POST') {
-        const active = Array.from(hotwordTrainJobs.values()).find((job) => job.status === 'running' || job.status === 'queued');
-        if (active) {
-          return new Response(JSON.stringify({
-            ok: true,
-            job_id: active.id,
-            status: 'already_running',
-            progress_text: active.progress_text,
-          }), { status: 200 });
-        }
-        hotwordTrainSeq += 1;
-        const job = {
-          id: `hw-${hotwordTrainSeq}`,
-          status: 'running',
-          progress_text: 'starting hotword training...',
-          error: '',
-        };
-        hotwordTrainJobs.set(job.id, job);
-        hotwordStatus = {
-          ...hotwordStatus,
-          train_in_progress: true,
-          ready: false,
-          trained: false,
-        };
-        return new Response(JSON.stringify({
-          ok: true,
-          job_id: job.id,
-          status: 'started',
         }), { status: 200 });
       }
       if (u.includes('/api/projects') && u.includes('/chat-model') && opts?.method === 'POST') {

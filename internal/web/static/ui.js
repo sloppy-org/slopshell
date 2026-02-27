@@ -125,15 +125,19 @@ export function showIndicatorMode(mode, x, y) {
   const el = indicatorEl();
   if (!el) return;
   const normalizedMode = String(mode || '').trim().toLowerCase();
-  const nextMode = normalizedMode === 'recording'
-    ? 'recording'
-    : (normalizedMode === 'listening' ? 'listening' : 'play');
+  let nextMode;
+  if (normalizedMode === 'recording') nextMode = 'recording';
+  else if (normalizedMode === 'listening') nextMode = 'listening';
+  else if (normalizedMode === 'paused') nextMode = 'paused';
+  else nextMode = 'play';
   const body = document.body;
-  el.classList.remove('is-recording', 'is-working', 'is-listening');
+  el.classList.remove('is-recording', 'is-working', 'is-listening', 'is-paused');
   if (nextMode === 'recording') {
     el.classList.add('is-recording');
   } else if (nextMode === 'listening') {
     el.classList.add('is-listening');
+  } else if (nextMode === 'paused') {
+    el.classList.add('is-paused');
   } else {
     el.classList.add('is-working');
   }
@@ -166,7 +170,7 @@ export function showIndicatorMode(mode, x, y) {
     }
   }
   if (body) {
-    const isCueVisible = nextMode === 'recording' || nextMode === 'play' || nextMode === 'listening';
+    const isCueVisible = nextMode === 'recording' || nextMode === 'play' || nextMode === 'listening' || nextMode === 'paused';
     body.classList.toggle('cue-active', isCueVisible);
   }
   uiState.indicatorVisible = true;
@@ -176,7 +180,7 @@ export function showIndicatorMode(mode, x, y) {
 export function hideIndicator() {
   const el = indicatorEl();
   if (!el) return;
-  el.classList.remove('is-recording', 'is-working', 'is-listening');
+  el.classList.remove('is-recording', 'is-working', 'is-listening', 'is-paused');
   el.style.display = 'none';
   const body = document.body;
   if (body) {
