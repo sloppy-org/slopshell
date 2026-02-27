@@ -291,6 +291,7 @@ func securityHeaders(next http.Handler) http.Handler {
 			"default-src 'self'; "+
 				"script-src 'self' 'wasm-unsafe-eval' https://cdn.jsdelivr.net; "+
 				"style-src 'self' 'unsafe-inline'; "+
+				"font-src 'self'; "+
 				"worker-src 'self' blob:; "+
 				"img-src 'self' data:; "+
 				"connect-src 'self' ws: wss: https://cdn.jsdelivr.net; "+
