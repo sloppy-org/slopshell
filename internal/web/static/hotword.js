@@ -9,6 +9,14 @@ const HOTWORD_DETECTION_COOLDOWN_MS = 1500;
 const HOTWORD_TARGET_SAMPLE_RATE = 16000;
 const HOTWORD_FRAME_MS = 80;
 const HOTWORD_TARGET_FRAME_SAMPLES = Math.floor((HOTWORD_TARGET_SAMPLE_RATE * HOTWORD_FRAME_MS) / 1000);
+const HOTWORD_MEL_CONTEXT_SAMPLES = 160 * 3;
+const HOTWORD_MEL_BANDS = 32;
+const HOTWORD_MEL_WINDOW = 76;
+const HOTWORD_EMBEDDING_DIM = 96;
+const HOTWORD_KEYWORD_FRAMES = 108;
+const HOTWORD_RAW_BUFFER_MAX = HOTWORD_TARGET_SAMPLE_RATE * 10;
+const HOTWORD_MEL_BUFFER_MAX = 10 * 97;
+const HOTWORD_FEATURE_BUFFER_MAX = 120;
 
 const listeners = new Set();
 
@@ -29,6 +37,60 @@ const state = {
   processingFrames: false,
   lastDetectionAt: 0,
 };
+
+const pipeline = {
+  rawBuffer: null,
+  rawLen: 0,
+  melBuffer: null,
+  melLen: 0,
+  featureBuffer: null,
+  featureLen: 0,
+};
+
+function resetPipeline() {
+  pipeline.rawBuffer = new Float32Array(HOTWORD_RAW_BUFFER_MAX);
+  pipeline.rawLen = 0;
+  pipeline.melBuffer = new Float32Array(HOTWORD_MEL_BUFFER_MAX * HOTWORD_MEL_BANDS);
+  pipeline.melLen = 0;
+  pipeline.featureBuffer = new Float32Array(HOTWORD_FEATURE_BUFFER_MAX * HOTWORD_EMBEDDING_DIM);
+  pipeline.featureLen = 0;
+}
+
+function appendRaw(samples) {
+  const need = pipeline.rawLen + samples.length;
+  if (need > HOTWORD_RAW_BUFFER_MAX) {
+    const drop = need - HOTWORD_RAW_BUFFER_MAX;
+    pipeline.rawBuffer.copyWithin(0, drop, pipeline.rawLen);
+    pipeline.rawLen -= drop;
+  }
+  pipeline.rawBuffer.set(samples, pipeline.rawLen);
+  pipeline.rawLen += samples.length;
+}
+
+function appendMelFrames(data, nFrames) {
+  const elems = nFrames * HOTWORD_MEL_BANDS;
+  const totalRows = pipeline.melLen + nFrames;
+  if (totalRows > HOTWORD_MEL_BUFFER_MAX) {
+    const dropRows = totalRows - HOTWORD_MEL_BUFFER_MAX;
+    const dropElems = dropRows * HOTWORD_MEL_BANDS;
+    pipeline.melBuffer.copyWithin(0, dropElems, pipeline.melLen * HOTWORD_MEL_BANDS);
+    pipeline.melLen -= dropRows;
+  }
+  const offset = pipeline.melLen * HOTWORD_MEL_BANDS;
+  for (let i = 0; i < elems; i += 1) {
+    pipeline.melBuffer[offset + i] = data[i] / 10 + 2;
+  }
+  pipeline.melLen += nFrames;
+}
+
+function appendEmbedding(data) {
+  if (pipeline.featureLen >= HOTWORD_FEATURE_BUFFER_MAX) {
+    pipeline.featureBuffer.copyWithin(0, HOTWORD_EMBEDDING_DIM, pipeline.featureLen * HOTWORD_EMBEDDING_DIM);
+    pipeline.featureLen -= 1;
+  }
+  pipeline.featureBuffer.set(data, pipeline.featureLen * HOTWORD_EMBEDDING_DIM);
+  pipeline.featureLen += 1;
+}
 
 function clampNumber(value, min, max) {
   const n = Number(value);
@@ -156,40 +218,64 @@ function emitHotwordDetected() {
   });
 }
 
+async function runSession(session, inputTensor) {
+  const inputName = session.inputNames[0];
+  const feed = { [inputName]: inputTensor };
+  const outputs = await session.run(feed);
+  return outputs[session.outputNames[0]] || null;
+}
+
 async function runPipelineOnnx(frame) {
   if (!state.model || !state.model.ort) return 0;
   const { ort, melSession, embeddingSession, keywordSession } = state.model;
-  if (!keywordSession) return 0;
+  if (!keywordSession || !pipeline.rawBuffer) return 0;
 
-  const runStage = async (session, inputTensor) => {
-    const inputName = Array.isArray(session.inputNames) && session.inputNames.length > 0
-      ? session.inputNames[0]
-      : 'input';
-    const feed = { [inputName]: inputTensor };
-    const outputs = await session.run(feed);
-    if (!outputs || typeof outputs !== 'object') {
-      return null;
-    }
-    const outputName = Array.isArray(session.outputNames) && session.outputNames.length > 0
-      ? session.outputNames[0]
-      : Object.keys(outputs)[0];
-    return outputs[outputName] || null;
-  };
+  const int16Scaled = new Float32Array(frame.length);
+  for (let i = 0; i < frame.length; i += 1) {
+    int16Scaled[i] = Math.round(frame[i] * 32767);
+  }
+  appendRaw(int16Scaled);
 
   try {
-    let tensor = new ort.Tensor('float32', frame, [1, frame.length]);
-    if (melSession) {
-      const melOut = await runStage(melSession, tensor);
-      if (!melOut) return 0;
-      tensor = melOut;
+    const melInputLen = Math.min(pipeline.rawLen, HOTWORD_TARGET_FRAME_SAMPLES + HOTWORD_MEL_CONTEXT_SAMPLES);
+    if (melInputLen < 400) return 0;
+
+    const melInputData = pipeline.rawBuffer.slice(pipeline.rawLen - melInputLen, pipeline.rawLen);
+    const melTensor = new ort.Tensor('float32', melInputData, [1, melInputLen]);
+    const melOut = await runSession(melSession, melTensor);
+    if (!melOut) return 0;
+
+    const dims = melOut.dims;
+    const nFrames = dims[dims.length - 2];
+    appendMelFrames(melOut.data, nFrames);
+
+    if (pipeline.melLen >= HOTWORD_MEL_WINDOW) {
+      const windowStart = (pipeline.melLen - HOTWORD_MEL_WINDOW) * HOTWORD_MEL_BANDS;
+      const windowEnd = pipeline.melLen * HOTWORD_MEL_BANDS;
+      const embInputData = new Float32Array(HOTWORD_MEL_WINDOW * HOTWORD_MEL_BANDS);
+      embInputData.set(pipeline.melBuffer.subarray(windowStart, windowEnd));
+      const embTensor = new ort.Tensor('float32', embInputData, [1, HOTWORD_MEL_WINDOW, HOTWORD_MEL_BANDS, 1]);
+      const embOut = await runSession(embeddingSession, embTensor);
+      if (!embOut) return 0;
+
+      const embedding = new Float32Array(HOTWORD_EMBEDDING_DIM);
+      for (let i = 0; i < HOTWORD_EMBEDDING_DIM; i += 1) {
+        embedding[i] = embOut.data[i];
+      }
+      appendEmbedding(embedding);
     }
-    if (embeddingSession) {
-      const embedOut = await runStage(embeddingSession, tensor);
-      if (!embedOut) return 0;
-      tensor = embedOut;
+
+    if (pipeline.featureLen >= HOTWORD_KEYWORD_FRAMES) {
+      const fStart = (pipeline.featureLen - HOTWORD_KEYWORD_FRAMES) * HOTWORD_EMBEDDING_DIM;
+      const fEnd = pipeline.featureLen * HOTWORD_EMBEDDING_DIM;
+      const kwInputData = new Float32Array(HOTWORD_KEYWORD_FRAMES * HOTWORD_EMBEDDING_DIM);
+      kwInputData.set(pipeline.featureBuffer.subarray(fStart, fEnd));
+      const kwTensor = new ort.Tensor('float32', kwInputData, [1, HOTWORD_KEYWORD_FRAMES, HOTWORD_EMBEDDING_DIM]);
+      const kwOut = await runSession(keywordSession, kwTensor);
+      return tensorScore(kwOut);
     }
-    const keywordOut = await runStage(keywordSession, tensor);
-    return tensorScore(keywordOut);
+
+    return 0;
   } catch (_) {
     return 0;
   }
@@ -254,11 +340,14 @@ function stopOnnxNodes() {
   state.targetSampleBuffer = new Float32Array(0);
   state.pendingFrames = [];
   state.processingFrames = false;
+  resetPipeline();
 }
 
 async function startOnnxMonitor(stream) {
   const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
   if (!AudioContextCtor) return false;
+
+  resetPipeline();
 
   const audioCtx = new AudioContextCtor();
   const sourceNode = audioCtx.createMediaStreamSource(stream);
