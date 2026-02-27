@@ -1,3 +1,5 @@
+import * as ort from 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.21.0/dist/ort.min.mjs';
+
 const HOTWORD_VENDOR_BASE = '/static/vendor/openwakeword';
 const HOTWORD_MODEL_FILES = {
   mel: `${HOTWORD_VENDOR_BASE}/melspectrogram.onnx`,
@@ -131,41 +133,6 @@ function resolveMock() {
   return candidate;
 }
 
-function loadScript(src) {
-  return new Promise((resolve, reject) => {
-    const existing = document.querySelector(`script[data-hotword-src="${src}"]`);
-    if (existing) {
-      if (existing.dataset.loaded === 'true') {
-        resolve();
-        return;
-      }
-      existing.addEventListener('load', () => resolve(), { once: true });
-      existing.addEventListener('error', () => reject(new Error(`failed to load ${src}`)), { once: true });
-      return;
-    }
-
-    const script = document.createElement('script');
-    script.src = src;
-    script.async = true;
-    script.dataset.hotwordSrc = src;
-    script.addEventListener('load', () => {
-      script.dataset.loaded = 'true';
-      resolve();
-    }, { once: true });
-    script.addEventListener('error', () => reject(new Error(`failed to load ${src}`)), { once: true });
-    document.head.appendChild(script);
-  });
-}
-
-async function ensureOrtRuntime() {
-  if (window.ort) return window.ort;
-  await loadScript(`${HOTWORD_VENDOR_BASE}/ort.min.js`);
-  if (!window.ort) {
-    throw new Error('onnx runtime not available after script load');
-  }
-  return window.ort;
-}
-
 function extractTensor(output) {
   if (!output) return null;
   if (output.data && output.dims) return output;
@@ -250,8 +217,8 @@ async function runSession(session, inputTensor) {
 }
 
 async function runPipelineOnnx(frame) {
-  if (!state.model || !state.model.ort) return 0;
-  const { ort, melSession, embeddingSession, keywordSession } = state.model;
+  if (!state.model) return 0;
+  const { melSession, embeddingSession, keywordSession } = state.model;
   if (!keywordSession || !pipeline.rawBuffer) return 0;
 
   const int16Scaled = new Float32Array(frame.length);
@@ -411,9 +378,9 @@ async function startOnnxMonitor(stream) {
 }
 
 async function initOnnxModel() {
-  const ort = await ensureOrtRuntime();
-  if (ort?.env?.wasm) {
-    ort.env.wasm.wasmPaths = `${HOTWORD_VENDOR_BASE}/`;
+  if (ort.env?.wasm) {
+    ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.21.0/dist/';
+    ort.env.wasm.numThreads = 1;
   }
 
   const sessionOptions = {
@@ -426,7 +393,6 @@ async function initOnnxModel() {
   const keywordSession = await ort.InferenceSession.create(HOTWORD_MODEL_FILES.keyword, sessionOptions);
 
   state.model = {
-    ort,
     melSession,
     embeddingSession,
     keywordSession,

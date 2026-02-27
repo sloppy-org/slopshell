@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hotword Test</title>
+<link rel="stylesheet" href="/static/hotword-test.css">
+</head>
+<body>
+<h1>Wake Word Test — OpenWakeWord (Alexa)</h1>
+<div id="status">Loading ONNX models...</div>
+<div id="detection">—</div>
+<div class="controls">
+  <button id="btn-start" disabled>Start Listening</button>
+  <button id="btn-stop" disabled>Stop</button>
+  <label>Threshold: <input type="range" id="threshold" min="0" max="1" step="0.05" value="0.5">
+    <span id="threshold-val">0.50</span></label>
+</div>
+<div id="log"></div>
+<script type="module" src="/static/hotword-test.js"></script>
+</body>
+</html>
