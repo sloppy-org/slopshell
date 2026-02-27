@@ -289,11 +289,11 @@ func securityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Content-Security-Policy",
 			"default-src 'self'; "+
-				"script-src 'self' 'wasm-unsafe-eval'; "+
+				"script-src 'self' 'wasm-unsafe-eval' https://cdn.jsdelivr.net; "+
 				"style-src 'self' 'unsafe-inline'; "+
-				"worker-src 'self'; "+
+				"worker-src 'self' blob:; "+
 				"img-src 'self' data:; "+
-				"connect-src 'self' ws: wss:; "+
+				"connect-src 'self' ws: wss: https://cdn.jsdelivr.net; "+
 				"frame-ancestors 'none'; "+
 				"base-uri 'none'; "+
 				"form-action 'self'")
@@ -301,7 +301,7 @@ func securityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		w.Header().Set("Permissions-Policy", "camera=(), geolocation=()")
 		w.Header().Set("Cross-Origin-Opener-Policy", "same-origin")
-		w.Header().Set("Cross-Origin-Embedder-Policy", "require-corp")
+		w.Header().Set("Cross-Origin-Embedder-Policy", "credentialless")
 		next.ServeHTTP(w, r)
 	})
 }

@@ -12,7 +12,6 @@ const (
 )
 
 var hotwordRuntimeAssetFiles = []string{
-	"ort.min.js",
 	"melspectrogram.onnx",
 	"embedding_model.onnx",
 	hotwordModelFileName,

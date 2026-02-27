@@ -59,6 +59,12 @@ btnStop.addEventListener('click', () => {
   log('Stopped.');
 });
 
+const _origWarn = console.warn;
+console.warn = (...args) => {
+  log(`[warn] ${args.map(a => (a instanceof Error ? a.message : String(a))).join(' ')}`);
+  _origWarn.apply(console, args);
+};
+
 log('Initializing ONNX models...');
 try {
   const ok = await initHotword();
@@ -68,7 +74,7 @@ try {
     btnStart.disabled = false;
     log('ONNX models loaded successfully.');
   } else {
-    statusEl.textContent = 'Model init returned false — check console.';
+    statusEl.textContent = 'Model init failed — see log below.';
     statusEl.className = 'error';
     log('initHotword() returned false.');
   }
