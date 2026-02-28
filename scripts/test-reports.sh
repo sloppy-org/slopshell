@@ -19,14 +19,63 @@ TABURA_PROFILE="${COVERAGE_DIR}/tabura.cover.out"
 TABURA_HTML="${COVERAGE_DIR}/tabura.html"
 UNIT_INDEX="${COVERAGE_DIR}/index.html"
 UNIT_SUMMARY="${COVERAGE_DIR}/summary.txt"
+UNIT_GO_TEST_LOG="${COVERAGE_DIR}/go-test.log"
+
+TABURA_COVERAGE_MIN_TOTAL="${TABURA_COVERAGE_MIN_TOTAL:-45.0}"
+TABURA_COVERAGE_MIN_PACKAGES="${TABURA_COVERAGE_MIN_PACKAGES:-}"
 
 printf '\n[reports] Generating Tabura Go coverage...\n'
 (
   cd "${ROOT_DIR}"
-  go test ./... -covermode=atomic -coverprofile="${TABURA_PROFILE}"
+  go test ./... -covermode=atomic -coverprofile="${TABURA_PROFILE}" | tee "${UNIT_GO_TEST_LOG}"
 )
 TABURA_TOTAL="$(go tool cover -func="${TABURA_PROFILE}" | awk '/^total:/ {print $3}')"
 go tool cover -html="${TABURA_PROFILE}" -o "${TABURA_HTML}"
+
+TABURA_TOTAL_NUM="$(printf '%s' "${TABURA_TOTAL}" | tr -d '%')"
+COVERAGE_FAILURES=0
+
+if ! awk -v total="${TABURA_TOTAL_NUM}" -v min="${TABURA_COVERAGE_MIN_TOTAL}" 'BEGIN { exit (total+0 >= min+0 ? 0 : 1) }'; then
+  echo "[reports] coverage gate failed: total ${TABURA_TOTAL} < ${TABURA_COVERAGE_MIN_TOTAL}%"
+  COVERAGE_FAILURES=$((COVERAGE_FAILURES + 1))
+fi
+
+if [[ -n "${TABURA_COVERAGE_MIN_PACKAGES}" ]]; then
+  IFS=',' read -r -a pkg_rules <<< "${TABURA_COVERAGE_MIN_PACKAGES}"
+  for rule in "${pkg_rules[@]}"; do
+    rule="$(echo "${rule}" | xargs)"
+    [[ -z "${rule}" ]] && continue
+    pkg="${rule%%=*}"
+    min="${rule#*=}"
+    if [[ "${pkg}" == "${min}" ]]; then
+      echo "[reports] invalid package coverage rule '${rule}' (expected package=min)"
+      COVERAGE_FAILURES=$((COVERAGE_FAILURES + 1))
+      continue
+    fi
+    pkg_cov="$(
+      awk -v target="${pkg}" '
+        $2 == target && /coverage:/ {
+          for (i = 1; i <= NF; i++) {
+            if ($i == "coverage:") {
+              gsub("%", "", $(i+1))
+              print $(i+1)
+              exit
+            }
+          }
+        }
+      ' "${UNIT_GO_TEST_LOG}"
+    )"
+    if [[ -z "${pkg_cov}" ]]; then
+      echo "[reports] coverage gate failed: package ${pkg} not found in go test output"
+      COVERAGE_FAILURES=$((COVERAGE_FAILURES + 1))
+      continue
+    fi
+    if ! awk -v cov="${pkg_cov}" -v min="${min}" 'BEGIN { exit (cov+0 >= min+0 ? 0 : 1) }'; then
+      echo "[reports] coverage gate failed: package ${pkg} ${pkg_cov}% < ${min}%"
+      COVERAGE_FAILURES=$((COVERAGE_FAILURES + 1))
+    fi
+  done
+fi
 
 PLAY_JSON="${E2E_DIR}/playwright-summary.json"
 PLAY_LOG="${E2E_DIR}/playwright.log"
@@ -91,8 +140,12 @@ Unit Coverage Summary
 Generated at: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 Tabura total: ${TABURA_TOTAL}
+Coverage min total: ${TABURA_COVERAGE_MIN_TOTAL}%
+Coverage min packages: ${TABURA_COVERAGE_MIN_PACKAGES}
+Coverage gate failures: ${COVERAGE_FAILURES}
 Tabura profile: ${TABURA_PROFILE}
 Tabura html: ${TABURA_HTML}
+Go test log: ${UNIT_GO_TEST_LOG}
 
 E2E expected: ${E2E_EXPECTED}
 E2E unexpected: ${E2E_UNEXPECTED}
@@ -107,3 +160,8 @@ printf '[reports] Unit coverage index: %s\n' "${UNIT_INDEX}"
 printf '[reports] Unit summary: %s\n' "${UNIT_SUMMARY}"
 printf '[reports] E2E report dir: %s\n' "${PLAY_REPORT_DIR}"
 printf '[reports] E2E summary: %s\n\n' "${E2E_SUMMARY}"
+
+if [[ "${COVERAGE_FAILURES}" -gt 0 ]]; then
+  echo "[reports] failing due to coverage gate violations"
+  exit 1
+fi

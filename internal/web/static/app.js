@@ -1054,6 +1054,94 @@ function newMediaRecorder(stream) {
   return new window.MediaRecorder(stream);
 }
 
+function isLikelyIOS() {
+  const ua = String(navigator.userAgent || '').toLowerCase();
+  return /iphone|ipad|ipod/.test(ua)
+    || (ua.includes('macintosh') && navigator.maxTouchPoints > 1);
+}
+
+function isWhisperFriendlyMime(mimeType) {
+  const mt = String(mimeType || '').toLowerCase();
+  if (!mt) return false;
+  return mt.includes('webm')
+    || mt.includes('ogg')
+    || mt.includes('wav')
+    || mt.includes('mpeg')
+    || mt.includes('mp3');
+}
+
+function shouldTranscodeVoiceBlobToWav(mimeType) {
+  const mt = String(mimeType || '').toLowerCase();
+  if (!mt) return isLikelyIOS();
+  return !isWhisperFriendlyMime(mt);
+}
+
+function encodeAudioBufferAsWav(audioBuffer) {
+  const channels = Math.max(1, Number(audioBuffer?.numberOfChannels) || 1);
+  const sampleRate = Math.max(8000, Number(audioBuffer?.sampleRate) || 44100);
+  const frameCount = Math.max(0, Number(audioBuffer?.length) || 0);
+  const bytesPerSample = 2;
+  const dataBytes = frameCount * bytesPerSample;
+  const wav = new ArrayBuffer(44 + dataBytes);
+  const view = new DataView(wav);
+  const writeString = (offset, value) => {
+    for (let i = 0; i < value.length; i += 1) {
+      view.setUint8(offset + i, value.charCodeAt(i));
+    }
+  };
+
+  writeString(0, 'RIFF');
+  view.setUint32(4, 36 + dataBytes, true);
+  writeString(8, 'WAVE');
+  writeString(12, 'fmt ');
+  view.setUint32(16, 16, true); // PCM chunk size
+  view.setUint16(20, 1, true); // PCM format
+  view.setUint16(22, 1, true); // mono output
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * bytesPerSample, true); // byte rate
+  view.setUint16(32, bytesPerSample, true); // block align
+  view.setUint16(34, 16, true); // bits per sample
+  writeString(36, 'data');
+  view.setUint32(40, dataBytes, true);
+
+  const channelData = [];
+  for (let ch = 0; ch < channels; ch += 1) {
+    if (typeof audioBuffer.getChannelData !== 'function') break;
+    channelData.push(audioBuffer.getChannelData(ch));
+  }
+  let offset = 44;
+  for (let i = 0; i < frameCount; i += 1) {
+    let sample = 0;
+    if (channelData.length > 0) {
+      for (let ch = 0; ch < channelData.length; ch += 1) {
+        sample += channelData[ch][i] || 0;
+      }
+      sample /= channelData.length;
+    }
+    sample = Math.max(-1, Math.min(1, sample));
+    const int16 = sample < 0 ? Math.round(sample * 0x8000) : Math.round(sample * 0x7FFF);
+    view.setInt16(offset, int16, true);
+    offset += 2;
+  }
+  return wav;
+}
+
+async function transcodeVoiceBlobToWav(blob) {
+  if (!(blob instanceof Blob) || blob.size <= 0) {
+    throw new Error('voice blob is empty');
+  }
+  if (!ttsAudioCtx || typeof ttsAudioCtx.decodeAudioData !== 'function') {
+    throw new Error('AudioContext decode is unavailable');
+  }
+  const input = await blob.arrayBuffer();
+  const decoded = await ttsAudioCtx.decodeAudioData(input.slice(0));
+  if (!decoded || typeof decoded.getChannelData !== 'function') {
+    throw new Error('decoded audio buffer is invalid');
+  }
+  const wav = encodeAudioBufferAsWav(decoded);
+  return new Blob([wav], { type: 'audio/wav' });
+}
+
 
 function canUseMicrophoneCapture() {
   return Boolean(window.MediaRecorder)
@@ -1704,12 +1792,26 @@ async function stopVoiceCaptureAndSend() {
   let remoteStopped = false;
   try {
     await stopChatVoiceMediaAndFlush(capture);
-    const mimeType = capture.mimeType || 'audio/webm';
-    sttStart(mimeType);
+    let mimeType = capture.mimeType || 'audio/webm';
+    let sttBlob = null;
     if (capture.chunks.length > 0) {
-      const blob = new Blob(capture.chunks, { type: mimeType });
+      sttBlob = new Blob(capture.chunks, { type: mimeType });
       capture.chunks = [];
-      await sttSendBlob(blob);
+      if (shouldTranscodeVoiceBlobToWav(mimeType)) {
+        try {
+          const wavBlob = await transcodeVoiceBlobToWav(sttBlob);
+          if (wavBlob && wavBlob.size > 0) {
+            sttBlob = wavBlob;
+            mimeType = 'audio/wav';
+          }
+        } catch (transcodeErr) {
+          console.warn('voice transcode fallback failed; using original recording payload', transcodeErr);
+        }
+      }
+    }
+    sttStart(mimeType);
+    if (sttBlob) {
+      await sttSendBlob(sttBlob);
     }
     const result = await sttStop();
     remoteStopped = true;

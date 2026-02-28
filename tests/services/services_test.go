@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 const (
@@ -239,9 +240,12 @@ func TestSTTTranscribeSineWave(t *testing.T) {
 	if err != nil {
 		t.Fatalf("STT inference failed: %v", err)
 	}
-	// Sine wave won't produce meaningful speech but should not crash
-	// Any text or empty is fine — the point is the service processes it
-	_ = resp
+	if !utf8.ValidString(resp) {
+		t.Fatalf("STT response is not valid UTF-8")
+	}
+	if len(resp) > 512 {
+		t.Fatalf("unexpectedly long STT response for synthetic sine wave: %d bytes", len(resp))
+	}
 }
 
 func TestSTTTranscribeSilence(t *testing.T) {
@@ -250,19 +254,27 @@ func TestSTTTranscribeSilence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("STT inference failed: %v", err)
 	}
-	// Silence should produce empty or hallucination text
-	_ = resp
+	if !utf8.ValidString(resp) {
+		t.Fatalf("STT silence response is not valid UTF-8")
+	}
+	if len(strings.TrimSpace(resp)) > 120 {
+		t.Fatalf("silence transcript too long (%d chars): %q", len(strings.TrimSpace(resp)), resp)
+	}
 }
 
 func TestSTTHandlesEmptyPayload(t *testing.T) {
-	// whisper-server returns 200 even for empty audio — verify it doesn't crash
+	// whisper-server may return either an error or an empty/short transcript.
 	resp, err := postSTTInference([]byte{})
 	if err != nil {
-		// An HTTP error is also acceptable
+		// HTTP error is acceptable for empty payload.
 		return
 	}
-	// If it returns 200, transcript should be empty or hallucination
-	_ = resp
+	if !utf8.ValidString(resp) {
+		t.Fatalf("empty-payload STT response is not valid UTF-8")
+	}
+	if len(strings.TrimSpace(resp)) > 120 {
+		t.Fatalf("empty-payload transcript too long (%d chars): %q", len(strings.TrimSpace(resp)), resp)
+	}
 }
 
 func TestSTTAcceptsValidWAV(t *testing.T) {
@@ -272,8 +284,12 @@ func TestSTTAcceptsValidWAV(t *testing.T) {
 	if err != nil {
 		t.Fatalf("STT failed to process valid WAV: %v", err)
 	}
-	// Service must return a response (any text, even empty for non-speech)
-	_ = resp
+	if !utf8.ValidString(resp) {
+		t.Fatalf("STT valid-WAV response is not valid UTF-8")
+	}
+	if len(resp) > 1024 {
+		t.Fatalf("valid-WAV transcript unexpectedly long (%d chars)", len(resp))
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -577,12 +593,12 @@ func buildWAV(durationMs, sampleRate int, sampleFunc func(i, numSamples, sr int)
 	// fmt chunk
 	buf.WriteString("fmt ")
 	binary.Write(buf, binary.LittleEndian, uint32(16))
-	binary.Write(buf, binary.LittleEndian, uint16(1))             // PCM
-	binary.Write(buf, binary.LittleEndian, uint16(1))             // mono
-	binary.Write(buf, binary.LittleEndian, uint32(sampleRate))    // sample rate
-	binary.Write(buf, binary.LittleEndian, uint32(sampleRate*2))  // byte rate
-	binary.Write(buf, binary.LittleEndian, uint16(2))             // block align
-	binary.Write(buf, binary.LittleEndian, uint16(16))            // bits per sample
+	binary.Write(buf, binary.LittleEndian, uint16(1))            // PCM
+	binary.Write(buf, binary.LittleEndian, uint16(1))            // mono
+	binary.Write(buf, binary.LittleEndian, uint32(sampleRate))   // sample rate
+	binary.Write(buf, binary.LittleEndian, uint32(sampleRate*2)) // byte rate
+	binary.Write(buf, binary.LittleEndian, uint16(2))            // block align
+	binary.Write(buf, binary.LittleEndian, uint16(16))           // bits per sample
 
 	// data chunk
 	buf.WriteString("data")

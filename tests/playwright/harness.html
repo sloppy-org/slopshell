@@ -481,6 +481,25 @@
       window.__vadDbFrames = Array.isArray(frames) ? frames.slice() : [];
     };
     window.__setVadDbFrames([]);
+    window.__mediaRecorderMimeType = 'audio/webm;codecs=opus';
+    window.__setMediaRecorderMimeType = (mimeType) => {
+      if (typeof mimeType === 'string' && mimeType.trim()) {
+        window.__mediaRecorderMimeType = mimeType.trim();
+      } else {
+        window.__mediaRecorderMimeType = 'audio/webm;codecs=opus';
+      }
+    };
+    window.__mediaRecorderChunkBytes = [1, 2, 3, 4, 5];
+    window.__setMediaRecorderChunkBytes = (bytes) => {
+      if (Array.isArray(bytes) && bytes.length > 0) {
+        window.__mediaRecorderChunkBytes = bytes
+          .map((n) => Number(n))
+          .filter((n) => Number.isFinite(n))
+          .map((n) => Math.max(0, Math.min(255, Math.trunc(n))));
+      } else {
+        window.__mediaRecorderChunkBytes = [1, 2, 3, 4, 5];
+      }
+    };
 
     const MockAudioContext = class {
       constructor() {
@@ -492,7 +511,22 @@
         this.state = 'running';
       }
       async decodeAudioData(buf) {
-        return { duration: 0.1, length: 4410, sampleRate: 44100, numberOfChannels: 1 };
+        const length = 4410;
+        const channel = new Float32Array(length);
+        for (let i = 0; i < length; i += 1) {
+          const phase = (i / 44100) * 2 * Math.PI * 440;
+          channel[i] = Math.sin(phase) * 0.1;
+        }
+        return {
+          duration: 0.1,
+          length,
+          sampleRate: 44100,
+          numberOfChannels: 1,
+          getChannelData(index) {
+            if (index !== 0) return new Float32Array(length);
+            return channel;
+          },
+        };
       }
       createMediaStreamSource() {
         return {
@@ -613,7 +647,7 @@
     window.MediaRecorder = class MockMediaRecorder {
       constructor() {
         this.state = 'inactive';
-        this.mimeType = 'audio/webm;codecs=opus';
+        this.mimeType = String(window.__mediaRecorderMimeType || 'audio/webm;codecs=opus');
         this._handlers = {};
         this._chunkTimer = null;
       }
@@ -642,7 +676,10 @@
         const intervalMs = Math.max(20, Number(timeslice) || 100);
         this._chunkTimer = setInterval(() => {
           if (this.state !== 'recording') return;
-          const blob = new Blob([new Uint8Array([1, 2, 3, 4, 5])], { type: this.mimeType });
+          const bytes = Array.isArray(window.__mediaRecorderChunkBytes)
+            ? window.__mediaRecorderChunkBytes
+            : [1, 2, 3, 4, 5];
+          const blob = new Blob([new Uint8Array(bytes)], { type: this.mimeType });
           this._emit('dataavailable', { data: blob });
         }, intervalMs);
       }
@@ -653,7 +690,10 @@
         }
         this.state = 'inactive';
         window.__harnessLog.push({ type: 'recorder', action: 'stop' });
-        const blob = new Blob([new Uint8Array([1, 2, 3, 4, 5])], { type: this.mimeType });
+        const bytes = Array.isArray(window.__mediaRecorderChunkBytes)
+          ? window.__mediaRecorderChunkBytes
+          : [1, 2, 3, 4, 5];
+        const blob = new Blob([new Uint8Array(bytes)], { type: this.mimeType });
         setTimeout(() => {
           this._emit('dataavailable', { data: blob });
           this._emit('stop', {});

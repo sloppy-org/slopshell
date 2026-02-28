@@ -578,6 +578,27 @@ test('voice transcription result gets sent as message', async ({ page }) => {
   expect(sent!.text).toBe('hello world');
 });
 
+test('ios-style mp4 recorder payload is transcoded to wav before STT upload', async ({ page }) => {
+  await clearLog(page);
+  await page.evaluate(() => {
+    const setMime = (window as any).__setMediaRecorderMimeType;
+    if (typeof setMime === 'function') setMime('audio/mp4');
+  });
+
+  await page.mouse.click(400, 400);
+  await page.waitForTimeout(500);
+  await waitForLogEntry(page, 'recorder', 'start');
+
+  await page.mouse.click(400, 400);
+  await waitForSTTAction(page, 'start');
+  await waitForSTTAction(page, 'stop');
+
+  const log = await getLog(page);
+  const sttStart = log.find((entry) => entry.type === 'stt' && entry.action === 'start');
+  expect(sttStart).toBeTruthy();
+  expect(sttStart?.mime_type).toBe('audio/wav');
+});
+
 test('recording indicator shows symbol', async ({ page }) => {
   await clearLog(page);
 
