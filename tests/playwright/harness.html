@@ -483,10 +483,18 @@
     window.__setVadDbFrames([]);
     window.__mediaRecorderMimeType = 'audio/webm;codecs=opus';
     window.__setMediaRecorderMimeType = (mimeType) => {
-      if (typeof mimeType === 'string' && mimeType.trim()) {
-        window.__mediaRecorderMimeType = mimeType.trim();
-      } else {
+      if (mimeType === null || typeof mimeType === 'undefined') {
         window.__mediaRecorderMimeType = 'audio/webm;codecs=opus';
+      } else {
+        window.__mediaRecorderMimeType = String(mimeType).trim();
+      }
+    };
+    window.__mediaRecorderChunkMimeType = null;
+    window.__setMediaRecorderChunkMimeType = (mimeType) => {
+      if (mimeType === null || typeof mimeType === 'undefined') {
+        window.__mediaRecorderChunkMimeType = null;
+      } else {
+        window.__mediaRecorderChunkMimeType = String(mimeType).trim();
       }
     };
     window.__mediaRecorderChunkBytes = [1, 2, 3, 4, 5];
@@ -499,6 +507,10 @@
       } else {
         window.__mediaRecorderChunkBytes = [1, 2, 3, 4, 5];
       }
+    };
+    window.__mediaRecorderRequestDataEnabled = true;
+    window.__setMediaRecorderRequestDataEnabled = (enabled) => {
+      window.__mediaRecorderRequestDataEnabled = Boolean(enabled);
     };
 
     const MockAudioContext = class {
@@ -647,7 +659,9 @@
     window.MediaRecorder = class MockMediaRecorder {
       constructor() {
         this.state = 'inactive';
-        this.mimeType = String(window.__mediaRecorderMimeType || 'audio/webm;codecs=opus');
+        this.mimeType = typeof window.__mediaRecorderMimeType === 'string'
+          ? window.__mediaRecorderMimeType
+          : 'audio/webm;codecs=opus';
         this._handlers = {};
         this._chunkTimer = null;
       }
@@ -679,7 +693,10 @@
           const bytes = Array.isArray(window.__mediaRecorderChunkBytes)
             ? window.__mediaRecorderChunkBytes
             : [1, 2, 3, 4, 5];
-          const blob = new Blob([new Uint8Array(bytes)], { type: this.mimeType });
+          const chunkMime = typeof window.__mediaRecorderChunkMimeType === 'string'
+            ? window.__mediaRecorderChunkMimeType
+            : this.mimeType;
+          const blob = new Blob([new Uint8Array(bytes)], chunkMime ? { type: chunkMime } : undefined);
           this._emit('dataavailable', { data: blob });
         }, intervalMs);
       }
@@ -693,11 +710,27 @@
         const bytes = Array.isArray(window.__mediaRecorderChunkBytes)
           ? window.__mediaRecorderChunkBytes
           : [1, 2, 3, 4, 5];
-        const blob = new Blob([new Uint8Array(bytes)], { type: this.mimeType });
+        const chunkMime = typeof window.__mediaRecorderChunkMimeType === 'string'
+          ? window.__mediaRecorderChunkMimeType
+          : this.mimeType;
+        const blob = new Blob([new Uint8Array(bytes)], chunkMime ? { type: chunkMime } : undefined);
         setTimeout(() => {
           this._emit('dataavailable', { data: blob });
           this._emit('stop', {});
         }, 10);
+      }
+      requestData() {
+        if (!window.__mediaRecorderRequestDataEnabled) return;
+        window.__harnessLog.push({ type: 'recorder', action: 'requestData' });
+        if (this.state !== 'recording') return;
+        const bytes = Array.isArray(window.__mediaRecorderChunkBytes)
+          ? window.__mediaRecorderChunkBytes
+          : [1, 2, 3, 4, 5];
+        const chunkMime = typeof window.__mediaRecorderChunkMimeType === 'string'
+          ? window.__mediaRecorderChunkMimeType
+          : this.mimeType;
+        const blob = new Blob([new Uint8Array(bytes)], chunkMime ? { type: chunkMime } : undefined);
+        this._emit('dataavailable', { data: blob });
       }
     };
   </script>

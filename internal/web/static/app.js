@@ -1076,6 +1076,15 @@ function shouldTranscodeVoiceBlobToWav(mimeType) {
   return !isWhisperFriendlyMime(mt);
 }
 
+function firstNonEmptyChunkMimeType(chunks) {
+  if (!Array.isArray(chunks)) return '';
+  for (const chunk of chunks) {
+    const mt = String(chunk?.type || '').trim();
+    if (mt) return mt;
+  }
+  return '';
+}
+
 function encodeAudioBufferAsWav(audioBuffer) {
   const channels = Math.max(1, Number(audioBuffer?.numberOfChannels) || 1);
   const sampleRate = Math.max(8000, Number(audioBuffer?.sampleRate) || 44100);
@@ -1703,9 +1712,9 @@ function stopChatVoiceMediaAndFlush(capture) {
     recorder.addEventListener('stop', onStop, { once: true });
     recorder.addEventListener('error', onError, { once: true });
     try {
-      if (typeof recorder.requestData === 'function') {
-        try { recorder.requestData(); } catch (_) {}
-      }
+      // Avoid requestData() before stop(): Safari/WebKit has had fetch-data
+      // races when requestData and stop are queued back-to-back, which can
+      // drop the final audio payload on iOS.
       recorder.stop();
     } catch (_) {
       finish();
@@ -1745,7 +1754,7 @@ async function beginVoiceCapture(x, y, anchor) {
     const stream = await acquireMicStream();
     if (state.chatVoiceCapture !== capture) return;
     const recorder = newMediaRecorder(stream);
-    capture.mimeType = recorder.mimeType || 'audio/webm';
+    capture.mimeType = String(recorder?.mimeType || '').trim();
     if (state.chatVoiceCapture !== capture) return;
     capture.mediaStream = stream;
     capture.mediaRecorder = recorder;
@@ -1792,10 +1801,18 @@ async function stopVoiceCaptureAndSend() {
   let remoteStopped = false;
   try {
     await stopChatVoiceMediaAndFlush(capture);
-    let mimeType = capture.mimeType || 'audio/webm';
+    let mimeType = String(capture.mimeType || '').trim();
+    if (!mimeType) {
+      mimeType = firstNonEmptyChunkMimeType(capture.chunks);
+    }
     let sttBlob = null;
     if (capture.chunks.length > 0) {
-      sttBlob = new Blob(capture.chunks, { type: mimeType });
+      sttBlob = mimeType
+        ? new Blob(capture.chunks, { type: mimeType })
+        : new Blob(capture.chunks);
+      if (!mimeType) {
+        mimeType = String(sttBlob?.type || '').trim();
+      }
       capture.chunks = [];
       if (shouldTranscodeVoiceBlobToWav(mimeType)) {
         try {
@@ -1808,6 +1825,9 @@ async function stopVoiceCaptureAndSend() {
           console.warn('voice transcode fallback failed; using original recording payload', transcodeErr);
         }
       }
+    }
+    if (!mimeType) {
+      mimeType = isLikelyIOS() ? 'audio/mp4' : 'audio/webm';
     }
     sttStart(mimeType);
     if (sttBlob) {

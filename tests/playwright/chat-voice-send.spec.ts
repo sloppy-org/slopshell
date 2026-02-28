@@ -599,6 +599,48 @@ test('ios-style mp4 recorder payload is transcoded to wav before STT upload', as
   expect(sttStart?.mime_type).toBe('audio/wav');
 });
 
+test('empty recorder mime with mp4 chunks still transcodes to wav for STT upload', async ({ page }) => {
+  await clearLog(page);
+  await page.evaluate(() => {
+    const setRecorderMime = (window as any).__setMediaRecorderMimeType;
+    const setChunkMime = (window as any).__setMediaRecorderChunkMimeType;
+    if (typeof setRecorderMime === 'function') setRecorderMime('');
+    if (typeof setChunkMime === 'function') setChunkMime('audio/mp4');
+  });
+
+  await page.mouse.click(400, 400);
+  await page.waitForTimeout(500);
+  await waitForLogEntry(page, 'recorder', 'start');
+
+  await page.mouse.click(400, 400);
+  await waitForSTTAction(page, 'start');
+  await waitForSTTAction(page, 'stop');
+
+  const log = await getLog(page);
+  const sttStart = log.find((entry) => entry.type === 'stt' && entry.action === 'start');
+  expect(sttStart).toBeTruthy();
+  expect(sttStart?.mime_type).toBe('audio/wav');
+});
+
+test('stop does not call MediaRecorder.requestData before recorder.stop', async ({ page }) => {
+  await clearLog(page);
+  await page.evaluate(() => {
+    const setRequestData = (window as any).__setMediaRecorderRequestDataEnabled;
+    if (typeof setRequestData === 'function') setRequestData(true);
+  });
+
+  await page.mouse.click(400, 400);
+  await page.waitForTimeout(500);
+  await waitForLogEntry(page, 'recorder', 'start');
+
+  await page.mouse.click(400, 400);
+  await waitForSTTAction(page, 'stop');
+
+  const log = await getLog(page);
+  const requestDataCalls = log.filter((entry) => entry.type === 'recorder' && entry.action === 'requestData');
+  expect(requestDataCalls).toHaveLength(0);
+});
+
 test('recording indicator shows symbol', async ({ page }) => {
   await clearLog(page);
 
