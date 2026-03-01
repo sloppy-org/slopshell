@@ -153,6 +153,19 @@ async function dispatchTouchTap(page: Page, x: number, y: number) {
   }, { x, y });
 }
 
+async function dispatchTouchLongPress(page: Page, x: number, y: number, holdMs = 560) {
+  await page.evaluate(async ({ x, y, holdMs }) => {
+    if (typeof Touch === 'undefined') return;
+    const target = document.elementFromPoint(x, y) || document.body;
+    const touchInit = { clientX: x, clientY: y, pageX: x, pageY: y, identifier: 0, target };
+    const touch = new Touch(touchInit);
+    target.dispatchEvent(new TouchEvent('touchstart', { touches: [touch], changedTouches: [touch], bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, holdMs));
+    const endTouch = new Touch(touchInit);
+    target.dispatchEvent(new TouchEvent('touchend', { touches: [], changedTouches: [endTouch], bubbles: true, cancelable: true }));
+  }, { x, y, holdMs });
+}
+
 
 // =============================================================================
 // Tabula Rasa button
@@ -1007,6 +1020,32 @@ test.describe('mobile viewport', () => {
     await expect(canvasText).toBeVisible();
     const text = await canvasText.textContent();
     expect(text).toContain('Line one');
+  });
+
+  test('long-press on artifact opens artifact editor and does not start recording', async ({ page }) => {
+    await renderTestArtifact(page);
+    await clearLog(page);
+
+    const canvasText = page.locator('#canvas-text');
+    await expect(canvasText).toBeVisible();
+    const box = await canvasText.boundingBox();
+    if (!box) throw new Error('canvas-text not visible');
+
+    const x = Math.floor(box.x + box.width * 0.45);
+    const y = Math.floor(box.y + box.height * 0.4);
+    await dispatchTouchLongPress(page, x, y);
+    await page.waitForTimeout(200);
+
+    const artifactEditor = page.locator('#artifact-editor');
+    await expect(artifactEditor).toBeVisible();
+
+    const log = await getLog(page);
+    const recorderStarts = log.filter(e => e.type === 'recorder' && e.action === 'start');
+    expect(recorderStarts.length).toBe(0);
+
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(120);
+    await expect(artifactEditor).toBeHidden();
   });
 
   test('right-click opens floating input on mobile', async ({ page }) => {

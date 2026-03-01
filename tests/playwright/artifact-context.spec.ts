@@ -119,7 +119,7 @@ test.describe('canvas layout', () => {
     expect(metricsAfter!.viewportTop).toBe(metricsBefore!.viewportTop);
   });
 
-  test('right-click on artifact opens text input', async ({ page }) => {
+  test('right-click on artifact opens artifact editor', async ({ page }) => {
     await renderTestArtifact(page);
     const canvasText = page.locator('#canvas-text');
     await expect(canvasText).toBeVisible();
@@ -129,9 +129,25 @@ test.describe('canvas layout', () => {
     await page.mouse.click(box.x + 50, box.y + 50, { button: 'right' });
     await page.waitForTimeout(200);
 
-    // Right-click opens text input
-    const floatingInput = page.locator('#floating-input');
-    await expect(floatingInput).toBeVisible();
+    const artifactEditor = page.locator('#artifact-editor');
+    await expect(artifactEditor).toBeVisible();
+    await expect(artifactEditor).toBeFocused();
+  });
+
+  test('Escape exits artifact editor mode', async ({ page }) => {
+    await renderTestArtifact(page);
+    const canvasText = page.locator('#canvas-text');
+    await expect(canvasText).toBeVisible();
+
+    const box = await canvasText.boundingBox();
+    if (!box) throw new Error('canvas-text not visible');
+    await page.mouse.click(box.x + 50, box.y + 50, { button: 'right' });
+    await page.waitForTimeout(150);
+    await expect(page.locator('#artifact-editor')).toBeVisible();
+
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(150);
+    await expect(page.locator('#artifact-editor')).toBeHidden();
   });
 
   test('left-click on artifact starts recording, not text input', async ({ page }) => {

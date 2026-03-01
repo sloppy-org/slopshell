@@ -1,5 +1,15 @@
 import { marked } from './vendor/marked.esm.js';
-import { renderCanvas, clearCanvas, getLocationFromSelection, clearLineHighlight, escapeHtml, sanitizeHtml, getActiveArtifactTitle } from './canvas.js';
+import {
+  renderCanvas,
+  clearCanvas,
+  getLocationFromSelection,
+  clearLineHighlight,
+  escapeHtml,
+  sanitizeHtml,
+  getActiveArtifactTitle,
+  getActiveTextEventId,
+  getPreviousArtifactText,
+} from './canvas.js';
 import { createEmptyCanvasRipple } from './empty-canvas-ripple.js';
 import {
   getUiState, setUiMode,
@@ -98,6 +108,7 @@ const state = {
   workspaceOpenFilePath: '',
   workspaceStepInFlight: false,
   prReviewAwaitingArtifact: false,
+  artifactEditMode: false,
 };
 
 export function getState() {
@@ -144,6 +155,7 @@ const ASSISTANT_ACTIVITY_POLL_MS = 1200;
 const CHAT_WS_STALE_THRESHOLD_MS = 20000;
 let localMessageSeq = 0;
 const CHAT_CTRL_LONG_PRESS_MS = 180;
+const ARTIFACT_EDIT_LONG_TAP_MS = 420;
 // Frontend end-of-utterance policy:
 // - start/end speech from local mic energy
 // - pure VAD commit (no semantic EOU sidecar)
@@ -1015,6 +1027,142 @@ function startDevReloadWatcher() {
 function isEditableTarget(target) {
   if (!(target instanceof Element)) return false;
   return Boolean(target.closest('input,textarea,select,[contenteditable="true"]'));
+}
+
+function artifactEditorEl() {
+  const el = document.getElementById('artifact-editor');
+  return el instanceof HTMLTextAreaElement ? el : null;
+}
+
+function ensureArtifactEditor() {
+  const existing = artifactEditorEl();
+  if (existing) return existing;
+  const viewport = document.getElementById('canvas-viewport');
+  if (!(viewport instanceof HTMLElement)) return null;
+  const el = document.createElement('textarea');
+  el.id = 'artifact-editor';
+  el.className = 'artifact-editor';
+  el.style.display = 'none';
+  el.setAttribute('aria-label', 'Artifact editor');
+  el.spellcheck = false;
+  el.wrap = 'off';
+  viewport.appendChild(el);
+  return el;
+}
+
+function isTextArtifactPaneActive() {
+  if (!state.hasArtifact) return false;
+  const pane = document.getElementById('canvas-text');
+  return pane instanceof HTMLElement
+    && pane.classList.contains('is-active')
+    && window.getComputedStyle(pane).display !== 'none';
+}
+
+function canEnterArtifactEditModeFromTarget(target) {
+  if (!isTextArtifactPaneActive()) return false;
+  if (state.prReviewMode) return false;
+  if (!(target instanceof Element)) return false;
+  if (!target.closest('#canvas-text')) return false;
+  if (target.closest('a,button,input,textarea,select,[contenteditable="true"]')) return false;
+  if (isRecording() || shouldStopInUiClick()) return false;
+  return true;
+}
+
+function parseCssPx(value, fallback = 0) {
+  const n = Number.parseFloat(String(value || ''));
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function measureEditorCharWidth(editor) {
+  const probe = document.createElement('span');
+  probe.textContent = 'M';
+  probe.style.position = 'fixed';
+  probe.style.visibility = 'hidden';
+  probe.style.whiteSpace = 'pre';
+  probe.style.font = window.getComputedStyle(editor).font;
+  document.body.appendChild(probe);
+  const width = probe.getBoundingClientRect().width;
+  probe.remove();
+  return width > 0 ? width : 8;
+}
+
+function offsetFromLineAndColumn(text, targetLine, targetCol) {
+  const lines = String(text || '').split('\n');
+  if (lines.length === 0) return 0;
+  const line = Math.max(0, Math.min(lines.length - 1, targetLine));
+  const col = Math.max(0, Math.min(lines[line].length, targetCol));
+  let offset = 0;
+  for (let i = 0; i < line; i += 1) {
+    offset += lines[i].length + 1;
+  }
+  return offset + col;
+}
+
+function placeArtifactEditorCaretFromPoint(editor, clientX, clientY) {
+  if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) return;
+  const rect = editor.getBoundingClientRect();
+  const cs = window.getComputedStyle(editor);
+  const padL = parseCssPx(cs.paddingLeft, 0);
+  const padT = parseCssPx(cs.paddingTop, 0);
+  const lineHeight = parseCssPx(cs.lineHeight, parseCssPx(cs.fontSize, 16) * 1.4);
+  const charWidth = measureEditorCharWidth(editor);
+  const localX = Math.max(0, clientX - rect.left + editor.scrollLeft - padL);
+  const localY = Math.max(0, clientY - rect.top + editor.scrollTop - padT);
+  const line = Math.max(0, Math.floor(localY / Math.max(1, lineHeight)));
+  const col = Math.max(0, Math.floor(localX / Math.max(1, charWidth)));
+  const offset = offsetFromLineAndColumn(editor.value, line, col);
+  editor.setSelectionRange(offset, offset);
+}
+
+function applyArtifactEditorText(text) {
+  if (!isTextArtifactPaneActive()) return;
+  const nextText = String(text || '');
+  if (nextText === String(getPreviousArtifactText() || '')) return;
+  const pane = document.getElementById('canvas-text');
+  const scrollTop = pane instanceof HTMLElement ? pane.scrollTop : 0;
+  renderCanvas({
+    event_id: getActiveTextEventId() || undefined,
+    kind: 'text_artifact',
+    title: getActiveArtifactTitle() || '',
+    text: nextText,
+  });
+  const nextPane = document.getElementById('canvas-text');
+  if (nextPane instanceof HTMLElement) {
+    const maxTop = Math.max(0, nextPane.scrollHeight - nextPane.clientHeight);
+    nextPane.scrollTop = Math.min(scrollTop, maxTop);
+  }
+}
+
+function exitArtifactEditMode(options = {}) {
+  const applyChanges = options.applyChanges !== false;
+  const editor = artifactEditorEl();
+  if (!editor || !state.artifactEditMode) return false;
+  const nextText = editor.value;
+  editor.style.display = 'none';
+  if (document.activeElement === editor) {
+    try { editor.blur(); } catch (_) {}
+  }
+  state.artifactEditMode = false;
+  document.body.classList.remove('artifact-edit-mode');
+  if (applyChanges) {
+    applyArtifactEditorText(nextText);
+  }
+  return true;
+}
+
+function enterArtifactEditMode(clientX, clientY) {
+  if (!isTextArtifactPaneActive()) return false;
+  const editor = ensureArtifactEditor();
+  if (!editor) return false;
+  cancelConversationListen();
+  hideTextInput();
+  editor.value = String(getPreviousArtifactText() || '');
+  editor.style.display = '';
+  state.artifactEditMode = true;
+  document.body.classList.add('artifact-edit-mode');
+  editor.focus();
+  placeArtifactEditorCaretFromPoint(editor, clientX, clientY);
+  return true;
 }
 
 function activeProject() {
@@ -1952,6 +2100,9 @@ function cancelChatVoiceCapture() {
 function showCanvasColumn(paneId) {
   const col = document.getElementById('canvas-column');
   if (!col) return;
+  if (paneId !== 'canvas-text' && state.artifactEditMode) {
+    exitArtifactEditMode({ applyChanges: true });
+  }
   if (paneId !== 'canvas-text') {
     exitPrReviewMode();
   }
@@ -1978,6 +2129,9 @@ function showCanvasColumn(paneId) {
 }
 
 function hideCanvasColumn() {
+  if (state.artifactEditMode) {
+    exitArtifactEditMode({ applyChanges: true });
+  }
   exitPrReviewMode();
   state.hasArtifact = false;
   state.workspaceOpenFilePath = '';
@@ -4112,6 +4266,9 @@ async function handleStopAction() {
 }
 
 function applyCanvasArtifactEvent(payload) {
+  if (state.artifactEditMode) {
+    exitArtifactEditMode({ applyChanges: false });
+  }
   const kind = String(payload?.kind || '').trim().toLowerCase();
   if (kind === 'clear_canvas') {
     state.prReviewAwaitingArtifact = false;
@@ -4664,9 +4821,18 @@ function closeEdgePanels() {
 function bindUi() {
   const canvasText = document.getElementById('canvas-text');
   const canvasViewport = document.getElementById('canvas-viewport');
+  const artifactEditor = ensureArtifactEditor();
   const indicatorNode = document.getElementById('indicator');
   if (indicatorNode && indicatorNode.parentElement !== document.body) {
     document.body.appendChild(indicatorNode);
+  }
+  if (artifactEditor) {
+    artifactEditor.addEventListener('keydown', (ev) => {
+      if (ev.key !== 'Escape') return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      exitArtifactEditMode({ applyChanges: true });
+    }, true);
   }
   let lastMouseX = Math.floor(window.innerWidth / 2);
   let lastMouseY = Math.floor(window.innerHeight / 2);
@@ -4844,7 +5010,15 @@ function bindUi() {
     let touchTapStartY = 0;
     let touchTapTracking = false;
     let touchTapMoved = false;
+    let touchLongTapTriggered = false;
+    let touchEditTimer = null;
     const TOUCH_TAP_MOVE_THRESHOLD = 10;
+    const clearTouchEditTimer = () => {
+      if (touchEditTimer !== null) {
+        clearTimeout(touchEditTimer);
+        touchEditTimer = null;
+      }
+    };
 
     const handleWorkspaceTap = (target, x, y) => {
       emitEmptyCanvasRipple(x, y, 0.95);
@@ -4873,30 +5047,65 @@ function bindUi() {
       if (ev.touches.length !== 1) {
         touchTapTracking = false;
         touchTapMoved = false;
+        touchLongTapTriggered = false;
+        clearTouchEditTimer();
         return;
       }
       const touch = ev.touches[0];
+      if (isEditableTarget(ev.target)) {
+        touchTapTracking = false;
+        touchTapMoved = false;
+        touchLongTapTriggered = false;
+        clearTouchEditTimer();
+        return;
+      }
       touchTapStartX = touch.clientX;
       touchTapStartY = touch.clientY;
       emitEmptyCanvasRipple(touch.clientX, touch.clientY, 0.5);
-      touchTapTracking = true;
+      touchTapTracking = !isVoiceInteractionTarget(ev.target, touch.clientX, touch.clientY);
       touchTapMoved = false;
+      touchLongTapTriggered = false;
+      clearTouchEditTimer();
+      if (touchTapTracking && canEnterArtifactEditModeFromTarget(ev.target)) {
+        touchEditTimer = window.setTimeout(() => {
+          touchEditTimer = null;
+          touchTapTracking = false;
+          touchTapMoved = false;
+          touchLongTapTriggered = enterArtifactEditMode(touchTapStartX, touchTapStartY);
+          if (touchLongTapTriggered) suppressSyntheticClick();
+        }, ARTIFACT_EDIT_LONG_TAP_MS);
+      }
     }, { passive: true });
 
     clickTarget.addEventListener('touchmove', (ev) => {
-      if (!touchTapTracking || touchTapMoved || ev.touches.length !== 1) return;
+      if ((!touchTapTracking && touchEditTimer === null) || touchTapMoved || ev.touches.length !== 1) return;
       const touch = ev.touches[0];
       if (Math.hypot(touch.clientX - touchTapStartX, touch.clientY - touchTapStartY) > TOUCH_TAP_MOVE_THRESHOLD) {
         touchTapMoved = true;
+        clearTouchEditTimer();
       }
     }, { passive: true });
 
     clickTarget.addEventListener('touchend', (ev) => {
+      if (touchLongTapTriggered) {
+        touchLongTapTriggered = false;
+        touchTapTracking = false;
+        touchTapMoved = false;
+        clearTouchEditTimer();
+        ev.preventDefault();
+        suppressSyntheticClick();
+        return;
+      }
       if (!touchTapTracking) return;
       touchTapTracking = false;
-      if (touchTapMoved) { touchTapMoved = false; return; }
+      if (touchTapMoved) {
+        touchTapMoved = false;
+        clearTouchEditTimer();
+        return;
+      }
       const touch = ev.changedTouches && ev.changedTouches.length > 0 ? ev.changedTouches[0] : null;
       if (!touch) return;
+      clearTouchEditTimer();
       ev.preventDefault();
       suppressSyntheticClick();
       handleWorkspaceTap(ev.target, touch.clientX, touch.clientY);
@@ -4905,6 +5114,8 @@ function bindUi() {
     clickTarget.addEventListener('touchcancel', () => {
       touchTapTracking = false;
       touchTapMoved = false;
+      touchLongTapTriggered = false;
+      clearTouchEditTimer();
     }, { passive: true });
 
     clickTarget.addEventListener('click', (ev) => {
@@ -4914,10 +5125,19 @@ function bindUi() {
     });
   }
 
-  // Right-click -> text input
+  // Right-click -> artifact editor (text artifacts) or floating text input
   if (clickTarget) {
     clickTarget.addEventListener('contextmenu', (ev) => {
+      if (state.artifactEditMode) {
+        ev.preventDefault();
+        return;
+      }
       if (ev.target instanceof Element && ev.target.closest('.edge-panel')) return;
+      if (canEnterArtifactEditModeFromTarget(ev.target)) {
+        ev.preventDefault();
+        enterArtifactEditMode(ev.clientX, ev.clientY);
+        return;
+      }
       ev.preventDefault();
       cancelConversationListen();
       let anchor = null;
@@ -5035,6 +5255,11 @@ function bindUi() {
   document.addEventListener('keydown', (ev) => {
     // Escape handling
     if (ev.key === 'Escape' && !ev.metaKey && !ev.ctrlKey && !ev.altKey) {
+      if (state.artifactEditMode) {
+        ev.preventDefault();
+        exitArtifactEditMode({ applyChanges: true });
+        return;
+      }
       if (isRecording()) {
         cancelChatVoiceCapture();
         showStatus('ready');
@@ -5097,6 +5322,7 @@ function bindUi() {
 
     if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
     if (isEditableTarget(ev.target)) return;
+    if (state.artifactEditMode) return;
 
     if (ev.key === 'ArrowRight') {
       if (stepCanvasFile(1)) {
