@@ -78,10 +78,9 @@ type App struct {
 
 	upgrader websocket.Upgrader
 
-	mu              sync.Mutex
-	canvasWS        map[string]map[*websocket.Conn]struct{}
-	chatWS          map[string]map[*chatWSConn]struct{}
-	turns           *chatTurnTracker
+	mu    sync.Mutex
+	hub   *wsHub
+	turns *chatTurnTracker
 	chatAppSessions map[string]*appserver.Session
 	remoteCanvasWS     map[string]*websocket.Conn
 	tunnelPorts        map[string]int
@@ -230,8 +229,7 @@ func New(dataDir, localProjectDir, localMCPURL, appServerURL, model, ttsURL, spa
 		store:                         s,
 		appServerClient:               appServerClient,
 		upgrader:                      websocket.Upgrader{CheckOrigin: checkWSOrigin},
-		canvasWS:        map[string]map[*websocket.Conn]struct{}{},
-		chatWS:          map[string]map[*chatWSConn]struct{}{},
+		hub:             newWSHub(),
 		turns:           newChatTurnTracker(),
 		chatAppSessions: map[string]*appserver.Session{},
 		remoteCanvasWS:                map[string]*websocket.Conn{},
@@ -741,17 +739,13 @@ func (a *App) Shutdown(ctx context.Context) error {
 	projectStops := map[string]context.CancelFunc{}
 	projectApps := map[string]*serve.App{}
 	a.turns.cancelAll()
+	a.hub.closeAllChat()
 	a.mu.Lock()
 	for _, cancel := range a.relayCancel {
 		cancel()
 	}
 	for _, ws := range a.remoteCanvasWS {
 		_ = ws.Close()
-	}
-	for _, set := range a.chatWS {
-		for conn := range set {
-			_ = conn.conn.Close()
-		}
 	}
 	for sid, cancel := range a.projectServeStop {
 		projectStops[sid] = cancel

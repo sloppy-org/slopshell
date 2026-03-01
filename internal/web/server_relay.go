@@ -28,20 +28,13 @@ func (a *App) handleCanvasWS(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
+	a.hub.registerCanvas(sid, ws)
 	a.mu.Lock()
-	if a.canvasWS[sid] == nil {
-		a.canvasWS[sid] = map[*websocket.Conn]struct{}{}
-	}
-	a.canvasWS[sid][ws] = struct{}{}
 	remote := a.remoteCanvasWS[sid]
 	a.mu.Unlock()
 
 	defer func() {
-		a.mu.Lock()
-		if set := a.canvasWS[sid]; set != nil {
-			delete(set, ws)
-		}
-		a.mu.Unlock()
+		a.hub.unregisterCanvas(sid, ws)
 		_ = ws.Close()
 	}()
 
@@ -319,13 +312,7 @@ func (a *App) startCanvasRelay(sessionID string, port int) {
 			if mt != websocket.TextMessage {
 				continue
 			}
-			a.mu.Lock()
-			clients := make([]*websocket.Conn, 0)
-			for ws := range a.canvasWS[sessionID] {
-				clients = append(clients, ws)
-			}
-			a.mu.Unlock()
-			for _, ws := range clients {
+			for _, ws := range a.hub.canvasClients(sessionID) {
 				_ = ws.WriteMessage(websocket.TextMessage, msg)
 			}
 		}

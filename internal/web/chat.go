@@ -605,18 +605,9 @@ func (a *App) handleChatWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	conn := newChatWSConn(ws)
-	a.mu.Lock()
-	if a.chatWS[sessionID] == nil {
-		a.chatWS[sessionID] = map[*chatWSConn]struct{}{}
-	}
-	a.chatWS[sessionID][conn] = struct{}{}
-	a.mu.Unlock()
+	a.hub.registerChat(sessionID, conn)
 	defer func() {
-		a.mu.Lock()
-		if set := a.chatWS[sessionID]; set != nil {
-			delete(set, conn)
-		}
-		a.mu.Unlock()
+		a.hub.unregisterChat(sessionID, conn)
 		_ = ws.Close()
 	}()
 
@@ -654,13 +645,7 @@ func (a *App) broadcastChatEvent(sessionID string, payload map[string]interface{
 	eventType, _ := payload["type"].(string)
 	_ = a.store.AddChatEvent(sessionID, turnID, eventType, string(encoded))
 
-	a.mu.Lock()
-	clients := make([]*chatWSConn, 0)
-	for conn := range a.chatWS[sessionID] {
-		clients = append(clients, conn)
-	}
-	a.mu.Unlock()
-	for _, conn := range clients {
+	for _, conn := range a.hub.chatClients(sessionID) {
 		_ = conn.writeText(encoded)
 	}
 }
