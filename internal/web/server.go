@@ -23,6 +23,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/gorilla/websocket"
 	"github.com/krystophny/tabura/internal/appserver"
+	"github.com/krystophny/tabura/internal/extensions"
 	"github.com/krystophny/tabura/internal/modelprofile"
 	"github.com/krystophny/tabura/internal/plugins"
 	"github.com/krystophny/tabura/internal/serve"
@@ -69,7 +70,9 @@ type App struct {
 	sttPreVADMinSpeechMSDefault   int
 	ttsURL                        string
 	pluginsDir                    string
+	extensionsDir                 string
 	pluginManager                 *plugins.Manager
+	extensionHost                 *extensions.Host
 	devRuntime                    bool
 
 	store *store.Store
@@ -182,10 +185,27 @@ func New(dataDir, localProjectDir, localMCPURL, appServerURL, model, ttsURL, spa
 	} else if resolvedPluginsDir == "" {
 		resolvedPluginsDir = filepath.Join(dataDir, "plugins")
 	}
+	resolvedExtensionsDir := strings.TrimSpace(os.Getenv("TABURA_EXTENSIONS_DIR"))
+	if strings.EqualFold(resolvedExtensionsDir, "off") {
+		resolvedExtensionsDir = ""
+	} else if resolvedExtensionsDir == "" {
+		resolvedExtensionsDir = filepath.Join(dataDir, "extensions")
+	}
 	pluginManager, err := plugins.New(plugins.Options{
 		Dir: resolvedPluginsDir,
 		Logf: func(format string, args ...interface{}) {
 			log.Printf("plugins: "+format, args...)
+		},
+	})
+	if err != nil {
+		_ = s.Close()
+		return nil, err
+	}
+	extensionHost, err := extensions.New(extensions.Options{
+		Dir:            resolvedExtensionsDir,
+		RuntimeVersion: "0.1.6",
+		Logf: func(format string, args ...interface{}) {
+			log.Printf("extensions: "+format, args...)
 		},
 	})
 	if err != nil {
@@ -210,7 +230,9 @@ func New(dataDir, localProjectDir, localMCPURL, appServerURL, model, ttsURL, spa
 		sttPreVADMinSpeechMSDefault:   resolvedSTTPreVADMinSpeechMS,
 		ttsURL:                        resolvedTTSURL,
 		pluginsDir:                    resolvedPluginsDir,
+		extensionsDir:                 resolvedExtensionsDir,
 		pluginManager:                 pluginManager,
+		extensionHost:                 extensionHost,
 		devRuntime:                    devRuntime,
 		store:                         s,
 		appServerClient:               appServerClient,
@@ -309,6 +331,8 @@ func (a *App) Router() http.Handler {
 	r.Get("/api/runtime", a.handleRuntime)
 	r.Get("/api/plugins", a.handlePlugins)
 	r.Post("/api/plugins/meeting-partner/decide", a.handleMeetingPartnerDecide)
+	r.Get("/api/extensions", a.handleExtensions)
+	r.Post("/api/extensions/commands/{command_id}", a.handleExtensionCommandExecute)
 	r.Get("/api/projects", a.handleProjectsList)
 	r.Post("/api/projects", a.handleProjectCreate)
 	r.Post("/api/projects/{project_id}/activate", a.handleProjectActivate)
@@ -471,7 +495,7 @@ func (a *App) handleRuntime(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]interface{}{
 		"boot_id":                     a.bootID,
 		"started_at":                  a.startedAt,
-		"version":                     "0.1.5",
+		"version":                     "0.1.6",
 		"dev_mode":                    a.devRuntime,
 		"local_mcp_url":               a.localMCPURL,
 		"app_server_url":              a.appServerURL,
@@ -485,6 +509,8 @@ func (a *App) handleRuntime(w http.ResponseWriter, r *http.Request) {
 		"tts_enabled":                 a.ttsURL != "",
 		"plugins_dir":                 a.pluginsDir,
 		"plugins_loaded":              a.loadedPluginCount(),
+		"extensions_dir":              a.extensionsDir,
+		"extensions_loaded":           a.loadedExtensionCount(),
 	})
 }
 
@@ -511,6 +537,13 @@ func (a *App) loadedPluginCount() int {
 	return a.pluginManager.Count()
 }
 
+func (a *App) loadedExtensionCount() int {
+	if a == nil || a.extensionHost == nil {
+		return 0
+	}
+	return a.extensionHost.Count()
+}
+
 func (a *App) handleMeetingPartnerDecide(w http.ResponseWriter, r *http.Request) {
 	if !a.requireAuth(w, r) {
 		return
@@ -525,13 +558,20 @@ func (a *App) handleMeetingPartnerDecide(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "invalid JSON", http.StatusBadRequest)
 		return
 	}
-	decision, matched := a.pluginManager.DecideMeetingPartner(r.Context(), plugins.HookRequest{
+	hookReq := plugins.HookRequest{
 		Hook:       plugins.HookMeetingPartnerDecide,
 		SessionID:  strings.TrimSpace(req.SessionID),
 		ProjectKey: strings.TrimSpace(req.ProjectKey),
 		Text:       strings.TrimSpace(req.Text),
 		Metadata:   req.Metadata,
-	})
+	}
+	decision, matched := plugins.MeetingPartnerDecision{}, false
+	if a.extensionHost != nil {
+		decision, matched = a.extensionHost.DecideMeetingPartner(r.Context(), hookReq)
+	}
+	if !matched && a.pluginManager != nil {
+		decision, matched = a.pluginManager.DecideMeetingPartner(r.Context(), hookReq)
+	}
 	if !matched {
 		decision = plugins.MeetingPartnerDecision{Decision: "noop"}
 	}
@@ -539,6 +579,54 @@ func (a *App) handleMeetingPartnerDecide(w http.ResponseWriter, r *http.Request)
 		"ok":       true,
 		"matched":  matched,
 		"decision": decision,
+	})
+}
+
+func (a *App) handleExtensions(w http.ResponseWriter, r *http.Request) {
+	if !a.requireAuth(w, r) {
+		return
+	}
+	list := []extensions.ExtensionInfo{}
+	if a.extensionHost != nil {
+		list = a.extensionHost.List()
+	}
+	writeJSON(w, map[string]interface{}{
+		"ok":         true,
+		"dir":        a.extensionsDir,
+		"count":      len(list),
+		"extensions": list,
+	})
+}
+
+func (a *App) handleExtensionCommandExecute(w http.ResponseWriter, r *http.Request) {
+	if !a.requireAuth(w, r) {
+		return
+	}
+	if a.extensionHost == nil {
+		http.Error(w, "extensions are disabled", http.StatusNotFound)
+		return
+	}
+	commandID := strings.TrimSpace(chi.URLParam(r, "command_id"))
+	if commandID == "" {
+		http.Error(w, "missing command_id", http.StatusBadRequest)
+		return
+	}
+	var req extensions.CommandRequest
+	if r.ContentLength > 0 {
+		if err := decodeJSON(r, &req); err != nil {
+			http.Error(w, "invalid JSON", http.StatusBadRequest)
+			return
+		}
+	}
+	req.CommandID = commandID
+	result, err := a.extensionHost.ExecuteCommand(r.Context(), req)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, map[string]interface{}{
+		"ok":     true,
+		"result": result,
 	})
 }
 

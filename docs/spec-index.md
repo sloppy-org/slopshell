@@ -19,6 +19,7 @@ Read in this order:
 3. `architecture.md`
 4. `plugins.md`
 5. `meeting-partner-whitepaper.md`
+6. `extension-platform-whitepaper.md`
 
 Integrated protocol reference:
 
@@ -26,8 +27,8 @@ Integrated protocol reference:
 
 Release notes:
 
-- Published release: `release-v0.1.5.md`
-- Previous release: `release-v0.1.4.md`
+- Published release: `release-v0.1.6.md`
+- Previous release: `release-v0.1.5.md`
 - Published baseline: `release-v0.0.1.md`
 - Older release notes are historical and may mention retired runtime paths.
 
@@ -35,6 +36,7 @@ Privacy and security specs:
 
 - `meeting-notes-privacy.md`
 - `meeting-partner-whitepaper.md`
+- `extension-platform-whitepaper.md`
 
 Migration/support docs:
 

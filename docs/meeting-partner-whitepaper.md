@@ -245,6 +245,27 @@ Reference topology:
 2. `meeting-partner` plugin service on loopback/internal network.
 3. Manifest-based registration in `TABURA_PLUGINS_DIR`.
 
+## Extension Platform Alignment
+
+Meeting-partner mode is now aligned with Tabura's extension host model:
+
+1. Extension manifests in `TABURA_EXTENSIONS_DIR` (`*.extension.json`).
+2. Permissioned hooks and command registrations.
+3. Compatibility fallback to legacy plugin manifests in `TABURA_PLUGINS_DIR`.
+
+This keeps policy logic extension-scoped while preserving core runtime safety.
+
+## Helpy-Style Capability Bundles
+
+The same extension model can host productivity capabilities similar to Helpy:
+
+1. deterministic email actions,
+2. calendar/event workflows,
+3. handoff-driven external task execution.
+
+These capabilities remain extension bundles and do not change core meeting-note
+privacy guarantees.
+
 ## Implementation Notes in Tabura
 
 Public runtime disclosure includes:

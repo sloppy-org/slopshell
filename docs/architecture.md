@@ -23,8 +23,10 @@ Runtime stack:
   - MCP HTTP daemon (`/mcp`) and canvas websocket (`/ws/canvas`) mounted on the MCP listener.
 - `internal/web/server.go`
   - Browser APIs for chat sessions, canvas APIs, and chat/canvas websocket routes on the web listener.
+- `internal/extensions/host.go`
+  - Manifest-driven extension runtime for webhook hooks, command execution, and permissions.
 - `internal/plugins/manager.go`
-  - Manifest-driven webhook plugin runtime for server-side chat hooks.
+  - Legacy plugin compatibility runtime.
 - `internal/store/store.go`
   - SQLite persistence for auth and chat session/message history.
 - `internal/protocol/bootstrap.go`
@@ -62,9 +64,9 @@ The browser UI is a full-viewport canvas with no visible chrome:
 4. Browser consumes websocket events: responses stream into ephemeral overlay, artifacts update the canvas in place.
 
 Chat hook flow:
-1. `chat.pre_user_message` plugin hooks run before user text is stored.
-2. `chat.pre_assistant_prompt` hooks run before app-server turn dispatch.
-3. `chat.post_assistant_response` hooks run before assistant output persistence/broadcast.
+1. Extension hooks run first (`chat.pre_user_message`, `chat.pre_assistant_prompt`, `chat.post_assistant_response`).
+2. Legacy plugin hooks run second for compatibility.
+3. Meeting-partner debug decision endpoint resolves extensions first, then legacy plugins.
 
 ## Interaction Model
 
@@ -126,11 +128,11 @@ Utterance filtering (server-side in `internal/stt/transcribe.go`):
 - Tabura stores local auth/session state in SQLite under web data dir.
 - MCP routes are not mounted on the web listener and default to loopback-only bind.
 
-## Plugin Boundary
+## Extension Boundary
 
-Pluginization in Tabura is scoped to product decision/capability layers, not
-runtime safety primitives. The current primary plugin target is
+Extensionization in Tabura is scoped to product decision/capability layers, not
+runtime safety primitives. The current primary extension target is
 `meeting-partner` (always-listen and intelligent response behavior for meeting
 mode) while auth/session, media transport, queueing, persistence, and privacy
-invariants remain in core. See `docs/plugins.md` and
-`docs/meeting-partner-whitepaper.md`.
+invariants remain in core. See `docs/plugins.md`,
+`docs/meeting-partner-whitepaper.md`, and `docs/extension-platform-whitepaper.md`.

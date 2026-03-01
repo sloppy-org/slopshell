@@ -1,36 +1,52 @@
-# Tabura Plugin System
+# Tabura Extension System
 
-This document defines plugin scope, contracts, and runtime boundaries.
+This document defines the extension runtime, contracts, and migration boundary
+from legacy plugins.
 
-## Core vs Plugin
+## Core vs Extension
 
-Core (non-plugin):
+Core (public Tabura):
 
 - Auth/session enforcement and API authorization.
-- Chat queue/cancellation/ws/persistence guarantees.
+- Chat queueing/cancellation/websocket/persistence guarantees.
 - STT/TTS transport and media validation.
 - Meeting-notes privacy invariants (RAM-only audio, no audio persistence).
 - Canvas/file safety boundaries.
+- Extension host lifecycle, permission enforcement, and command routing.
 
-Plugin scope:
+Extension scope (private/public bundles):
 
 - Product decision logic and capability modules.
 - Meeting-partner behavior (always-listen policy, directed speech gating, intelligent responses).
+- Vertical integrations (email/calendar/task systems, Helpy connectors, organization workflows).
 
-## Loading and Inventory
+## Runtime Directories
 
-- Manifest directory: `TABURA_PLUGINS_DIR`
+Extension manifests:
+
+- `TABURA_EXTENSIONS_DIR`
+  - Default: `<data-dir>/extensions`
+  - Disable: `TABURA_EXTENSIONS_DIR=off`
+
+Legacy plugin manifests (compatibility):
+
+- `TABURA_PLUGINS_DIR`
   - Default: `<data-dir>/plugins`
   - Disable: `TABURA_PLUGINS_DIR=off`
-- Runtime inventory:
-  - `GET /api/runtime` -> `plugins_dir`, `plugins_loaded`
-  - `GET /api/plugins` -> loaded plugin metadata
 
-## Manifest
+## Runtime Inventory APIs
+
+- `GET /api/runtime` -> `extensions_dir`, `extensions_loaded`, `plugins_dir`, `plugins_loaded`
+- `GET /api/extensions` -> loaded extension metadata
+- `GET /api/plugins` -> loaded legacy plugin metadata
+
+## Extension Manifest (`*.extension.json`)
 
 ```json
 {
   "id": "meeting-partner",
+  "display_name": "Meeting Partner",
+  "version": "1.0.0",
   "kind": "webhook",
   "endpoint": "http://127.0.0.1:9901/hooks",
   "hooks": [
@@ -41,19 +57,48 @@ Plugin scope:
     "meeting_partner.segment_finalized",
     "meeting_partner.decide"
   ],
+  "permissions": [
+    "hook.chat.pre_user_message",
+    "hook.chat.pre_assistant_prompt",
+    "hook.chat.post_assistant_response",
+    "meeting_partner.decide"
+  ],
+  "commands": [
+    {
+      "id": "meeting_partner.respond",
+      "title": "Respond",
+      "description": "Emit a guided response",
+      "hook": "extension.command",
+      "permission": "command.execute"
+    }
+  ],
+  "ui_contributions": [
+    {
+      "id": "meeting_panel",
+      "slot": "right.sidebar",
+      "title": "Meeting Partner"
+    }
+  ],
+  "engine": {
+    "tabura": ">=0.1.6"
+  },
+  "signing": {
+    "publisher": "acme-labs"
+  },
   "timeout_ms": 1200,
   "enabled": true,
-  "secret_env": "TABURA_PLUGIN_SECRET"
+  "secret_env": "TABURA_EXTENSION_SECRET"
 }
 ```
 
 Notes:
 
-- Only `kind=webhook` is supported.
+- Only `kind=webhook` is currently supported.
 - Timeout is capped at `30000ms`.
 - If `secret_env` resolves, Tabura sends `Authorization: Bearer <secret>`.
+- `engine.tabura` supports exact (`0.1.6`) or minimum (`>=0.1.0`) constraints.
 
-## Hook Request Contract
+## Hook Contract
 
 Tabura sends:
 
@@ -71,9 +116,7 @@ Tabura sends:
 }
 ```
 
-## Response Contract
-
-Supported response shapes:
+Webhook response supports:
 
 1. Text mutation/blocking for chat hooks:
 
@@ -110,13 +153,50 @@ or
 }
 ```
 
-Allowed meeting-partner `decision` values:
+Allowed meeting-partner decision values:
 
 - `noop`
 - `respond`
 - `action`
 
-## Built-in Hook Points
+## Command Execution Contract
+
+Execute extension command:
+
+- `POST /api/extensions/commands/{command_id}`
+
+Request:
+
+```json
+{
+  "session_id": "s1",
+  "project_key": "p1",
+  "output_mode": "voice",
+  "text": "optional command context",
+  "args": {
+    "urgency": "normal"
+  },
+  "metadata": {
+    "source": "ui"
+  }
+}
+```
+
+Response:
+
+```json
+{
+  "ok": true,
+  "result": {
+    "command_id": "meeting_partner.respond",
+    "extension_id": "meeting-partner",
+    "success": true,
+    "message": "executed"
+  }
+}
+```
+
+## Built-in Hooks
 
 Chat hooks:
 
@@ -130,40 +210,18 @@ Meeting-partner hooks:
 - `meeting_partner.segment_finalized`
 - `meeting_partner.decide`
 
-## Debug Endpoint for Meeting Partner
+Extension command hook:
+
+- `extension.command`
+
+## Meeting Partner Debug Endpoint
 
 `POST /api/plugins/meeting-partner/decide`
 
-Request:
-
-```json
-{
-  "session_id": "s1",
-  "project_key": "p1",
-  "text": "Could you summarize that?",
-  "metadata": { "source": "meeting_notes" }
-}
-```
-
-Response:
-
-```json
-{
-  "ok": true,
-  "matched": true,
-  "decision": {
-    "decision": "respond",
-    "response_text": "Let me summarize.",
-    "channel": "voice",
-    "urgency": "normal",
-    "plugin_id": "meeting-partner"
-  }
-}
-```
-
-If no plugin returns a decision, Tabura returns `decision=noop` with `matched=false`.
+This endpoint checks extension hooks first, then legacy plugins.
 
 ## Repository Split
 
-- `tabura` keeps runtime substrate and invariants.
-- `tabura-plugins` (private) contains premium/plugin implementations.
+- `tabura` keeps runtime substrate and extension host contracts.
+- `tabura-plugins` (private) contains premium extension bundles (meeting partner, always-on workflows, automations).
+- `helpy` provides external capability services that can be exposed as Tabura extension bundles.

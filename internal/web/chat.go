@@ -87,10 +87,26 @@ type chatCommandRequest struct {
 }
 
 func (a *App) applyPluginHook(ctx context.Context, req plugins.HookRequest) plugins.HookResult {
-	if a == nil || a.pluginManager == nil {
+	if a == nil {
 		return plugins.HookResult{Text: req.Text}
 	}
-	return a.pluginManager.Apply(ctx, req)
+	text := req.Text
+	if a.extensionHost != nil {
+		extResult := a.extensionHost.Apply(ctx, req)
+		if extResult.Blocked {
+			return extResult
+		}
+		text = extResult.Text
+		req.Text = text
+	}
+	if a.pluginManager == nil {
+		return plugins.HookResult{Text: text}
+	}
+	legacyResult := a.pluginManager.Apply(ctx, req)
+	if legacyResult.Blocked {
+		return legacyResult
+	}
+	return plugins.HookResult{Text: legacyResult.Text}
 }
 
 func (a *App) applyPreAssistantPromptHook(ctx context.Context, sessionID, projectKey, outputMode, mode, prompt string) (string, error) {

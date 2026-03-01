@@ -28,6 +28,12 @@ func newAuthedTestAppWithPluginDir(t *testing.T, pluginDir string) *App {
 	return newAuthedTestApp(t)
 }
 
+func newAuthedTestAppWithExtensionDir(t *testing.T, extensionDir string) *App {
+	t.Helper()
+	t.Setenv("TABURA_EXTENSIONS_DIR", extensionDir)
+	return newAuthedTestApp(t)
+}
+
 func TestRuntimeAndPluginInventoryEndpoints(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"text":"ok"}`))
@@ -322,5 +328,114 @@ func TestMeetingPartnerDecideEndpoint(t *testing.T) {
 	}
 	if payload.Decision.PluginID != "meeting-partner" {
 		t.Fatalf("plugin_id=%q, want %q", payload.Decision.PluginID, "meeting-partner")
+	}
+}
+
+func TestExtensionsInventoryEndpoint(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"text":"ok"}`))
+	}))
+	defer server.Close()
+
+	extensionDir := t.TempDir()
+	writePluginManifest(t, extensionDir, "meeting.extension.json", map[string]any{
+		"id":       "meeting-partner",
+		"version":  "1.0.0",
+		"kind":     "webhook",
+		"endpoint": server.URL,
+		"hooks":    []string{"meeting_partner.decide"},
+		"enabled":  true,
+	})
+	app := newAuthedTestAppWithExtensionDir(t, extensionDir)
+	handler := app.Router()
+
+	rrRuntime := doAuthedJSONRequest(t, handler, http.MethodGet, "/api/runtime", nil)
+	if rrRuntime.Code != http.StatusOK {
+		t.Fatalf("runtime status=%d body=%s", rrRuntime.Code, rrRuntime.Body.String())
+	}
+	var runtimePayload map[string]any
+	if err := json.Unmarshal(rrRuntime.Body.Bytes(), &runtimePayload); err != nil {
+		t.Fatalf("decode runtime response: %v", err)
+	}
+	if got := intFromAny(runtimePayload["extensions_loaded"], -1); got != 1 {
+		t.Fatalf("extensions_loaded=%d, want 1", got)
+	}
+	if gotDir := strings.TrimSpace(strFromAny(runtimePayload["extensions_dir"])); gotDir != extensionDir {
+		t.Fatalf("extensions_dir=%q, want %q", gotDir, extensionDir)
+	}
+
+	rrExtensions := doAuthedJSONRequest(t, handler, http.MethodGet, "/api/extensions", nil)
+	if rrExtensions.Code != http.StatusOK {
+		t.Fatalf("extensions status=%d body=%s", rrExtensions.Code, rrExtensions.Body.String())
+	}
+	var extensionsPayload struct {
+		OK         bool `json:"ok"`
+		Dir        string
+		Count      int `json:"count"`
+		Extensions []struct {
+			ID string `json:"id"`
+		} `json:"extensions"`
+	}
+	if err := json.Unmarshal(rrExtensions.Body.Bytes(), &extensionsPayload); err != nil {
+		t.Fatalf("decode extensions response: %v", err)
+	}
+	if !extensionsPayload.OK {
+		t.Fatalf("expected ok=true")
+	}
+	if extensionsPayload.Count != 1 {
+		t.Fatalf("count=%d, want 1", extensionsPayload.Count)
+	}
+	if len(extensionsPayload.Extensions) != 1 || strings.TrimSpace(extensionsPayload.Extensions[0].ID) != "meeting-partner" {
+		t.Fatalf("unexpected extensions payload: %+v", extensionsPayload.Extensions)
+	}
+}
+
+func TestExtensionCommandExecuteEndpoint(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"command":{"success":true,"message":"executed"}}`))
+	}))
+	defer server.Close()
+
+	extensionDir := t.TempDir()
+	writePluginManifest(t, extensionDir, "commands.extension.json", map[string]any{
+		"id":       "meeting-partner",
+		"version":  "1.0.0",
+		"kind":     "webhook",
+		"endpoint": server.URL,
+		"enabled":  true,
+		"commands": []map[string]any{
+			{
+				"id":          "meeting_partner.respond",
+				"title":       "Respond",
+				"description": "Respond in meeting mode",
+			},
+		},
+	})
+	app := newAuthedTestAppWithExtensionDir(t, extensionDir)
+	rr := doAuthedJSONRequest(
+		t,
+		app.Router(),
+		http.MethodPost,
+		"/api/extensions/commands/meeting_partner.respond",
+		map[string]any{
+			"session_id": "s1",
+			"text":       "hello",
+		},
+	)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var payload struct {
+		OK     bool `json:"ok"`
+		Result struct {
+			Success bool   `json:"success"`
+			Message string `json:"message"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !payload.OK || !payload.Result.Success {
+		t.Fatalf("expected success payload, got %+v", payload)
 	}
 }
