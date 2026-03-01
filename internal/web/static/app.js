@@ -39,6 +39,7 @@ import {
   getPreRollAudio,
   getHotwordMicStream,
 } from './hotword.js';
+import { initVAD, ensureVADLoaded } from './vad.js';
 
 const state = {
   sessionId: 'local',
@@ -123,6 +124,8 @@ function isVoiceTurn() {
 
 window._taburaApp = { getState, acquireMicStream, sttStart, sttSendBlob, sttStop, sttCancel };
 
+void ensureVADLoaded();
+
 let bootstrapErrorShown = false;
 
 function showBootstrapError(message) {
@@ -165,31 +168,10 @@ const ARTIFACT_EDIT_LONG_TAP_MS = 420;
 const VOICE_VAD_AUTO_SEND_DEFAULT = true;
 const VOICE_VAD_AUTO_SEND_STORAGE_KEY = 'tabura.voiceVadAutoSend';
 const VOICE_VAD_AUTO_SEND_QUERY_PARAM = 'voice_vad_auto_send';
-const VOICE_VAD_MIN_UTTERANCE_MS = 300;
-const VOICE_VAD_CANDIDATE_SILENCE_MS = 900;
-const VOICE_VAD_CANDIDATE_RECHECK_MS = 450;
-const VOICE_VAD_HARD_SILENCE_MS = 2500;
 const VOICE_VAD_NO_SPEECH_MS = 4000;
-const VOICE_VAD_MAX_RECORDING_SOFT_MS = 120000;
 const VOICE_VAD_MAX_RECORDING_HARD_MS = 240000;
-const HOTWORD_VAD_MIN_UTTERANCE_MS = 420;
-const HOTWORD_VAD_CANDIDATE_SILENCE_MS = 1400;
-const HOTWORD_VAD_CANDIDATE_RECHECK_MS = 650;
-const HOTWORD_VAD_HARD_SILENCE_MS = 3200;
 const HOTWORD_VAD_NO_SPEECH_MS = 7000;
-const HOTWORD_VAD_MIN_COMMIT_MS = 2200;
-const VOICE_VAD_FRAME_MS = 40;
 const VOICE_VAD_RECORDER_CHUNK_MS = 250;
-const VOICE_VAD_NOISE_FLOOR_SAMPLES = 8;
-const VOICE_VAD_NOISE_FLOOR_PERCENTILE = 0.35;
-const VOICE_VAD_NOISE_FLOOR_ADAPT_ALPHA = 0.12;
-const VOICE_VAD_SPEECH_START_OFFSET_DB = 3;
-const VOICE_VAD_SPEECH_END_OFFSET_DB = 1.5;
-const VOICE_VAD_SPEECH_START_THRESHOLD_MIN_DB = -42;
-const VOICE_VAD_SPEECH_END_THRESHOLD_MIN_DB = -45;
-const VOICE_VAD_SPEECH_START_FRAMES = 4;
-const VOICE_VAD_NOISE_FLOOR_MIN_DB = -60;
-const VOICE_VAD_NOISE_FLOOR_MAX_DB = -18;
 const VOICE_CAPTURE_STOP_FLUSH_TIMEOUT_MS = 1500;
 const STOP_REQUEST_TIMEOUT_MS = 3500;
 const VOICE_TRANSCRIPT_SUBMIT_GUARD_MS = 220;
@@ -820,7 +802,6 @@ configureConversation({
   },
   getAudioContext: () => ttsAudioCtx,
   acquireMicStream,
-  computeDecibelFromTimeDomain,
 });
 applyConversationStateSnapshot();
 
@@ -1625,253 +1606,107 @@ function stopChatVoiceMedia(capture) {
   capture.mediaStream = null;
 }
 
-function computeDecibelFromTimeDomain(data) {
-  let sumSquares = 0;
-  for (let i = 0; i < data.length; i++) {
-    const sample = (data[i] - 128) / 128;
-    sumSquares += sample * sample;
+function handleVADNoSpeechTimeout(capture) {
+  stopVADMonitor(capture);
+  state.indicatorSuppressedByCanvasUpdate = false;
+  showStatus('no speech detected');
+  setRecording(false);
+  setVoiceLifecycle(VOICE_LIFECYCLE.IDLE, 'voice-vad-no-speech');
+  sttCancel();
+  stopChatVoiceMedia(capture);
+  if (state.chatVoiceCapture === capture) {
+    state.chatVoiceCapture = null;
   }
-  const rms = Math.sqrt(sumSquares / Math.max(1, data.length));
-  if (rms <= 0 || Number.isNaN(rms)) return -100;
-  return 20 * Math.log10(rms);
-}
-
-function clampNumber(value, min, max) {
-  return Math.max(min, Math.min(max, value));
-}
-
-function percentileValue(values, percentile) {
-  if (!Array.isArray(values) || values.length === 0) return null;
-  const sorted = values
-    .map((value) => Number(value))
-    .filter((value) => Number.isFinite(value))
-    .sort((a, b) => a - b);
-  if (sorted.length === 0) return null;
-  const rank = clampNumber(percentile, 0, 1) * (sorted.length - 1);
-  const lower = Math.floor(rank);
-  const upper = Math.ceil(rank);
-  if (lower === upper) return sorted[lower];
-  const weight = rank - lower;
-  return (sorted[lower] * (1 - weight)) + (sorted[upper] * weight);
+  updateAssistantActivityIndicator();
+  window.setTimeout(() => {
+    if (isUiReadyForStatus()) {
+      showStatus('ready');
+    }
+  }, 800);
 }
 
 function startVADMonitor(capture) {
   if (!isVoiceVADAutoSendEnabled()) return;
   if (!capture || capture.vadState) return;
   if (!capture.mediaStream) return;
-  if (!ttsAudioCtx || typeof ttsAudioCtx.createAnalyser !== 'function' || typeof ttsAudioCtx.createMediaStreamSource !== 'function') return;
+  void startSileroVADMonitor(capture);
+}
 
-  if (ttsAudioCtx.state === 'suspended') {
-    ttsAudioCtx.resume().catch(() => {});
-  }
+async function startSileroVADMonitor(capture) {
+  const isHotwordCapture = Boolean(capture?.hotwordTriggered);
+  const vadNoSpeechMs = isHotwordCapture ? HOTWORD_VAD_NO_SPEECH_MS : VOICE_VAD_NO_SPEECH_MS;
+  const redemptionMs = isHotwordCapture ? 1200 : 600;
+  const minSpeechMs = isHotwordCapture ? 400 : 250;
 
-  const handleNoSpeechTimeout = () => {
-    stopVADMonitor(capture);
-    state.indicatorSuppressedByCanvasUpdate = false;
-    showStatus('no speech detected');
-    setRecording(false);
-    setVoiceLifecycle(VOICE_LIFECYCLE.IDLE, 'voice-vad-no-speech');
-    sttCancel();
-    stopChatVoiceMedia(capture);
-    if (state.chatVoiceCapture === capture) {
-      state.chatVoiceCapture = null;
-    }
-    updateAssistantActivityIndicator();
-    window.setTimeout(() => {
-      if (isUiReadyForStatus()) {
-        showStatus('ready');
-      }
-    }, 800);
-  };
-
-  const options = {
-    startAtMs: performance.now(),
-    lastFrameAtMs: performance.now(),
-    speechMs: 0,
-    silenceMs: 0,
-    hasSpeech: false,
-    pendingCommitAtMs: 0,
-    speechFrames: 0,
-    noiseSamples: [],
-    noiseFloorDb: null,
+  const vadState = {
+    sileroInstance: null,
+    noSpeechTimer: null,
+    maxDurationTimer: null,
+    committed: false,
     isRunning: true,
   };
-  const isHotwordCapture = Boolean(capture?.hotwordTriggered);
-  const vadMinUtteranceMs = isHotwordCapture ? HOTWORD_VAD_MIN_UTTERANCE_MS : VOICE_VAD_MIN_UTTERANCE_MS;
-  const vadCandidateSilenceMs = isHotwordCapture ? HOTWORD_VAD_CANDIDATE_SILENCE_MS : VOICE_VAD_CANDIDATE_SILENCE_MS;
-  const vadCandidateRecheckMs = isHotwordCapture ? HOTWORD_VAD_CANDIDATE_RECHECK_MS : VOICE_VAD_CANDIDATE_RECHECK_MS;
-  const vadHardSilenceMs = isHotwordCapture ? HOTWORD_VAD_HARD_SILENCE_MS : VOICE_VAD_HARD_SILENCE_MS;
-  const vadNoSpeechMs = isHotwordCapture ? HOTWORD_VAD_NO_SPEECH_MS : VOICE_VAD_NO_SPEECH_MS;
-  const vadMinCommitMs = isHotwordCapture ? HOTWORD_VAD_MIN_COMMIT_MS : 0;
+  capture.vadState = vadState;
 
-  let source;
-  let analyser;
+  vadState.noSpeechTimer = window.setTimeout(() => {
+    if (!vadState.isRunning || vadState.committed) return;
+    handleVADNoSpeechTimeout(capture);
+  }, vadNoSpeechMs);
+
+  vadState.maxDurationTimer = window.setTimeout(() => {
+    if (!vadState.isRunning || vadState.committed) return;
+    vadState.committed = true;
+    stopVADMonitor(capture);
+    void stopVoiceCaptureAndSend();
+  }, VOICE_VAD_MAX_RECORDING_HARD_MS);
+
   try {
-    source = ttsAudioCtx.createMediaStreamSource(capture.mediaStream);
-    analyser = ttsAudioCtx.createAnalyser();
-    analyser.fftSize = 1024;
-    analyser.smoothingTimeConstant = 0.25;
-    const bins = new Uint8Array(analyser.frequencyBinCount);
-    source.connect(analyser);
-    // iOS Safari requires the graph to terminate at destination for
-    // AnalyserNode to receive live data from a MediaStreamSource.
-    let silentGain = null;
-    if (typeof ttsAudioCtx.createGain === 'function') {
-      silentGain = ttsAudioCtx.createGain();
-      silentGain.gain.value = 0;
-      analyser.connect(silentGain);
-      silentGain.connect(ttsAudioCtx.destination);
-    }
-
-    const update = () => {
-      if (!options.isRunning || !capture || capture.stopping || state.chatVoiceCapture !== capture) {
-        stopVADMonitor(capture);
-        return;
-      }
-
-      analyser.getByteTimeDomainData(bins);
-      const db = computeDecibelFromTimeDomain(bins);
-      const now = performance.now();
-      const frameElapsedMsRaw = now - options.lastFrameAtMs;
-      const frameElapsedMs = Number.isFinite(frameElapsedMsRaw) && frameElapsedMsRaw > 0
-        ? Math.min(300, frameElapsedMsRaw)
-        : VOICE_VAD_FRAME_MS;
-      options.lastFrameAtMs = now;
-      const elapsed = now - options.startAtMs;
-
-      if (options.noiseFloorDb == null && options.noiseSamples.length < VOICE_VAD_NOISE_FLOOR_SAMPLES) {
-        options.noiseSamples.push(db);
-        if (options.noiseSamples.length >= VOICE_VAD_NOISE_FLOOR_SAMPLES) {
-          const seededFloor = percentileValue(options.noiseSamples, VOICE_VAD_NOISE_FLOOR_PERCENTILE);
-          if (seededFloor != null) {
-            options.noiseFloorDb = clampNumber(
-              seededFloor,
-              VOICE_VAD_NOISE_FLOOR_MIN_DB,
-              VOICE_VAD_NOISE_FLOOR_MAX_DB,
-            );
-          }
+    const instance = await initVAD({
+      stream: capture.mediaStream,
+      positiveSpeechThreshold: 0.6,
+      negativeSpeechThreshold: 0.35,
+      redemptionMs,
+      minSpeechMs,
+      preSpeechPadMs: 300,
+      onSpeechStart() {
+        if (!vadState.isRunning || vadState.committed) return;
+        if (vadState.noSpeechTimer) {
+          window.clearTimeout(vadState.noSpeechTimer);
+          vadState.noSpeechTimer = null;
         }
-      }
-
-      if (options.noiseFloorDb == null) {
-        if (elapsed >= vadNoSpeechMs) {
-          handleNoSpeechTimeout();
-          return;
-        }
-        return;
-      }
-
-      const startThresholdBefore = Math.max(
-        VOICE_VAD_SPEECH_START_THRESHOLD_MIN_DB,
-        options.noiseFloorDb + VOICE_VAD_SPEECH_START_OFFSET_DB,
-      );
-      const endThresholdBefore = Math.max(
-        VOICE_VAD_SPEECH_END_THRESHOLD_MIN_DB,
-        options.noiseFloorDb + VOICE_VAD_SPEECH_END_OFFSET_DB,
-      );
-      const floorUpdateCeilDb = options.hasSpeech ? endThresholdBefore + 2 : startThresholdBefore;
-      // Keep tracking ambient floor but avoid pulling it up while speech is active.
-      if (db <= floorUpdateCeilDb) {
-        options.noiseFloorDb = clampNumber(
-          ((1 - VOICE_VAD_NOISE_FLOOR_ADAPT_ALPHA) * options.noiseFloorDb) + (VOICE_VAD_NOISE_FLOOR_ADAPT_ALPHA * db),
-          VOICE_VAD_NOISE_FLOOR_MIN_DB,
-          VOICE_VAD_NOISE_FLOOR_MAX_DB,
-        );
-      }
-
-      const startThresholdDb = Math.max(
-        VOICE_VAD_SPEECH_START_THRESHOLD_MIN_DB,
-        options.noiseFloorDb + VOICE_VAD_SPEECH_START_OFFSET_DB,
-      );
-      const endThresholdDb = Math.max(
-        VOICE_VAD_SPEECH_END_THRESHOLD_MIN_DB,
-        options.noiseFloorDb + VOICE_VAD_SPEECH_END_OFFSET_DB,
-      );
-
-      if (!options.hasSpeech) {
-        if (db >= startThresholdDb) {
-          options.speechFrames += 1;
-        } else {
-          options.speechFrames = 0;
-        }
-        if (options.speechFrames >= VOICE_VAD_SPEECH_START_FRAMES) {
-          options.hasSpeech = true;
-          options.speechStartAt = now;
-          options.silenceMs = 0;
-          options.speechFrames = 0;
-        }
-      }
-
-      if (!options.hasSpeech) {
-        if (elapsed >= vadNoSpeechMs) {
-          handleNoSpeechTimeout();
-          return;
-        }
-        return;
-      }
-
-      if (db >= endThresholdDb) {
-        options.silenceMs = 0;
-      } else {
-        options.silenceMs += frameElapsedMs;
-      }
-
-      options.speechMs = Math.max(0, now - options.speechStartAt);
-      if (options.speechMs < vadMinUtteranceMs) return;
-      const hitCandidate = options.silenceMs >= vadCandidateSilenceMs;
-      const hitHardSilence = options.silenceMs >= vadHardSilenceMs;
-      const hitSoftMaxDuration = elapsed >= VOICE_VAD_MAX_RECORDING_SOFT_MS;
-      const hitHardMaxDuration = elapsed >= VOICE_VAD_MAX_RECORDING_HARD_MS;
-      const canCommit = elapsed >= vadMinCommitMs;
-
-      if ((canCommit && hitHardSilence) || hitHardMaxDuration || hitSoftMaxDuration) {
+      },
+      onSpeechEnd() {
+        if (!vadState.isRunning || vadState.committed) return;
+        vadState.committed = true;
         stopVADMonitor(capture);
         void stopVoiceCaptureAndSend();
-        return;
-      }
+      },
+    });
 
-      if (canCommit && hitCandidate) {
-        if (!options.pendingCommitAtMs) {
-          options.pendingCommitAtMs = now + vadCandidateRecheckMs;
-          return;
-        }
-        if (now >= options.pendingCommitAtMs) {
-          stopVADMonitor(capture);
-          void stopVoiceCaptureAndSend();
-        }
-        return;
-      }
-
-      if (options.pendingCommitAtMs) {
-        options.pendingCommitAtMs = 0;
-      }
-    };
-
-    const timer = window.setInterval(update, VOICE_VAD_FRAME_MS);
-    capture.vadState = { source, analyser, silentGain, timer, options, bins, isRunning: true };
-  } catch (_) {
-    if (source) {
-      try { source.disconnect(); } catch (_) {}
+    if (!vadState.isRunning) {
+      if (instance) instance.destroy();
+      return;
     }
-    capture.vadState = null;
+
+    vadState.sileroInstance = instance;
+    if (instance) instance.start();
+  } catch (err) {
+    console.warn('Silero VAD init failed:', err);
+    if (vadState.isRunning) {
+      handleVADNoSpeechTimeout(capture);
+    }
   }
 }
 
 function stopVADMonitor(capture) {
   if (!capture || !capture.vadState) return;
-  const state = capture.vadState;
+  const vs = capture.vadState;
   capture.vadState = null;
-  if (state.options) state.options.isRunning = false;
-  state.isRunning = false;
-  if (state.timer) window.clearInterval(state.timer);
-  if (state.source) {
-    try { state.source.disconnect(); } catch (_) {}
-  }
-  if (state.silentGain) {
-    try { state.silentGain.disconnect(); } catch (_) {}
-  }
-  if (state.analyser) {
-    try { state.analyser.disconnect(); } catch (_) {}
+  vs.isRunning = false;
+
+  if (vs.noSpeechTimer) window.clearTimeout(vs.noSpeechTimer);
+  if (vs.maxDurationTimer) window.clearTimeout(vs.maxDurationTimer);
+  if (vs.sileroInstance) {
+    try { vs.sileroInstance.destroy(); } catch (_) {}
   }
 }
 

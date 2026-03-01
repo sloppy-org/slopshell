@@ -6,7 +6,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// Privacy: sttBuf is RAM-only and never persisted to disk or database.
+// Privacy: sttBuf and participantBuf are RAM-only and never persisted to disk or database.
 // See docs/meeting-notes-privacy.md.
 type chatWSConn struct {
 	conn        *websocket.Conn
@@ -19,6 +19,10 @@ type chatWSConn struct {
 	ttsNextSeq  int64
 	ttsNextEmit int64
 	ttsPending  map[int64]ttsOrderedResult
+	participantMu        sync.Mutex
+	participantActive    bool
+	participantSessionID string
+	participantBuf       []byte // RAM-only: audio never persisted
 }
 
 func newChatWSConn(conn *websocket.Conn) *chatWSConn {

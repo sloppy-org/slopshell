@@ -173,6 +173,103 @@
     };
     window.__isHotwordActive = () => Boolean(window.__taburaHotwordMock?.active);
 
+    // Mock Silero VAD: interprets __vadDbFrames with adaptive noise floor.
+    // Speech detection uses relative thresholding (2 dB above calibrated floor).
+    const VAD_MOCK_FRAME_MS = 40;
+    const VAD_MOCK_CALIBRATION_FRAMES = 8;
+    const VAD_MOCK_SPEECH_OFFSET_DB = 2;
+    const VAD_MOCK_SPEECH_START_FRAMES = 3;
+    const VAD_MOCK_REDEMPTION_FRAMES = 8;
+    window.__taburaVadMock = {
+      init() { return true; },
+      create(callbacks) {
+        let running = false;
+        let timer = null;
+        let speechActive = false;
+        let speechFrameCount = 0;
+        let silenceAfterSpeechCount = 0;
+        let calibrationSamples = [];
+        let noiseFloorDb = null;
+        return {
+          start() {
+            if (running) return;
+            running = true;
+            speechActive = false;
+            speechFrameCount = 0;
+            silenceAfterSpeechCount = 0;
+            calibrationSamples = [];
+            noiseFloorDb = null;
+            timer = setInterval(() => {
+              if (!running) return;
+              const script = Array.isArray(window.__vadDbFrames) ? window.__vadDbFrames : [];
+              const db = script.length > 0 ? Number(script.shift()) : -80;
+
+              if (noiseFloorDb === null) {
+                calibrationSamples.push(db);
+                if (calibrationSamples.length >= VAD_MOCK_CALIBRATION_FRAMES) {
+                  const sorted = calibrationSamples.slice().sort((a, b) => a - b);
+                  noiseFloorDb = sorted[Math.floor(sorted.length * 0.35)] || -60;
+                }
+                return;
+              }
+
+              const speechThreshold = noiseFloorDb + VAD_MOCK_SPEECH_OFFSET_DB;
+              const isSpeech = db > speechThreshold;
+
+              if (!speechActive) {
+                if (isSpeech) {
+                  speechFrameCount += 1;
+                  if (speechFrameCount >= VAD_MOCK_SPEECH_START_FRAMES) {
+                    speechActive = true;
+                    silenceAfterSpeechCount = 0;
+                    if (callbacks.onSpeechStart) callbacks.onSpeechStart();
+                  }
+                } else {
+                  speechFrameCount = 0;
+                }
+              } else {
+                if (isSpeech) {
+                  silenceAfterSpeechCount = 0;
+                } else {
+                  silenceAfterSpeechCount += 1;
+                  if (silenceAfterSpeechCount >= VAD_MOCK_REDEMPTION_FRAMES) {
+                    speechActive = false;
+                    speechFrameCount = 0;
+                    silenceAfterSpeechCount = 0;
+                    if (callbacks.onSpeechEnd) callbacks.onSpeechEnd(new Float32Array(160));
+                  }
+                }
+              }
+            }, VAD_MOCK_FRAME_MS);
+          },
+          pause() {
+            running = false;
+            if (timer) { clearInterval(timer); timer = null; }
+          },
+          destroy() {
+            running = false;
+            if (timer) { clearInterval(timer); timer = null; }
+          },
+        };
+      },
+    };
+
+    window.__injectParticipantSegment = (segment) => {
+      const sessions = window.__mockWsSessions || [];
+      const chatWs = sessions.find((ws) => typeof ws.url === 'string' && ws.url.includes('/ws/chat/'));
+      if (chatWs?.onmessage) {
+        chatWs.onmessage({ data: JSON.stringify({
+          type: 'participant_segment_text',
+          session_id: segment?.session_id || 'psess-harness-001',
+          text: segment?.text || 'test segment',
+          segment_id: segment?.segment_id || 1,
+          start_ts: segment?.start_ts || Math.floor(Date.now() / 1000),
+          end_ts: segment?.end_ts || Math.floor(Date.now() / 1000),
+          latency_ms: segment?.latency_ms || 100,
+        }) });
+      }
+    };
+
     const harnessProjects = [
       {
         id: 'test',
@@ -316,6 +413,42 @@
           default_project_id: 'test',
           active_project_id: activeProjectId,
         }), { status: 200 });
+      }
+      if (u.includes('/api/participant/config') && opts?.method === 'PUT') {
+        let body = {};
+        try { body = JSON.parse(String(opts?.body || '{}')); } catch (_) { body = {}; }
+        const cfg = {
+          language: String(body.language || 'en'),
+          max_segment_duration_ms: Number(body.max_segment_duration_ms || 30000),
+          session_ram_cap_mb: Number(body.session_ram_cap_mb || 64),
+          stt_model: String(body.stt_model || 'whisper-1'),
+          audio_persistence: 'none',
+        };
+        return new Response(JSON.stringify(cfg), { status: 200 });
+      }
+      if (u.includes('/api/participant/config')) {
+        return new Response(JSON.stringify({
+          language: 'en',
+          max_segment_duration_ms: 30000,
+          session_ram_cap_mb: 64,
+          stt_model: 'whisper-1',
+          audio_persistence: 'none',
+        }), { status: 200 });
+      }
+      if (u.includes('/api/participant/status')) {
+        return new Response(JSON.stringify({ ok: true, active_sessions: 0 }), { status: 200 });
+      }
+      if (u.includes('/api/participant/sessions') && u.includes('/transcript')) {
+        return new Response(JSON.stringify({ ok: true, segments: [] }), { status: 200 });
+      }
+      if (u.includes('/api/participant/sessions') && u.includes('/search')) {
+        return new Response(JSON.stringify({ ok: true, segments: [] }), { status: 200 });
+      }
+      if (u.includes('/api/participant/sessions') && u.includes('/export')) {
+        return new Response(JSON.stringify({ ok: true, session: {}, segments: [] }), { status: 200 });
+      }
+      if (u.includes('/api/participant/sessions')) {
+        return new Response(JSON.stringify({ ok: true, sessions: [] }), { status: 200 });
       }
       if (u.includes('/api/chat/sessions') && u.includes('/cancel-delegates')) {
         window.__harnessLog.push({
@@ -468,6 +601,22 @@
             }, 5);
           } else if (msg.type === 'stt_cancel') {
             window.__harnessLog.push({ type: 'stt', action: 'cancel' });
+          } else if (msg.type === 'participant_start') {
+            window.__harnessLog.push({ type: 'participant', action: 'start' });
+            const ws = this;
+            setTimeout(() => {
+              if (ws.onmessage) {
+                ws.onmessage({ data: JSON.stringify({ type: 'participant_started', session_id: 'psess-harness-001' }) });
+              }
+            }, 5);
+          } else if (msg.type === 'participant_stop') {
+            window.__harnessLog.push({ type: 'participant', action: 'stop' });
+            const ws = this;
+            setTimeout(() => {
+              if (ws.onmessage) {
+                ws.onmessage({ data: JSON.stringify({ type: 'participant_stopped', session_id: 'psess-harness-001' }) });
+              }
+            }, 5);
           } else if (msg.type === 'tts_speak') {
             window.__harnessLog.push({ type: 'tts', text: msg.text, lang: msg.lang });
             const ws = this;
