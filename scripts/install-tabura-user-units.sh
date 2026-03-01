@@ -11,7 +11,7 @@ fail() { printf '[tabura-units] ERROR: %s\n' "$*" >&2; exit 1; }
 # --- Verify prerequisites ---
 
 command -v llama-server >/dev/null 2>&1 || fail "llama-server not in PATH. Build llama.cpp and install to ~/.local/bin"
-command -v whisper-server >/dev/null 2>&1 || fail "whisper-server not in PATH. Install whisper.cpp"
+command -v voxtype >/dev/null 2>&1 || fail "voxtype not in PATH. Install voxtype"
 command -v codex >/dev/null 2>&1 || fail "codex not in PATH. Install @openai/codex"
 
 # --- Bootstrap service dependencies ---

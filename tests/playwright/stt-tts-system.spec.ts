@@ -69,11 +69,10 @@ function ffmpegAvailable(): boolean {
 
 function sttServiceRunning(): boolean {
   try {
-    // whisper.cpp returns non-zero for empty input but the TCP connect succeeding means it's up
-    execSync('curl -sS --max-time 2 http://127.0.0.1:8427/inference -X POST -F "file=@/dev/null" 2>&1', { stdio: 'pipe' });
+    execSync('curl -fsS --max-time 2 http://127.0.0.1:8427/healthz', { stdio: 'pipe' });
     return true;
   } catch {
-    return true;
+    return false;
   }
 }
 
@@ -410,7 +409,7 @@ test.describe('STT/TTS system tests', () => {
 
   test.describe('STT', () => {
     test.beforeAll(() => {
-      if (!sttUp) throw new Error('whisper.cpp STT not running on :8427');
+      if (!sttUp) throw new Error('voxtype STT service not running on :8427');
     });
 
     test('STT rejects short audio as too short', async () => {
@@ -495,7 +494,7 @@ test.describe('STT/TTS system tests', () => {
 
         const result = await sttConn.waitForText(
           (m) => m.type === 'stt_result' || m.type === 'stt_empty' || m.type === 'stt_error',
-          20_000,
+          60_000,
         );
         expect(result.type).toBe('stt_result');
         const transcript = String(result.text || '').toLowerCase();

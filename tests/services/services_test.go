@@ -220,11 +220,11 @@ func TestLLMLatency(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// STT — whisper.cpp (port 8427)
+// STT — voxtype local OpenAI-compatible service (port 8427)
 // ---------------------------------------------------------------------------
 
 func TestSTTHealth(t *testing.T) {
-	resp, err := httpGetJSON(sttURL + "/health")
+	resp, err := httpGetJSON(sttURL + "/healthz")
 	if err != nil {
 		t.Fatalf("STT health failed: %v", err)
 	}
@@ -263,7 +263,7 @@ func TestSTTTranscribeSilence(t *testing.T) {
 }
 
 func TestSTTHandlesEmptyPayload(t *testing.T) {
-	// whisper-server may return either an error or an empty/short transcript.
+	// Server may return either an error or an empty/short transcript.
 	resp, err := postSTTInference([]byte{})
 	if err != nil {
 		// HTTP error is acceptable for empty payload.
@@ -484,11 +484,14 @@ func postSTTInference(wavData []byte) (string, error) {
 	if err := writer.WriteField("response_format", "json"); err != nil {
 		return "", err
 	}
+	if err := writer.WriteField("model", "whisper-1"); err != nil {
+		return "", err
+	}
 	if err := writer.Close(); err != nil {
 		return "", err
 	}
 	client := &http.Client{Timeout: 60 * time.Second}
-	resp, err := client.Post(sttURL+"/inference", writer.FormDataContentType(), &body)
+	resp, err := client.Post(sttURL+"/v1/audio/transcriptions", writer.FormDataContentType(), &body)
 	if err != nil {
 		return "", fmt.Errorf("STT inference: %w", err)
 	}

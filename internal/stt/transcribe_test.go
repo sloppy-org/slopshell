@@ -18,8 +18,8 @@ func TestTranscribe(t *testing.T) {
 			if r.Method != http.MethodPost {
 				t.Errorf("expected POST, got %s", r.Method)
 			}
-			if r.URL.Path != "/inference" {
-				t.Errorf("expected /inference, got %s", r.URL.Path)
+			if r.URL.Path != "/v1/audio/transcriptions" {
+				t.Errorf("expected /v1/audio/transcriptions, got %s", r.URL.Path)
 			}
 			ct := r.Header.Get("Content-Type")
 			if ct == "" {
@@ -31,6 +31,9 @@ func TestTranscribe(t *testing.T) {
 			if r.FormValue("response_format") != "json" {
 				t.Errorf("expected response_format=json, got %q", r.FormValue("response_format"))
 			}
+			if r.FormValue("model") != "whisper-1" {
+				t.Errorf("expected model=whisper-1, got %q", r.FormValue("model"))
+			}
 			_, fh, err := r.FormFile("file")
 			if err != nil {
 				t.Fatalf("form file: %v", err)
@@ -39,7 +42,7 @@ func TestTranscribe(t *testing.T) {
 				t.Errorf("expected audio.webm, got %q", fh.Filename)
 			}
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(whisperResponse{Text: "Hello world"})
+			json.NewEncoder(w).Encode(sttResponse{Text: "Hello world"})
 		}))
 		defer srv.Close()
 
@@ -61,7 +64,7 @@ func TestTranscribe(t *testing.T) {
 			_, fh, _ := r.FormFile("file")
 			gotFilename = fh.Filename
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(whisperResponse{Text: "Some speech"})
+			json.NewEncoder(w).Encode(sttResponse{Text: "Some speech"})
 		}))
 		defer srv.Close()
 
@@ -79,7 +82,7 @@ func TestTranscribe(t *testing.T) {
 	t.Run("hallucination rejected", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(whisperResponse{Text: "Thank you."})
+			json.NewEncoder(w).Encode(sttResponse{Text: "Thank you."})
 		}))
 		defer srv.Close()
 
@@ -92,7 +95,7 @@ func TestTranscribe(t *testing.T) {
 	t.Run("noise rejected", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(whisperResponse{Text: "um"})
+			json.NewEncoder(w).Encode(sttResponse{Text: "um"})
 		}))
 		defer srv.Close()
 
@@ -105,7 +108,7 @@ func TestTranscribe(t *testing.T) {
 	t.Run("language prompt echo rejected", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(whisperResponse{Text: "The spoken language is one of: en, de."})
+			json.NewEncoder(w).Encode(sttResponse{Text: "The spoken language is one of: en, de."})
 		}))
 		defer srv.Close()
 
@@ -118,7 +121,7 @@ func TestTranscribe(t *testing.T) {
 	t.Run("empty transcript", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(whisperResponse{Text: ""})
+			json.NewEncoder(w).Encode(sttResponse{Text: ""})
 		}))
 		defer srv.Close()
 
@@ -150,7 +153,7 @@ func TestTranscribe(t *testing.T) {
 	t.Run("applies text replacements", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(whisperResponse{Text: "The stelorators use rungicata methods"})
+			json.NewEncoder(w).Encode(sttResponse{Text: "The stelorators use rungicata methods"})
 		}))
 		defer srv.Close()
 
@@ -369,27 +372,20 @@ func TestTranscribeWithOptionsConstrainedLanguages(t *testing.T) {
 		if err := r.ParseMultipartForm(32 << 20); err != nil {
 			t.Fatalf("parse multipart: %v", err)
 		}
-		lang := r.FormValue("language")
-		if r.FormValue("response_format") != "verbose_json" {
-			t.Fatalf("response_format=%q, want verbose_json", r.FormValue("response_format"))
+		if r.FormValue("language") != "auto" {
+			t.Fatalf("language=%q, want auto", r.FormValue("language"))
+		}
+		if r.FormValue("response_format") != "json" {
+			t.Fatalf("response_format=%q, want json", r.FormValue("response_format"))
+		}
+		if r.FormValue("model") != "whisper-1" {
+			t.Fatalf("model=%q, want whisper-1", r.FormValue("model"))
 		}
 		w.Header().Set("Content-Type", "application/json")
-		switch lang {
-		case "en":
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"text":     "hello world",
-				"language": "en",
-				"segments": []map[string]any{{"avg_logprob": -0.40, "no_speech_prob": 0.25}},
-			})
-		case "de":
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"text":     "hallo welt",
-				"language": "de",
-				"segments": []map[string]any{{"avg_logprob": -0.10, "no_speech_prob": 0.05}},
-			})
-		default:
-			http.Error(w, "unexpected language", http.StatusBadRequest)
-		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"text":     "hallo welt",
+			"language": "de",
+		})
 	}))
 	defer srv.Close()
 
@@ -402,50 +398,63 @@ func TestTranscribeWithOptionsConstrainedLanguages(t *testing.T) {
 	if text != "hallo welt" {
 		t.Fatalf("text=%q, want hallo welt", text)
 	}
-	if got := atomic.LoadInt32(&requestCount); got != 2 {
-		t.Fatalf("request count=%d, want 2", got)
+	if got := atomic.LoadInt32(&requestCount); got != 1 {
+		t.Fatalf("request count=%d, want 1", got)
 	}
 }
 
-func TestTranscribeWithOptionsConstrainedLanguagesPrefersMatchingDetectedLanguage(t *testing.T) {
+func TestTranscribeWithOptionsUsesProvidedOpenAIEndpoint(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseMultipartForm(32 << 20); err != nil {
 			t.Fatalf("parse multipart: %v", err)
 		}
-		lang := r.FormValue("language")
-		if r.FormValue("response_format") != "verbose_json" {
-			t.Fatalf("response_format=%q, want verbose_json", r.FormValue("response_format"))
+		if r.URL.Path != "/v1/audio/transcriptions" {
+			t.Fatalf("path=%q, want /v1/audio/transcriptions", r.URL.Path)
+		}
+		if r.FormValue("language") != "de" {
+			t.Fatalf("language=%q, want de", r.FormValue("language"))
 		}
 		w.Header().Set("Content-Type", "application/json")
-		switch lang {
-		case "en":
-			// Slightly higher raw score than "de", but detected language mismatches
-			// the requested language and should be penalized.
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"text":     "hello world",
-				"language": "de",
-				"segments": []map[string]any{{"avg_logprob": 0.10, "no_speech_prob": 0.00}},
-			})
-		case "de":
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"text":     "hallo welt",
-				"language": "de",
-				"segments": []map[string]any{{"avg_logprob": 0.00, "no_speech_prob": 0.00}},
-			})
-		default:
-			http.Error(w, "unexpected language", http.StatusBadRequest)
-		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"text": "hallo welt"})
 	}))
 	defer srv.Close()
 
-	text, err := TranscribeWithOptions(srv.URL, "audio/webm", []byte("fake-audio-data"), nil, TranscribeOptions{
-		AllowedLanguages: []string{"en", "de"},
+	text, err := TranscribeWithOptions(srv.URL+"/v1/audio/transcriptions", "audio/webm", []byte("fake-audio-data"), nil, TranscribeOptions{
+		AllowedLanguages: []string{"de"},
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if text != "hallo welt" {
 		t.Fatalf("text=%q, want hallo welt", text)
+	}
+}
+
+func TestTranscribeWithOptionsTranslateUsesTranslationsEndpoint(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseMultipartForm(32 << 20); err != nil {
+			t.Fatalf("parse multipart: %v", err)
+		}
+		if r.URL.Path != "/v1/audio/translations" {
+			t.Fatalf("path=%q, want /v1/audio/translations", r.URL.Path)
+		}
+		if r.FormValue("translate") != "true" {
+			t.Fatalf("translate=%q, want true", r.FormValue("translate"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"text": "hello world"})
+	}))
+	defer srv.Close()
+
+	text, err := TranscribeWithOptions(srv.URL, "audio/webm", []byte("fake-audio-data"), nil, TranscribeOptions{
+		AllowedLanguages: []string{"de"},
+		Translate:        true,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if text != "hello world" {
+		t.Fatalf("text=%q, want hello world", text)
 	}
 }
 
@@ -475,10 +484,14 @@ func TestTranscribeWithOptionsSingleLanguageAndPrompt(t *testing.T) {
 		if r.FormValue("response_format") != "json" {
 			t.Fatalf("response_format=%q, want json", r.FormValue("response_format"))
 		}
+		if r.FormValue("model") != "whisper-x" {
+			t.Fatalf("model=%q, want whisper-x", r.FormValue("model"))
+		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(whisperResponse{Text: "hallo welt"})
+		_ = json.NewEncoder(w).Encode(sttResponse{Text: "hallo welt"})
 	}))
 	defer srv.Close()
+	t.Setenv("TABURA_STT_MODEL_NAME", "whisper-x")
 
 	text, err := TranscribeWithOptions(srv.URL, "audio/webm", []byte("fake-audio-data"), nil, TranscribeOptions{
 		AllowedLanguages: []string{"de"},
@@ -497,7 +510,7 @@ func TestTranscribeWithOptionsPreVADSkipsSilentWAV(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&requestCount, 1)
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(whisperResponse{Text: "should not be called"})
+		_ = json.NewEncoder(w).Encode(sttResponse{Text: "should not be called"})
 	}))
 	defer srv.Close()
 
@@ -600,7 +613,7 @@ func buildTestPCM16WAV(sampleRate, channels, durationMS int, amplitude float64) 
 func TestPrivacyTranscribeNoTempFiles(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(whisperResponse{Text: "Hello world"})
+		json.NewEncoder(w).Encode(sttResponse{Text: "Hello world"})
 	}))
 	defer srv.Close()
 

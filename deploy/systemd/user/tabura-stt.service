@@ -1,5 +1,5 @@
 [Unit]
-Description=Tabura Whisper STT Sidecar (large-v3-turbo)
+Description=Tabura voxtype STT Sidecar (OpenAI-compatible)
 After=network.target
 
 [Service]
@@ -7,7 +7,8 @@ Type=simple
 WorkingDirectory=%h/code/assi/tabula
 Environment=HOME=%h
 Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
-Environment=TABURA_STT_MODEL_DIR=%h/.local/share/tabura-stt/models
+Environment=TABURA_STT_LANGUAGE=de,en
+Environment=TABURA_STT_MODEL=large-v3-turbo
 ExecStart=%h/code/assi/tabula/scripts/setup-whisper-stt.sh
 Restart=on-failure
 RestartSec=5

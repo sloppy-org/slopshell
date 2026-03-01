@@ -1,53 +1,52 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-MODEL_DIR="${TABURA_STT_MODEL_DIR:-$HOME/.local/share/tabura-stt/models}"
-MODEL_FILE="${TABURA_STT_MODEL_FILE:-ggml-large-v3-turbo.bin}"
-MODEL_URL="${TABURA_STT_MODEL_URL:-https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin}"
-SERVER_BIN="${WHISPER_SERVER_BIN:-whisper-server}"
+VOXTYPE_BIN="${VOXTYPE_BIN:-voxtype}"
 HOST="${TABURA_STT_HOST:-127.0.0.1}"
 PORT="${TABURA_STT_PORT:-8427}"
-LANGUAGE="${TABURA_STT_LANGUAGE:-en,de}"
+LANGUAGE_RAW="${TABURA_STT_LANGUAGE:-en,de}"
 THREADS="${TABURA_STT_THREADS:-4}"
 PROMPT="${TABURA_STT_PROMPT:-}"
+MODEL="${TABURA_STT_MODEL:-large-v3-turbo}"
 
-# Check for existing model from voxtype to avoid re-downloading.
-VOXTYPE_MODEL="$HOME/.local/share/voxtype/models/$MODEL_FILE"
-
-if ! command -v "$SERVER_BIN" >/dev/null 2>&1; then
-  echo "whisper.cpp server binary not found: $SERVER_BIN" >&2
-  echo "Install whisper.cpp and ensure whisper-server is on PATH (or set WHISPER_SERVER_BIN)." >&2
+if ! command -v "$VOXTYPE_BIN" >/dev/null 2>&1; then
+  echo "voxtype binary not found: $VOXTYPE_BIN" >&2
+  echo "Install voxtype and ensure it is in PATH (or set VOXTYPE_BIN)." >&2
   exit 1
 fi
 
-mkdir -p "$MODEL_DIR"
-MODEL_PATH="$MODEL_DIR/$MODEL_FILE"
-if [ ! -s "$MODEL_PATH" ]; then
-  if [ -s "$VOXTYPE_MODEL" ]; then
-    echo "Symlinking existing voxtype model: $VOXTYPE_MODEL -> $MODEL_PATH"
-    ln -sf "$VOXTYPE_MODEL" "$MODEL_PATH"
-  else
-    echo "Downloading $MODEL_FILE to $MODEL_PATH"
-    curl -fL --retry 3 --retry-delay 2 -o "$MODEL_PATH.tmp" "$MODEL_URL"
-    mv "$MODEL_PATH.tmp" "$MODEL_PATH"
-  fi
+LANGUAGE_CSV="$(printf '%s' "$LANGUAGE_RAW" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+if [ -z "$LANGUAGE_CSV" ]; then
+  LANGUAGE_CSV="en,de"
+fi
+PRIMARY_LANGUAGE="${LANGUAGE_CSV%%,*}"
+LANGUAGE_MODE="$PRIMARY_LANGUAGE"
+if [[ "$LANGUAGE_CSV" == *,* ]]; then
+  LANGUAGE_MODE="auto"
 fi
 
-echo "Starting whisper STT sidecar at http://$HOST:$PORT"
-LANGUAGE_TRIMMED="$(printf '%s' "$LANGUAGE" | tr -d '[:space:]')"
-if [[ "$LANGUAGE_TRIMMED" == *,* ]]; then
-  LANGUAGE="auto"
-fi
+echo "Starting voxtype STT service at http://$HOST:$PORT (languages=$LANGUAGE_CSV model=$MODEL)"
+
+export VOXTYPE_SERVICE_ENABLED=true
+export VOXTYPE_SERVICE_HOST="$HOST"
+export VOXTYPE_SERVICE_PORT="$PORT"
+export VOXTYPE_SERVICE_ALLOWED_LANGUAGES="$LANGUAGE_CSV"
+export VOXTYPE_LANGUAGE="$LANGUAGE_MODE"
+export VOXTYPE_MODEL="$MODEL"
+export VOXTYPE_THREADS="$THREADS"
+export VOXTYPE_HOTKEY_ENABLED=false
 
 args=(
-  -m "$MODEL_PATH"
-  --host "$HOST"
-  --port "$PORT"
-  -l "$LANGUAGE"
+  --service
+  --service-host "$HOST"
+  --service-port "$PORT"
+  --no-hotkey
+  --model "$MODEL"
+  --language "$LANGUAGE_MODE"
   --threads "$THREADS"
 )
 if [ -n "$PROMPT" ]; then
-  args+=(--prompt "$PROMPT")
+  args+=(--initial-prompt "$PROMPT")
 fi
 
-exec "$SERVER_BIN" "${args[@]}"
+exec "$VOXTYPE_BIN" "${args[@]}"
