@@ -17,6 +17,7 @@ Read in this order:
 1. `object-scoped-intent-ui.md`
 2. `interfaces.md`
 3. `architecture.md`
+4. `plugins.md`
 
 Integrated protocol reference:
 

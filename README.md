@@ -13,6 +13,7 @@ Risk notice: see [`DISCLAIMER.md`](DISCLAIMER.md)
 
 - **Spec hub**: [`docs/spec-index.md`](docs/spec-index.md)
 - **System architecture**: [`docs/architecture.md`](docs/architecture.md)
+- **Plugin boundaries**: [`docs/plugins.md`](docs/plugins.md)
 - **Codex app-server integration**: [`docs/codex-app-server-pivot.md`](docs/codex-app-server-pivot.md)
 - **HTTP/MCP interface inventory**: [`docs/interfaces.md`](docs/interfaces.md)
 - **UI paradigm**: [`docs/object-scoped-intent-ui.md`](docs/object-scoped-intent-ui.md)

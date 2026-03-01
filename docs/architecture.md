@@ -118,3 +118,11 @@ Utterance filtering (server-side in `internal/stt/transcribe.go`):
 - Producer endpoint authority remains outside Tabura.
 - Tabura stores local auth/session state in SQLite under web data dir.
 - MCP routes are not mounted on the web listener and default to loopback-only bind.
+
+## Plugin Boundary
+
+Pluginization in Tabura is scoped to product decision/capability layers, not
+runtime safety primitives. The current primary plugin target is
+`meeting-partner` (always-listen and intelligent response behavior for meeting
+mode) while auth/session, media transport, queueing, persistence, and privacy
+invariants remain in core. See `docs/plugins.md`.
