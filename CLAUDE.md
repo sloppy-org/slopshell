@@ -138,6 +138,78 @@ Run consistency check:
 scripts/check-version-consistency.sh
 ```
 
+## Code Map
+
+```
+cmd/tabura/              CLI entry point, flag parsing, server bootstrap
+internal/
+  web/                   HTTP/WS server (public-facing)
+    server.go            App struct, constructor, auth, router, lifecycle
+    server_relay.go      Canvas WS, MCP relay, file proxy
+    chat.go              Chat HTTP handlers, commands, plugin hooks
+    chat_queue.go        chatTurnTracker type, cancellation, session mgmt
+    chat_turn.go         Assistant turn execution, rendering decisions
+    chat_prompt.go       Prompt building, delegation hints, canvas context
+    chat_hub.go          Hub project orchestration
+    chat_intent.go       Intent classification, system action execution
+    chat_canvas.go       Canvas artifact file lifecycle, file watching
+    chat_model.go        Model profile resolution
+    chat_participant.go  Meeting participant capture (RAM-only audio)
+    chat_tts.go          TTS synthesis
+    chat_stt.go          STT WebSocket message handling
+    chat_stt_http.go     STT HTTP transcribe endpoint
+    chat_pr.go           GitHub PR review loading
+    chat_ws.go           chatWSConn type, TTS sequencing
+    ws_hub.go            wsHub type: WebSocket connection registry, broadcast
+    tunnel_registry.go   tunnelRegistry type: MCP tunnel/relay/serve state
+    stt_config.go        STT configuration persistence
+    stt_replacements.go  STT text replacement rules
+    hotword.go           Hotword detector asset status
+    static/              Embedded frontend (JS/CSS)
+  store/                 SQLite persistence (zero internal deps)
+    store.go             Store struct, types, constructor, migrations
+    store_auth.go        Admin password, auth sessions
+    store_project.go     Project CRUD, app state
+    store_host.go        Host CRUD, remote sessions
+    store_chat.go        Chat session/message operations
+    store_participant.go Participant session/segment/event tracking
+  mcp/                   MCP protocol server
+    server.go            Protocol dispatch, types, stdio transport
+    server_delegate.go   Delegate job lifecycle (start/poll/cancel)
+    server_tools.go      Tool implementations, resource reads
+  appserver/             Codex app-server WebSocket client
+  canvas/                In-memory canvas session/artifact state
+  stt/                   STT HTTP client, VAD, hallucination detection
+  plugins/               Plugin webhook manager + HookProvider interface
+  extensions/            Extension host (superset of plugins)
+  modelprofile/          Model alias resolution, reasoning config
+  serve/                 MCP HTTP server runtime
+  surface/               MCP tool/route definitions
+  ptt/                   Push-to-talk daemon (Linux evdev)
+  pty/                   PTY abstraction (Unix/Windows)
+  ptyd/                  PTY daemon application
+  update/                Binary auto-update
+  protocol/              Project bootstrap, AGENTS.md
+  licensing/             License compliance tests
+```
+
+## Naming and Placement Conventions
+
+- **Package names**: lowercase, single word, noun describing the domain (`store`, `canvas`, `stt`). No `util`, `common`, `helpers`.
+- **File names**: `<domain>.go` for the primary file, `<domain>_<aspect>.go` for splits (e.g., `store_chat.go`, `server_delegate.go`). Tests: `<domain>_<aspect>_test.go`.
+- **web/ file naming**: HTTP handlers go in the file matching their route group (`chat.go` for `/api/chat/*`). Supporting logic gets a `_<aspect>` suffix (`chat_turn.go`, `chat_queue.go`).
+- **Concurrent-state types**: unexported types (`chatTurnTracker`, `wsHub`, `tunnelRegistry`) each own their own `sync.Mutex`. Live in the file that uses them most.
+- **Size limits**: files < 500 lines (hard limit 1,000), functions < 50 lines (hard limit 100).
+- **Interfaces**: define in the owning package (`plugins.HookProvider`), not in the consumer. Keep narrow (2-4 methods).
+- **Dependency direction**: leaf packages (`store`, `stt`, `canvas`, `appserver`, `modelprofile`) have zero internal deps. `mcp` and `serve` compose leaf packages. `web` composes everything.
+
+## Adding a New Feature Module
+
+1. If it needs no `web` imports: create `internal/<name>/` with its own types, tests, and zero internal deps.
+2. If it's a new API surface: add handlers in `internal/web/<domain>.go`, register routes in `Router()`.
+3. If it manages concurrent state: define an unexported tracker/registry type with its own mutex. Add it as a field on `App`.
+4. If it integrates external HTTP services: define an interface in the relevant leaf package, implement it there, inject into `App` via the constructor.
+
 ## Testing Policy
 
 Every UI interaction flow must have a Playwright test.
