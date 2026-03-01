@@ -78,15 +78,11 @@ type App struct {
 
 	upgrader websocket.Upgrader
 
-	mu                 sync.Mutex
-	canvasWS           map[string]map[*websocket.Conn]struct{}
-	chatWS             map[string]map[*chatWSConn]struct{}
-	chatTurnCancel     map[string]map[string]context.CancelFunc
-	chatTurnQueue      map[string]int
-	chatTurnOutputMode map[string][]string
-	chatTurnLocalOnly  map[string][]bool
-	chatTurnWorker     map[string]bool
-	chatAppSessions    map[string]*appserver.Session
+	mu              sync.Mutex
+	canvasWS        map[string]map[*websocket.Conn]struct{}
+	chatWS          map[string]map[*chatWSConn]struct{}
+	turns           *chatTurnTracker
+	chatAppSessions map[string]*appserver.Session
 	remoteCanvasWS     map[string]*websocket.Conn
 	tunnelPorts        map[string]int
 	relayCancel        map[string]context.CancelFunc
@@ -234,14 +230,10 @@ func New(dataDir, localProjectDir, localMCPURL, appServerURL, model, ttsURL, spa
 		store:                         s,
 		appServerClient:               appServerClient,
 		upgrader:                      websocket.Upgrader{CheckOrigin: checkWSOrigin},
-		canvasWS:                      map[string]map[*websocket.Conn]struct{}{},
-		chatWS:                        map[string]map[*chatWSConn]struct{}{},
-		chatTurnCancel:                map[string]map[string]context.CancelFunc{},
-		chatTurnQueue:                 map[string]int{},
-		chatTurnOutputMode:            map[string][]string{},
-		chatTurnLocalOnly:             map[string][]bool{},
-		chatTurnWorker:                map[string]bool{},
-		chatAppSessions:               map[string]*appserver.Session{},
+		canvasWS:        map[string]map[*websocket.Conn]struct{}{},
+		chatWS:          map[string]map[*chatWSConn]struct{}{},
+		turns:           newChatTurnTracker(),
+		chatAppSessions: map[string]*appserver.Session{},
 		remoteCanvasWS:                map[string]*websocket.Conn{},
 		tunnelPorts:                   map[string]int{},
 		relayCancel:                   map[string]context.CancelFunc{},
@@ -748,14 +740,10 @@ func (a *App) start(host string, port int, certFile, keyFile string) error {
 func (a *App) Shutdown(ctx context.Context) error {
 	projectStops := map[string]context.CancelFunc{}
 	projectApps := map[string]*serve.App{}
+	a.turns.cancelAll()
 	a.mu.Lock()
 	for _, cancel := range a.relayCancel {
 		cancel()
-	}
-	for _, runs := range a.chatTurnCancel {
-		for _, cancel := range runs {
-			cancel()
-		}
 	}
 	for _, ws := range a.remoteCanvasWS {
 		_ = ws.Close()

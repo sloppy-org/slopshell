@@ -6,59 +6,190 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/krystophny/tabura/internal/appserver"
 )
 
-func (a *App) registerActiveChatTurn(sessionID, runID string, cancel context.CancelFunc) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.chatTurnCancel[sessionID] == nil {
-		a.chatTurnCancel[sessionID] = map[string]context.CancelFunc{}
-	}
-	a.chatTurnCancel[sessionID][runID] = cancel
+type chatTurnTracker struct {
+	mu         sync.Mutex
+	cancel     map[string]map[string]context.CancelFunc
+	queue      map[string]int
+	outputMode map[string][]string
+	localOnly  map[string][]bool
+	worker     map[string]bool
 }
 
-func (a *App) unregisterActiveChatTurn(sessionID, runID string) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	runs := a.chatTurnCancel[sessionID]
+func newChatTurnTracker() *chatTurnTracker {
+	return &chatTurnTracker{
+		cancel:     map[string]map[string]context.CancelFunc{},
+		queue:      map[string]int{},
+		outputMode: map[string][]string{},
+		localOnly:  map[string][]bool{},
+		worker:     map[string]bool{},
+	}
+}
+
+func (t *chatTurnTracker) register(sessionID, runID string, cancelFn context.CancelFunc) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.cancel[sessionID] == nil {
+		t.cancel[sessionID] = map[string]context.CancelFunc{}
+	}
+	t.cancel[sessionID][runID] = cancelFn
+}
+
+func (t *chatTurnTracker) unregister(sessionID, runID string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	runs := t.cancel[sessionID]
 	if runs == nil {
 		return
 	}
 	delete(runs, runID)
 	if len(runs) == 0 {
-		delete(a.chatTurnCancel, sessionID)
+		delete(t.cancel, sessionID)
 	}
 }
 
-func (a *App) cancelActiveChatTurns(sessionID string) int {
-	a.mu.Lock()
-	runs := a.chatTurnCancel[sessionID]
+func (t *chatTurnTracker) cancelActive(sessionID string) int {
+	t.mu.Lock()
+	runs := t.cancel[sessionID]
 	if len(runs) == 0 {
-		a.mu.Unlock()
+		t.mu.Unlock()
 		return 0
 	}
 	cancels := make([]context.CancelFunc, 0, len(runs))
-	for _, cancel := range runs {
-		cancels = append(cancels, cancel)
+	for _, fn := range runs {
+		cancels = append(cancels, fn)
 	}
-	delete(a.chatTurnCancel, sessionID)
-	a.mu.Unlock()
-	for _, cancel := range cancels {
-		cancel()
+	delete(t.cancel, sessionID)
+	t.mu.Unlock()
+	for _, fn := range cancels {
+		fn()
 	}
 	return len(cancels)
 }
 
-func (a *App) clearQueuedChatTurns(sessionID string) int {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	queued := a.chatTurnQueue[sessionID]
-	delete(a.chatTurnQueue, sessionID)
-	delete(a.chatTurnOutputMode, sessionID)
+func (t *chatTurnTracker) cancelAll() {
+	t.mu.Lock()
+	all := t.cancel
+	t.cancel = map[string]map[string]context.CancelFunc{}
+	t.mu.Unlock()
+	for _, runs := range all {
+		for _, fn := range runs {
+			fn()
+		}
+	}
+}
+
+func (t *chatTurnTracker) clearQueued(sessionID string) int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	queued := t.queue[sessionID]
+	delete(t.queue, sessionID)
+	delete(t.outputMode, sessionID)
 	return queued
+}
+
+func (t *chatTurnTracker) activeCount(sessionID string) int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return len(t.cancel[sessionID])
+}
+
+func (t *chatTurnTracker) queuedCount(sessionID string) int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.queue[sessionID]
+}
+
+func (t *chatTurnTracker) enqueue(sessionID, outputMode string, localOnlyFlag bool) (queued int, startWorker bool) {
+	mode := normalizeTurnOutputMode(outputMode)
+	t.mu.Lock()
+	t.outputMode[sessionID] = append(t.outputMode[sessionID], mode)
+	t.localOnly[sessionID] = append(t.localOnly[sessionID], localOnlyFlag)
+	t.queue[sessionID] = t.queue[sessionID] + 1
+	queued = t.queue[sessionID]
+	workerRunning := t.worker[sessionID]
+	if !workerRunning {
+		t.worker[sessionID] = true
+	}
+	t.mu.Unlock()
+	startWorker = !workerRunning
+	return
+}
+
+func (t *chatTurnTracker) dequeue(sessionID string) (dequeuedTurn, bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	queued := t.queue[sessionID]
+	if queued <= 0 {
+		return dequeuedTurn{}, false
+	}
+	modes := t.outputMode[sessionID]
+	mode := turnOutputModeVoice
+	if len(modes) > 0 {
+		mode = normalizeTurnOutputMode(modes[0])
+		modes = modes[1:]
+		if len(modes) == 0 {
+			delete(t.outputMode, sessionID)
+		} else {
+			t.outputMode[sessionID] = modes
+		}
+	}
+	localFlags := t.localOnly[sessionID]
+	localOnlyFlag := false
+	if len(localFlags) > 0 {
+		localOnlyFlag = localFlags[0]
+		localFlags = localFlags[1:]
+		if len(localFlags) == 0 {
+			delete(t.localOnly, sessionID)
+		} else {
+			t.localOnly[sessionID] = localFlags
+		}
+	}
+	queued--
+	if queued <= 0 {
+		delete(t.queue, sessionID)
+		delete(t.outputMode, sessionID)
+		delete(t.localOnly, sessionID)
+		return dequeuedTurn{outputMode: mode, localOnly: localOnlyFlag}, true
+	}
+	t.queue[sessionID] = queued
+	return dequeuedTurn{outputMode: mode, localOnly: localOnlyFlag}, true
+}
+
+func (t *chatTurnTracker) markIdleIfEmpty(sessionID string) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.queue[sessionID] > 0 {
+		return false
+	}
+	delete(t.worker, sessionID)
+	return true
+}
+
+type dequeuedTurn struct {
+	outputMode string
+	localOnly  bool
+}
+
+func (a *App) registerActiveChatTurn(sessionID, runID string, cancel context.CancelFunc) {
+	a.turns.register(sessionID, runID, cancel)
+}
+
+func (a *App) unregisterActiveChatTurn(sessionID, runID string) {
+	a.turns.unregister(sessionID, runID)
+}
+
+func (a *App) cancelActiveChatTurns(sessionID string) int {
+	return a.turns.cancelActive(sessionID)
+}
+
+func (a *App) clearQueuedChatTurns(sessionID string) int {
+	return a.turns.clearQueued(sessionID)
 }
 
 func (a *App) cancelChatWork(sessionID string) (int, int) {
@@ -210,89 +341,28 @@ func (a *App) cancelDelegatedJobsForProject(projectKey string) int {
 }
 
 func (a *App) activeChatTurnCount(sessionID string) int {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return len(a.chatTurnCancel[sessionID])
+	return a.turns.activeCount(sessionID)
 }
 
 func (a *App) queuedChatTurnCount(sessionID string) int {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return a.chatTurnQueue[sessionID]
+	return a.turns.queuedCount(sessionID)
 }
 
 func (a *App) enqueueAssistantTurn(sessionID, outputMode string, opts ...bool) int {
-	mode := normalizeTurnOutputMode(outputMode)
-	localOnly := len(opts) > 0 && opts[0]
-	a.mu.Lock()
-	a.chatTurnOutputMode[sessionID] = append(a.chatTurnOutputMode[sessionID], mode)
-	a.chatTurnLocalOnly[sessionID] = append(a.chatTurnLocalOnly[sessionID], localOnly)
-	a.chatTurnQueue[sessionID] = a.chatTurnQueue[sessionID] + 1
-	queued := a.chatTurnQueue[sessionID]
-	workerRunning := a.chatTurnWorker[sessionID]
-	if !workerRunning {
-		a.chatTurnWorker[sessionID] = true
-	}
-	a.mu.Unlock()
-	if !workerRunning {
+	localOnlyFlag := len(opts) > 0 && opts[0]
+	queued, startWorker := a.turns.enqueue(sessionID, outputMode, localOnlyFlag)
+	if startWorker {
 		go a.runAssistantTurnQueue(sessionID)
 	}
 	return queued
 }
 
-type dequeuedTurn struct {
-	outputMode string
-	localOnly  bool
-}
-
 func (a *App) dequeueAssistantTurn(sessionID string) (dequeuedTurn, bool) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	queued := a.chatTurnQueue[sessionID]
-	if queued <= 0 {
-		return dequeuedTurn{}, false
-	}
-	modes := a.chatTurnOutputMode[sessionID]
-	mode := turnOutputModeVoice
-	if len(modes) > 0 {
-		mode = normalizeTurnOutputMode(modes[0])
-		modes = modes[1:]
-		if len(modes) == 0 {
-			delete(a.chatTurnOutputMode, sessionID)
-		} else {
-			a.chatTurnOutputMode[sessionID] = modes
-		}
-	}
-	localFlags := a.chatTurnLocalOnly[sessionID]
-	localOnly := false
-	if len(localFlags) > 0 {
-		localOnly = localFlags[0]
-		localFlags = localFlags[1:]
-		if len(localFlags) == 0 {
-			delete(a.chatTurnLocalOnly, sessionID)
-		} else {
-			a.chatTurnLocalOnly[sessionID] = localFlags
-		}
-	}
-	queued--
-	if queued <= 0 {
-		delete(a.chatTurnQueue, sessionID)
-		delete(a.chatTurnOutputMode, sessionID)
-		delete(a.chatTurnLocalOnly, sessionID)
-		return dequeuedTurn{outputMode: mode, localOnly: localOnly}, true
-	}
-	a.chatTurnQueue[sessionID] = queued
-	return dequeuedTurn{outputMode: mode, localOnly: localOnly}, true
+	return a.turns.dequeue(sessionID)
 }
 
 func (a *App) markAssistantWorkerIdleIfQueueEmpty(sessionID string) bool {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.chatTurnQueue[sessionID] > 0 {
-		return false
-	}
-	delete(a.chatTurnWorker, sessionID)
-	return true
+	return a.turns.markIdleIfEmpty(sessionID)
 }
 
 func (a *App) runAssistantTurnQueue(sessionID string) {
