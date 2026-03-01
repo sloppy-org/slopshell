@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -23,6 +24,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/krystophny/tabura/internal/appserver"
 	"github.com/krystophny/tabura/internal/modelprofile"
+	"github.com/krystophny/tabura/internal/plugins"
 	"github.com/krystophny/tabura/internal/serve"
 	"github.com/krystophny/tabura/internal/store"
 )
@@ -66,6 +68,8 @@ type App struct {
 	sttPreVADThresholdDBDefault   float64
 	sttPreVADMinSpeechMSDefault   int
 	ttsURL                        string
+	pluginsDir                    string
+	pluginManager                 *plugins.Manager
 	devRuntime                    bool
 
 	store *store.Store
@@ -172,6 +176,22 @@ func New(dataDir, localProjectDir, localMCPURL, appServerURL, model, ttsURL, spa
 		_ = s.Close()
 		return nil, err
 	}
+	resolvedPluginsDir := strings.TrimSpace(os.Getenv("TABURA_PLUGINS_DIR"))
+	if strings.EqualFold(resolvedPluginsDir, "off") {
+		resolvedPluginsDir = ""
+	} else if resolvedPluginsDir == "" {
+		resolvedPluginsDir = filepath.Join(dataDir, "plugins")
+	}
+	pluginManager, err := plugins.New(plugins.Options{
+		Dir: resolvedPluginsDir,
+		Logf: func(format string, args ...interface{}) {
+			log.Printf("plugins: "+format, args...)
+		},
+	})
+	if err != nil {
+		_ = s.Close()
+		return nil, err
+	}
 	app := &App{
 		dataDir:                       dataDir,
 		localProjectDir:               localProjectDir,
@@ -189,6 +209,8 @@ func New(dataDir, localProjectDir, localMCPURL, appServerURL, model, ttsURL, spa
 		sttPreVADThresholdDBDefault:   resolvedSTTPreVADThresholdDB,
 		sttPreVADMinSpeechMSDefault:   resolvedSTTPreVADMinSpeechMS,
 		ttsURL:                        resolvedTTSURL,
+		pluginsDir:                    resolvedPluginsDir,
+		pluginManager:                 pluginManager,
 		devRuntime:                    devRuntime,
 		store:                         s,
 		appServerClient:               appServerClient,
@@ -285,6 +307,8 @@ func (a *App) Router() http.Handler {
 
 	// runtime
 	r.Get("/api/runtime", a.handleRuntime)
+	r.Get("/api/plugins", a.handlePlugins)
+	r.Post("/api/plugins/meeting-partner/decide", a.handleMeetingPartnerDecide)
 	r.Get("/api/projects", a.handleProjectsList)
 	r.Post("/api/projects", a.handleProjectCreate)
 	r.Post("/api/projects/{project_id}/activate", a.handleProjectActivate)
@@ -459,6 +483,62 @@ func (a *App) handleRuntime(w http.ResponseWriter, r *http.Request) {
 		"available_reasoning_efforts": modelprofile.AvailableReasoningEffortsByAlias(),
 		"stt_url":                     a.sttURL,
 		"tts_enabled":                 a.ttsURL != "",
+		"plugins_dir":                 a.pluginsDir,
+		"plugins_loaded":              a.loadedPluginCount(),
+	})
+}
+
+func (a *App) handlePlugins(w http.ResponseWriter, r *http.Request) {
+	if !a.requireAuth(w, r) {
+		return
+	}
+	list := []plugins.PluginInfo{}
+	if a.pluginManager != nil {
+		list = a.pluginManager.List()
+	}
+	writeJSON(w, map[string]interface{}{
+		"ok":      true,
+		"dir":     a.pluginsDir,
+		"count":   len(list),
+		"plugins": list,
+	})
+}
+
+func (a *App) loadedPluginCount() int {
+	if a == nil || a.pluginManager == nil {
+		return 0
+	}
+	return a.pluginManager.Count()
+}
+
+func (a *App) handleMeetingPartnerDecide(w http.ResponseWriter, r *http.Request) {
+	if !a.requireAuth(w, r) {
+		return
+	}
+	var req struct {
+		SessionID  string                 `json:"session_id"`
+		ProjectKey string                 `json:"project_key"`
+		Text       string                 `json:"text"`
+		Metadata   map[string]interface{} `json:"metadata"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+	decision, matched := a.pluginManager.DecideMeetingPartner(r.Context(), plugins.HookRequest{
+		Hook:       plugins.HookMeetingPartnerDecide,
+		SessionID:  strings.TrimSpace(req.SessionID),
+		ProjectKey: strings.TrimSpace(req.ProjectKey),
+		Text:       strings.TrimSpace(req.Text),
+		Metadata:   req.Metadata,
+	})
+	if !matched {
+		decision = plugins.MeetingPartnerDecision{Decision: "noop"}
+	}
+	writeJSON(w, map[string]interface{}{
+		"ok":       true,
+		"matched":  matched,
+		"decision": decision,
 	})
 }
 

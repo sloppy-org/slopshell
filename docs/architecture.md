@@ -23,6 +23,8 @@ Runtime stack:
   - MCP HTTP daemon (`/mcp`) and canvas websocket (`/ws/canvas`) mounted on the MCP listener.
 - `internal/web/server.go`
   - Browser APIs for chat sessions, canvas APIs, and chat/canvas websocket routes on the web listener.
+- `internal/plugins/manager.go`
+  - Manifest-driven webhook plugin runtime for server-side chat hooks.
 - `internal/store/store.go`
   - SQLite persistence for auth and chat session/message history.
 - `internal/protocol/bootstrap.go`
@@ -58,6 +60,11 @@ The browser UI is a full-viewport canvas with no visible chrome:
 2. Tool dispatch in `internal/mcp/server.go` resolves into adapter operations.
 3. Adapter updates session/artifact state in memory and emits events.
 4. Browser consumes websocket events: responses stream into ephemeral overlay, artifacts update the canvas in place.
+
+Chat hook flow:
+1. `chat.pre_user_message` plugin hooks run before user text is stored.
+2. `chat.pre_assistant_prompt` hooks run before app-server turn dispatch.
+3. `chat.post_assistant_response` hooks run before assistant output persistence/broadcast.
 
 ## Interaction Model
 
@@ -125,4 +132,5 @@ Pluginization in Tabura is scoped to product decision/capability layers, not
 runtime safety primitives. The current primary plugin target is
 `meeting-partner` (always-listen and intelligent response behavior for meeting
 mode) while auth/session, media transport, queueing, persistence, and privacy
-invariants remain in core. See `docs/plugins.md`.
+invariants remain in core. See `docs/plugins.md` and
+`docs/meeting-partner-whitepaper.md`.

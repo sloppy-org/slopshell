@@ -1,60 +1,169 @@
-# Tabura Plugin Boundaries
+# Tabura Plugin System
 
-This document defines what belongs in the Tabura core runtime vs plugin space.
+This document defines plugin scope, contracts, and runtime boundaries.
 
-## Core Runtime (Non-Plugin)
+## Core vs Plugin
 
-These concerns stay in this repository and are not delegated to plugins:
+Core (non-plugin):
 
-- Auth/session/cookie enforcement and API access control.
-- Chat turn queueing, cancellation, websocket transport, and persistence.
-- STT/TTS transport primitives and media validation.
-- Privacy invariants for meeting notes (RAM-only audio, no audio persistence).
-- Canvas/file safety boundaries and path constraints.
+- Auth/session enforcement and API authorization.
+- Chat queue/cancellation/ws/persistence guarantees.
+- STT/TTS transport and media validation.
+- Meeting-notes privacy invariants (RAM-only audio, no audio persistence).
+- Canvas/file safety boundaries.
 
-Reason: these are correctness, security, and reliability guarantees.
+Plugin scope:
 
-## Plugin Space
+- Product decision logic and capability modules.
+- Meeting-partner behavior (always-listen policy, directed speech gating, intelligent responses).
 
-Plugins should own product-specific decision logic and capability modules.
+## Loading and Inventory
 
-## Primary Plugin Target: `meeting-partner`
+- Manifest directory: `TABURA_PLUGINS_DIR`
+  - Default: `<data-dir>/plugins`
+  - Disable: `TABURA_PLUGINS_DIR=off`
+- Runtime inventory:
+  - `GET /api/runtime` -> `plugins_dir`, `plugins_loaded`
+  - `GET /api/plugins` -> loaded plugin metadata
 
-`meeting-partner` is the intended plugin domain for:
+## Manifest
 
-- Always-listen behavior policy in meeting mode.
-- Directed speech detection and response gating.
-- Intelligent response strategy from transcript/event context.
-- Optional room memory/entity timeline behavior.
+```json
+{
+  "id": "meeting-partner",
+  "kind": "webhook",
+  "endpoint": "http://127.0.0.1:9901/hooks",
+  "hooks": [
+    "chat.pre_user_message",
+    "chat.pre_assistant_prompt",
+    "chat.post_assistant_response",
+    "meeting_partner.session_state",
+    "meeting_partner.segment_finalized",
+    "meeting_partner.decide"
+  ],
+  "timeout_ms": 1200,
+  "enabled": true,
+  "secret_env": "TABURA_PLUGIN_SECRET"
+}
+```
 
-This aligns with meeting-notes assistant-intelligence scope and keeps transcript
-pipeline/privacy guarantees in core.
+Notes:
 
-## Issue Mapping
+- Only `kind=webhook` is supported.
+- Timeout is capped at `30000ms`.
+- If `secret_env` resolves, Tabura sends `Authorization: Bearer <secret>`.
 
-Plugin-oriented scope:
+## Hook Request Contract
 
-- `#106` DDSD gate from transcript context
-- `#108` assistant response execution
-- `#109` interaction policies
-- `#111` room memory/entity timeline
+Tabura sends:
 
-Core runtime scope:
+```json
+{
+  "hook": "meeting_partner.decide",
+  "session_id": "chat-session-id",
+  "project_key": "project-key",
+  "output_mode": "voice",
+  "text": "latest transcript chunk or prompt",
+  "metadata": {
+    "source": "meeting_notes",
+    "speaker": "user"
+  }
+}
+```
 
-- `#102` transcript/event schema
-- `#103` in-memory capture buffers
-- `#105` meeting-notes core pipeline
-- `#110` UI state sync for command-driven sessions
-- `#113` config API and invariants
-- `#114` transcript API/viewer
-- `#116` intent command entrypoints (protocol wiring)
-- `#117`, `#118` privacy contract and enforcement
-- `#119` launch tracker
-- `#121` local PTT daemon runtime
+## Response Contract
+
+Supported response shapes:
+
+1. Text mutation/blocking for chat hooks:
+
+```json
+{
+  "text": "rewritten text",
+  "blocked": false,
+  "reason": ""
+}
+```
+
+2. Meeting-partner decision (nested or top-level):
+
+```json
+{
+  "meeting_partner": {
+    "decision": "respond",
+    "response_text": "Here is the summary.",
+    "channel": "voice",
+    "urgency": "normal"
+  }
+}
+```
+
+or
+
+```json
+{
+  "decision": "action",
+  "action": {
+    "type": "create_task",
+    "title": "Follow up with legal"
+  }
+}
+```
+
+Allowed meeting-partner `decision` values:
+
+- `noop`
+- `respond`
+- `action`
+
+## Built-in Hook Points
+
+Chat hooks:
+
+- `chat.pre_user_message`
+- `chat.pre_assistant_prompt`
+- `chat.post_assistant_response`
+
+Meeting-partner hooks:
+
+- `meeting_partner.session_state`
+- `meeting_partner.segment_finalized`
+- `meeting_partner.decide`
+
+## Debug Endpoint for Meeting Partner
+
+`POST /api/plugins/meeting-partner/decide`
+
+Request:
+
+```json
+{
+  "session_id": "s1",
+  "project_key": "p1",
+  "text": "Could you summarize that?",
+  "metadata": { "source": "meeting_notes" }
+}
+```
+
+Response:
+
+```json
+{
+  "ok": true,
+  "matched": true,
+  "decision": {
+    "decision": "respond",
+    "response_text": "Let me summarize.",
+    "channel": "voice",
+    "urgency": "normal",
+    "plugin_id": "meeting-partner"
+  }
+}
+```
+
+If no plugin returns a decision, Tabura returns `decision=noop` with `matched=false`.
 
 ## Repository Split
 
-- `tabura` keeps runtime substrate and guarantees.
-- `tabura-plugins` (private) owns premium/product plugin implementations.
-
-This split allows rapid feature evolution without weakening core guarantees.
+- `tabura` keeps runtime substrate and invariants.
+- `tabura-plugins` (private) contains premium/plugin implementations.

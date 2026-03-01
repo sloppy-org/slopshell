@@ -18,6 +18,7 @@ Read in this order:
 2. `interfaces.md`
 3. `architecture.md`
 4. `plugins.md`
+5. `meeting-partner-whitepaper.md`
 
 Integrated protocol reference:
 
@@ -33,6 +34,7 @@ Release notes:
 Privacy and security specs:
 
 - `meeting-notes-privacy.md`
+- `meeting-partner-whitepaper.md`
 
 Migration/support docs:
 

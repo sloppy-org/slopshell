@@ -20,6 +20,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/krystophny/tabura/internal/appserver"
 	"github.com/krystophny/tabura/internal/modelprofile"
+	"github.com/krystophny/tabura/internal/plugins"
 	"github.com/krystophny/tabura/internal/store"
 )
 
@@ -83,6 +84,34 @@ type chatMessageRequest struct {
 
 type chatCommandRequest struct {
 	Command string `json:"command"`
+}
+
+func (a *App) applyPluginHook(ctx context.Context, req plugins.HookRequest) plugins.HookResult {
+	if a == nil || a.pluginManager == nil {
+		return plugins.HookResult{Text: req.Text}
+	}
+	return a.pluginManager.Apply(ctx, req)
+}
+
+func (a *App) applyPreAssistantPromptHook(ctx context.Context, sessionID, projectKey, outputMode, mode, prompt string) (string, error) {
+	result := a.applyPluginHook(ctx, plugins.HookRequest{
+		Hook:       plugins.HookChatPreAssistantPrompt,
+		SessionID:  sessionID,
+		ProjectKey: projectKey,
+		OutputMode: outputMode,
+		Text:       prompt,
+		Metadata: map[string]interface{}{
+			"mode": mode,
+		},
+	})
+	if result.Blocked {
+		reason := strings.TrimSpace(result.Reason)
+		if reason == "" {
+			reason = "assistant prompt blocked by plugin"
+		}
+		return "", errors.New(reason)
+	}
+	return strings.TrimSpace(result.Text), nil
 }
 
 func (a *App) handleChatSessionCreate(w http.ResponseWriter, r *http.Request) {
@@ -285,7 +314,8 @@ func (a *App) handleChatSessionMessage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing session_id", http.StatusBadRequest)
 		return
 	}
-	if _, err := a.store.GetChatSession(sessionID); err != nil {
+	session, err := a.store.GetChatSession(sessionID)
+	if err != nil {
 		http.Error(w, "session not found", http.StatusNotFound)
 		return
 	}
@@ -296,6 +326,29 @@ func (a *App) handleChatSessionMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	text := strings.TrimSpace(req.Text)
 	outputMode := normalizeTurnOutputMode(req.OutputMode)
+	if text == "" {
+		http.Error(w, "text is required", http.StatusBadRequest)
+		return
+	}
+	pluginResult := a.applyPluginHook(r.Context(), plugins.HookRequest{
+		Hook:       plugins.HookChatPreUserMessage,
+		SessionID:  sessionID,
+		ProjectKey: session.ProjectKey,
+		OutputMode: outputMode,
+		Text:       text,
+		Metadata: map[string]interface{}{
+			"local_only": req.LocalOnly,
+		},
+	})
+	if pluginResult.Blocked {
+		reason := strings.TrimSpace(pluginResult.Reason)
+		if reason == "" {
+			reason = "message blocked by plugin"
+		}
+		http.Error(w, reason, http.StatusBadRequest)
+		return
+	}
+	text = strings.TrimSpace(pluginResult.Text)
 	if text == "" {
 		http.Error(w, "text is required", http.StatusBadRequest)
 		return
@@ -916,6 +969,17 @@ func (a *App) runAssistantTurn(sessionID string, outputMode string, localOnly bo
 		a.broadcastChatEvent(sessionID, map[string]interface{}{"type": "error", "error": "empty prompt"})
 		return
 	}
+	prompt, err = a.applyPreAssistantPromptHook(context.Background(), sessionID, session.ProjectKey, outputMode, session.Mode, prompt)
+	if err != nil {
+		errText := err.Error()
+		_, _ = a.store.AddChatMessage(sessionID, "system", errText, errText, "text")
+		a.broadcastChatEvent(sessionID, map[string]interface{}{"type": "error", "error": errText})
+		return
+	}
+	if strings.TrimSpace(prompt) == "" {
+		a.broadcastChatEvent(sessionID, map[string]interface{}{"type": "error", "error": "empty prompt"})
+		return
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), assistantTurnTimeout)
 	runID := randomToken()
@@ -1097,6 +1161,18 @@ func (a *App) runAssistantTurnLegacy(sessionID string, session store.ChatSession
 		a.broadcastChatEvent(sessionID, map[string]interface{}{"type": "error", "error": "empty prompt"})
 		return
 	}
+	var err error
+	prompt, err = a.applyPreAssistantPromptHook(context.Background(), sessionID, session.ProjectKey, outputMode, session.Mode, prompt)
+	if err != nil {
+		errText := err.Error()
+		_, _ = a.store.AddChatMessage(sessionID, "system", errText, errText, "text")
+		a.broadcastChatEvent(sessionID, map[string]interface{}{"type": "error", "error": errText})
+		return
+	}
+	if strings.TrimSpace(prompt) == "" {
+		a.broadcastChatEvent(sessionID, map[string]interface{}{"type": "error", "error": "empty prompt"})
+		return
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), assistantTurnTimeout)
 	runID := randomToken()
@@ -1262,6 +1338,31 @@ func (a *App) finalizeAssistantResponse(
 	turnID, fallbackTurnID, threadID string,
 	outputMode string,
 ) string {
+	postResult := a.applyPluginHook(context.Background(), plugins.HookRequest{
+		Hook:       plugins.HookChatPostAssistantReply,
+		SessionID:  sessionID,
+		ProjectKey: projectKey,
+		OutputMode: outputMode,
+		Text:       text,
+		Metadata: map[string]interface{}{
+			"turn_id":   strings.TrimSpace(turnID),
+			"thread_id": strings.TrimSpace(threadID),
+		},
+	})
+	if postResult.Blocked {
+		errText := strings.TrimSpace(postResult.Reason)
+		if errText == "" {
+			errText = "assistant response blocked by plugin"
+		}
+		_, _ = a.store.AddChatMessage(sessionID, "system", errText, errText, "text")
+		a.broadcastChatEvent(sessionID, map[string]interface{}{
+			"type":  "error",
+			"error": errText,
+		})
+		return ""
+	}
+	text = postResult.Text
+
 	outputMode = normalizeTurnOutputMode(outputMode)
 	canvasSessionID := a.resolveCanvasSessionID(projectKey)
 	autoCanvas := false

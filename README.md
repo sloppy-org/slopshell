@@ -14,6 +14,7 @@ Risk notice: see [`DISCLAIMER.md`](DISCLAIMER.md)
 - **Spec hub**: [`docs/spec-index.md`](docs/spec-index.md)
 - **System architecture**: [`docs/architecture.md`](docs/architecture.md)
 - **Plugin boundaries**: [`docs/plugins.md`](docs/plugins.md)
+- **Meeting-partner whitepaper (prior art)**: [`docs/meeting-partner-whitepaper.md`](docs/meeting-partner-whitepaper.md)
 - **Codex app-server integration**: [`docs/codex-app-server-pivot.md`](docs/codex-app-server-pivot.md)
 - **HTTP/MCP interface inventory**: [`docs/interfaces.md`](docs/interfaces.md)
 - **UI paradigm**: [`docs/object-scoped-intent-ui.md`](docs/object-scoped-intent-ui.md)
@@ -110,6 +111,7 @@ Why Piper remains an HTTP sidecar:
 - Intent LLM fallback endpoint: `http://127.0.0.1:8426/v1/chat/completions` (`TABURA_INTENT_LLM_URL`, set `off` to disable)
 - Local canvas session id: `local`
 - Spark thinking budget for Spark model (fast path): `TABURA_APP_SERVER_SPARK_REASONING_EFFORT=low` (`low`/`medium`/`high`/`extra_high`)
+- Plugin manifest directory: `TABURA_PLUGINS_DIR` (default `<data-dir>/plugins`; set `off` to disable)
 
 Security model:
 - MCP routes are intentionally not exposed on the web listener.
