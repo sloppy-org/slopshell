@@ -39,7 +39,7 @@ import {
   getPreRollAudio,
   getHotwordMicStream,
 } from './hotword.js';
-import { initVAD, ensureVADLoaded } from './vad.js';
+import { initVAD, ensureVADLoaded, float32ToWav } from './vad.js';
 
 const state = {
   sessionId: 'local',
@@ -1687,9 +1687,13 @@ async function startSileroVADMonitor(capture) {
           vadState.noSpeechTimer = null;
         }
       },
-      onSpeechEnd() {
+      onSpeechEnd(audio) {
         if (!vadState.isRunning || vadState.committed) return;
         vadState.committed = true;
+        if (audio instanceof Float32Array && audio.length > 0) {
+          capture._vadAudioBlob = float32ToWav(audio, 16000);
+        }
+        stopVADMonitor(capture);
         void stopVoiceCaptureAndSend();
       },
     });
@@ -1866,22 +1870,29 @@ async function stopVoiceCaptureAndSend() {
   let reopenConversationListen = false;
   try {
     await stopChatVoiceMediaAndFlush(capture);
-    let mimeType = String(capture.mimeType || '').trim();
-    if (!mimeType) {
-      mimeType = firstNonEmptyChunkMimeType(capture.chunks);
-    }
     let sttBlob = null;
-    if (capture.chunks.length > 0) {
-      sttBlob = mimeType
-        ? new Blob(capture.chunks, { type: mimeType })
-        : new Blob(capture.chunks);
+    let mimeType = '';
+    if (capture._vadAudioBlob) {
+      sttBlob = capture._vadAudioBlob;
+      mimeType = 'audio/wav';
+      capture._vadAudioBlob = null;
+    } else {
+      mimeType = String(capture.mimeType || '').trim();
       if (!mimeType) {
-        mimeType = String(sttBlob?.type || '').trim();
+        mimeType = firstNonEmptyChunkMimeType(capture.chunks);
       }
-      capture.chunks = [];
-    }
-    if (!mimeType) {
-      mimeType = isLikelyIOS() ? 'audio/mp4' : 'audio/webm';
+      if (capture.chunks.length > 0) {
+        sttBlob = mimeType
+          ? new Blob(capture.chunks, { type: mimeType })
+          : new Blob(capture.chunks);
+        if (!mimeType) {
+          mimeType = String(sttBlob?.type || '').trim();
+        }
+        capture.chunks = [];
+      }
+      if (!mimeType) {
+        mimeType = isLikelyIOS() ? 'audio/mp4' : 'audio/webm';
+      }
     }
     sttStart(mimeType);
     if (sttBlob) {
