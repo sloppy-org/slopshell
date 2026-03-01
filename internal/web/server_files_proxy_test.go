@@ -23,9 +23,7 @@ func TestFilesProxyAllowsSameOriginEmbedding(t *testing.T) {
 	if err != nil {
 		t.Fatalf("extract port: %v", err)
 	}
-	app.mu.Lock()
-	app.tunnelPorts["s1"] = port
-	app.mu.Unlock()
+	app.tunnels.setPort("s1", port)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/files/s1/docs/test.pdf", nil)
 	req.AddCookie(&http.Cookie{Name: SessionCookie, Value: testAuthToken})
@@ -66,9 +64,7 @@ func TestFilesProxyDecodesEncodedNestedPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("extract port: %v", err)
 	}
-	app.mu.Lock()
-	app.tunnelPorts["s1"] = port
-	app.mu.Unlock()
+	app.tunnels.setPort("s1", port)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/files/s1/docs%2Ftest.pdf", nil)
 	req.AddCookie(&http.Cookie{Name: SessionCookie, Value: testAuthToken})

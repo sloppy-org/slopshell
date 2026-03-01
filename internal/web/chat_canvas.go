@@ -146,9 +146,7 @@ func (a *App) executeFileBlocks(projectKey, canvasSessionID string, blocks []fil
 
 func (a *App) writeCanvasFileBlock(projectKey, canvasSessionID string, block fileBlock) bool {
 	cwd := a.cwdForProjectKey(projectKey)
-	a.mu.Lock()
-	port, ok := a.tunnelPorts[canvasSessionID]
-	a.mu.Unlock()
+	port, ok := a.tunnels.getPort(canvasSessionID)
 	if !ok {
 		return false
 	}
@@ -215,9 +213,7 @@ func (a *App) resolveCanvasFileTarget(projectKey string) *canvasFileTarget {
 		return nil
 	}
 	sid := a.canvasSessionIDForProject(project)
-	a.mu.Lock()
-	port, ok := a.tunnelPorts[sid]
-	a.mu.Unlock()
+	port, ok := a.tunnels.getPort(sid)
 	if !ok {
 		return nil
 	}

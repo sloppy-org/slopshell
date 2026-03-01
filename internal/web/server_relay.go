@@ -29,9 +29,7 @@ func (a *App) handleCanvasWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.hub.registerCanvas(sid, ws)
-	a.mu.Lock()
-	remote := a.remoteCanvasWS[sid]
-	a.mu.Unlock()
+	remote := a.tunnels.getRemoteCanvas(sid)
 
 	defer func() {
 		a.hub.unregisterCanvas(sid, ws)
@@ -54,9 +52,7 @@ func (a *App) handleCanvasSnapshot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sid := chi.URLParam(r, "session_id")
-	a.mu.Lock()
-	port, ok := a.tunnelPorts[sid]
-	a.mu.Unlock()
+	port, ok := a.tunnels.getPort(sid)
 	if !ok {
 		http.Error(w, "no active tunnel for session", http.StatusNotFound)
 		return
@@ -221,9 +217,7 @@ func (a *App) handleFilesProxy(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid path", http.StatusForbidden)
 		return
 	}
-	a.mu.Lock()
-	port, ok := a.tunnelPorts[sid]
-	a.mu.Unlock()
+	port, ok := a.tunnels.getPort(sid)
 	if !ok {
 		http.Error(w, "no active tunnel for session", http.StatusNotFound)
 		return
@@ -269,24 +263,12 @@ func extractPort(raw string) (int, error) {
 }
 
 func (a *App) startCanvasRelay(sessionID string, port int) {
-	a.mu.Lock()
-	if cancel := a.relayCancel[sessionID]; cancel != nil {
-		cancel()
-		delete(a.relayCancel, sessionID)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	a.relayCancel[sessionID] = cancel
-	a.mu.Unlock()
+	ctx := a.tunnels.replaceRelayCancel(sessionID)
 
 	go func() {
 		defer func() {
-			a.mu.Lock()
-			delete(a.relayCancel, sessionID)
-			if rc := a.remoteCanvasWS[sessionID]; rc != nil {
-				_ = rc.Close()
-				delete(a.remoteCanvasWS, sessionID)
-			}
-			a.mu.Unlock()
+			a.tunnels.deleteRelayCancel(sessionID)
+			a.tunnels.deleteRemoteCanvas(sessionID)
 		}()
 
 		wsURL := fmt.Sprintf("ws://127.0.0.1:%d/ws/canvas", port)
@@ -294,9 +276,7 @@ func (a *App) startCanvasRelay(sessionID string, port int) {
 		if err != nil {
 			return
 		}
-		a.mu.Lock()
-		a.remoteCanvasWS[sessionID] = conn
-		a.mu.Unlock()
+		a.tunnels.setRemoteCanvas(sessionID, conn)
 
 		for {
 			select {
@@ -320,10 +300,7 @@ func (a *App) startCanvasRelay(sessionID string, port int) {
 }
 
 func (a *App) startLocalServe() error {
-	a.mu.Lock()
-	_, alreadyReady := a.tunnelPorts[LocalSessionID]
-	a.mu.Unlock()
-	if alreadyReady {
+	if a.tunnels.hasPort(LocalSessionID) {
 		return nil
 	}
 	if a.localProjectDir == "" {
@@ -334,19 +311,14 @@ func (a *App) startLocalServe() error {
 		if err != nil {
 			return err
 		}
-		a.mu.Lock()
-		a.tunnelPorts[LocalSessionID] = port
-		a.mu.Unlock()
+		a.tunnels.setPort(LocalSessionID, port)
 		a.startCanvasRelay(LocalSessionID, port)
 		return nil
 	}
 
 	app := serve.NewApp(a.localProjectDir)
 	ctx, cancel := context.WithCancel(context.Background())
-	a.mu.Lock()
-	a.localServe = app
-	a.localServeCancel = cancel
-	a.mu.Unlock()
+	a.tunnels.setLocalServe(app, cancel)
 	go func() {
 		_ = app.Start("127.0.0.1", DaemonPort)
 	}()
@@ -361,9 +333,7 @@ func (a *App) startLocalServe() error {
 		if err == nil {
 			_ = resp.Body.Close()
 			if resp.StatusCode == 200 {
-				a.mu.Lock()
-				a.tunnelPorts[LocalSessionID] = DaemonPort
-				a.mu.Unlock()
+				a.tunnels.setPort(LocalSessionID, DaemonPort)
 				a.startCanvasRelay(LocalSessionID, DaemonPort)
 				return nil
 			}

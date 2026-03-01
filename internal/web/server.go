@@ -78,18 +78,12 @@ type App struct {
 
 	upgrader websocket.Upgrader
 
-	mu    sync.Mutex
-	hub   *wsHub
-	turns *chatTurnTracker
+	mu              sync.Mutex
+	hub             *wsHub
+	turns           *chatTurnTracker
+	tunnels         *tunnelRegistry
 	chatAppSessions map[string]*appserver.Session
-	remoteCanvasWS     map[string]*websocket.Conn
-	tunnelPorts        map[string]int
-	relayCancel        map[string]context.CancelFunc
-	localServe         *serve.App
-	localServeCancel   context.CancelFunc
-	projectServes      map[string]*serve.App
-	projectServeStop   map[string]context.CancelFunc
-	ghCommandRunner    ghCommandRunner
+	ghCommandRunner ghCommandRunner
 
 	bootID    string
 	startedAt string
@@ -231,13 +225,9 @@ func New(dataDir, localProjectDir, localMCPURL, appServerURL, model, ttsURL, spa
 		upgrader:                      websocket.Upgrader{CheckOrigin: checkWSOrigin},
 		hub:             newWSHub(),
 		turns:           newChatTurnTracker(),
+		tunnels:         newTunnelRegistry(),
 		chatAppSessions: map[string]*appserver.Session{},
-		remoteCanvasWS:                map[string]*websocket.Conn{},
-		tunnelPorts:                   map[string]int{},
-		relayCancel:                   map[string]context.CancelFunc{},
-		projectServes:                 map[string]*serve.App{},
-		projectServeStop:              map[string]context.CancelFunc{},
-		ghCommandRunner:               runGitHubCLI,
+		ghCommandRunner: runGitHubCLI,
 		bootID:                        strconv.FormatInt(time.Now().UnixNano(), 16),
 		startedAt:                     time.Now().UTC().Format(time.RFC3339Nano),
 	}
@@ -736,38 +726,8 @@ func (a *App) start(host string, port int, certFile, keyFile string) error {
 }
 
 func (a *App) Shutdown(ctx context.Context) error {
-	projectStops := map[string]context.CancelFunc{}
-	projectApps := map[string]*serve.App{}
 	a.turns.cancelAll()
 	a.hub.closeAllChat()
-	a.mu.Lock()
-	for _, cancel := range a.relayCancel {
-		cancel()
-	}
-	for _, ws := range a.remoteCanvasWS {
-		_ = ws.Close()
-	}
-	for sid, cancel := range a.projectServeStop {
-		projectStops[sid] = cancel
-	}
-	for sid, app := range a.projectServes {
-		projectApps[sid] = app
-	}
-	a.mu.Unlock()
-
-	for _, cancel := range projectStops {
-		cancel()
-	}
-	for _, app := range projectApps {
-		if app != nil {
-			_ = app.Stop(ctx)
-		}
-	}
-	if a.localServe != nil {
-		_ = a.localServe.Stop(ctx)
-	}
-	if a.localServeCancel != nil {
-		a.localServeCancel()
-	}
+	a.tunnels.shutdown(ctx)
 	return a.store.Close()
 }

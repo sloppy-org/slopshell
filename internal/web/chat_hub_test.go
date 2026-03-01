@@ -249,9 +249,7 @@ func TestExecuteSystemActionDelegateStartsJob(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse mock port: %v", err)
 	}
-	app.mu.Lock()
-	app.tunnelPorts[app.canvasSessionIDForProject(defaultProject)] = port
-	app.mu.Unlock()
+	app.tunnels.setPort(app.canvasSessionIDForProject(defaultProject), port)
 
 	msg, payload, err := app.executeSystemAction(session.ID, session, &SystemAction{
 		Action: "delegate",

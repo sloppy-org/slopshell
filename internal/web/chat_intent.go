@@ -378,9 +378,7 @@ func (a *App) executeSystemAction(sessionID string, session store.ChatSession, a
 		if canvasSessionID == "" {
 			return "", nil, errors.New("delegate canvas session is not available")
 		}
-		a.mu.Lock()
-		port, ok := a.tunnelPorts[canvasSessionID]
-		a.mu.Unlock()
+		port, ok := a.tunnels.getPort(canvasSessionID)
 		if !ok {
 			return "", nil, fmt.Errorf("no active MCP tunnel for project %q", targetProject.Name)
 		}

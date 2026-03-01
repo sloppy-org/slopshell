@@ -469,12 +469,9 @@ func (a *App) startProjectServe(sessionID, projectDir string) error {
 	if projectDir == "" {
 		return errors.New("project path is required")
 	}
-	a.mu.Lock()
-	if _, ok := a.tunnelPorts[sessionID]; ok {
-		a.mu.Unlock()
+	if a.tunnels.hasPort(sessionID) {
 		return nil
 	}
-	a.mu.Unlock()
 
 	port, err := chooseLoopbackPort()
 	if err != nil {
@@ -497,11 +494,8 @@ func (a *App) startProjectServe(sessionID, projectDir string) error {
 		if err == nil {
 			_ = resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
-				a.mu.Lock()
-				a.projectServes[sessionID] = projectApp
-				a.projectServeStop[sessionID] = cancel
-				a.tunnelPorts[sessionID] = port
-				a.mu.Unlock()
+				a.tunnels.setProjectServe(sessionID, projectApp, cancel)
+				a.tunnels.setPort(sessionID, port)
 				a.startCanvasRelay(sessionID, port)
 				return nil
 			}
@@ -517,10 +511,7 @@ func (a *App) startProjectServe(sessionID, projectDir string) error {
 
 func (a *App) ensureProjectCanvasReady(project store.Project) error {
 	sessionID := a.canvasSessionIDForProject(project)
-	a.mu.Lock()
-	_, ok := a.tunnelPorts[sessionID]
-	a.mu.Unlock()
-	if ok {
+	if a.tunnels.hasPort(sessionID) {
 		return nil
 	}
 
@@ -529,9 +520,7 @@ func (a *App) ensureProjectCanvasReady(project store.Project) error {
 		if err != nil {
 			return err
 		}
-		a.mu.Lock()
-		a.tunnelPorts[sessionID] = port
-		a.mu.Unlock()
+		a.tunnels.setPort(sessionID, port)
 		a.startCanvasRelay(sessionID, port)
 		return nil
 	}
@@ -540,10 +529,7 @@ func (a *App) ensureProjectCanvasReady(project store.Project) error {
 		if err := a.startLocalServe(); err != nil {
 			return err
 		}
-		a.mu.Lock()
-		_, ok = a.tunnelPorts[sessionID]
-		a.mu.Unlock()
-		if ok {
+		if a.tunnels.hasPort(sessionID) {
 			return nil
 		}
 	}

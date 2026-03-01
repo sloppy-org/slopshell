@@ -217,9 +217,7 @@ func (a *App) clearCanvasForProject(projectKey string) {
 	if canvasSessionID == "" {
 		return
 	}
-	a.mu.Lock()
-	port, ok := a.tunnelPorts[canvasSessionID]
-	a.mu.Unlock()
+	port, ok := a.tunnels.getPort(canvasSessionID)
 	if !ok {
 		return
 	}
@@ -303,9 +301,7 @@ func (a *App) delegateActiveJobsForProject(projectKey string) int {
 	if canvasSessionID == "" {
 		return 0
 	}
-	a.mu.Lock()
-	port, ok := a.tunnelPorts[canvasSessionID]
-	a.mu.Unlock()
+	port, ok := a.tunnels.getPort(canvasSessionID)
 	if !ok {
 		return 0
 	}
@@ -326,9 +322,7 @@ func (a *App) cancelDelegatedJobsForProject(projectKey string) int {
 	if canvasSessionID == "" {
 		return 0
 	}
-	a.mu.Lock()
-	port, ok := a.tunnelPorts[canvasSessionID]
-	a.mu.Unlock()
+	port, ok := a.tunnels.getPort(canvasSessionID)
 	if !ok {
 		return 0
 	}

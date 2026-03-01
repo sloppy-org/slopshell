@@ -157,9 +157,7 @@ func TestExecuteChatCommandStopCancelsDelegatedWork(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse mock port: %v", err)
 	}
-	app.mu.Lock()
-	app.tunnelPorts[project.CanvasSessionID] = port
-	app.mu.Unlock()
+	app.tunnels.setPort(project.CanvasSessionID, port)
 
 	result, err := app.executeChatCommand(session.ID, "/stop")
 	if err != nil {
@@ -337,9 +335,7 @@ func TestHandleChatSessionCommandStopCancelsDelegatedWork(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse mock port: %v", err)
 	}
-	app.mu.Lock()
-	app.tunnelPorts[project.CanvasSessionID] = port
-	app.mu.Unlock()
+	app.tunnels.setPort(project.CanvasSessionID, port)
 
 	rr := doAuthedJSONRequest(t, app.Router(), http.MethodPost, "/api/chat/sessions/"+session.ID+"/commands", map[string]any{
 		"command": "/stop",
@@ -424,9 +420,7 @@ func TestHandleChatSessionCancelEndpointStopsDelegatedWork(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse mock port: %v", err)
 	}
-	app.mu.Lock()
-	app.tunnelPorts[project.CanvasSessionID] = port
-	app.mu.Unlock()
+	app.tunnels.setPort(project.CanvasSessionID, port)
 
 	rr := doAuthedJSONRequest(t, app.Router(), http.MethodPost, "/api/chat/sessions/"+session.ID+"/cancel", map[string]any{})
 	if rr.Code != http.StatusOK {

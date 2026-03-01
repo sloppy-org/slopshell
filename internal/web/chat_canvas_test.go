@@ -630,9 +630,7 @@ func TestFinalizeAssistantResponse_SilentOverwritesScratchArtifact(t *testing.T)
 	if err != nil {
 		t.Fatalf("extract port: %v", err)
 	}
-	app.mu.Lock()
-	app.tunnelPorts[app.canvasSessionIDForProject(project)] = port
-	app.mu.Unlock()
+	app.tunnels.setPort(app.canvasSessionIDForProject(project), port)
 	ctx := app.resolveCanvasContext(project.ProjectKey)
 	if ctx == nil {
 		t.Fatal("expected canvas context")
@@ -703,9 +701,7 @@ func TestFinalizeAssistantResponse_SilentFallsBackToScratchForWorkspaceArtifact(
 	if err != nil {
 		t.Fatalf("extract port: %v", err)
 	}
-	app.mu.Lock()
-	app.tunnelPorts[app.canvasSessionIDForProject(project)] = port
-	app.mu.Unlock()
+	app.tunnels.setPort(app.canvasSessionIDForProject(project), port)
 
 	var persistedID int64
 	var persistedText string
@@ -772,9 +768,7 @@ func TestFinalizeAssistantResponse_SilentFallsBackWhenOverwritePathEscapesProjec
 	if err != nil {
 		t.Fatalf("extract port: %v", err)
 	}
-	app.mu.Lock()
-	app.tunnelPorts[app.canvasSessionIDForProject(project)] = port
-	app.mu.Unlock()
+	app.tunnels.setPort(app.canvasSessionIDForProject(project), port)
 
 	var persistedID int64
 	var persistedText string
