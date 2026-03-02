@@ -951,8 +951,13 @@ test.describe('safari-recorder=broken', () => {
     await clearLog(page);
 
     await page.mouse.click(400, 400);
-    await page.waitForTimeout(500);
     await waitForLogEntry(page, 'recorder', 'start');
+
+    // Wait until the recorder has accumulated at least one chunk (250ms interval).
+    await expect.poll(async () => page.evaluate(() => {
+      const cap = (window as any)._taburaApp?.getState?.()?.chatVoiceCapture;
+      return cap?.chunks?.length || 0;
+    }), { timeout: 15_000 }).toBeGreaterThan(0);
 
     await page.mouse.click(400, 400);
     await waitForSTTAction(page, 'stop');

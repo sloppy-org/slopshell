@@ -87,12 +87,21 @@ rm -rf "${PLAY_REPORT_DIR}" "${PLAY_RESULTS_DIR}"
 mkdir -p "${PLAY_REPORT_DIR}" "${PLAY_RESULTS_DIR}"
 
 printf '\n[reports] Running Playwright E2E suite...\n'
+PLAY_EXIT=0
 (
   cd "${ROOT_DIR}"
   PLAYWRIGHT_HTML_REPORT="${PLAY_REPORT_DIR}" \
     ./scripts/playwright.sh --config=playwright.config.ts --output="${PLAY_RESULTS_DIR}" --reporter=json \
     > "${PLAY_JSON}" 2> "${PLAY_LOG}"
-)
+) || PLAY_EXIT=$?
+
+if [[ "${PLAY_EXIT}" -ne 0 ]]; then
+  printf '[reports] Playwright exited with code %d\n' "${PLAY_EXIT}"
+  if [[ -s "${PLAY_LOG}" ]]; then
+    printf '[reports] Playwright stderr (last 40 lines):\n'
+    tail -40 "${PLAY_LOG}"
+  fi
+fi
 
 read -r E2E_EXPECTED E2E_UNEXPECTED E2E_SKIPPED E2E_FLAKY E2E_DURATION_MS <<EOF_STATS
 $(node -e "const fs=require('fs');const p=process.argv[1];const j=JSON.parse(fs.readFileSync(p,'utf8'));const s=j.stats||{};process.stdout.write([s.expected||0,s.unexpected||0,s.skipped||0,s.flaky||0,s.duration||0].join(' '));" "${PLAY_JSON}")
@@ -163,5 +172,10 @@ printf '[reports] E2E summary: %s\n\n' "${E2E_SUMMARY}"
 
 if [[ "${COVERAGE_FAILURES}" -gt 0 ]]; then
   echo "[reports] failing due to coverage gate violations"
+  exit 1
+fi
+
+if [[ "${PLAY_EXIT}" -ne 0 ]]; then
+  echo "[reports] failing due to Playwright exit code ${PLAY_EXIT}"
   exit 1
 fi
