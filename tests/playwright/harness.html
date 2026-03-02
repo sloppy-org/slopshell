@@ -80,6 +80,56 @@
   </div>
 
   <script>
+    // Touch + TouchEvent polyfill for WebKit headless (throws "Illegal
+    // constructor" for Touch and rejects non-native Touch objects in
+    // TouchEvent). All touch-based Playwright tests need this.
+    (function() {
+      var needsTouch = false;
+      if (typeof Touch === 'undefined') {
+        needsTouch = true;
+      } else {
+        try { new Touch({ identifier: 0, target: document.body }); } catch { needsTouch = true; }
+      }
+      if (needsTouch) {
+        function TouchPolyfill(init) {
+          this.identifier = init.identifier ?? 0;
+          this.target = init.target ?? document.body;
+          this.clientX = init.clientX ?? 0;
+          this.clientY = init.clientY ?? 0;
+          this.pageX = init.pageX ?? init.clientX ?? 0;
+          this.pageY = init.pageY ?? init.clientY ?? 0;
+          this.screenX = init.screenX ?? init.clientX ?? 0;
+          this.screenY = init.screenY ?? init.clientY ?? 0;
+          this.radiusX = init.radiusX ?? 0;
+          this.radiusY = init.radiusY ?? 0;
+          this.rotationAngle = init.rotationAngle ?? 0;
+          this.force = init.force ?? 0;
+        }
+        Object.defineProperty(window, 'Touch', {
+          value: TouchPolyfill, writable: true, configurable: true,
+        });
+      }
+      var needsTouchEvent = false;
+      if (needsTouch && typeof TouchEvent !== 'undefined') {
+        try {
+          var t = new Touch({ identifier: 0, target: document.body });
+          new TouchEvent('touchstart', { touches: [t], changedTouches: [t], bubbles: true });
+        } catch { needsTouchEvent = true; }
+      }
+      if (needsTouchEvent) {
+        function TouchEventPolyfill(type, init) {
+          var ev = new Event(type, init);
+          ev.touches = (init && init.touches) || [];
+          ev.changedTouches = (init && init.changedTouches) || [];
+          ev.targetTouches = (init && init.targetTouches) || [];
+          return ev;
+        }
+        Object.defineProperty(window, 'TouchEvent', {
+          value: TouchEventPolyfill, writable: true, configurable: true,
+        });
+      }
+    })();
+
     // Harness log for test assertions
     window.__harnessLog = [];
     const DEFAULT_CANCEL_RESPONSE = { ok: true, canceled: 3, active_canceled: 1, queued_canceled: 1, delegate_canceled: 1 };
