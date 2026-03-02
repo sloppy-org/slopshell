@@ -1655,11 +1655,6 @@ async function startSileroVADMonitor(capture) {
   };
   capture.vadState = vadState;
 
-  vadState.noSpeechTimer = window.setTimeout(() => {
-    if (!vadState.isRunning || vadState.committed) return;
-    handleVADNoSpeechTimeout(capture);
-  }, vadNoSpeechMs);
-
   vadState.maxDurationTimer = window.setTimeout(() => {
     if (!vadState.isRunning || vadState.committed) return;
     vadState.committed = true;
@@ -1692,12 +1687,6 @@ async function startSileroVADMonitor(capture) {
         vadState.committed = true;
         if (audio instanceof Float32Array && audio.length > 0) {
           capture._vadAudioBlob = float32ToWav(audio, 16000);
-        } else if (capture.chunks.length > 0) {
-          // Fallback: snapshot periodic MediaRecorder chunks collected so far,
-          // before recorder.stop() can corrupt them on Safari/WebKit.
-          const mt = String(capture.mimeType || '').trim()
-            || (isLikelyIOS() ? 'audio/mp4' : 'audio/webm');
-          capture._vadAudioBlob = new Blob(capture.chunks.slice(), { type: mt });
         }
         stopVADMonitor(capture);
         void stopVoiceCaptureAndSend();
@@ -1711,6 +1700,15 @@ async function startSileroVADMonitor(capture) {
 
     vadState.sileroInstance = instance;
     if (instance) instance.start();
+
+    // Start the no-speech timer only after the VAD is running. On Safari,
+    // model + AudioWorklet init can exceed 4s; starting the timer before
+    // init would fire handleVADNoSpeechTimeout and tear down the capture
+    // before the VAD ever processed a frame.
+    vadState.noSpeechTimer = window.setTimeout(() => {
+      if (!vadState.isRunning || vadState.committed) return;
+      handleVADNoSpeechTimeout(capture);
+    }, vadNoSpeechMs);
   } catch (err) {
     console.warn('Silero VAD init failed:', err);
     if (vadState.isRunning) {
@@ -1881,7 +1879,7 @@ async function stopVoiceCaptureAndSend() {
       // VAD auto-stop: use speech audio directly, skip MediaRecorder flush
       // so Safari cannot interfere via its broken stop/dataavailable ordering.
       sttBlob = capture._vadAudioBlob;
-      mimeType = String(capture._vadAudioBlob.type || '').trim() || 'audio/wav';
+      mimeType = 'audio/wav';
       capture._vadAudioBlob = null;
     } else {
       // Manual stop / timeout: flush MediaRecorder and use its chunks.
