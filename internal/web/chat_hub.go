@@ -41,7 +41,7 @@ Available actions:
 - {"action":"show_status"}
 
 For multi-step tasks, return {"actions":[{"action":"..."},{"action":"..."}]}.
-For open/show-file requests where path is uncertain (for example "Open README"), prefer shell find/list first, then open_file_canvas.
+For open/show-file requests where path is uncertain (for example "Open the project manifest"), prefer shell find/list first, then open_file_canvas.
 When chaining shell -> open_file_canvas, set path="$last_shell_path".
 In JSON command strings, prefer single quotes inside shell command arguments.
 

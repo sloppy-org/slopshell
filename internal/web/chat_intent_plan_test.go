@@ -553,7 +553,7 @@ func TestClassifyAndExecuteSystemActionOpenRequestReturnsExplicitFailureWhenPlan
 	}
 }
 
-func TestExecuteSystemActionPlanPrefersTopLevelReadmeForPlaceholder(t *testing.T) {
+func TestExecuteSystemActionPlanPrefersTopLevelSiblingForPlaceholder(t *testing.T) {
 	app := newAuthedTestApp(t)
 	project, err := app.ensureDefaultProjectRecord()
 	if err != nil {
@@ -562,11 +562,11 @@ func TestExecuteSystemActionPlanPrefersTopLevelReadmeForPlaceholder(t *testing.T
 	if err := os.MkdirAll(filepath.Join(project.RootPath, "pr", "92613"), 0o755); err != nil {
 		t.Fatalf("mkdir nested path: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(project.RootPath, "README.md"), []byte("root-readme"), 0o644); err != nil {
-		t.Fatalf("write root README.md: %v", err)
+	if err := os.WriteFile(filepath.Join(project.RootPath, "CLAUDE.md"), []byte("root-claude"), 0o644); err != nil {
+		t.Fatalf("write root CLAUDE.md: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(project.RootPath, "pr", "92613", "README.md"), []byte("nested-readme"), 0o644); err != nil {
-		t.Fatalf("write nested README.md: %v", err)
+	if err := os.WriteFile(filepath.Join(project.RootPath, "pr", "92613", "CLAUDE.md"), []byte("nested-claude"), 0o644); err != nil {
+		t.Fatalf("write nested CLAUDE.md: %v", err)
 	}
 	session, err := app.store.GetOrCreateChatSession(project.ProjectKey)
 	if err != nil {
@@ -587,7 +587,7 @@ func TestExecuteSystemActionPlanPrefersTopLevelReadmeForPlaceholder(t *testing.T
 		{
 			Action: "shell",
 			Params: map[string]interface{}{
-				"command": "printf './pr/92613/README.md\\n'",
+				"command": "printf './pr/92613/CLAUDE.md\\n'",
 			},
 		},
 		{
@@ -606,10 +606,10 @@ func TestExecuteSystemActionPlanPrefersTopLevelReadmeForPlaceholder(t *testing.T
 	if showCalls < 1 {
 		t.Fatalf("canvas_artifact_show calls = %d, want >= 1", showCalls)
 	}
-	if got := strings.TrimSpace(strFromAny(observed["title"])); got != "README.md" {
-		t.Fatalf("canvas title = %q, want README.md", got)
+	if got := strings.TrimSpace(strFromAny(observed["title"])); got != "CLAUDE.md" {
+		t.Fatalf("canvas title = %q, want CLAUDE.md", got)
 	}
-	if got := strings.TrimSpace(strFromAny(observed["markdown_or_text"])); got != "root-readme" {
-		t.Fatalf("canvas content = %q, want root-readme", got)
+	if got := strings.TrimSpace(strFromAny(observed["markdown_or_text"])); got != "root-claude" {
+		t.Fatalf("canvas content = %q, want root-claude", got)
 	}
 }

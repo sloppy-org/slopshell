@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -54,7 +55,7 @@ Policy:
 - Use {"action":"shell","command":"..."} only for explicit shell-like requests (for example list/find/grep/read operations).
 - Use {"action":"open_file_canvas","path":"..."} when user asks to open/show a specific file on canvas.
 - For multi-step tasks, return {"actions":[{"action":"..."}, {"action":"..."}]}.
-- For "open README"-style requests, prefer a two-step plan: shell find/list first, then open_file_canvas.
+- For open/show file requests where the exact path is uncertain, prefer a two-step plan: shell find/list first, then open_file_canvas.
 - When chaining shell -> open_file_canvas, set path="$last_shell_path".
 - In JSON command strings, prefer single quotes inside shell command arguments.
 
@@ -688,7 +689,7 @@ func (a *App) classifyAndExecuteSystemAction(ctx context.Context, sessionID stri
 			}
 		}
 		if requestRequiresOpenCanvasAction(trimmedText) {
-			return "I couldn't open that file on canvas. Please provide an exact relative path (for example: README.md).", nil, true
+			return "I couldn't open that file on canvas. Please provide an exact relative path (for example: docs/CLAUDE.md).", nil, true
 		}
 		return "", nil, false
 	}
@@ -730,14 +731,85 @@ func firstShellPathFromOutput(output string) string {
 	return ""
 }
 
-func preferTopLevelReadmePath(cwd, candidate string) string {
+type shellPathCandidate struct {
+	Title         string
+	HiddenPenalty int
+	Depth         int
+	Length        int
+}
+
+func selectBestShellPathFromOutput(cwd, output string) string {
+	root := strings.TrimSpace(cwd)
+	if root == "" {
+		return firstShellPathFromOutput(output)
+	}
+	lines := strings.Split(output, "\n")
+	candidates := make([]shellPathCandidate, 0, len(lines))
+	for _, line := range lines {
+		candidate := strings.TrimSpace(line)
+		if candidate == "" || candidate == "(no output)" {
+			continue
+		}
+		candidate = strings.TrimPrefix(candidate, "./")
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "" || candidate == "." || candidate == ".." {
+			continue
+		}
+		absPath, canvasTitle, err := resolveCanvasFilePath(root, candidate)
+		if err != nil {
+			continue
+		}
+		info, statErr := os.Stat(absPath)
+		if statErr != nil || info.IsDir() {
+			continue
+		}
+		title := filepath.ToSlash(strings.TrimSpace(canvasTitle))
+		if title == "" {
+			continue
+		}
+		segments := strings.Split(title, "/")
+		hiddenPenalty := 0
+		for _, segment := range segments {
+			seg := strings.TrimSpace(segment)
+			if strings.HasPrefix(seg, ".") {
+				hiddenPenalty++
+			}
+		}
+		depth := strings.Count(title, "/")
+		candidates = append(candidates, shellPathCandidate{
+			Title:         title,
+			HiddenPenalty: hiddenPenalty,
+			Depth:         depth,
+			Length:        len(title),
+		})
+	}
+	if len(candidates) == 0 {
+		return firstShellPathFromOutput(output)
+	}
+	sort.SliceStable(candidates, func(i, j int) bool {
+		left := candidates[i]
+		right := candidates[j]
+		if left.HiddenPenalty != right.HiddenPenalty {
+			return left.HiddenPenalty < right.HiddenPenalty
+		}
+		if left.Depth != right.Depth {
+			return left.Depth < right.Depth
+		}
+		return left.Length < right.Length
+	})
+	return candidates[0].Title
+}
+
+func preferTopLevelSiblingPath(cwd, candidate string) string {
 	cleanCandidate := filepath.ToSlash(strings.TrimSpace(candidate))
 	if cleanCandidate == "" {
 		return cleanCandidate
 	}
+	if !strings.Contains(cleanCandidate, "/") {
+		return cleanCandidate
+	}
 	base := strings.TrimSpace(filepath.Base(cleanCandidate))
-	baseLower := strings.ToLower(base)
-	if !strings.HasPrefix(baseLower, "readme") {
+	if base == "" || base == "." || base == ".." {
 		return cleanCandidate
 	}
 	root := strings.TrimSpace(cwd)
@@ -784,7 +856,7 @@ func (a *App) executeSystemActionPlan(sessionID string, session store.ChatSessio
 				if strings.TrimSpace(lastShellPath) == "" {
 					return "", nil, errors.New("open_file_canvas requires a resolved shell path")
 				}
-				resolved.Params["path"] = preferTopLevelReadmePath(targetCWD, lastShellPath)
+				resolved.Params["path"] = preferTopLevelSiblingPath(targetCWD, lastShellPath)
 			}
 		}
 		message, payload, err := a.executeSystemAction(sessionID, session, resolved)
@@ -799,7 +871,7 @@ func (a *App) executeSystemActionPlan(sessionID string, session store.ChatSessio
 			payloadType := strings.TrimSpace(fmt.Sprint(payload["type"]))
 			payloadOutput := strings.TrimSpace(fmt.Sprint(payload["output"]))
 			if strings.EqualFold(payloadType, "shell") && payloadOutput != "" && payloadOutput != "<nil>" {
-				lastShellPath = firstShellPathFromOutput(payloadOutput)
+				lastShellPath = selectBestShellPathFromOutput(targetCWD, payloadOutput)
 			}
 		}
 	}
