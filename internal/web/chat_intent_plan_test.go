@@ -2,6 +2,9 @@ package web
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -142,7 +145,7 @@ func TestExecuteSystemActionPlanResolvesLastShellPathPlaceholder(t *testing.T) {
 	}
 }
 
-func TestClassifyAndExecuteSystemActionQuickOpenFallbackWithoutIntentLLM(t *testing.T) {
+func TestClassifyAndExecuteSystemActionWithoutIntentLLMDoesNotAutoOpen(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentClassifierURL = ""
 	app.intentLLMURL = ""
@@ -169,26 +172,98 @@ func TestClassifyAndExecuteSystemActionQuickOpenFallbackWithoutIntentLLM(t *test
 	}
 	app.tunnels.setPort(app.canvasSessionIDForProject(project), port)
 
-	message, payloads, handled := app.classifyAndExecuteSystemAction(context.Background(), session.ID, session, "Open README")
+	_, payloads, handled := app.classifyAndExecuteSystemAction(context.Background(), session.ID, session, "Open README")
+	if handled {
+		t.Fatal("expected request to remain unhandled without intent LLM")
+	}
+	if len(payloads) != 0 {
+		t.Fatalf("payloads length = %d, want 0", len(payloads))
+	}
+	if showCalls != 0 {
+		t.Fatalf("canvas_artifact_show calls = %d, want 0", showCalls)
+	}
+}
+
+func TestClassifyAndExecuteSystemActionToolRequestsUseQwenPlan(t *testing.T) {
+	classifier := setupMockIntentClassifierServer(t, http.StatusOK, map[string]interface{}{
+		"intent":     "shell",
+		"confidence": 0.99,
+		"entities": map[string]interface{}{
+			"command": "printf './README.md\\n'",
+		},
+	})
+	defer classifier.Close()
+
+	llmCalls := 0
+	llm := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if strings.TrimSpace(r.URL.Path) != "/v1/chat/completions" {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		llmCalls++
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"choices": []map[string]interface{}{
+				{
+					"message": map[string]interface{}{
+						"content": `{"actions":[{"action":"shell","command":"ls -1"},{"action":"shell","command":"find . -maxdepth 2 -type f -iname 'README*' | head -n 1"},{"action":"open_file_canvas","path":"$last_shell_path"}]}`,
+					},
+				},
+			},
+		})
+	}))
+	defer llm.Close()
+
+	app := newAuthedTestApp(t)
+	app.intentClassifierURL = classifier.URL
+	app.intentLLMURL = llm.URL
+
+	project, err := app.ensureDefaultProjectRecord()
+	if err != nil {
+		t.Fatalf("ensure default project: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(project.RootPath, "README.md"), []byte("hello-readme"), 0o644); err != nil {
+		t.Fatalf("write README.md: %v", err)
+	}
+	session, err := app.store.GetOrCreateChatSession(project.ProjectKey)
+	if err != nil {
+		t.Fatalf("chat session: %v", err)
+	}
+
+	showCalls := 0
+	var observed map[string]interface{}
+	server := setupMockCanvasShowServer(t, &showCalls, &observed)
+	defer server.Close()
+	port, err := extractPort(server.URL)
+	if err != nil {
+		t.Fatalf("extract canvas port: %v", err)
+	}
+	app.tunnels.setPort(app.canvasSessionIDForProject(project), port)
+
+	_, payloads, handled := app.classifyAndExecuteSystemAction(context.Background(), session.ID, session, "Open the README file.")
 	if !handled {
-		t.Fatal("expected quick-open fallback to handle request")
+		t.Fatal("expected request to be handled by Qwen action plan")
 	}
-	if len(payloads) != 3 {
-		t.Fatalf("payloads length = %d, want 3 (ls + find + open)", len(payloads))
+	if llmCalls == 0 {
+		t.Fatal("expected Qwen intent LLM call")
 	}
-	if got := strings.TrimSpace(strFromAny(payloads[0]["type"])); got != "shell" {
-		t.Fatalf("payload[0].type = %q, want shell", got)
+	if len(payloads) < 3 {
+		t.Fatalf("payloads length = %d, want >= 3", len(payloads))
 	}
-	if got := strings.TrimSpace(strFromAny(payloads[1]["type"])); got != "shell" {
-		t.Fatalf("payload[1].type = %q, want shell", got)
+	if got := strings.TrimSpace(strFromAny(payloads[0]["command"])); got != "ls -1" {
+		t.Fatalf("expected first action command from LLM plan, got %q", got)
 	}
-	if got := strings.TrimSpace(strFromAny(payloads[2]["type"])); got != "open_file_canvas" {
-		t.Fatalf("payload[2].type = %q, want open_file_canvas", got)
+	if got := strings.TrimSpace(strFromAny(payloads[len(payloads)-1]["type"])); got != "open_file_canvas" {
+		t.Fatalf("last payload type = %q, want open_file_canvas", got)
 	}
 	if showCalls < 1 {
 		t.Fatalf("canvas_artifact_show calls = %d, want >= 1", showCalls)
 	}
-	if !strings.Contains(message, "Opened README.md on canvas.") {
-		t.Fatalf("message = %q, expected open confirmation", message)
+	if got := strings.TrimSpace(strFromAny(observed["title"])); got != "README.md" {
+		t.Fatalf("canvas title = %q, want README.md", got)
 	}
 }

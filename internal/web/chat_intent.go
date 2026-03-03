@@ -322,6 +322,16 @@ func detectQuickOpenToken(text string) string {
 				token = strings.TrimSpace(token[:len(token)-len(suffix)])
 			}
 		}
+		token = strings.TrimSpace(strings.TrimRight(token, ".,;:!?"))
+		tokenLower := strings.ToLower(token)
+		if strings.HasPrefix(tokenLower, "the ") {
+			token = strings.TrimSpace(token[4:])
+		}
+		tokenLower = strings.ToLower(token)
+		if strings.HasSuffix(tokenLower, " file") {
+			token = strings.TrimSpace(token[:len(token)-5])
+		}
+		token = strings.TrimSpace(strings.TrimRight(token, ".,;:!?"))
 		token = strings.Trim(token, "\"'`")
 		return strings.TrimSpace(token)
 	}
@@ -571,39 +581,16 @@ func (a *App) classifyAndExecuteSystemAction(ctx context.Context, sessionID stri
 		}
 		return message, payloads, true
 	}
-	if strings.TrimSpace(a.intentLLMURL) == "" {
-		if openToken := detectQuickOpenToken(trimmedText); openToken != "" {
-			quickPlan := []*SystemAction{
-				{
-					Action: "shell",
-					Params: map[string]interface{}{
-						"command": "ls -1",
-					},
-				},
-				{
-					Action: "shell",
-					Params: map[string]interface{}{
-						"command": buildFindCommandForToken(openToken),
-					},
-				},
-				{
-					Action: "open_file_canvas",
-					Params: map[string]interface{}{
-						"path": systemActionLastShellPathPlaceholder,
-					},
-				},
-			}
-			if message, payloads, ok := tryExecutePlan(quickPlan); ok {
-				return message, payloads, true
-			}
-		}
-	}
 
 	localAction, localConfidence, localErr := a.classifyIntentLocally(ctx, trimmedText)
 	if localErr == nil && localAction != nil && localConfidence >= intentClassifierMinConfidence {
 		if normalized := normalizeSystemActionForExecution(localAction, trimmedText); normalized != nil {
-			if message, payloads, ok := tryExecutePlan([]*SystemAction{normalized}); ok {
-				return message, payloads, true
+			// Route tool actions through Qwen plan decoding so one prompt can trigger
+			// multiple coordinated actions (e.g., shell + open_file_canvas).
+			if normalized.Action != "shell" && normalized.Action != "open_file_canvas" {
+				if message, payloads, ok := tryExecutePlan([]*SystemAction{normalized}); ok {
+					return message, payloads, true
+				}
 			}
 		}
 	}
