@@ -38,7 +38,7 @@ const (
 const intentLLMSystemPrompt = `You are Tabura's local router. Output JSON only.
 Allowed actions: switch_project, switch_model, toggle_silent, toggle_conversation, cancel_work, show_status, delegate, shell, open_file_canvas, chat.
 Use {"action":"chat"} unless user clearly requests a system action.
-For explicit delegation or clearly long coding tasks use {"action":"delegate","model":"codex|gpt|spark","effort":"low|medium|high|xhigh","task":"..."}.
+For explicit delegation or clearly long coding tasks use {"action":"delegate","model":"codex|gpt|spark","reasoning_effort":"low|medium|high|xhigh","task":"..."}.
 For current-information requests (weather, web search, news, prices, schedules, latest/current updates), MUST use delegate and MUST NOT use shell.
 Routing policy: simple current-info -> spark low; complex general -> gpt high; complex coding/technical -> codex high; simple coding -> codex low; simple general -> gpt low.
 For shell-like requests use {"action":"shell","command":"..."}.
@@ -47,14 +47,15 @@ If exact path is uncertain, use multi-step {"actions":[...]}: shell search first
 Prefer case-insensitive filename search (for example -iname) and use single quotes inside JSON command strings.`
 
 type localIntentClassifierResponse struct {
-	Action     string                 `json:"action"`
-	Intent     string                 `json:"intent"`
-	Confidence float64                `json:"confidence"`
-	Entities   map[string]interface{} `json:"entities"`
-	Params     map[string]interface{} `json:"params"`
-	Name       string                 `json:"name"`
-	Alias      string                 `json:"alias"`
-	Effort     string                 `json:"effort"`
+	Action          string                 `json:"action"`
+	Intent          string                 `json:"intent"`
+	Confidence      float64                `json:"confidence"`
+	Entities        map[string]interface{} `json:"entities"`
+	Params          map[string]interface{} `json:"params"`
+	Name            string                 `json:"name"`
+	Alias           string                 `json:"alias"`
+	Effort          string                 `json:"effort"`
+	ReasoningEffort string                 `json:"reasoning_effort"`
 }
 
 type localIntentLLMChatCompletionResponse struct {
@@ -470,8 +471,11 @@ func (a *App) classifyIntentLocally(ctx context.Context, text string) (*SystemAc
 	if strings.TrimSpace(payload.Alias) != "" {
 		params["alias"] = strings.TrimSpace(payload.Alias)
 	}
-	if strings.TrimSpace(payload.Effort) != "" {
+	if actionName == "switch_model" && strings.TrimSpace(payload.Effort) != "" {
 		params["effort"] = strings.TrimSpace(payload.Effort)
+	}
+	if actionName == "delegate" && strings.TrimSpace(payload.ReasoningEffort) != "" {
+		params["reasoning_effort"] = strings.TrimSpace(payload.ReasoningEffort)
 	}
 	if actionName == "delegate" {
 		model := normalizeDelegateModel(systemActionStringParam(params, "model"))
@@ -505,7 +509,6 @@ func normalizeSystemActionForExecution(action *SystemAction, fallbackText string
 		action.Params["model"] = model
 		effort := normalizeDelegateEffort(model, systemActionDelegateEffort(action.Params))
 		if effort != "" {
-			action.Params["effort"] = effort
 			action.Params["reasoning_effort"] = effort
 		}
 		if systemActionDelegateTask(action.Params) == "" {
@@ -1586,7 +1589,6 @@ func (a *App) executeSystemAction(sessionID string, session store.ChatSession, a
 			"project_id": targetProject.ID,
 		}
 		if effort != "" {
-			payload["effort"] = effort
 			payload["reasoning_effort"] = effort
 		}
 		copyRouteMetadata(payload, action.Params)

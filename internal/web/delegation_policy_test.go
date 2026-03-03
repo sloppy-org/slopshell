@@ -78,6 +78,9 @@ func TestEnforceDelegationPolicyCurrentInfoBlocksShell(t *testing.T) {
 	if got := strings.TrimSpace(systemActionStringParam(enforced[0].Params, "reasoning_effort")); got != modelprofile.ReasoningLow {
 		t.Fatalf("delegate reasoning_effort = %q, want %q", got, modelprofile.ReasoningLow)
 	}
+	if _, exists := enforced[0].Params["effort"]; exists {
+		t.Fatalf("unexpected delegate effort alias in params: %#v", enforced[0].Params["effort"])
+	}
 	if got := strings.TrimSpace(systemActionStringParam(enforced[0].Params, "route_domain")); got != delegationDomainCurrentInfo {
 		t.Fatalf("route_domain = %q, want %q", got, delegationDomainCurrentInfo)
 	}
@@ -165,6 +168,9 @@ func TestClassifyAndExecuteSystemActionCurrentInfoRewritesShellToDelegate(t *tes
 		}
 		if got := strings.TrimSpace(strFromAny(payload["reasoning_effort"])); got != modelprofile.ReasoningLow {
 			t.Fatalf("payload reasoning_effort = %q, want %q", got, modelprofile.ReasoningLow)
+		}
+		if _, exists := payload["effort"]; exists {
+			t.Fatalf("unexpected payload effort alias: %#v", payload["effort"])
 		}
 		if got := strings.TrimSpace(strFromAny(payload["route_domain"])); got != delegationDomainCurrentInfo {
 			t.Fatalf("payload route_domain = %q, want %q", got, delegationDomainCurrentInfo)

@@ -31,11 +31,9 @@ type delegationRoute struct {
 }
 
 func systemActionDelegateEffort(params map[string]interface{}) string {
-	for _, key := range []string{"reasoning_effort", "effort"} {
-		value := systemActionStringParam(params, key)
-		if value != "" && value != "<nil>" {
-			return value
-		}
+	value := systemActionStringParam(params, "reasoning_effort")
+	if value != "" && value != "<nil>" {
+		return value
 	}
 	return ""
 }
@@ -200,7 +198,6 @@ func buildDelegateActionFromRoute(route delegationRoute, userText string) *Syste
 		"policy_version":   delegationPolicyVersion,
 	}
 	if effort != "" {
-		params["effort"] = effort
 		params["reasoning_effort"] = effort
 	}
 	return &SystemAction{
@@ -235,7 +232,6 @@ func applyRouteToDelegateAction(action *SystemAction, route delegationRoute, use
 	}
 	effort = normalizeDelegateEffort(model, effort)
 	if strings.TrimSpace(effort) != "" {
-		action.Params["effort"] = effort
 		action.Params["reasoning_effort"] = effort
 	}
 

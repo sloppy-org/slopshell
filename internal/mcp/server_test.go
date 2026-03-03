@@ -165,7 +165,7 @@ func TestResolveModelAlias(t *testing.T) {
 	}
 }
 
-func TestBuildDelegateRequestAcceptsReasoningEffortAndEffortAlias(t *testing.T) {
+func TestBuildDelegateRequestUsesReasoningEffortOnly(t *testing.T) {
 	adapter := canvas.NewAdapter(t.TempDir(), nil)
 	s := NewServer(adapter)
 
@@ -184,19 +184,16 @@ func TestBuildDelegateRequestAcceptsReasoningEffortAndEffortAlias(t *testing.T) 
 		t.Fatalf("reasoning param effort = %q, want medium", got)
 	}
 
-	reqB, err := s.buildDelegateRequest(map[string]interface{}{
+	_, err = s.buildDelegateRequest(map[string]interface{}{
 		"prompt": "audit code",
 		"model":  "codex",
 		"effort": "low",
 	})
-	if err != nil {
-		t.Fatalf("buildDelegateRequest with effort alias failed: %v", err)
+	if err == nil {
+		t.Fatal("expected effort alias to be rejected")
 	}
-	if got := reqB.ReasoningEffort; got != "low" {
-		t.Fatalf("alias effort normalize = %q, want low", got)
-	}
-	if got, _ := reqB.Reasoning["effort"].(string); got != "low" {
-		t.Fatalf("alias reasoning param effort = %q, want low", got)
+	if !strings.Contains(err.Error(), "reasoning_effort") {
+		t.Fatalf("expected reasoning_effort guidance, got: %v", err)
 	}
 }
 
@@ -312,10 +309,13 @@ func TestToolDefinitionsEmitsProperties(t *testing.T) {
 	if props == nil {
 		t.Fatal("missing properties in inputSchema")
 	}
-	for _, key := range []string{"prompt", "model", "reasoning_effort", "effort", "context", "system_prompt", "cwd", "timeout_seconds"} {
+	for _, key := range []string{"prompt", "model", "reasoning_effort", "context", "system_prompt", "cwd", "timeout_seconds"} {
 		if props[key] == nil {
 			t.Errorf("missing property %q", key)
 		}
+	}
+	if props["effort"] != nil {
+		t.Fatalf("unexpected effort alias property present: %#v", props["effort"])
 	}
 	modelProp, _ := props["model"].(map[string]interface{})
 	if modelProp == nil {

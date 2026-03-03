@@ -85,11 +85,11 @@ func (s *Server) buildDelegateRequest(args map[string]interface{}) (delegateRequ
 	if prompt == "" {
 		return delegateRequest{}, errors.New("prompt is required")
 	}
+	if _, hasLegacyEffort := args["effort"]; hasLegacyEffort {
+		return delegateRequest{}, errors.New("effort is unsupported for delegate_to_model; use reasoning_effort")
+	}
 	model := resolveModelAlias(strArg(args, "model"))
 	rawEffort := strings.TrimSpace(strArg(args, "reasoning_effort"))
-	if rawEffort == "" {
-		rawEffort = strings.TrimSpace(strArg(args, "effort"))
-	}
 	reasoningEffort := normalizeDelegateReasoningEffort(model, rawEffort)
 	fullPrompt := assembleDelegatePrompt(
 		strArg(args, "system_prompt"),

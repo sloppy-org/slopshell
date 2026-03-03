@@ -103,11 +103,6 @@ var MCPTools = []Tool{
 				Description: "Reasoning effort for the delegate model. Allowed: low, medium, high, xhigh.",
 				Enum:        []string{"low", "medium", "high", "xhigh"},
 			},
-			"effort": {
-				Type:        "string",
-				Description: "Alias for reasoning_effort. Allowed: low, medium, high, xhigh.",
-				Enum:        []string{"low", "medium", "high", "xhigh"},
-			},
 			"context": {
 				Type:        "string",
 				Description: "Summary of the conversation so far, giving the delegate model background.",

@@ -23,14 +23,11 @@ The local router (Qwen profile) is fast but brittle for current-information task
   - block `shell`
   - inject route metadata into action payloads (`route_domain`, `route_complexity`, `route_reason`, `policy_version`)
 
-## Delegate effort compatibility
+## Delegate effort contract
 
-`delegate_to_model` accepts both:
+`delegate_to_model` accepts only `reasoning_effort` at the MCP boundary.
 
-- `reasoning_effort` (Tabura/UI-facing)
-- `effort` (compat alias)
-
-Both are normalized and mapped to Codex app-server `effort` params at thread/turn start.
+This value is normalized and mapped to Codex app-server `effort` params at thread/turn start.
 
 ## Design notes from external agent systems
 
