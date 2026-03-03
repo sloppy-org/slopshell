@@ -523,6 +523,82 @@ func planContainsAction(actions []*SystemAction, actionName string) bool {
 	return false
 }
 
+func safeFindToken(raw string) string {
+	token := strings.TrimSpace(strings.ToLower(raw))
+	if token == "" {
+		return ""
+	}
+	var out strings.Builder
+	for _, r := range token {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '.' || r == '_' || r == '-' || r == '/' {
+			out.WriteRune(r)
+		}
+	}
+	clean := strings.TrimSpace(out.String())
+	clean = strings.Trim(clean, "/")
+	return clean
+}
+
+func buildOpenCanvasFallbackPlan(text string) []*SystemAction {
+	if !requestRequiresOpenCanvasAction(text) {
+		return nil
+	}
+	hints := extractOpenRequestHints(text)
+	patterns := make([]string, 0, 16)
+	addPattern := func(pattern string) {
+		p := strings.TrimSpace(pattern)
+		if p == "" {
+			return
+		}
+		for _, existing := range patterns {
+			if strings.EqualFold(existing, p) {
+				return
+			}
+		}
+		patterns = append(patterns, p)
+	}
+	for _, rawHint := range hints {
+		hint := safeFindToken(normalizeOpenHintToken(rawHint))
+		if hint == "" {
+			continue
+		}
+		base := safeFindToken(filepath.Base(hint))
+		stem := safeFindToken(strings.TrimSuffix(base, filepath.Ext(base)))
+		if base != "" {
+			addPattern(base)
+			addPattern(base + ".*")
+			addPattern("*" + base + "*")
+		}
+		if stem != "" && stem != base {
+			addPattern(stem)
+			addPattern(stem + ".*")
+			addPattern("*" + stem + "*")
+		}
+	}
+	if len(patterns) == 0 {
+		return nil
+	}
+	parts := make([]string, 0, len(patterns))
+	for _, pattern := range patterns {
+		parts = append(parts, fmt.Sprintf("-iname '%s'", pattern))
+	}
+	command := "find . -maxdepth 8 -type f \\( " + strings.Join(parts, " -o ") + " \\) | head -n 80"
+	return []*SystemAction{
+		{
+			Action: "shell",
+			Params: map[string]interface{}{
+				"command": command,
+			},
+		},
+		{
+			Action: "open_file_canvas",
+			Params: map[string]interface{}{
+				"path": systemActionLastShellPathPlaceholder,
+			},
+		},
+	}
+}
+
 func ensureOpenCanvasTerminalAction(actions []*SystemAction) []*SystemAction {
 	if len(actions) == 0 || planContainsAction(actions, "open_file_canvas") {
 		return actions
@@ -739,6 +815,11 @@ func (a *App) classifyAndExecuteSystemAction(ctx context.Context, sessionID stri
 			}
 		}
 		if requestRequiresOpenCanvasAction(trimmedText) {
+			if fallbackPlan := buildOpenCanvasFallbackPlan(trimmedText); len(fallbackPlan) > 0 {
+				if message, payloads, ok := tryExecutePlan(fallbackPlan); ok {
+					return message, payloads, true
+				}
+			}
 			return "I couldn't open that file on canvas. Please provide an exact relative path (for example: docs/CLAUDE.md).", nil, true
 		}
 		return "", nil, false

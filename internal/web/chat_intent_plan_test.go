@@ -791,7 +791,7 @@ func TestClassifyIntentPlanWithLLMRejectsOpenRequestWithoutShellOrOpenActionAfte
 	}
 }
 
-func TestClassifyAndExecuteSystemActionOpenRequestReturnsExplicitFailureWhenPlanInvalid(t *testing.T) {
+func TestClassifyAndExecuteSystemActionOpenRequestUsesFallbackPlanWhenLLMPlanInvalid(t *testing.T) {
 	llm := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -821,20 +821,39 @@ func TestClassifyAndExecuteSystemActionOpenRequestReturnsExplicitFailureWhenPlan
 	if err != nil {
 		t.Fatalf("ensure default project: %v", err)
 	}
+	if err := os.WriteFile(filepath.Join(project.RootPath, "README.md"), []byte("fallback-readme"), 0o644); err != nil {
+		t.Fatalf("write README.md: %v", err)
+	}
 	session, err := app.store.GetOrCreateChatSession(project.ProjectKey)
 	if err != nil {
 		t.Fatalf("chat session: %v", err)
 	}
 
+	showCalls := 0
+	var observed map[string]interface{}
+	server := setupMockCanvasShowServer(t, &showCalls, &observed)
+	defer server.Close()
+	port, err := extractPort(server.URL)
+	if err != nil {
+		t.Fatalf("extract canvas port: %v", err)
+	}
+	app.tunnels.setPort(app.canvasSessionIDForProject(project), port)
+
 	message, payloads, handled := app.classifyAndExecuteSystemAction(context.Background(), session.ID, session, "Open README")
 	if !handled {
-		t.Fatal("expected explicit handled failure for invalid open-file plan")
+		t.Fatal("expected handled result for invalid open-file plan")
 	}
-	if len(payloads) != 0 {
-		t.Fatalf("payloads length = %d, want 0", len(payloads))
+	if len(payloads) < 2 {
+		t.Fatalf("payloads length = %d, want >= 2", len(payloads))
 	}
-	if !strings.Contains(strings.ToLower(message), "couldn't open") {
+	if strings.Contains(strings.ToLower(message), "couldn't open") {
 		t.Fatalf("unexpected failure message: %q", message)
+	}
+	if showCalls < 1 {
+		t.Fatalf("canvas_artifact_show calls = %d, want >= 1", showCalls)
+	}
+	if got := strings.TrimSpace(strFromAny(observed["title"])); got != "README.md" {
+		t.Fatalf("canvas title = %q, want README.md", got)
 	}
 }
 
