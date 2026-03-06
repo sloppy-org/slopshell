@@ -129,7 +129,7 @@ func New(opts Options) (*Manager, error) {
 			continue
 		}
 		name := strings.TrimSpace(entry.Name())
-		if name == "" || !strings.HasSuffix(strings.ToLower(name), ".json") {
+		if !isPluginManifestFileName(name) {
 			continue
 		}
 		files = append(files, filepath.Join(dir, name))
@@ -339,6 +339,14 @@ func compileManifest(cfg manifest) (runtimePlugin, error) {
 		timeout:   time.Duration(timeoutMS) * time.Millisecond,
 		secretEnv: strings.TrimSpace(cfg.SecretEnv),
 	}, nil
+}
+
+func isPluginManifestFileName(name string) bool {
+	clean := strings.ToLower(strings.TrimSpace(name))
+	if clean == "" || !strings.HasSuffix(clean, ".json") {
+		return false
+	}
+	return !strings.HasSuffix(clean, ".extension.json")
 }
 
 func normalizeHooks(in []string) []string {

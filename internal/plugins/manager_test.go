@@ -234,3 +234,42 @@ func TestManagerDecideMeetingPartnerSkipsInvalidDecision(t *testing.T) {
 		t.Fatalf("plugin_id = %q, want %q", decision.PluginID, "noop")
 	}
 }
+
+func TestManagerIgnoresExtensionManifestFiles(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"text":"plugin response"}`))
+	}))
+	defer server.Close()
+
+	dir := t.TempDir()
+	writeManifest(t, dir, "01-plugin.json", map[string]any{
+		"id":       "plugin-only",
+		"kind":     "webhook",
+		"endpoint": server.URL,
+		"hooks":    []string{HookChatPreUserMessage},
+		"enabled":  true,
+	})
+	writeManifest(t, dir, "02-ignored.extension.json", map[string]any{
+		"id":       "extension-ignored",
+		"version":  "1.0.0",
+		"kind":     "webhook",
+		"endpoint": server.URL,
+		"hooks":    []string{HookChatPreUserMessage},
+		"enabled":  true,
+	})
+
+	mgr, err := New(Options{Dir: dir})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	if got := mgr.Count(); got != 1 {
+		t.Fatalf("count = %d, want 1", got)
+	}
+	list := mgr.List()
+	if len(list) != 1 {
+		t.Fatalf("list len = %d, want 1", len(list))
+	}
+	if got := strings.TrimSpace(list[0].ID); got != "plugin-only" {
+		t.Fatalf("plugin id = %q, want %q", got, "plugin-only")
+	}
+}

@@ -27,10 +27,12 @@ Runtime stack:
   - Browser APIs for chat sessions, canvas APIs, and chat/canvas websocket routes on the web listener.
 - `internal/extensions/host.go`
   - Legacy manifest-driven compatibility runtime pending contraction,
-    replacement, or removal.
+    replacement, or removal. Loads only `*.extension.json` manifests.
 - `internal/plugins/manager.go`
   - Legacy webhook compatibility runtime pending contraction, replacement, or
-    removal.
+    removal. Loads only legacy plugin `*.json` manifests and ignores
+    `*.extension.json` files so the two retained compatibility paths stay
+    distinct.
 - `internal/store/store.go`
   - SQLite persistence for auth and chat session/message history.
 - `internal/protocol/bootstrap.go`

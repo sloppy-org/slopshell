@@ -24,6 +24,9 @@ capability providers such as Helpy.
 - Core UI stays in core UI code
 - Meeting-notes behavior stays in core meeting-notes code
 - Privacy and safety invariants stay in core
+- Plugin manifests stay on the legacy `*.json` path; extension manifests stay on
+  `*.extension.json`, and the plugin loader ignores extension manifests so the
+  compatibility boundary stays explicit
 - Any remaining `internal/extensions` and `internal/plugins` code should be
   treated as transitional compatibility or interop code, not an expanding
   platform surface

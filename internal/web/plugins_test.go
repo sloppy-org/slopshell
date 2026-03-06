@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-func writePluginManifest(t *testing.T, dir, name string, payload map[string]any) {
+func writeManifestFile(t *testing.T, dir, name string, payload map[string]any) {
 	t.Helper()
 	raw, err := json.Marshal(payload)
 	if err != nil {
@@ -20,6 +20,16 @@ func writePluginManifest(t *testing.T, dir, name string, payload map[string]any)
 	if err := os.WriteFile(filepath.Join(dir, name), raw, 0o644); err != nil {
 		t.Fatalf("write manifest: %v", err)
 	}
+}
+
+func writePluginManifest(t *testing.T, dir, name string, payload map[string]any) {
+	t.Helper()
+	writeManifestFile(t, dir, name, payload)
+}
+
+func writeExtensionManifest(t *testing.T, dir, name string, payload map[string]any) {
+	t.Helper()
+	writeManifestFile(t, dir, name, payload)
 }
 
 func newAuthedTestAppWithPluginDir(t *testing.T, pluginDir string) *App {
@@ -43,6 +53,14 @@ func TestRuntimeAndPluginInventoryEndpoints(t *testing.T) {
 	pluginDir := t.TempDir()
 	writePluginManifest(t, pluginDir, "rewrite.json", map[string]any{
 		"id":       "rewrite",
+		"kind":     "webhook",
+		"endpoint": server.URL,
+		"hooks":    []string{"chat.pre_user_message"},
+		"enabled":  true,
+	})
+	writePluginManifest(t, pluginDir, "ignored.extension.json", map[string]any{
+		"id":       "extension-ignored",
+		"version":  "1.0.0",
 		"kind":     "webhook",
 		"endpoint": server.URL,
 		"hooks":    []string{"chat.pre_user_message"},
@@ -338,7 +356,7 @@ func TestExtensionsInventoryEndpoint(t *testing.T) {
 	defer server.Close()
 
 	extensionDir := t.TempDir()
-	writePluginManifest(t, extensionDir, "meeting.extension.json", map[string]any{
+	writeExtensionManifest(t, extensionDir, "meeting.extension.json", map[string]any{
 		"id":       "meeting-partner",
 		"version":  "1.0.0",
 		"kind":     "webhook",
@@ -397,7 +415,7 @@ func TestExtensionCommandExecuteEndpoint(t *testing.T) {
 	defer server.Close()
 
 	extensionDir := t.TempDir()
-	writePluginManifest(t, extensionDir, "commands.extension.json", map[string]any{
+	writeExtensionManifest(t, extensionDir, "commands.extension.json", map[string]any{
 		"id":       "meeting-partner",
 		"version":  "1.0.0",
 		"kind":     "webhook",
@@ -407,7 +425,7 @@ func TestExtensionCommandExecuteEndpoint(t *testing.T) {
 			{
 				"id":          "meeting_partner.respond",
 				"title":       "Respond",
-				"description": "Respond in meeting mode",
+				"description": "Respond to participant",
 			},
 		},
 	})
