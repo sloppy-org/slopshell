@@ -5686,9 +5686,6 @@ function bindUi() {
     };
 
     const handleWorkspaceTap = (target, x, y) => {
-      if (isPenInputMode()) {
-        return;
-      }
       if (isConversationListenActive()) {
         if (isVoiceInteractionTarget(target, x, y)) return;
         cancelConversationListen();
@@ -5906,7 +5903,7 @@ function bindUi() {
   const chatHistory = document.getElementById('chat-history');
   if (chatHistory) {
     chatHistory.addEventListener('click', (ev) => {
-      if (state.inputMode !== 'voice') return;
+      if (isKeyboardInputMode()) return;
       if (ev.button !== 0) return;
       if (ev.target instanceof Element && ev.target.closest('a,button,input,textarea,select,[contenteditable="true"]')) return;
       if (isInEdgeZone(ev.clientX, ev.clientY)) return;
