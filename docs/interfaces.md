@@ -38,7 +38,6 @@ Runtime and chat session management:
 - `POST /api/chat/sessions/{session_id}/messages`
 - `POST /api/chat/sessions/{session_id}/commands`
 - `POST /api/chat/sessions/{session_id}/cancel`
-- `POST /api/chat/sessions/{session_id}/cancel-delegates`
 
 Canvas/files:
 - `GET /api/canvas/{session_id}/snapshot`
@@ -57,11 +56,6 @@ Defined in `internal/surface/definitions.go` and used by `internal/mcp/server.go
 - `canvas_import_handoff`
 - `temp_file_create`
 - `temp_file_remove`
-- `delegate_to_model`
-- `delegate_to_model_status`
-- `delegate_to_model_cancel`
-- `delegate_to_model_active_count`
-- `delegate_to_model_cancel_all`
 
 ## Stability Statement
 
