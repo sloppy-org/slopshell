@@ -1,10 +1,15 @@
 import { defineConfig, devices } from '@playwright/test';
 
+const grepInvert = process.env.PLAYWRIGHT_GREP_INVERT
+  ? new RegExp(process.env.PLAYWRIGHT_GREP_INVERT)
+  : undefined;
+
 export default defineConfig({
   testDir: 'tests/playwright',
   timeout: 30_000,
   fullyParallel: false,
   workers: process.env.CI ? 1 : 2,
+  grepInvert,
   expect: {
     timeout: 5_000,
   },

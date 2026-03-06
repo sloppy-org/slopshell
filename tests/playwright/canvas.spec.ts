@@ -79,6 +79,21 @@ async function injectCanvasEvent(page: Page, payload: Record<string, unknown>) {
   }, payload);
 }
 
+async function setInputMode(page: Page, inputMode: 'typing' | 'voice') {
+  await page.evaluate((mode) => {
+    (window as any).__setRuntimeState?.({ input_mode: mode });
+    const app = (window as any)._taburaApp;
+    if (app?.getState) app.getState().inputMode = mode;
+  }, inputMode);
+}
+
+async function dispatchPrintableKey(page: Page, key: string) {
+  await page.evaluate((value) => {
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: value, bubbles: true }));
+    document.dispatchEvent(new KeyboardEvent('keyup', { key: value, bubbles: true }));
+  }, key);
+}
+
 async function dispatchTouchTap(page: Page, x: number, y: number) {
   await page.evaluate(({ x, y }) => {
     if (typeof Touch === 'undefined') return;
@@ -141,8 +156,10 @@ test.describe('canvas - tabula rasa', () => {
   });
 
   test('keyboard typing activates text input, Enter sends, text cleared', async ({ page }) => {
+    await setInputMode(page, 'typing');
+
     // Type a character - should auto-open floating-input
-    await page.keyboard.type('h');
+    await dispatchPrintableKey(page, 'h');
     await page.waitForTimeout(100);
 
     const floatingInput = page.locator('#floating-input');
@@ -700,9 +717,11 @@ test.describe('canvas - edge panels', () => {
   test('chat log appears in right edge panel', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 720 });
     await injectCanvasModuleRef(page);
+    await setInputMode(page, 'typing');
 
     // Send a message
-    await page.keyboard.type('test msg');
+    await dispatchPrintableKey(page, 't');
+    await page.keyboard.type('est msg');
     await page.keyboard.press('Enter');
     await page.waitForTimeout(300);
 

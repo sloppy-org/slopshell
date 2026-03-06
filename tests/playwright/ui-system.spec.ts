@@ -46,6 +46,21 @@ async function injectCanvasEvent(page: Page, payload: Record<string, unknown>) {
   }, payload);
 }
 
+async function setInputMode(page: Page, inputMode: 'typing' | 'voice') {
+  await page.evaluate((mode) => {
+    (window as any).__setRuntimeState?.({ input_mode: mode });
+    const app = (window as any)._taburaApp;
+    if (app?.getState) app.getState().inputMode = mode;
+  }, inputMode);
+}
+
+async function dispatchPrintableKey(page: Page, key: string) {
+  await page.evaluate((value) => {
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: value, bubbles: true }));
+    document.dispatchEvent(new KeyboardEvent('keyup', { key: value, bubbles: true }));
+  }, key);
+}
+
 async function waitForLogEntry(page: Page, type: string, action?: string) {
   await expect.poll(async () => {
     const log = await getLog(page);
@@ -543,7 +558,9 @@ test.describe('keyboard auto-routing', () => {
   });
 
   test('typing on blank canvas opens floating input', async ({ page }) => {
-    await page.keyboard.type('a');
+    await setInputMode(page, 'typing');
+
+    await dispatchPrintableKey(page, 'a');
     await page.waitForTimeout(100);
 
     const input = page.locator('#floating-input');
@@ -580,7 +597,7 @@ test.describe('project state persistence', () => {
     await waitReady(page);
   });
 
-  test('silent mode persists in localStorage', async ({ page }) => {
+  test('silent mode persists in runtime preferences', async ({ page }) => {
     // Toggle silent mode via system_action
     await injectChatEvent(page, {
       type: 'system_action',
@@ -593,11 +610,10 @@ test.describe('project state persistence', () => {
     });
     expect(silentState).toBe(true);
 
-    // localStorage should persist
     const stored = await page.evaluate(() => {
-      return localStorage.getItem('tabura.ttsSilent');
+      return (window as any).__getRuntimeState?.().silent_mode ?? null;
     });
-    expect(stored).toBe('true');
+    expect(stored).toBe(true);
   });
 
   test('conversation mode persists in localStorage', async ({ page }) => {
@@ -660,7 +676,7 @@ test.describe('system_action model and project switching', () => {
       type: 'system_action',
       action: {
         type: 'switch_project',
-        project_id: 'hub',
+        project_id: 'test',
       },
     });
     await page.waitForTimeout(500);
@@ -953,14 +969,15 @@ test.describe('mobile viewport', () => {
     await expect(artifactEditor).toBeHidden();
   });
 
-  test('right-click opens floating input on mobile', async ({ page }) => {
+  test('right-click opens bottom composer on mobile', async ({ page }) => {
     // Simulate contextmenu via evaluate since mobile doesn't have right-click
     await page.evaluate(() => {
       const ev = new MouseEvent('contextmenu', { clientX: 187, clientY: 333, bubbles: true });
-      document.elementFromPoint(187, 333)?.dispatchEvent(ev);
+      document.getElementById('canvas-viewport')?.dispatchEvent(ev);
     });
     await page.waitForTimeout(100);
-    await expect(page.locator('#floating-input')).toBeVisible();
+    await expect(page.locator('#edge-right')).toHaveClass(/edge-pinned/);
+    await expect(page.locator('#chat-pane-input')).toBeFocused();
   });
 });
 
@@ -1033,8 +1050,11 @@ test.describe('full assistant turn flow', () => {
   });
 
   test('text input -> turn started -> streaming -> final output -> dismiss', async ({ page }) => {
+    await setInputMode(page, 'typing');
+
     // Submit message
-    await page.keyboard.type('explain this');
+    await dispatchPrintableKey(page, 'e');
+    await page.keyboard.type('xplain this');
     await page.keyboard.press('Enter');
     await page.waitForTimeout(200);
 

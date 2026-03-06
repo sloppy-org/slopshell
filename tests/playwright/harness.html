@@ -162,6 +162,27 @@
     window.__setMessagePostDelay(0);
     window.__setSTTTranscribeResponse({ text: 'hello world' }, 200);
     const harnessParams = new URL(window.location.href).searchParams;
+    const runtimeState = {
+      dev_mode: false,
+      boot_id: 'test',
+      tts_enabled: true,
+      silent_mode: false,
+      input_mode: 'voice',
+      startup_behavior: 'hub_first',
+    };
+    window.__setRuntimeState = (patch) => {
+      const next = patch && typeof patch === 'object' ? patch : {};
+      if (Object.prototype.hasOwnProperty.call(next, 'silent_mode')) {
+        runtimeState.silent_mode = Boolean(next.silent_mode);
+      }
+      if (Object.prototype.hasOwnProperty.call(next, 'input_mode')) {
+        runtimeState.input_mode = String(next.input_mode || '').trim().toLowerCase() === 'typing' ? 'typing' : 'voice';
+      }
+      if (Object.prototype.hasOwnProperty.call(next, 'startup_behavior')) {
+        runtimeState.startup_behavior = 'hub_first';
+      }
+    };
+    window.__getRuntimeState = () => ({ ...runtimeState });
     let hotwordInitEnabled = harnessParams.get('hotword') !== 'fail';
     const safariRecorderBroken = harnessParams.get('safari-recorder') === 'broken';
     let ttsPlaybackDelayMs = 10;
@@ -361,6 +382,32 @@
           has_password: true,
           authenticated: true,
           local_session: 'local',
+        }), { status: 200 });
+      }
+      if (u.includes('/api/runtime/preferences') && opts?.method === 'PATCH') {
+        let body = {};
+        try { body = JSON.parse(String(opts?.body || '{}')); } catch (_) { body = {}; }
+        if (Object.prototype.hasOwnProperty.call(body, 'silent_mode')) {
+          runtimeState.silent_mode = Boolean(body.silent_mode);
+        }
+        if (typeof body?.input_mode === 'string') {
+          runtimeState.input_mode = String(body.input_mode).trim().toLowerCase() === 'typing' ? 'typing' : 'voice';
+        }
+        if (typeof body?.startup_behavior === 'string') {
+          runtimeState.startup_behavior = 'hub_first';
+        }
+        window.__harnessLog.push({
+          type: 'api_fetch',
+          action: 'runtime_preferences',
+          method: opts?.method || 'PATCH',
+          url: u,
+          payload: { ...runtimeState },
+        });
+        return new Response(JSON.stringify({
+          ok: true,
+          silent_mode: runtimeState.silent_mode,
+          input_mode: runtimeState.input_mode,
+          startup_behavior: runtimeState.startup_behavior,
         }), { status: 200 });
       }
       if (u.includes('/api/projects') && u.includes('/activate')) {
@@ -586,7 +633,7 @@
         return new Response(JSON.stringify({ active: 0, queued: 0 }), { status: 200 });
       }
       if (u.includes('/api/runtime')) {
-        return new Response(JSON.stringify({ dev_mode: false, boot_id: 'test', tts_enabled: true }), { status: 200 });
+        return new Response(JSON.stringify({ ...runtimeState }), { status: 200 });
       }
       if (u.includes('/api/canvas/')) {
         return new Response(JSON.stringify({}), { status: 200 });

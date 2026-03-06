@@ -36,6 +36,7 @@ jobs:
         env:
           TABURA_COVERAGE_MIN_TOTAL: "50.0"
           TABURA_COVERAGE_MIN_PACKAGES: "github.com/krystophny/tabura/internal/web=52.0,github.com/krystophny/tabura/internal/serve=40.0,github.com/krystophny/tabura/cmd/tabura=35.0,github.com/krystophny/tabura/internal/store=70.0,github.com/krystophny/tabura/internal/protocol=70.0,github.com/krystophny/tabura/internal/surface=70.0"
+          PLAYWRIGHT_GREP_INVERT: "@local-only"
         run: ./scripts/test-reports.sh
 
       - name: Upload test reports
