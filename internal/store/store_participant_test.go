@@ -1,7 +1,12 @@
 package store
 
 import (
+	"database/sql"
+	"path/filepath"
+	"strings"
 	"testing"
+
+	_ "modernc.org/sqlite"
 )
 
 func TestParticipantSessionLifecycle(t *testing.T) {
@@ -221,5 +226,101 @@ func TestParticipantSessionValidation(t *testing.T) {
 	err = s.UpsertParticipantRoomState("", "summary", "[]", "[]")
 	if err == nil {
 		t.Fatal("expected error for empty session id in room state")
+	}
+}
+
+func TestParticipantSchemaMigrationAddsMissingColumns(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "legacy.db")
+	legacyDB, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open legacy db: %v", err)
+	}
+
+	legacySchema := `
+CREATE TABLE participant_sessions (
+  id TEXT PRIMARY KEY,
+  project_key TEXT NOT NULL,
+  started_at INTEGER NOT NULL,
+  ended_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE participant_segments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id TEXT NOT NULL,
+  start_ts INTEGER NOT NULL
+);
+CREATE TABLE participant_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id TEXT NOT NULL,
+  event_type TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE TABLE participant_room_state (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id TEXT NOT NULL UNIQUE,
+  updated_at INTEGER NOT NULL
+);
+`
+	if _, err := legacyDB.Exec(legacySchema); err != nil {
+		t.Fatalf("seed legacy schema: %v", err)
+	}
+	if err := legacyDB.Close(); err != nil {
+		t.Fatalf("close legacy db: %v", err)
+	}
+
+	s, err := New(dbPath)
+	if err != nil {
+		t.Fatalf("store.New() migration error: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = s.Close()
+	})
+
+	columns, err := s.TableColumns()
+	if err != nil {
+		t.Fatalf("TableColumns() error: %v", err)
+	}
+
+	assertColumnsPresent(t, columns, "participant_sessions", "id", "project_key", "started_at", "ended_at", "config_json")
+	assertColumnsPresent(t, columns, "participant_segments", "id", "session_id", "start_ts", "end_ts", "speaker", "text", "model", "latency_ms", "committed_at", "status")
+	assertColumnsPresent(t, columns, "participant_events", "id", "session_id", "segment_id", "event_type", "payload_json", "created_at")
+	assertColumnsPresent(t, columns, "participant_room_state", "id", "session_id", "summary_text", "entities_json", "topic_timeline_json", "updated_at")
+}
+
+func TestParticipantSchemaOmitsAudioPersistenceColumns(t *testing.T) {
+	s := newTestStore(t)
+
+	columns, err := s.TableColumns()
+	if err != nil {
+		t.Fatalf("TableColumns() error: %v", err)
+	}
+
+	disallowed := []string{"audio", "blob", "path", "hash", "fingerprint"}
+	for _, table := range []string{
+		"participant_sessions",
+		"participant_segments",
+		"participant_events",
+		"participant_room_state",
+	} {
+		for _, col := range columns[table] {
+			for _, bad := range disallowed {
+				if strings.Contains(col, bad) {
+					t.Fatalf("%s should not contain %q column, got %q", table, bad, col)
+				}
+			}
+		}
+	}
+}
+
+func assertColumnsPresent(t *testing.T, columns map[string][]string, table string, want ...string) {
+	t.Helper()
+
+	got := make(map[string]bool, len(columns[table]))
+	for _, col := range columns[table] {
+		got[col] = true
+	}
+	for _, name := range want {
+		if !got[name] {
+			t.Fatalf("%s is missing column %q: got %v", table, name, columns[table])
+		}
 	}
 }

@@ -254,7 +254,10 @@ CREATE TABLE IF NOT EXISTS participant_room_state (
 	if _, err := s.db.Exec(schema); err != nil {
 		return err
 	}
-	return s.migrateProjectColumns()
+	if err := s.migrateProjectColumns(); err != nil {
+		return err
+	}
+	return s.migrateParticipantColumns()
 }
 
 func (s *Store) migrateProjectColumns() error {
@@ -301,6 +304,72 @@ func (s *Store) migrateProjectColumns() error {
 	_, _ = s.db.Exec(`UPDATE projects SET last_opened_at = updated_at WHERE last_opened_at = 0`)
 	_, _ = s.db.Exec(`UPDATE chat_messages SET render_format = 'text' WHERE lower(trim(render_format)) = 'canvas'`)
 	return nil
+}
+
+func (s *Store) migrateParticipantColumns() error {
+	type colDef struct {
+		Table string
+		Name  string
+		SQL   string
+	}
+	columns := []colDef{
+		{Table: "participant_sessions", Name: "config_json", SQL: `ALTER TABLE participant_sessions ADD COLUMN config_json TEXT NOT NULL DEFAULT '{}'`},
+		{Table: "participant_segments", Name: "end_ts", SQL: `ALTER TABLE participant_segments ADD COLUMN end_ts INTEGER NOT NULL DEFAULT 0`},
+		{Table: "participant_segments", Name: "speaker", SQL: `ALTER TABLE participant_segments ADD COLUMN speaker TEXT NOT NULL DEFAULT ''`},
+		{Table: "participant_segments", Name: "text", SQL: `ALTER TABLE participant_segments ADD COLUMN text TEXT NOT NULL DEFAULT ''`},
+		{Table: "participant_segments", Name: "model", SQL: `ALTER TABLE participant_segments ADD COLUMN model TEXT NOT NULL DEFAULT ''`},
+		{Table: "participant_segments", Name: "latency_ms", SQL: `ALTER TABLE participant_segments ADD COLUMN latency_ms INTEGER NOT NULL DEFAULT 0`},
+		{Table: "participant_segments", Name: "committed_at", SQL: `ALTER TABLE participant_segments ADD COLUMN committed_at INTEGER NOT NULL DEFAULT 0`},
+		{Table: "participant_segments", Name: "status", SQL: `ALTER TABLE participant_segments ADD COLUMN status TEXT NOT NULL DEFAULT 'final'`},
+		{Table: "participant_events", Name: "segment_id", SQL: `ALTER TABLE participant_events ADD COLUMN segment_id INTEGER NOT NULL DEFAULT 0`},
+		{Table: "participant_events", Name: "payload_json", SQL: `ALTER TABLE participant_events ADD COLUMN payload_json TEXT NOT NULL DEFAULT ''`},
+		{Table: "participant_room_state", Name: "summary_text", SQL: `ALTER TABLE participant_room_state ADD COLUMN summary_text TEXT NOT NULL DEFAULT ''`},
+		{Table: "participant_room_state", Name: "entities_json", SQL: `ALTER TABLE participant_room_state ADD COLUMN entities_json TEXT NOT NULL DEFAULT '[]'`},
+		{Table: "participant_room_state", Name: "topic_timeline_json", SQL: `ALTER TABLE participant_room_state ADD COLUMN topic_timeline_json TEXT NOT NULL DEFAULT '[]'`},
+	}
+
+	tableColumns, err := s.tableColumnSet(
+		"participant_sessions",
+		"participant_segments",
+		"participant_events",
+		"participant_room_state",
+	)
+	if err != nil {
+		return err
+	}
+
+	for _, col := range columns {
+		if tableColumns[col.Table][col.Name] {
+			continue
+		}
+		if _, err := s.db.Exec(col.SQL); err != nil {
+			return err
+		}
+	}
+
+	_, _ = s.db.Exec(`UPDATE participant_sessions SET config_json = '{}' WHERE trim(config_json) = ''`)
+	_, _ = s.db.Exec(`UPDATE participant_segments SET committed_at = start_ts WHERE committed_at = 0`)
+	_, _ = s.db.Exec(`UPDATE participant_segments SET status = 'final' WHERE trim(status) = ''`)
+	_, _ = s.db.Exec(`UPDATE participant_events SET payload_json = '{}' WHERE trim(payload_json) = ''`)
+	_, _ = s.db.Exec(`UPDATE participant_room_state SET entities_json = '[]' WHERE trim(entities_json) = ''`)
+	_, _ = s.db.Exec(`UPDATE participant_room_state SET topic_timeline_json = '[]' WHERE trim(topic_timeline_json) = ''`)
+	return nil
+}
+
+func (s *Store) tableColumnSet(tables ...string) (map[string]map[string]bool, error) {
+	tableColumns := make(map[string]map[string]bool, len(tables))
+	for _, table := range tables {
+		cols, err := s.tableColumnNames(table)
+		if err != nil {
+			return nil, err
+		}
+		existing := make(map[string]bool, len(cols))
+		for _, c := range cols {
+			existing[c] = true
+		}
+		tableColumns[table] = existing
+	}
+	return tableColumns, nil
 }
 
 func randomHex(n int) string {

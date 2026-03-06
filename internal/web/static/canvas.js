@@ -929,6 +929,75 @@ function textRangeFromClientPoint(clientX, clientY) {
   return null;
 }
 
+function textRangeFromPointInRoot(root, clientX, clientY) {
+  const direct = textRangeFromClientPoint(clientX, clientY);
+  if (!(root instanceof HTMLElement)) return direct;
+  if (direct && root.contains(direct.startContainer)) return direct;
+
+  const rect = root.getBoundingClientRect();
+  if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) {
+    return direct;
+  }
+
+  const probeY = Math.max(rect.top + 1, Math.min(clientY, rect.bottom - 1));
+  const probeXs = [
+    Math.max(rect.left + 1, Math.min(clientX, rect.right - 1)),
+    Math.max(rect.left + 1, Math.min(rect.left + 8, rect.right - 1)),
+  ];
+  for (const probeX of probeXs) {
+    const probe = textRangeFromClientPoint(probeX, probeY);
+    if (probe && root.contains(probe.startContainer)) {
+      return probe;
+    }
+  }
+  return direct;
+}
+
+function estimateTextLineAtPoint(root, clientY) {
+  if (!(root instanceof HTMLElement)) return null;
+  const range = document.createRange();
+  range.selectNodeContents(root);
+  const rects = Array.from(range.getClientRects()).filter((rect) => rect.width > 0 && rect.height > 0);
+  if (rects.length === 0) return null;
+
+  const lineRects = [];
+  const topEpsilonPx = 1.5;
+  for (const rect of rects) {
+    const existing = lineRects.find((line) => Math.abs(line.top - rect.top) <= topEpsilonPx);
+    if (existing) {
+      existing.top = Math.min(existing.top, rect.top);
+      existing.bottom = Math.max(existing.bottom, rect.bottom);
+      existing.height = Math.max(existing.height, rect.height);
+      continue;
+    }
+    lineRects.push({
+      top: rect.top,
+      bottom: rect.bottom,
+      height: rect.height,
+    });
+  }
+  lineRects.sort((a, b) => a.top - b.top);
+
+  let nearestIndex = -1;
+  let nearestDistance = Infinity;
+  for (let i = 0; i < lineRects.length; i += 1) {
+    const rect = lineRects[i];
+    let distance = 0;
+    if (clientY < rect.top) distance = rect.top - clientY;
+    else if (clientY > rect.bottom) distance = clientY - rect.bottom;
+    if (distance < nearestDistance) {
+      nearestDistance = distance;
+      nearestIndex = i;
+    }
+  }
+  if (nearestIndex < 0) return null;
+  return {
+    line: nearestIndex + 1,
+    top: lineRects[nearestIndex].top,
+    height: lineRects[nearestIndex].height,
+  };
+}
+
 export function getActiveArtifactTitle() {
   return activeArtifactTitle;
 }
@@ -1076,7 +1145,7 @@ function getMarkdownSourceAnchorContext(node) {
 
 export function getLocationFromPoint(clientX, clientY) {
   const e = getEls();
-  const range = textRangeFromClientPoint(clientX, clientY);
+  const range = textRangeFromPointInRoot(e.text, clientX, clientY);
   if (e.text && activeTextEventId && range && e.text.contains(range.startContainer)) {
     const diffAnchor = getDiffAnchorContext(range.startContainer);
     if (diffAnchor) return diffAnchor;
@@ -1093,6 +1162,15 @@ export function getLocationFromPoint(clientX, clientY) {
       return { line, title };
     } catch (_) {
       return null;
+    }
+  }
+  if (e.text && activeTextEventId) {
+    const rect = e.text.getBoundingClientRect();
+    if (clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom) {
+      const estimate = estimateTextLineAtPoint(e.text, clientY);
+      if (estimate) {
+        return { line: estimate.line, title: getActiveArtifactTitle() };
+      }
     }
   }
   return getPdfAnchorFromPoint(clientX, clientY);
@@ -1138,9 +1216,22 @@ export function showLineHighlight(clientX, clientY) {
   clearLineHighlight();
   const e = getEls();
   if (!e.text) return;
-  const range = textRangeFromClientPoint(clientX, clientY);
-  if (!range || !e.text.contains(range.startContainer)) return;
-  const rangeRect = range.getBoundingClientRect();
+  const range = textRangeFromPointInRoot(e.text, clientX, clientY);
+  let rangeRect = null;
+  if (range && e.text.contains(range.startContainer)) {
+    rangeRect = range.getBoundingClientRect();
+  } else {
+    const estimate = estimateTextLineAtPoint(e.text, clientY);
+    if (!estimate) return;
+    const rootRect = e.text.getBoundingClientRect();
+    rangeRect = {
+      top: estimate.top,
+      height: estimate.height,
+      bottom: estimate.top + estimate.height,
+      left: rootRect.left,
+      right: rootRect.right,
+    };
+  }
   const rootRect = e.text.getBoundingClientRect();
   const top = rangeRect.top - rootRect.top + e.text.scrollTop;
   const lineHeight = rangeRect.height || parseFloat(window.getComputedStyle(e.text).lineHeight) || 22;
