@@ -58,6 +58,7 @@ type Project struct {
 	CanvasSessionID          string `json:"canvas_session_id"`
 	ChatModel                string `json:"chat_model"`
 	ChatModelReasoningEffort string `json:"chat_model_reasoning_effort"`
+	CompanionConfigJSON      string `json:"-"`
 	IsDefault                bool   `json:"is_default"`
 	CreatedAt                int64  `json:"created_at"`
 	UpdatedAt                int64  `json:"updated_at"`
@@ -200,6 +201,7 @@ CREATE TABLE IF NOT EXISTS projects (
   canvas_session_id TEXT NOT NULL DEFAULT '',
   chat_model TEXT NOT NULL DEFAULT '',
   chat_model_reasoning_effort TEXT NOT NULL DEFAULT '',
+  companion_config_json TEXT NOT NULL DEFAULT '{}',
   is_default INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
@@ -271,6 +273,7 @@ func (s *Store) migrateProjectColumns() error {
 		{Table: "projects", Name: "canvas_session_id", SQL: `ALTER TABLE projects ADD COLUMN canvas_session_id TEXT NOT NULL DEFAULT ''`},
 		{Table: "projects", Name: "chat_model", SQL: `ALTER TABLE projects ADD COLUMN chat_model TEXT NOT NULL DEFAULT ''`},
 		{Table: "projects", Name: "chat_model_reasoning_effort", SQL: `ALTER TABLE projects ADD COLUMN chat_model_reasoning_effort TEXT NOT NULL DEFAULT ''`},
+		{Table: "projects", Name: "companion_config_json", SQL: `ALTER TABLE projects ADD COLUMN companion_config_json TEXT NOT NULL DEFAULT '{}'`},
 		{Table: "projects", Name: "last_opened_at", SQL: `ALTER TABLE projects ADD COLUMN last_opened_at INTEGER NOT NULL DEFAULT 0`},
 		{Table: "chat_messages", Name: "thread_key", SQL: `ALTER TABLE chat_messages ADD COLUMN thread_key TEXT NOT NULL DEFAULT ''`},
 	}
@@ -301,6 +304,7 @@ func (s *Store) migrateProjectColumns() error {
 	_, _ = s.db.Exec(`UPDATE projects SET canvas_session_id = id WHERE trim(canvas_session_id) = ''`)
 	_, _ = s.db.Exec(`UPDATE projects SET chat_model = lower(trim(chat_model))`)
 	_, _ = s.db.Exec(`UPDATE projects SET chat_model_reasoning_effort = lower(trim(chat_model_reasoning_effort))`)
+	_, _ = s.db.Exec(`UPDATE projects SET companion_config_json = '{}' WHERE trim(companion_config_json) = ''`)
 	_, _ = s.db.Exec(`UPDATE projects SET last_opened_at = updated_at WHERE last_opened_at = 0`)
 	_, _ = s.db.Exec(`UPDATE chat_messages SET render_format = 'text' WHERE lower(trim(render_format)) = 'canvas'`)
 	return nil

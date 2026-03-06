@@ -3,7 +3,6 @@ package web
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"strconv"
@@ -15,10 +14,7 @@ import (
 	"github.com/krystophny/tabura/internal/stt"
 )
 
-const (
-	participantConfigStateKey = "participant_config"
-	participantMaxBufBytes    = 10 * 1024 * 1024
-)
+const participantMaxBufBytes = 10 * 1024 * 1024
 
 type participantMessage struct {
 	Type      string `json:"type"`
@@ -32,24 +28,6 @@ type participantMessage struct {
 	LatencyMS int64  `json:"latency_ms,omitempty"`
 }
 
-type participantConfig struct {
-	Language             string `json:"language"`
-	MaxSegmentDurationMS int    `json:"max_segment_duration_ms"`
-	SessionRAMCapMB      int    `json:"session_ram_cap_mb"`
-	STTModel             string `json:"stt_model"`
-	AudioPersistence     string `json:"audio_persistence"`
-}
-
-func defaultParticipantConfig() participantConfig {
-	return participantConfig{
-		Language:             "en",
-		MaxSegmentDurationMS: 30000,
-		SessionRAMCapMB:      64,
-		STTModel:             "whisper-1",
-		AudioPersistence:     "none",
-	}
-}
-
 func handleParticipantStart(a *App, conn *chatWSConn, chatSessionID string) {
 	conn.participantMu.Lock()
 	defer conn.participantMu.Unlock()
@@ -59,12 +37,10 @@ func handleParticipantStart(a *App, conn *chatWSConn, chatSessionID string) {
 		return
 	}
 
-	projectKey := strings.TrimSpace(chatSessionID)
+	projectKey, cfg := a.resolveParticipantProject(chatSessionID)
 	if projectKey == "" {
 		projectKey = "default"
 	}
-
-	cfg := a.loadParticipantConfig()
 	cfgJSON, _ := json.Marshal(cfg)
 	sess, err := a.store.AddParticipantSession(projectKey, string(cfgJSON))
 	if err != nil {
@@ -203,87 +179,6 @@ func zeroizeBytes(buf []byte) {
 	for i := range buf {
 		buf[i] = 0
 	}
-}
-
-func (a *App) loadParticipantConfig() participantConfig {
-	cfg := defaultParticipantConfig()
-	raw, err := a.store.AppState(participantConfigStateKey)
-	if err != nil || strings.TrimSpace(raw) == "" {
-		return cfg
-	}
-	var persisted participantConfig
-	if err := json.Unmarshal([]byte(raw), &persisted); err != nil {
-		return cfg
-	}
-	if strings.TrimSpace(persisted.Language) != "" {
-		cfg.Language = persisted.Language
-	}
-	if persisted.MaxSegmentDurationMS > 0 {
-		cfg.MaxSegmentDurationMS = persisted.MaxSegmentDurationMS
-	}
-	if persisted.SessionRAMCapMB > 0 {
-		cfg.SessionRAMCapMB = persisted.SessionRAMCapMB
-	}
-	if strings.TrimSpace(persisted.STTModel) != "" {
-		cfg.STTModel = persisted.STTModel
-	}
-	cfg.AudioPersistence = "none"
-	return cfg
-}
-
-func (a *App) saveParticipantConfig(cfg participantConfig) error {
-	cfg.AudioPersistence = "none"
-	data, err := json.Marshal(cfg)
-	if err != nil {
-		return err
-	}
-	return a.store.SetAppState(participantConfigStateKey, string(data))
-}
-
-func (a *App) handleParticipantConfigGet(w http.ResponseWriter, r *http.Request) {
-	if !a.requireAuth(w, r) {
-		return
-	}
-	writeJSON(w, a.loadParticipantConfig())
-}
-
-func (a *App) handleParticipantConfigPut(w http.ResponseWriter, r *http.Request) {
-	if !a.requireAuth(w, r) {
-		return
-	}
-	body, err := io.ReadAll(io.LimitReader(r.Body, 1024*1024))
-	if err != nil {
-		http.Error(w, "failed to read body", http.StatusBadRequest)
-		return
-	}
-	defer r.Body.Close()
-
-	var patch participantConfig
-	if err := json.Unmarshal(body, &patch); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
-		return
-	}
-
-	cfg := a.loadParticipantConfig()
-	if strings.TrimSpace(patch.Language) != "" {
-		cfg.Language = strings.TrimSpace(patch.Language)
-	}
-	if patch.MaxSegmentDurationMS > 0 {
-		cfg.MaxSegmentDurationMS = patch.MaxSegmentDurationMS
-	}
-	if patch.SessionRAMCapMB > 0 {
-		cfg.SessionRAMCapMB = patch.SessionRAMCapMB
-	}
-	if strings.TrimSpace(patch.STTModel) != "" {
-		cfg.STTModel = strings.TrimSpace(patch.STTModel)
-	}
-	cfg.AudioPersistence = "none"
-
-	if err := a.saveParticipantConfig(cfg); err != nil {
-		http.Error(w, "failed to save config", http.StatusInternalServerError)
-		return
-	}
-	writeJSON(w, cfg)
 }
 
 func (a *App) handleParticipantStatus(w http.ResponseWriter, r *http.Request) {

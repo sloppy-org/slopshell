@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -206,6 +207,9 @@ func TestStoreProjectLifecycleAndAppState(t *testing.T) {
 	if err := s.UpdateProjectChatModelReasoningEffort(p1.ID, "  HIGH "); err != nil {
 		t.Fatalf("UpdateProjectChatModelReasoningEffort() error: %v", err)
 	}
+	if err := s.UpdateProjectCompanionConfig(p1.ID, `{"companion_enabled":false,"idle_surface":"black"}`); err != nil {
+		t.Fatalf("UpdateProjectCompanionConfig() error: %v", err)
+	}
 	p1Updated, err := s.GetProject(p1.ID)
 	if err != nil {
 		t.Fatalf("GetProject(updated p1) error: %v", err)
@@ -215,6 +219,9 @@ func TestStoreProjectLifecycleAndAppState(t *testing.T) {
 	}
 	if p1Updated.ChatModelReasoningEffort != "high" {
 		t.Fatalf("ChatModelReasoningEffort = %q, want high", p1Updated.ChatModelReasoningEffort)
+	}
+	if got := strings.TrimSpace(p1Updated.CompanionConfigJSON); got != `{"companion_enabled":false,"idle_surface":"black"}` {
+		t.Fatalf("CompanionConfigJSON = %q", got)
 	}
 
 	beforeTouch := p1Updated.LastOpenedAt
@@ -253,6 +260,44 @@ func TestStoreProjectLifecycleAndAppState(t *testing.T) {
 	}
 	if activeID != p2.ID {
 		t.Fatalf("ActiveProjectID() = %q, want %q", activeID, p2.ID)
+	}
+}
+
+func TestStoreProjectCompanionConfigPersistsAcrossReopen(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "tabura.db")
+	s, err := New(dbPath)
+	if err != nil {
+		t.Fatalf("store.New() error: %v", err)
+	}
+
+	root := filepath.Join(t.TempDir(), "workspace")
+	project, err := s.CreateProject("Project A", "key-a", root, "managed", "", "", false)
+	if err != nil {
+		t.Fatalf("CreateProject() error: %v", err)
+	}
+	if err := s.UpdateProjectCompanionConfig(project.ID, `{"companion_enabled":false,"language":"de","idle_surface":"black"}`); err != nil {
+		t.Fatalf("UpdateProjectCompanionConfig() error: %v", err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatalf("Close() error: %v", err)
+	}
+
+	reopened, err := New(dbPath)
+	if err != nil {
+		t.Fatalf("reopen store: %v", err)
+	}
+	defer func() {
+		_ = reopened.Close()
+	}()
+	got, err := reopened.GetProject(project.ID)
+	if err != nil {
+		t.Fatalf("GetProject() after reopen error: %v", err)
+	}
+	if strings.TrimSpace(got.CompanionConfigJSON) != `{"companion_enabled":false,"language":"de","idle_surface":"black"}` {
+		t.Fatalf("CompanionConfigJSON after reopen = %q", got.CompanionConfigJSON)
+	}
+	if _, err := os.Stat(dbPath); err != nil {
+		t.Fatalf("expected db at %s: %v", dbPath, err)
 	}
 }
 

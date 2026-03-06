@@ -61,6 +61,7 @@ func scanProject(
 		&out.CanvasSessionID,
 		&out.ChatModel,
 		&out.ChatModelReasoningEffort,
+		&out.CompanionConfigJSON,
 		&isDefault,
 		&out.CreatedAt,
 		&out.UpdatedAt,
@@ -75,6 +76,7 @@ func scanProject(
 	out.ProjectKey = strings.TrimSpace(out.ProjectKey)
 	out.ChatModel = normalizeProjectChatModel(out.ChatModel)
 	out.ChatModelReasoningEffort = normalizeProjectChatModelReasoningEffort(out.ChatModelReasoningEffort)
+	out.CompanionConfigJSON = strings.TrimSpace(out.CompanionConfigJSON)
 	out.IsDefault = isDefault != 0
 	return out, nil
 }
@@ -88,7 +90,7 @@ func boolToInt(v bool) int {
 
 func (s *Store) ListProjects() ([]Project, error) {
 	rows, err := s.db.Query(
-		`SELECT id, name, project_key, root_path, kind, mcp_url, canvas_session_id, chat_model, chat_model_reasoning_effort, is_default, created_at, updated_at, last_opened_at
+		`SELECT id, name, project_key, root_path, kind, mcp_url, canvas_session_id, chat_model, chat_model_reasoning_effort, companion_config_json, is_default, created_at, updated_at, last_opened_at
 		 FROM projects
 		 ORDER BY is_default DESC, last_opened_at DESC, lower(name) ASC, created_at ASC`,
 	)
@@ -109,7 +111,7 @@ func (s *Store) ListProjects() ([]Project, error) {
 
 func (s *Store) GetProject(id string) (Project, error) {
 	return scanProject(s.db.QueryRow(
-		`SELECT id, name, project_key, root_path, kind, mcp_url, canvas_session_id, chat_model, chat_model_reasoning_effort, is_default, created_at, updated_at, last_opened_at
+		`SELECT id, name, project_key, root_path, kind, mcp_url, canvas_session_id, chat_model, chat_model_reasoning_effort, companion_config_json, is_default, created_at, updated_at, last_opened_at
 		 FROM projects WHERE id = ?`,
 		strings.TrimSpace(id),
 	))
@@ -117,7 +119,7 @@ func (s *Store) GetProject(id string) (Project, error) {
 
 func (s *Store) GetProjectByProjectKey(projectKey string) (Project, error) {
 	return scanProject(s.db.QueryRow(
-		`SELECT id, name, project_key, root_path, kind, mcp_url, canvas_session_id, chat_model, chat_model_reasoning_effort, is_default, created_at, updated_at, last_opened_at
+		`SELECT id, name, project_key, root_path, kind, mcp_url, canvas_session_id, chat_model, chat_model_reasoning_effort, companion_config_json, is_default, created_at, updated_at, last_opened_at
 		 FROM projects WHERE project_key = ?`,
 		strings.TrimSpace(projectKey),
 	))
@@ -125,7 +127,7 @@ func (s *Store) GetProjectByProjectKey(projectKey string) (Project, error) {
 
 func (s *Store) GetProjectByRootPath(rootPath string) (Project, error) {
 	return scanProject(s.db.QueryRow(
-		`SELECT id, name, project_key, root_path, kind, mcp_url, canvas_session_id, chat_model, chat_model_reasoning_effort, is_default, created_at, updated_at, last_opened_at
+		`SELECT id, name, project_key, root_path, kind, mcp_url, canvas_session_id, chat_model, chat_model_reasoning_effort, companion_config_json, is_default, created_at, updated_at, last_opened_at
 		 FROM projects WHERE root_path = ?`,
 		normalizeProjectPath(rootPath),
 	))
@@ -133,7 +135,7 @@ func (s *Store) GetProjectByRootPath(rootPath string) (Project, error) {
 
 func (s *Store) GetProjectByCanvasSession(canvasSessionID string) (Project, error) {
 	return scanProject(s.db.QueryRow(
-		`SELECT id, name, project_key, root_path, kind, mcp_url, canvas_session_id, chat_model, chat_model_reasoning_effort, is_default, created_at, updated_at, last_opened_at
+		`SELECT id, name, project_key, root_path, kind, mcp_url, canvas_session_id, chat_model, chat_model_reasoning_effort, companion_config_json, is_default, created_at, updated_at, last_opened_at
 		 FROM projects WHERE canvas_session_id = ?`,
 		strings.TrimSpace(canvasSessionID),
 	))

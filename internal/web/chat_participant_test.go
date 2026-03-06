@@ -44,11 +44,17 @@ func TestParticipantConfigDefaultValues(t *testing.T) {
 	if cfg.AudioPersistence != "none" {
 		t.Fatalf("audio_persistence = %q, want none", cfg.AudioPersistence)
 	}
+	if cfg.CaptureSource != "microphone" {
+		t.Fatalf("capture_source = %q, want microphone", cfg.CaptureSource)
+	}
 	if cfg.Language == "" {
 		t.Fatal("language is empty")
 	}
 	if cfg.MaxSegmentDurationMS <= 0 {
 		t.Fatalf("max_segment_duration_ms = %d", cfg.MaxSegmentDurationMS)
+	}
+	if !cfg.CompanionEnabled {
+		t.Fatal("companion_enabled = false, want true")
 	}
 }
 
@@ -56,9 +62,12 @@ func TestParticipantConfigPutAudioPersistenceInvariant(t *testing.T) {
 	app := newAuthedTestApp(t)
 
 	payload := map[string]interface{}{
+		"companion_enabled": false,
 		"language":          "de",
 		"stt_model":         "whisper-large",
+		"idle_surface":      "black",
 		"audio_persistence": "disk",
+		"capture_source":    "line-in",
 	}
 	rr := doAuthedJSONRequest(t, app.Router(), http.MethodPut, "/api/participant/config", payload)
 	if rr.Code != http.StatusOK {
@@ -72,8 +81,17 @@ func TestParticipantConfigPutAudioPersistenceInvariant(t *testing.T) {
 	if cfg.AudioPersistence != "none" {
 		t.Fatalf("audio_persistence = %q after PUT with disk, want none", cfg.AudioPersistence)
 	}
+	if cfg.CaptureSource != "microphone" {
+		t.Fatalf("capture_source = %q after PUT, want microphone", cfg.CaptureSource)
+	}
 	if cfg.Language != "de" {
 		t.Fatalf("language = %q, want de", cfg.Language)
+	}
+	if cfg.IdleSurface != "black" {
+		t.Fatalf("idle_surface = %q, want black", cfg.IdleSurface)
+	}
+	if cfg.CompanionEnabled {
+		t.Fatal("companion_enabled = true after PUT, want false")
 	}
 
 	rr = doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/participant/config", nil)
@@ -82,6 +100,12 @@ func TestParticipantConfigPutAudioPersistenceInvariant(t *testing.T) {
 	}
 	if cfg.AudioPersistence != "none" {
 		t.Fatalf("audio_persistence = %q after round-trip, want none", cfg.AudioPersistence)
+	}
+	if cfg.CaptureSource != "microphone" {
+		t.Fatalf("capture_source = %q after round-trip, want microphone", cfg.CaptureSource)
+	}
+	if cfg.CompanionEnabled {
+		t.Fatal("companion_enabled = true after round-trip, want false")
 	}
 }
 
@@ -339,18 +363,26 @@ func TestParticipantExportMarkdown(t *testing.T) {
 
 func TestPrivacyParticipantConfigNeverStoresAudioPersistence(t *testing.T) {
 	app := newAuthedTestApp(t)
+	project, err := app.ensureDefaultProjectRecord()
+	if err != nil {
+		t.Fatalf("ensureDefaultProjectRecord: %v", err)
+	}
 
-	cfg := app.loadParticipantConfig()
+	cfg := app.loadCompanionConfig(project)
 	if cfg.AudioPersistence != "none" {
 		t.Fatalf("default audio_persistence = %q, want none", cfg.AudioPersistence)
 	}
 
 	cfg.AudioPersistence = "disk"
-	if err := app.saveParticipantConfig(cfg); err != nil {
+	if err := app.saveCompanionConfig(project.ID, cfg); err != nil {
 		t.Fatalf("save config: %v", err)
 	}
 
-	loaded := app.loadParticipantConfig()
+	reloadedProject, err := app.store.GetProject(project.ID)
+	if err != nil {
+		t.Fatalf("GetProject: %v", err)
+	}
+	loaded := app.loadCompanionConfig(reloadedProject)
 	if loaded.AudioPersistence != "none" {
 		t.Fatalf("loaded audio_persistence = %q after save with disk, want none", loaded.AudioPersistence)
 	}
@@ -505,6 +537,36 @@ func TestParticipantBinaryChunkTranscribesWAVSegmentImmediately(t *testing.T) {
 	defer conn.participantMu.Unlock()
 	if conn.participantBuf != nil {
 		t.Fatal("participantBuf should be cleared after immediate chunk transcription")
+	}
+}
+
+func TestParticipantStartUsesChatSessionProjectKey(t *testing.T) {
+	app := newAuthedTestApp(t)
+	project, err := app.ensureDefaultProjectRecord()
+	if err != nil {
+		t.Fatalf("ensureDefaultProjectRecord: %v", err)
+	}
+	session, err := app.store.GetOrCreateChatSession(project.ProjectKey)
+	if err != nil {
+		t.Fatalf("GetOrCreateChatSession: %v", err)
+	}
+	conn, cleanup := newTestWSConn(t)
+	defer cleanup()
+
+	handleParticipantStart(app, conn, session.ID)
+
+	conn.participantMu.Lock()
+	participantSessionID := conn.participantSessionID
+	conn.participantMu.Unlock()
+	if participantSessionID == "" {
+		t.Fatal("expected participant session id")
+	}
+	participantSession, err := app.store.GetParticipantSession(participantSessionID)
+	if err != nil {
+		t.Fatalf("GetParticipantSession: %v", err)
+	}
+	if participantSession.ProjectKey != project.ProjectKey {
+		t.Fatalf("participant session project_key = %q, want %q", participantSession.ProjectKey, project.ProjectKey)
 	}
 }
 
