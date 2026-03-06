@@ -1077,13 +1077,17 @@ body.panel-motion-enabled {
   top: 0;
   left: 0;
   right: 0;
-  height: 240px;
+  height: calc(240px + var(--safe-area-top));
   transform: translateY(-100%);
 }
 
 .edge-top.edge-active,
 .edge-top.edge-pinned {
   transform: translateY(0);
+}
+
+.edge-top .edge-panel-inner {
+  padding-top: calc(var(--safe-area-top) + 0.35rem);
 }
 
 /* Right edge panel */
@@ -1368,7 +1372,7 @@ body.panel-motion-enabled {
   }
 
   .edge-top {
-    height: 200px;
+    height: calc(200px + var(--safe-area-top));
   }
 }
 

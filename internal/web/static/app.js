@@ -4964,6 +4964,8 @@ let edgeRightTimer = null;
 let edgeTouchStart = null;
 const EDGE_TAP_SIZE_PX = 30;
 const EDGE_TAP_SIZE_SMALL_PX = 30;
+const EDGE_TOP_TAP_SIZE_PX = 56;
+const EDGE_TOP_TAP_SIZE_SMALL_PX = 52;
 const EDGE_TAP_SIZE_SMALL_MEDIA_QUERY = '(max-width: 768px)';
 
 function getEdgeTapSizePx() {
@@ -4976,6 +4978,19 @@ function getEdgeTapSizePx() {
       : EDGE_TAP_SIZE_PX;
   } catch (_) {
     return EDGE_TAP_SIZE_PX;
+  }
+}
+
+function getTopEdgeTapSizePx() {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+    return EDGE_TOP_TAP_SIZE_PX;
+  }
+  try {
+    return window.matchMedia(EDGE_TAP_SIZE_SMALL_MEDIA_QUERY).matches
+      ? EDGE_TOP_TAP_SIZE_SMALL_PX
+      : EDGE_TOP_TAP_SIZE_PX;
+  } catch (_) {
+    return EDGE_TOP_TAP_SIZE_PX;
   }
 }
 
@@ -5041,8 +5056,9 @@ function initEdgePanels() {
   // Desktop: hover near edge
   document.addEventListener('mousemove', (ev) => {
     const edgeTapSize = getEdgeTapSizePx();
+    const topEdgeTapSize = getTopEdgeTapSizePx();
     // Top edge
-    if (ev.clientY < edgeTapSize && edgeTop && !edgeTop.classList.contains('edge-pinned')) {
+    if (ev.clientY < topEdgeTapSize && edgeTop && !edgeTop.classList.contains('edge-pinned')) {
       edgeTop.classList.add('edge-active');
       if (edgeTopTimer) { clearTimeout(edgeTopTimer); edgeTopTimer = null; }
     }
@@ -5221,6 +5237,7 @@ function initEdgePanels() {
     const target = ev.target instanceof Element ? ev.target : null;
     const t = ev.touches[0];
     const edgeTapSize = getEdgeTapSizePx();
+    const topEdgeTapSize = getTopEdgeTapSizePx();
     edgeTouchHandled = false;
     const startsInCanvasViewport = Boolean(target && target.closest('#canvas-viewport'));
     // When a canvas artifact is visible, prioritize horizontal swipe-to-flip
@@ -5239,7 +5256,7 @@ function initEdgePanels() {
       edgeTouchStart = { x: t.clientX, y: t.clientY, edge: 'left' };
     } else if (!preserveCanvasHorizontalSwipe && t.clientX > window.innerWidth - edgeTapSize) {
       edgeTouchStart = { x: t.clientX, y: t.clientY, edge: 'right' };
-    } else if (t.clientY < edgeTapSize) {
+    } else if (t.clientY < topEdgeTapSize) {
       edgeTouchStart = { x: t.clientX, y: t.clientY, edge: 'top' };
     } else if (t.clientY > window.innerHeight - edgeTapSize) {
       edgeTouchStart = { x: t.clientX, y: t.clientY, edge: 'bottom' };
@@ -5421,7 +5438,8 @@ function bindUi() {
   let hasLastMousePosition = false;
   const isInEdgeZone = (x, y) => {
     const s = getEdgeTapSizePx();
-    return x < s || x > window.innerWidth - s || y < s || y > window.innerHeight - s;
+    const top = getTopEdgeTapSizePx();
+    return x < s || x > window.innerWidth - s || y < top || y > window.innerHeight - s;
   };
   const isVoiceInteractionTarget = (target, x, y) => (
     isInEdgeZone(x, y)

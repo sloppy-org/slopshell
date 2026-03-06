@@ -117,3 +117,49 @@ func TestRuntimePreferenceUpdatePersists(t *testing.T) {
 		t.Fatalf("startup_behavior = %q, want %q", got, "hub_first")
 	}
 }
+
+func TestRuntimeMigratesLegacyImplicitVoiceModeToPen(t *testing.T) {
+	app := newAuthedTestApp(t)
+	if err := app.store.SetAppState(appStateInputModeKey, "voice"); err != nil {
+		t.Fatalf("seed legacy voice input mode: %v", err)
+	}
+
+	rr := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/runtime", nil)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("runtime status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode runtime response: %v", err)
+	}
+	if got := strFromAny(payload["input_mode"]); got != "pen" {
+		t.Fatalf("input_mode = %q, want %q", got, "pen")
+	}
+	if got, err := app.store.AppState(appStateInputModeKey); err != nil {
+		t.Fatalf("read migrated input mode: %v", err)
+	} else if got != "pen" {
+		t.Fatalf("stored input_mode = %q, want %q", got, "pen")
+	}
+}
+
+func TestRuntimeKeepsExplicitVoiceMode(t *testing.T) {
+	app := newAuthedTestApp(t)
+	if err := app.store.SetAppState(appStateInputModeKey, "voice"); err != nil {
+		t.Fatalf("seed explicit voice input mode: %v", err)
+	}
+	if err := app.store.SetAppState(appStateInputModeExplicitKey, "true"); err != nil {
+		t.Fatalf("seed explicit input mode flag: %v", err)
+	}
+
+	rr := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/runtime", nil)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("runtime status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode runtime response: %v", err)
+	}
+	if got := strFromAny(payload["input_mode"]); got != "voice" {
+		t.Fatalf("input_mode = %q, want %q", got, "voice")
+	}
+}

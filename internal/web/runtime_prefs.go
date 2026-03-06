@@ -60,7 +60,30 @@ func (a *App) runtimeInputMode() string {
 	if err != nil {
 		return "pen"
 	}
-	return normalizeRuntimeInputMode(value)
+	mode := normalizeRuntimeInputMode(value)
+	if mode == "" {
+		return "pen"
+	}
+	explicit, err := a.store.AppState(appStateInputModeExplicitKey)
+	if err != nil {
+		return mode
+	}
+	if parseBoolString(explicit, false) {
+		return mode
+	}
+	if mode != "voice" {
+		return mode
+	}
+	// Legacy installs persisted voice as the default. Migrate that
+	// implicit value to the new pen-first default, but keep explicit
+	// user selections intact via runtime.input_mode.explicit.
+	if err := a.store.SetAppState(appStateInputModeKey, "pen"); err != nil {
+		return "pen"
+	}
+	if err := a.store.SetAppState(appStateInputModeExplicitKey, "false"); err != nil {
+		return "pen"
+	}
+	return "pen"
 }
 
 func (a *App) runtimeStartupBehavior() string {
@@ -88,7 +111,10 @@ func (a *App) setRuntimeInputMode(mode string) error {
 	if a == nil || a.store == nil {
 		return nil
 	}
-	return a.store.SetAppState(appStateInputModeKey, normalizeRuntimeInputMode(mode))
+	if err := a.store.SetAppState(appStateInputModeKey, normalizeRuntimeInputMode(mode)); err != nil {
+		return err
+	}
+	return a.store.SetAppState(appStateInputModeExplicitKey, "true")
 }
 
 func (a *App) setRuntimeStartupBehavior(behavior string) error {

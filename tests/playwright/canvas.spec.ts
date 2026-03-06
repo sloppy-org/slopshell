@@ -903,6 +903,14 @@ test.describe('canvas - edge panels', () => {
     expect(classes).not.toContain('edge-active');
   });
 
+  test('tablet touch tap from deeper top strip still opens top panel', async ({ page }) => {
+    await page.setViewportSize({ width: 1024, height: 1366 });
+    const edgeTop = page.locator('#edge-top');
+    await dispatchTouchTap(page, 512, 42);
+    await page.waitForTimeout(200);
+    await expect(edgeTop).toHaveClass(/edge-pinned/);
+  });
+
   test('touch swipe left hides file sidebar drawer', async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 667 });
     const pane = page.locator('#pr-file-pane');
