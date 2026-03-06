@@ -19,54 +19,58 @@ const (
 )
 
 type companionConfig struct {
-	CompanionEnabled     bool   `json:"companion_enabled"`
-	Language             string `json:"language"`
-	MaxSegmentDurationMS int    `json:"max_segment_duration_ms"`
-	SessionRAMCapMB      int    `json:"session_ram_cap_mb"`
-	STTModel             string `json:"stt_model"`
-	IdleSurface          string `json:"idle_surface"`
-	AudioPersistence     string `json:"audio_persistence"`
-	CaptureSource        string `json:"capture_source"`
+	CompanionEnabled          bool   `json:"companion_enabled"`
+	DirectedSpeechGateEnabled bool   `json:"directed_speech_gate_enabled"`
+	Language                  string `json:"language"`
+	MaxSegmentDurationMS      int    `json:"max_segment_duration_ms"`
+	SessionRAMCapMB           int    `json:"session_ram_cap_mb"`
+	STTModel                  string `json:"stt_model"`
+	IdleSurface               string `json:"idle_surface"`
+	AudioPersistence          string `json:"audio_persistence"`
+	CaptureSource             string `json:"capture_source"`
 }
 
 type participantConfig = companionConfig
 
 type companionConfigPatch struct {
-	CompanionEnabled     *bool   `json:"companion_enabled"`
-	Language             *string `json:"language"`
-	MaxSegmentDurationMS *int    `json:"max_segment_duration_ms"`
-	SessionRAMCapMB      *int    `json:"session_ram_cap_mb"`
-	STTModel             *string `json:"stt_model"`
-	IdleSurface          *string `json:"idle_surface"`
-	AudioPersistence     *string `json:"audio_persistence"`
-	CaptureSource        *string `json:"capture_source"`
+	CompanionEnabled          *bool   `json:"companion_enabled"`
+	DirectedSpeechGateEnabled *bool   `json:"directed_speech_gate_enabled"`
+	Language                  *string `json:"language"`
+	MaxSegmentDurationMS      *int    `json:"max_segment_duration_ms"`
+	SessionRAMCapMB           *int    `json:"session_ram_cap_mb"`
+	STTModel                  *string `json:"stt_model"`
+	IdleSurface               *string `json:"idle_surface"`
+	AudioPersistence          *string `json:"audio_persistence"`
+	CaptureSource             *string `json:"capture_source"`
 }
 
 type companionStateResponse struct {
-	OK               bool                      `json:"ok"`
-	ProjectID        string                    `json:"project_id"`
-	ProjectKey       string                    `json:"project_key"`
-	State            string                    `json:"state"`
-	CompanionEnabled bool                      `json:"companion_enabled"`
-	IdleSurface      string                    `json:"idle_surface"`
-	AudioPersistence string                    `json:"audio_persistence"`
-	CaptureSource    string                    `json:"capture_source"`
-	ActiveSessions   int                       `json:"active_sessions"`
-	ActiveSessionID  string                    `json:"active_session_id,omitempty"`
-	LatestSession    *store.ParticipantSession `json:"latest_session,omitempty"`
-	Config           companionConfig           `json:"config"`
+	OK                 bool                        `json:"ok"`
+	ProjectID          string                      `json:"project_id"`
+	ProjectKey         string                      `json:"project_key"`
+	State              string                      `json:"state"`
+	CompanionEnabled   bool                        `json:"companion_enabled"`
+	IdleSurface        string                      `json:"idle_surface"`
+	AudioPersistence   string                      `json:"audio_persistence"`
+	CaptureSource      string                      `json:"capture_source"`
+	ActiveSessions     int                         `json:"active_sessions"`
+	ActiveSessionID    string                      `json:"active_session_id,omitempty"`
+	LatestSession      *store.ParticipantSession   `json:"latest_session,omitempty"`
+	DirectedSpeechGate companionDirectedSpeechGate `json:"directed_speech_gate"`
+	Config             companionConfig             `json:"config"`
 }
 
 func defaultCompanionConfig() companionConfig {
 	return companionConfig{
-		CompanionEnabled:     true,
-		Language:             "en",
-		MaxSegmentDurationMS: 30000,
-		SessionRAMCapMB:      64,
-		STTModel:             "whisper-1",
-		IdleSurface:          companionIdleSurfaceRobot,
-		AudioPersistence:     companionAudioPersistenceNone,
-		CaptureSource:        companionCaptureSourceMic,
+		CompanionEnabled:          true,
+		DirectedSpeechGateEnabled: false,
+		Language:                  "en",
+		MaxSegmentDurationMS:      30000,
+		SessionRAMCapMB:           64,
+		STTModel:                  "whisper-1",
+		IdleSurface:               companionIdleSurfaceRobot,
+		AudioPersistence:          companionAudioPersistenceNone,
+		CaptureSource:             companionCaptureSourceMic,
 	}
 }
 
@@ -82,6 +86,7 @@ func normalizeCompanionIdleSurface(raw string) string {
 func normalizeCompanionConfig(cfg companionConfig) companionConfig {
 	normalized := defaultCompanionConfig()
 	normalized.CompanionEnabled = cfg.CompanionEnabled
+	normalized.DirectedSpeechGateEnabled = cfg.DirectedSpeechGateEnabled
 	if language := strings.TrimSpace(cfg.Language); language != "" {
 		normalized.Language = language
 	}
@@ -103,6 +108,9 @@ func normalizeCompanionConfig(cfg companionConfig) companionConfig {
 func applyCompanionConfigPatch(cfg companionConfig, patch companionConfigPatch) companionConfig {
 	if patch.CompanionEnabled != nil {
 		cfg.CompanionEnabled = *patch.CompanionEnabled
+	}
+	if patch.DirectedSpeechGateEnabled != nil {
+		cfg.DirectedSpeechGateEnabled = *patch.DirectedSpeechGateEnabled
 	}
 	if patch.Language != nil {
 		cfg.Language = strings.TrimSpace(*patch.Language)
@@ -286,6 +294,7 @@ func (a *App) handleProjectCompanionState(w http.ResponseWriter, r *http.Request
 	activeSessions := 0
 	activeSessionID := ""
 	var latestSession *store.ParticipantSession
+	var gateSession *store.ParticipantSession
 	for i := range sessions {
 		if latestSession == nil {
 			latestSession = &sessions[i]
@@ -296,24 +305,30 @@ func (a *App) handleProjectCompanionState(w http.ResponseWriter, r *http.Request
 		activeSessions++
 		if activeSessionID == "" {
 			activeSessionID = sessions[i].ID
+			gateSession = &sessions[i]
 		}
+	}
+	if gateSession == nil {
+		gateSession = latestSession
 	}
 	state := companionRuntimeStateIdle
 	if activeSessions > 0 {
 		state = companionRuntimeStateListening
 	}
+	gate := a.loadCompanionDirectedSpeechGate(cfg, gateSession)
 	writeJSON(w, companionStateResponse{
-		OK:               true,
-		ProjectID:        project.ID,
-		ProjectKey:       project.ProjectKey,
-		State:            state,
-		CompanionEnabled: cfg.CompanionEnabled,
-		IdleSurface:      cfg.IdleSurface,
-		AudioPersistence: cfg.AudioPersistence,
-		CaptureSource:    cfg.CaptureSource,
-		ActiveSessions:   activeSessions,
-		ActiveSessionID:  activeSessionID,
-		LatestSession:    latestSession,
-		Config:           cfg,
+		OK:                 true,
+		ProjectID:          project.ID,
+		ProjectKey:         project.ProjectKey,
+		State:              state,
+		CompanionEnabled:   cfg.CompanionEnabled,
+		IdleSurface:        cfg.IdleSurface,
+		AudioPersistence:   cfg.AudioPersistence,
+		CaptureSource:      cfg.CaptureSource,
+		ActiveSessions:     activeSessions,
+		ActiveSessionID:    activeSessionID,
+		LatestSession:      latestSession,
+		DirectedSpeechGate: gate,
+		Config:             cfg,
 	})
 }

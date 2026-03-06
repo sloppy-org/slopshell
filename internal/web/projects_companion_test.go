@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/krystophny/tabura/internal/store"
 )
 
 func TestProjectCompanionConfigRequiresAuth(t *testing.T) {
@@ -39,14 +41,15 @@ func TestProjectCompanionConfigPutAndState(t *testing.T) {
 	}
 
 	rrPut := doAuthedJSONRequest(t, app.Router(), http.MethodPut, "/api/projects/"+project.ID+"/companion/config", map[string]any{
-		"companion_enabled":       false,
-		"language":                "de",
-		"max_segment_duration_ms": 45000,
-		"session_ram_cap_mb":      96,
-		"stt_model":               "whisper-large-v3",
-		"idle_surface":            "black",
-		"audio_persistence":       "disk",
-		"capture_source":          "desktop",
+		"companion_enabled":            false,
+		"directed_speech_gate_enabled": true,
+		"language":                     "de",
+		"max_segment_duration_ms":      45000,
+		"session_ram_cap_mb":           96,
+		"stt_model":                    "whisper-large-v3",
+		"idle_surface":                 "black",
+		"audio_persistence":            "disk",
+		"capture_source":               "desktop",
 	})
 	if rrPut.Code != http.StatusOK {
 		t.Fatalf("PUT status = %d, want 200", rrPut.Code)
@@ -57,6 +60,9 @@ func TestProjectCompanionConfigPutAndState(t *testing.T) {
 	}
 	if cfg.CompanionEnabled {
 		t.Fatal("companion_enabled = true, want false")
+	}
+	if !cfg.DirectedSpeechGateEnabled {
+		t.Fatal("directed_speech_gate_enabled = false, want true")
 	}
 	if cfg.Language != "de" {
 		t.Fatalf("language = %q, want de", cfg.Language)
@@ -117,5 +123,76 @@ func TestProjectCompanionConfigPutAndState(t *testing.T) {
 	}
 	if state.Config.CompanionEnabled {
 		t.Fatal("state config companion_enabled = true, want false")
+	}
+	if state.DirectedSpeechGate.Enabled != cfg.DirectedSpeechGateEnabled {
+		t.Fatalf("state directed_speech_gate.enabled = %v, want %v", state.DirectedSpeechGate.Enabled, cfg.DirectedSpeechGateEnabled)
+	}
+	if state.DirectedSpeechGate.Decision != companionGateDecisionDisabled {
+		t.Fatalf("state directed_speech_gate.decision = %q, want %q", state.DirectedSpeechGate.Decision, companionGateDecisionDisabled)
+	}
+	if state.DirectedSpeechGate.Reason != "companion_disabled" {
+		t.Fatalf("state directed_speech_gate.reason = %q, want companion_disabled", state.DirectedSpeechGate.Reason)
+	}
+}
+
+func TestProjectCompanionStateExposesDirectedSpeechGateMetadata(t *testing.T) {
+	app := newAuthedTestApp(t)
+	project, err := app.ensureDefaultProjectRecord()
+	if err != nil {
+		t.Fatalf("ensureDefaultProjectRecord: %v", err)
+	}
+	cfg := app.loadCompanionConfig(project)
+	cfg.DirectedSpeechGateEnabled = true
+	if err := app.saveCompanionConfig(project.ID, cfg); err != nil {
+		t.Fatalf("save companion config: %v", err)
+	}
+
+	sess, err := app.store.AddParticipantSession(project.ProjectKey, "{}")
+	if err != nil {
+		t.Fatalf("AddParticipantSession: %v", err)
+	}
+	if err := app.store.AddParticipantEvent(sess.ID, 0, "session_started", "{}"); err != nil {
+		t.Fatalf("AddParticipantEvent session_started: %v", err)
+	}
+	seg, err := app.store.AddParticipantSegment(store.ParticipantSegment{
+		SessionID:   sess.ID,
+		StartTS:     100,
+		EndTS:       101,
+		Text:        "Tabura, open the companion transcript.",
+		CommittedAt: 102,
+		Status:      "final",
+	})
+	if err != nil {
+		t.Fatalf("AddParticipantSegment: %v", err)
+	}
+	if err := app.store.AddParticipantEvent(sess.ID, seg.ID, "segment_committed", `{"text":"Tabura, open the companion transcript."}`); err != nil {
+		t.Fatalf("AddParticipantEvent segment_committed: %v", err)
+	}
+
+	rr := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/projects/"+project.ID+"/companion/state", nil)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("GET state status = %d, want 200", rr.Code)
+	}
+	var state companionStateResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &state); err != nil {
+		t.Fatalf("decode companion state: %v", err)
+	}
+	if state.DirectedSpeechGate.Decision != companionGateDecisionDirect {
+		t.Fatalf("directed_speech_gate.decision = %q, want %q", state.DirectedSpeechGate.Decision, companionGateDecisionDirect)
+	}
+	if state.DirectedSpeechGate.Reason != "assistant_name_mentioned" {
+		t.Fatalf("directed_speech_gate.reason = %q, want assistant_name_mentioned", state.DirectedSpeechGate.Reason)
+	}
+	if state.DirectedSpeechGate.SessionID != sess.ID {
+		t.Fatalf("directed_speech_gate.session_id = %q, want %q", state.DirectedSpeechGate.SessionID, sess.ID)
+	}
+	if state.DirectedSpeechGate.SegmentID != seg.ID {
+		t.Fatalf("directed_speech_gate.segment_id = %d, want %d", state.DirectedSpeechGate.SegmentID, seg.ID)
+	}
+	if state.DirectedSpeechGate.LastEventType != "segment_committed" {
+		t.Fatalf("directed_speech_gate.last_event_type = %q, want segment_committed", state.DirectedSpeechGate.LastEventType)
+	}
+	if state.DirectedSpeechGate.EvaluatedText != "Tabura, open the companion transcript." {
+		t.Fatalf("directed_speech_gate.evaluated_text = %q", state.DirectedSpeechGate.EvaluatedText)
 	}
 }
