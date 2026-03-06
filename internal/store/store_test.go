@@ -152,6 +152,7 @@ func TestStoreProjectLifecycleAndAppState(t *testing.T) {
 	s := newTestStore(t)
 	rootA := filepath.Join(t.TempDir(), "workspace-a")
 	rootB := filepath.Join(t.TempDir(), "workspace-b")
+	rootMeeting := filepath.Join(t.TempDir(), "meeting-a")
 
 	if _, err := s.CreateProject("", "key-a", rootA, "managed", "", "", false); err == nil {
 		t.Fatalf("expected empty project name validation error")
@@ -174,6 +175,14 @@ func TestStoreProjectLifecycleAndAppState(t *testing.T) {
 	}
 	if !p2.IsDefault {
 		t.Fatalf("p2 should be default")
+	}
+
+	meeting, err := s.CreateProject("Meeting Temp", "key-meeting", rootMeeting, "meeting", "", "", false)
+	if err != nil {
+		t.Fatalf("CreateProject(meeting) error: %v", err)
+	}
+	if meeting.Kind != "meeting" {
+		t.Fatalf("meeting kind = %q, want meeting", meeting.Kind)
 	}
 
 	gotByKey, err := s.GetProjectByProjectKey("key-a")
@@ -241,8 +250,8 @@ func TestStoreProjectLifecycleAndAppState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListProjects() error: %v", err)
 	}
-	if len(projects) != 2 {
-		t.Fatalf("ListProjects() len = %d, want 2", len(projects))
+	if len(projects) != 3 {
+		t.Fatalf("ListProjects() len = %d, want 3", len(projects))
 	}
 	if !projects[0].IsDefault {
 		t.Fatalf("first listed project should be default")
@@ -260,6 +269,17 @@ func TestStoreProjectLifecycleAndAppState(t *testing.T) {
 	}
 	if activeID != p2.ID {
 		t.Fatalf("ActiveProjectID() = %q, want %q", activeID, p2.ID)
+	}
+
+	if err := s.UpdateProjectKind(meeting.ID, "managed"); err != nil {
+		t.Fatalf("UpdateProjectKind() error: %v", err)
+	}
+	meetingManaged, err := s.GetProject(meeting.ID)
+	if err != nil {
+		t.Fatalf("GetProject(meeting managed) error: %v", err)
+	}
+	if meetingManaged.Kind != "managed" {
+		t.Fatalf("meeting managed kind = %q, want managed", meetingManaged.Kind)
 	}
 }
 
@@ -452,6 +472,12 @@ func TestStoreSchemaAndHelperNormalizers(t *testing.T) {
 	if got := normalizeProjectKind(" LINKED "); got != "linked" {
 		t.Fatalf("normalizeProjectKind(linked) = %q, want linked", got)
 	}
+	if got := normalizeProjectKind(" Meeting "); got != "meeting" {
+		t.Fatalf("normalizeProjectKind(meeting) = %q, want meeting", got)
+	}
+	if got := normalizeProjectKind(" TASK "); got != "task" {
+		t.Fatalf("normalizeProjectKind(task) = %q, want task", got)
+	}
 	if got := normalizeProjectKind("weird"); got != "managed" {
 		t.Fatalf("normalizeProjectKind(default) = %q, want managed", got)
 	}
@@ -490,5 +516,66 @@ func TestStoreSchemaAndHelperNormalizers(t *testing.T) {
 	}
 	if got := boolToInt(false); got != 0 {
 		t.Fatalf("boolToInt(false) = %d, want 0", got)
+	}
+}
+
+func TestStoreDeleteProjectRemovesAssociatedSessions(t *testing.T) {
+	s := newTestStore(t)
+	root := filepath.Join(t.TempDir(), "meeting-temp")
+	project, err := s.CreateProject("Meeting Temp", "meeting-key", root, "meeting", "", "", false)
+	if err != nil {
+		t.Fatalf("CreateProject() error: %v", err)
+	}
+	if err := s.SetActiveProjectID(project.ID); err != nil {
+		t.Fatalf("SetActiveProjectID() error: %v", err)
+	}
+	chatSession, err := s.GetOrCreateChatSession(project.ProjectKey)
+	if err != nil {
+		t.Fatalf("GetOrCreateChatSession() error: %v", err)
+	}
+	if _, err := s.AddChatMessage(chatSession.ID, "assistant", "saved output", "saved output", "markdown"); err != nil {
+		t.Fatalf("AddChatMessage() error: %v", err)
+	}
+	if err := s.AddChatEvent(chatSession.ID, "turn-1", "assistant_output", `{"ok":true}`); err != nil {
+		t.Fatalf("AddChatEvent() error: %v", err)
+	}
+	participantSession, err := s.AddParticipantSession(project.ProjectKey, "{}")
+	if err != nil {
+		t.Fatalf("AddParticipantSession() error: %v", err)
+	}
+	if _, err := s.AddParticipantSegment(ParticipantSegment{
+		SessionID: participantSession.ID,
+		StartTS:   100,
+		EndTS:     101,
+		Text:      "text artifact only",
+		Status:    "final",
+	}); err != nil {
+		t.Fatalf("AddParticipantSegment() error: %v", err)
+	}
+	if err := s.AddParticipantEvent(participantSession.ID, 0, "segment_committed", `{"text":"text artifact only"}`); err != nil {
+		t.Fatalf("AddParticipantEvent() error: %v", err)
+	}
+	if err := s.UpsertParticipantRoomState(participantSession.ID, "summary", `["Acme"]`, `["Decision"]`); err != nil {
+		t.Fatalf("UpsertParticipantRoomState() error: %v", err)
+	}
+
+	if err := s.DeleteProject(project.ID); err != nil {
+		t.Fatalf("DeleteProject() error: %v", err)
+	}
+	if _, err := s.GetProject(project.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("GetProject(deleted) error = %v, want sql.ErrNoRows", err)
+	}
+	if _, err := s.GetChatSession(chatSession.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("GetChatSession(deleted) error = %v, want sql.ErrNoRows", err)
+	}
+	if _, err := s.GetParticipantSession(participantSession.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("GetParticipantSession(deleted) error = %v, want sql.ErrNoRows", err)
+	}
+	activeID, err := s.ActiveProjectID()
+	if err != nil {
+		t.Fatalf("ActiveProjectID() error: %v", err)
+	}
+	if activeID != "" {
+		t.Fatalf("ActiveProjectID() = %q, want empty", activeID)
 	}
 }

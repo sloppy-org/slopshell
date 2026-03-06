@@ -1356,6 +1356,11 @@ function isHubActive() {
   return isHubProject(activeProject());
 }
 
+function isTemporaryProjectKind(kind) {
+  const normalized = String(kind || '').trim().toLowerCase();
+  return normalized === 'meeting' || normalized === 'task';
+}
+
 function normalizeReasoningEffortOptions(rawEfforts) {
   const raw = Array.isArray(rawEfforts) ? rawEfforts : [];
   const clean = [];
@@ -3974,9 +3979,45 @@ function renderEdgeTopModelButtons() {
         })
         .catch((err) => {
           showStatus(`input mode failed: ${String(err?.message || err || 'unknown error')}`);
-        });
+      });
     });
     host.appendChild(inputButton);
+  }
+
+  const temporarySourceProjectID = project && !isHubProject(project) ? String(project.id || '').trim() : '';
+  const temporaryButtons = isTemporaryProjectKind(project?.kind)
+    ? [
+        {
+          className: 'edge-temp-persist-btn',
+          label: 'keep',
+          onClick: () => { void persistTemporaryProject(String(project?.id || '').trim()); },
+        },
+        {
+          className: 'edge-temp-discard-btn',
+          label: 'discard',
+          onClick: () => { void discardTemporaryProject(String(project?.id || '').trim()); },
+        },
+      ]
+    : [
+        {
+          className: 'edge-temp-meeting-btn',
+          label: 'meeting',
+          onClick: () => { void createTemporaryProject('meeting', temporarySourceProjectID); },
+        },
+        {
+          className: 'edge-temp-task-btn',
+          label: 'task',
+          onClick: () => { void createTemporaryProject('task', temporarySourceProjectID); },
+        },
+      ];
+  for (const action of temporaryButtons) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `edge-project-btn edge-model-btn ${action.className}`;
+    button.textContent = action.label;
+    button.disabled = state.projectSwitchInFlight || state.projectModelSwitchInFlight;
+    button.addEventListener('click', action.onClick);
+    host.appendChild(button);
   }
 }
 
@@ -4023,6 +4064,99 @@ async function switchProjectChatModel(modelAlias, reasoningEffort = '') {
   } finally {
     state.projectModelSwitchInFlight = false;
     renderEdgeTopModelButtons();
+  }
+}
+
+async function createTemporaryProject(kind, sourceProjectID = '') {
+  const projectKind = String(kind || '').trim().toLowerCase();
+  if (!isTemporaryProjectKind(projectKind)) return;
+  if (state.projectSwitchInFlight || state.projectModelSwitchInFlight) return;
+  showStatus(`starting ${projectKind}...`);
+  const payload = {
+    kind: projectKind,
+    activate: true,
+  };
+  const sourceID = String(sourceProjectID || '').trim();
+  if (sourceID) {
+    payload.source_project_id = sourceID;
+  }
+  try {
+    const resp = await fetch(apiURL('projects'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!resp.ok) {
+      const detail = (await resp.text()).trim() || `HTTP ${resp.status}`;
+      throw new Error(detail);
+    }
+    const responsePayload = await resp.json();
+    const project = responsePayload?.project || {};
+    const projectID = String(project?.id || '').trim();
+    await fetchProjects();
+    if (projectID) {
+      await switchProject(projectID);
+      return;
+    }
+    showStatus(`${projectKind} ready`);
+  } catch (err) {
+    const message = String(err?.message || err || `${projectKind} start failed`);
+    appendPlainMessage('system', `${projectKind} start failed: ${message}`);
+    showStatus(`${projectKind} start failed: ${message}`);
+  }
+}
+
+async function persistTemporaryProject(projectID) {
+  const id = String(projectID || '').trim();
+  if (!id) return;
+  if (state.projectSwitchInFlight || state.projectModelSwitchInFlight) return;
+  showStatus('saving session...');
+  try {
+    const resp = await fetch(apiURL(`projects/${encodeURIComponent(id)}/persist`), { method: 'POST' });
+    if (!resp.ok) {
+      const detail = (await resp.text()).trim() || `HTTP ${resp.status}`;
+      throw new Error(detail);
+    }
+    const payload = await resp.json();
+    if (payload?.project) {
+      upsertProject(payload.project);
+    }
+    await fetchProjects();
+    renderEdgeTopProjects();
+    renderEdgeTopModelButtons();
+    showStatus('session saved');
+  } catch (err) {
+    const message = String(err?.message || err || 'session save failed');
+    appendPlainMessage('system', `Session save failed: ${message}`);
+    showStatus(`session save failed: ${message}`);
+  }
+}
+
+async function discardTemporaryProject(projectID) {
+  const id = String(projectID || '').trim();
+  if (!id) return;
+  if (state.projectSwitchInFlight || state.projectModelSwitchInFlight) return;
+  showStatus('discarding session...');
+  try {
+    const resp = await fetch(apiURL(`projects/${encodeURIComponent(id)}/discard`), { method: 'POST' });
+    if (!resp.ok) {
+      const detail = (await resp.text()).trim() || `HTTP ${resp.status}`;
+      throw new Error(detail);
+    }
+    const payload = await resp.json();
+    const nextProjectID = String(payload?.active_project_id || '').trim() || state.defaultProjectId || hubProject()?.id || '';
+    await fetchProjects();
+    if (nextProjectID) {
+      await switchProject(nextProjectID);
+      return;
+    }
+    renderEdgeTopProjects();
+    renderEdgeTopModelButtons();
+    showStatus('session discarded');
+  } catch (err) {
+    const message = String(err?.message || err || 'session discard failed');
+    appendPlainMessage('system', `Session discard failed: ${message}`);
+    showStatus(`session discard failed: ${message}`);
   }
 }
 

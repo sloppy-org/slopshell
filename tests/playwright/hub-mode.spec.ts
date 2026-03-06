@@ -167,3 +167,77 @@ test('system switch_project action routes through project activation', async ({ 
     );
   }, { timeout: 5_000 }).toBe(true);
 });
+
+test('temporary meeting can be spawned from the current project and persisted', async ({ page }) => {
+  await page.evaluate(() => {
+    document.getElementById('edge-top')?.classList.add('edge-pinned');
+  });
+  await page.locator('#edge-top-projects .edge-project-btn:not(.edge-hub-btn)').click();
+  await expect(page.locator('#edge-top-models .edge-temp-meeting-btn')).toBeVisible();
+
+  await page.locator('#edge-top-models .edge-temp-meeting-btn').click();
+
+  await expect.poll(async () => {
+    const log = await getLog(page);
+    return log.some(
+      (entry) => entry.type === 'api_fetch'
+        && entry.action === 'project_create'
+        && String(entry.payload?.kind || '') === 'meeting'
+        && String(entry.payload?.source_project_id || '') === 'test',
+    );
+  }, { timeout: 5_000 }).toBe(true);
+
+  const meetingButton = page.locator('#edge-top-projects .edge-project-btn.is-active').filter({ hasText: 'Meeting 1' });
+  await expect(meetingButton).toHaveCount(1);
+  await expect(page.locator('#edge-top-models .edge-temp-persist-btn')).toBeVisible();
+  await expect(page.locator('#edge-top-models .edge-temp-discard-btn')).toBeVisible();
+
+  await page.locator('#edge-top-models .edge-temp-persist-btn').click();
+
+  await expect.poll(async () => {
+    const log = await getLog(page);
+    return log.some(
+      (entry) => entry.type === 'api_fetch'
+        && entry.action === 'project_persist'
+        && String(entry.payload?.project_id || '') === 'meeting-1',
+    );
+  }, { timeout: 5_000 }).toBe(true);
+
+  await expect(page.locator('#edge-top-models .edge-temp-persist-btn')).toHaveCount(0);
+  await expect(page.locator('#edge-top-models .edge-temp-discard-btn')).toHaveCount(0);
+  await expect(page.locator('#edge-top-models .edge-temp-meeting-btn')).toBeVisible();
+});
+
+test('temporary task can be spawned from hub and discarded', async ({ page }) => {
+  await page.evaluate(() => {
+    document.getElementById('edge-top')?.classList.add('edge-pinned');
+  });
+  await expect(page.locator('#edge-top-models .edge-temp-task-btn')).toBeVisible();
+
+  await page.locator('#edge-top-models .edge-temp-task-btn').click();
+
+  await expect.poll(async () => {
+    const log = await getLog(page);
+    return log.some(
+      (entry) => entry.type === 'api_fetch'
+        && entry.action === 'project_create'
+        && String(entry.payload?.kind || '') === 'task'
+        && String(entry.payload?.source_project_id || '') === '',
+    );
+  }, { timeout: 5_000 }).toBe(true);
+
+  const taskButton = page.locator('#edge-top-projects .edge-project-btn.is-active').filter({ hasText: 'Task 1' });
+  await expect(taskButton).toHaveCount(1);
+  await page.locator('#edge-top-models .edge-temp-discard-btn').click();
+
+  await expect.poll(async () => {
+    const log = await getLog(page);
+    return log.some(
+      (entry) => entry.type === 'api_fetch'
+        && entry.action === 'project_discard'
+        && String(entry.payload?.project_id || '') === 'task-1',
+    );
+  }, { timeout: 5_000 }).toBe(true);
+
+  await expect(page.locator('#edge-top-projects .edge-hub-btn')).toHaveClass(/is-active/);
+});

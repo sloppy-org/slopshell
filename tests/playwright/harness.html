@@ -406,6 +406,14 @@
         run_state: { ...(harnessProjectRunStates[project.id] || project.run_state || {}) },
       };
     };
+    const nextHarnessProjectId = (kind) => {
+      const cleanKind = String(kind || 'project').trim().toLowerCase() || 'project';
+      let suffix = 1;
+      while (harnessProjects.some((project) => project.id === `${cleanKind}-${suffix}`)) {
+        suffix += 1;
+      }
+      return `${cleanKind}-${suffix}`;
+    };
 
     // Mock fetch for /api/setup etc.
     const _realFetch = window.fetch;
@@ -447,6 +455,48 @@
           startup_behavior: runtimeState.startup_behavior,
         }), { status: 200 });
       }
+      if (u.endsWith('/api/projects') && opts?.method === 'POST') {
+        let body = {};
+        try {
+          body = JSON.parse(String(opts?.body || '{}'));
+        } catch (_) {
+          body = {};
+        }
+        const kind = String(body?.kind || 'managed').trim().toLowerCase();
+        const id = nextHarnessProjectId(kind);
+        const label = kind === 'meeting' ? 'Meeting' : (kind === 'task' ? 'Task' : 'Project');
+        const project = {
+          id,
+          name: `${label} ${id.split('-').pop()}`,
+          kind,
+          project_key: `/tmp/${id}`,
+          root_path: `/tmp/${id}`,
+          chat_session_id: `chat-${id}`,
+          canvas_session_id: id,
+          chat_mode: 'chat',
+          chat_model: 'spark',
+          chat_model_reasoning_effort: 'low',
+          run_state: { active_turns: 0, queued_turns: 0, is_working: false, status: 'idle' },
+        };
+        harnessProjects.push(project);
+        harnessProjectRunStates[id] = { ...project.run_state };
+        if (Boolean(body?.activate)) {
+          activeProjectId = id;
+        }
+        window.__harnessLog.push({
+          type: 'api_fetch',
+          action: 'project_create',
+          method: opts?.method || 'POST',
+          url: u,
+          payload: { kind, project_id: id, source_project_id: String(body?.source_project_id || '').trim() },
+        });
+        return new Response(JSON.stringify({
+          ok: true,
+          created: true,
+          activated: Boolean(body?.activate),
+          project: cloneProject(id),
+        }), { status: 200 });
+      }
       if (u.includes('/api/projects') && u.includes('/activate')) {
         const activateId = decodeURIComponent(u.split('/api/projects/')[1].split('/activate')[0] || '').trim();
         const project = cloneProject(activateId);
@@ -460,6 +510,51 @@
         });
         return new Response(JSON.stringify({
           project,
+        }), { status: 200 });
+      }
+      if (u.includes('/api/projects/') && u.includes('/persist') && opts?.method === 'POST') {
+        const projectId = decodeURIComponent(u.split('/api/projects/')[1].split('/persist')[0] || '').trim();
+        const index = harnessProjects.findIndex((project) => project.id === projectId);
+        if (index < 0) {
+          return new Response('project not found', { status: 404 });
+        }
+        harnessProjects[index] = {
+          ...harnessProjects[index],
+          kind: 'managed',
+        };
+        window.__harnessLog.push({
+          type: 'api_fetch',
+          action: 'project_persist',
+          method: opts?.method || 'POST',
+          url: u,
+          payload: { project_id: projectId },
+        });
+        return new Response(JSON.stringify({
+          ok: true,
+          project: cloneProject(projectId),
+        }), { status: 200 });
+      }
+      if (u.includes('/api/projects/') && u.includes('/discard') && opts?.method === 'POST') {
+        const projectId = decodeURIComponent(u.split('/api/projects/')[1].split('/discard')[0] || '').trim();
+        const index = harnessProjects.findIndex((project) => project.id === projectId);
+        if (index < 0) {
+          return new Response('project not found', { status: 404 });
+        }
+        harnessProjects.splice(index, 1);
+        delete harnessProjectRunStates[projectId];
+        activeProjectId = harnessProjects.some((project) => project.id === 'hub') ? 'hub' : (harnessProjects[0]?.id || '');
+        window.__harnessLog.push({
+          type: 'api_fetch',
+          action: 'project_discard',
+          method: opts?.method || 'POST',
+          url: u,
+          payload: { project_id: projectId, active_project_id: activeProjectId },
+        });
+        return new Response(JSON.stringify({
+          ok: true,
+          discarded_project: projectId,
+          active_project_id: activeProjectId,
+          active_project: cloneProject(activeProjectId),
         }), { status: 200 });
       }
       if (u.includes('/api/hotword/status')) {

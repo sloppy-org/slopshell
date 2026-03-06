@@ -11,6 +11,10 @@ import (
 
 func normalizeProjectKind(kind string) string {
 	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "meeting":
+		return "meeting"
+	case "task":
+		return "task"
 	case "linked":
 		return "linked"
 	case "hub":
@@ -277,4 +281,85 @@ func (s *Store) UpdateProjectChatModelReasoningEffort(id, effort string) error {
 		projectID,
 	)
 	return err
+}
+
+func (s *Store) UpdateProjectKind(id, kind string) error {
+	projectID := strings.TrimSpace(id)
+	if projectID == "" {
+		return errors.New("project id is required")
+	}
+	_, err := s.db.Exec(
+		`UPDATE projects SET kind = ?, updated_at = ? WHERE id = ?`,
+		normalizeProjectKind(kind),
+		time.Now().Unix(),
+		projectID,
+	)
+	return err
+}
+
+func (s *Store) DeleteProject(id string) error {
+	projectID := strings.TrimSpace(id)
+	if projectID == "" {
+		return errors.New("project id is required")
+	}
+	project, err := s.GetProject(projectID)
+	if err != nil {
+		return err
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	projectKey := strings.TrimSpace(project.ProjectKey)
+	if _, err := tx.Exec(
+		`DELETE FROM participant_room_state
+		 WHERE session_id IN (SELECT id FROM participant_sessions WHERE project_key = ?)`,
+		projectKey,
+	); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(
+		`DELETE FROM participant_events
+		 WHERE session_id IN (SELECT id FROM participant_sessions WHERE project_key = ?)`,
+		projectKey,
+	); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(
+		`DELETE FROM participant_segments
+		 WHERE session_id IN (SELECT id FROM participant_sessions WHERE project_key = ?)`,
+		projectKey,
+	); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM participant_sessions WHERE project_key = ?`, projectKey); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(
+		`DELETE FROM chat_messages
+		 WHERE session_id IN (SELECT id FROM chat_sessions WHERE project_key = ?)`,
+		projectKey,
+	); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(
+		`DELETE FROM chat_events
+		 WHERE session_id IN (SELECT id FROM chat_sessions WHERE project_key = ?)`,
+		projectKey,
+	); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM chat_sessions WHERE project_key = ?`, projectKey); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM projects WHERE id = ?`, projectID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM app_state WHERE key = 'active_project_id' AND value = ?`, projectID); err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }

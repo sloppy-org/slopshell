@@ -1,12 +1,16 @@
 package web
 
 import (
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/krystophny/tabura/internal/store"
 )
 
 type projectsListResponse struct {
@@ -611,5 +615,195 @@ func TestHubWelcomeListsProjects(t *testing.T) {
 	}
 	if projectName != "" && !strings.Contains(rrWelcome.Body.String(), projectName) {
 		t.Fatalf("hub welcome missing project name %q: %s", projectName, rrWelcome.Body.String())
+	}
+}
+
+func TestTemporaryProjectCreationCopiesSourceSettingsAndPersist(t *testing.T) {
+	app := newAuthedTestApp(t)
+	source, err := app.ensureDefaultProjectRecord()
+	if err != nil {
+		t.Fatalf("default project: %v", err)
+	}
+	if err := app.store.UpdateProjectChatModel(source.ID, "gpt"); err != nil {
+		t.Fatalf("UpdateProjectChatModel() error: %v", err)
+	}
+	if err := app.store.UpdateProjectChatModelReasoningEffort(source.ID, "xhigh"); err != nil {
+		t.Fatalf("UpdateProjectChatModelReasoningEffort() error: %v", err)
+	}
+	if err := app.store.UpdateProjectCompanionConfig(source.ID, `{"companion_enabled":true,"idle_surface":"black"}`); err != nil {
+		t.Fatalf("UpdateProjectCompanionConfig() error: %v", err)
+	}
+
+	rrCreate := doAuthedJSONRequest(t, app.Router(), http.MethodPost, "/api/projects", map[string]any{
+		"kind":              "meeting",
+		"source_project_id": source.ID,
+	})
+	if rrCreate.Code != http.StatusOK {
+		t.Fatalf("expected create 200, got %d: %s", rrCreate.Code, rrCreate.Body.String())
+	}
+	var createPayload struct {
+		OK      bool `json:"ok"`
+		Project struct {
+			ID        string `json:"id"`
+			Kind      string `json:"kind"`
+			RootPath  string `json:"root_path"`
+			ChatModel string `json:"chat_model"`
+		} `json:"project"`
+	}
+	if err := json.Unmarshal(rrCreate.Body.Bytes(), &createPayload); err != nil {
+		t.Fatalf("decode create response: %v", err)
+	}
+	if !createPayload.OK || createPayload.Project.ID == "" {
+		t.Fatalf("expected created project payload")
+	}
+	if createPayload.Project.Kind != "meeting" {
+		t.Fatalf("created kind = %q, want meeting", createPayload.Project.Kind)
+	}
+	if createPayload.Project.ChatModel != "gpt" {
+		t.Fatalf("created chat model = %q, want gpt", createPayload.Project.ChatModel)
+	}
+	if createPayload.Project.RootPath == source.RootPath {
+		t.Fatalf("temporary project root should differ from source root")
+	}
+	if !strings.Contains(filepath.ToSlash(createPayload.Project.RootPath), "/projects/temporary/meeting/") {
+		t.Fatalf("temporary root = %q, want temporary meeting path", createPayload.Project.RootPath)
+	}
+
+	created, err := app.store.GetProject(createPayload.Project.ID)
+	if err != nil {
+		t.Fatalf("GetProject(created) error: %v", err)
+	}
+	if created.ChatModel != "gpt" {
+		t.Fatalf("stored chat model = %q, want gpt", created.ChatModel)
+	}
+	if created.ChatModelReasoningEffort != "xhigh" {
+		t.Fatalf("stored reasoning effort = %q, want xhigh", created.ChatModelReasoningEffort)
+	}
+	if got := strings.TrimSpace(created.CompanionConfigJSON); got != `{"companion_enabled":true,"idle_surface":"black"}` {
+		t.Fatalf("stored companion config = %q", got)
+	}
+
+	rrPersist := doAuthedJSONRequest(
+		t,
+		app.Router(),
+		http.MethodPost,
+		"/api/projects/"+createPayload.Project.ID+"/persist",
+		map[string]any{},
+	)
+	if rrPersist.Code != http.StatusOK {
+		t.Fatalf("expected persist 200, got %d: %s", rrPersist.Code, rrPersist.Body.String())
+	}
+	var persistPayload struct {
+		OK      bool `json:"ok"`
+		Project struct {
+			ID   string `json:"id"`
+			Kind string `json:"kind"`
+		} `json:"project"`
+	}
+	if err := json.Unmarshal(rrPersist.Body.Bytes(), &persistPayload); err != nil {
+		t.Fatalf("decode persist response: %v", err)
+	}
+	if !persistPayload.OK {
+		t.Fatalf("expected persist ok=true")
+	}
+	if persistPayload.Project.Kind != "managed" {
+		t.Fatalf("persisted kind = %q, want managed", persistPayload.Project.Kind)
+	}
+}
+
+func TestTemporaryProjectDiscardRemovesProjectDataAndFallsBackToHub(t *testing.T) {
+	app := newAuthedTestApp(t)
+	hub, err := app.ensureHubProject()
+	if err != nil {
+		t.Fatalf("ensure hub: %v", err)
+	}
+
+	rrCreate := doAuthedJSONRequest(t, app.Router(), http.MethodPost, "/api/projects", map[string]any{
+		"kind": "task",
+	})
+	if rrCreate.Code != http.StatusOK {
+		t.Fatalf("expected create 200, got %d: %s", rrCreate.Code, rrCreate.Body.String())
+	}
+	var createPayload struct {
+		Project struct {
+			ID         string `json:"id"`
+			ProjectKey string `json:"project_key"`
+			RootPath   string `json:"root_path"`
+		} `json:"project"`
+	}
+	if err := json.Unmarshal(rrCreate.Body.Bytes(), &createPayload); err != nil {
+		t.Fatalf("decode create response: %v", err)
+	}
+	if createPayload.Project.ID == "" {
+		t.Fatalf("expected created task project id")
+	}
+	if err := os.WriteFile(filepath.Join(createPayload.Project.RootPath, "run-output.md"), []byte("saved output"), 0o644); err != nil {
+		t.Fatalf("WriteFile(run-output.md) error: %v", err)
+	}
+	chatSession, err := app.store.GetOrCreateChatSession(createPayload.Project.ProjectKey)
+	if err != nil {
+		t.Fatalf("GetOrCreateChatSession() error: %v", err)
+	}
+	if _, err := app.store.AddChatMessage(chatSession.ID, "assistant", "saved output", "saved output", "markdown"); err != nil {
+		t.Fatalf("AddChatMessage() error: %v", err)
+	}
+	participantSession, err := app.store.AddParticipantSession(createPayload.Project.ProjectKey, "{}")
+	if err != nil {
+		t.Fatalf("AddParticipantSession() error: %v", err)
+	}
+	if _, err := app.store.AddParticipantSegment(store.ParticipantSegment{
+		SessionID: participantSession.ID,
+		StartTS:   100,
+		EndTS:     101,
+		Text:      "transcript only",
+		Status:    "final",
+	}); err != nil {
+		t.Fatalf("AddParticipantSegment() error: %v", err)
+	}
+	if err := app.store.UpsertParticipantRoomState(participantSession.ID, "summary", `["Acme"]`, `["Decision"]`); err != nil {
+		t.Fatalf("UpsertParticipantRoomState() error: %v", err)
+	}
+
+	rrDiscard := doAuthedJSONRequest(
+		t,
+		app.Router(),
+		http.MethodPost,
+		"/api/projects/"+createPayload.Project.ID+"/discard",
+		map[string]any{},
+	)
+	if rrDiscard.Code != http.StatusOK {
+		t.Fatalf("expected discard 200, got %d: %s", rrDiscard.Code, rrDiscard.Body.String())
+	}
+	var discardPayload struct {
+		OK              bool   `json:"ok"`
+		ActiveProjectID string `json:"active_project_id"`
+		ActiveProject   struct {
+			ID   string `json:"id"`
+			Kind string `json:"kind"`
+		} `json:"active_project"`
+	}
+	if err := json.Unmarshal(rrDiscard.Body.Bytes(), &discardPayload); err != nil {
+		t.Fatalf("decode discard response: %v", err)
+	}
+	if !discardPayload.OK {
+		t.Fatalf("expected discard ok=true")
+	}
+	if discardPayload.ActiveProjectID != hub.ID {
+		t.Fatalf("active_project_id = %q, want %q", discardPayload.ActiveProjectID, hub.ID)
+	}
+	if discardPayload.ActiveProject.Kind != "hub" {
+		t.Fatalf("active project kind = %q, want hub", discardPayload.ActiveProject.Kind)
+	}
+	if _, err := app.store.GetProject(createPayload.Project.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("GetProject(discarded) error = %v, want sql.ErrNoRows", err)
+	}
+	if _, err := app.store.GetChatSession(chatSession.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("GetChatSession(discarded) error = %v, want sql.ErrNoRows", err)
+	}
+	if _, err := app.store.GetParticipantSession(participantSession.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("GetParticipantSession(discarded) error = %v, want sql.ErrNoRows", err)
+	}
+	if _, err := os.Stat(createPayload.Project.RootPath); !os.IsNotExist(err) {
+		t.Fatalf("temporary project root still exists: %v", err)
 	}
 }

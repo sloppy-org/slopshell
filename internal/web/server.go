@@ -359,6 +359,8 @@ func (a *App) Router() http.Handler {
 	r.Get("/api/projects/activity", a.handleProjectsActivity)
 	r.Post("/api/projects", a.handleProjectCreate)
 	r.Post("/api/projects/{project_id}/activate", a.handleProjectActivate)
+	r.Post("/api/projects/{project_id}/persist", a.handleTemporaryProjectPersist)
+	r.Post("/api/projects/{project_id}/discard", a.handleTemporaryProjectDiscard)
 	r.Post("/api/projects/{project_id}/chat-model", a.handleProjectChatModelUpdate)
 	r.Get("/api/projects/{project_id}/context", a.handleProjectContext)
 	r.Get("/api/projects/{project_id}/files", a.handleProjectFilesList)

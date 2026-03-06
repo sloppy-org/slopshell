@@ -23,11 +23,12 @@ import (
 const projectServeStartTimeout = 10 * time.Second
 
 type projectCreateRequest struct {
-	Name     string `json:"name"`
-	Kind     string `json:"kind"`
-	Path     string `json:"path"`
-	MCPURL   string `json:"mcp_url"`
-	Activate *bool  `json:"activate"`
+	Name            string `json:"name"`
+	Kind            string `json:"kind"`
+	Path            string `json:"path"`
+	MCPURL          string `json:"mcp_url"`
+	SourceProjectID string `json:"source_project_id"`
+	Activate        *bool  `json:"activate"`
 }
 
 type projectAPIModel struct {
@@ -101,13 +102,26 @@ type projectActivityItem struct {
 func normalizeProjectKindInput(kind, path string) string {
 	cleanKind := strings.ToLower(strings.TrimSpace(kind))
 	switch cleanKind {
-	case "managed", "linked":
+	case "managed", "linked", "meeting", "task":
 		return cleanKind
 	}
 	if strings.TrimSpace(path) != "" {
 		return "linked"
 	}
 	return "managed"
+}
+
+func isTemporaryProjectKind(kind string) bool {
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "meeting", "task":
+		return true
+	default:
+		return false
+	}
+}
+
+func isTemporaryProject(project store.Project) bool {
+	return isTemporaryProjectKind(project.Kind)
 }
 
 func defaultProjectNameFromPath(path string) string {
@@ -145,6 +159,14 @@ func slugifyProjectName(name string) string {
 		return "project"
 	}
 	return slug
+}
+
+func defaultTemporaryProjectName(kind string, now time.Time) string {
+	label := "Task"
+	if strings.EqualFold(strings.TrimSpace(kind), "meeting") {
+		label = "Meeting"
+	}
+	return fmt.Sprintf("%s %s", label, now.Format("2006-01-02 15:04"))
 }
 
 func isNoRows(err error) bool {
@@ -423,10 +445,67 @@ func (a *App) nextManagedProjectPath(name string) (string, error) {
 	return "", errors.New("unable to allocate managed project path")
 }
 
+func (a *App) nextTemporaryProjectPath(kind, name string) (string, error) {
+	baseDir := filepath.Join(a.dataDir, "projects", "temporary", strings.ToLower(strings.TrimSpace(kind)))
+	if err := os.MkdirAll(baseDir, 0o755); err != nil {
+		return "", err
+	}
+	slug := slugifyProjectName(name)
+	for i := 0; i < 500; i++ {
+		candidate := slug
+		if i > 0 {
+			candidate = fmt.Sprintf("%s-%d", slug, i+1)
+		}
+		path := filepath.Join(baseDir, candidate)
+		if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+			return path, nil
+		}
+	}
+	return "", errors.New("unable to allocate temporary project path")
+}
+
+func (a *App) projectSourceByID(projectID string) (store.Project, bool, error) {
+	id := strings.TrimSpace(projectID)
+	if id == "" {
+		return store.Project{}, false, nil
+	}
+	project, err := a.store.GetProject(id)
+	if err != nil {
+		return store.Project{}, false, err
+	}
+	if isHubProject(project) {
+		return store.Project{}, false, nil
+	}
+	return project, true, nil
+}
+
+func (a *App) inheritProjectSettings(targetID string, source store.Project) error {
+	if strings.TrimSpace(source.ChatModel) != "" {
+		if err := a.store.UpdateProjectChatModel(targetID, source.ChatModel); err != nil {
+			return err
+		}
+	}
+	if strings.TrimSpace(source.ChatModelReasoningEffort) != "" {
+		if err := a.store.UpdateProjectChatModelReasoningEffort(targetID, source.ChatModelReasoningEffort); err != nil {
+			return err
+		}
+	}
+	if strings.TrimSpace(source.CompanionConfigJSON) != "" {
+		if err := a.store.UpdateProjectCompanionConfig(targetID, source.CompanionConfigJSON); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (a *App) createProject(req projectCreateRequest) (store.Project, bool, error) {
 	kind := normalizeProjectKindInput(req.Kind, req.Path)
 	name := strings.TrimSpace(req.Name)
 	mcpURL := strings.TrimSpace(req.MCPURL)
+	sourceProject, hasSource, err := a.projectSourceByID(req.SourceProjectID)
+	if err != nil {
+		return store.Project{}, false, err
+	}
 
 	var absRoot string
 	switch kind {
@@ -441,6 +520,25 @@ func (a *App) createProject(req projectCreateRequest) (store.Project, bool, erro
 		}
 		if !info.IsDir() {
 			return store.Project{}, false, errors.New("path must be a directory")
+		}
+		boot, err := protocol.BootstrapProject(rootPath)
+		if err != nil {
+			return store.Project{}, false, err
+		}
+		absRoot = filepath.Clean(boot.Paths.ProjectDir)
+	case "meeting", "task":
+		if strings.TrimSpace(req.Path) != "" {
+			return store.Project{}, false, errors.New("path is not supported for temporary projects")
+		}
+		if name == "" {
+			name = defaultTemporaryProjectName(kind, time.Now())
+		}
+		rootPath, err := a.nextTemporaryProjectPath(kind, name)
+		if err != nil {
+			return store.Project{}, false, err
+		}
+		if err := os.MkdirAll(rootPath, 0o755); err != nil {
+			return store.Project{}, false, err
 		}
 		boot, err := protocol.BootstrapProject(rootPath)
 		if err != nil {
@@ -491,7 +589,84 @@ func (a *App) createProject(req projectCreateRequest) (store.Project, bool, erro
 		}
 		return store.Project{}, false, err
 	}
+	if hasSource {
+		if err := a.inheritProjectSettings(created.ID, sourceProject); err != nil {
+			return store.Project{}, false, err
+		}
+		refreshed, refreshErr := a.store.GetProject(created.ID)
+		if refreshErr != nil {
+			return store.Project{}, false, refreshErr
+		}
+		created = refreshed
+	}
 	return created, true, nil
+}
+
+func (a *App) persistTemporaryProject(projectID string) (store.Project, error) {
+	project, err := a.store.GetProject(strings.TrimSpace(projectID))
+	if err != nil {
+		return store.Project{}, err
+	}
+	if !isTemporaryProject(project) {
+		return store.Project{}, errors.New("project is not temporary")
+	}
+	if err := a.store.UpdateProjectKind(project.ID, "managed"); err != nil {
+		return store.Project{}, err
+	}
+	return a.store.GetProject(project.ID)
+}
+
+func (a *App) temporaryProjectDiscardRoot(project store.Project) string {
+	root := filepath.Clean(project.RootPath)
+	base := filepath.Clean(filepath.Join(a.dataDir, "projects", "temporary"))
+	if !pathWithinRoot(root, base) {
+		return ""
+	}
+	return root
+}
+
+func (a *App) fallbackProjectAfterDiscard(discardedProjectID string) (store.Project, error) {
+	if hub, err := a.ensureHubProject(); err == nil && hub.ID != strings.TrimSpace(discardedProjectID) {
+		return hub, nil
+	}
+	defaultProject, err := a.ensureDefaultProjectRecord()
+	if err == nil && defaultProject.ID != strings.TrimSpace(discardedProjectID) {
+		return defaultProject, nil
+	}
+	projects, err := a.store.ListProjects()
+	if err != nil {
+		return store.Project{}, err
+	}
+	for _, project := range projects {
+		if project.ID != strings.TrimSpace(discardedProjectID) {
+			return project, nil
+		}
+	}
+	return store.Project{}, sql.ErrNoRows
+}
+
+func (a *App) discardTemporaryProject(projectID string) (store.Project, error) {
+	project, err := a.store.GetProject(strings.TrimSpace(projectID))
+	if err != nil {
+		return store.Project{}, err
+	}
+	if !isTemporaryProject(project) {
+		return store.Project{}, errors.New("project is not temporary")
+	}
+	discardRoot := a.temporaryProjectDiscardRoot(project)
+	fallback, fallbackErr := a.fallbackProjectAfterDiscard(project.ID)
+	if err := a.store.DeleteProject(project.ID); err != nil {
+		return store.Project{}, err
+	}
+	if discardRoot != "" {
+		if removeErr := os.RemoveAll(discardRoot); removeErr != nil {
+			return store.Project{}, removeErr
+		}
+	}
+	if fallbackErr != nil {
+		return store.Project{}, fallbackErr
+	}
+	return a.activateProject(fallback.ID)
 }
 
 func (a *App) handleProjectCreate(w http.ResponseWriter, r *http.Request) {
@@ -528,6 +703,66 @@ func (a *App) handleProjectCreate(w http.ResponseWriter, r *http.Request) {
 		"created":   created,
 		"activated": activate,
 		"project":   item,
+	})
+}
+
+func (a *App) handleTemporaryProjectPersist(w http.ResponseWriter, r *http.Request) {
+	if !a.requireAuth(w, r) {
+		return
+	}
+	projectID := strings.TrimSpace(chi.URLParam(r, "project_id"))
+	if projectID == "" {
+		http.Error(w, "project_id is required", http.StatusBadRequest)
+		return
+	}
+	project, err := a.persistTemporaryProject(projectID)
+	if err != nil {
+		if isNoRows(err) {
+			http.Error(w, "project not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	item, err := a.buildProjectAPIModel(project)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, map[string]interface{}{
+		"ok":      true,
+		"project": item,
+	})
+}
+
+func (a *App) handleTemporaryProjectDiscard(w http.ResponseWriter, r *http.Request) {
+	if !a.requireAuth(w, r) {
+		return
+	}
+	projectID := strings.TrimSpace(chi.URLParam(r, "project_id"))
+	if projectID == "" {
+		http.Error(w, "project_id is required", http.StatusBadRequest)
+		return
+	}
+	activeProject, err := a.discardTemporaryProject(projectID)
+	if err != nil {
+		if isNoRows(err) {
+			http.Error(w, "project not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	item, err := a.buildProjectAPIModel(activeProject)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, map[string]interface{}{
+		"ok":                true,
+		"discarded_project": projectID,
+		"active_project_id": activeProject.ID,
+		"active_project":    item,
 	})
 }
 
