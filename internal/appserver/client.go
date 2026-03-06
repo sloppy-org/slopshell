@@ -155,7 +155,7 @@ func (c *Client) SendPromptStream(ctx context.Context, req PromptRequest, onEven
 			"clientInfo": map[string]interface{}{
 				"name":    "tabura-web",
 				"title":   "Tabura Web",
-				"version": "0.1.7",
+				"version": "0.1.8",
 			},
 			"capabilities": map[string]interface{}{
 				"experimentalApi": true,

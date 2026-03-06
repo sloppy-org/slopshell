@@ -29,8 +29,8 @@ Integrated protocol reference:
 
 Release notes:
 
-- Published release: `release-v0.1.7.md`
-- Previous release: `release-v0.1.6.md`
+- Published release: `release-v0.1.8.md`
+- Previous release: `release-v0.1.7.md`
 - Published baseline: `release-v0.0.1.md`
 - Older release notes are historical and may mention retired runtime paths.
 

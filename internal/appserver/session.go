@@ -103,7 +103,7 @@ func (s *Session) handshake(ctx context.Context) error {
 			"clientInfo": map[string]interface{}{
 				"name":    "tabura-web",
 				"title":   "Tabura Web",
-				"version": "0.1.7",
+				"version": "0.1.8",
 			},
 			"capabilities": map[string]interface{}{
 				"experimentalApi": true,

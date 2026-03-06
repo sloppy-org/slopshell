@@ -1,6 +1,6 @@
 {
   "title": "tabura",
-  "version": "v0.1.7",
+  "version": "v0.1.8",
   "description": "Tabura is a local-first MCP canvas and review runtime that defines and implements an object-scoped intent interface. The model centers AI invocation on selected UI objects via long press, mode-aware intent capture (voice, silent prompt, comment), explicit human approval controls (accept, edit, reject), and annotation-first review flows with commit-controlled persistence. This publication also includes integrated handoff protocol specifications, schemas, and conformance examples in the same repository to keep interaction and transport contracts citable together. The project emphasizes low-motion, low-redraw interaction behavior suitable for e-ink and high-latency display contexts while keeping API surfaces and runtime interfaces reproducible.",
   "license": "MIT",
   "upload_type": "software",
