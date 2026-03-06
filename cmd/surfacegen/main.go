@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/krystophny/tabura/internal/surface"
 )
@@ -21,18 +20,9 @@ func main() {
 		fatalf("resolve working directory: %v", err)
 	}
 
-	agentsPath := filepath.Join(root, "AGENTS.md")
 	interfacesPath := filepath.Join(root, "docs", "interfaces.md")
 
 	changed := false
-
-	agentsChanged, err := syncAgentsProtocolBlock(agentsPath, checkOnly)
-	if err != nil {
-		fatalf("sync %s: %v", agentsPath, err)
-	}
-	if agentsChanged {
-		changed = true
-	}
 
 	interfacesChanged, err := syncFullFile(interfacesPath, []byte(surface.InterfacesMarkdown()), checkOnly)
 	if err != nil {
@@ -50,36 +40,6 @@ func main() {
 func fatalf(format string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, format+"\n", args...)
 	os.Exit(1)
-}
-
-func syncAgentsProtocolBlock(path string, checkOnly bool) (bool, error) {
-	current, err := os.ReadFile(path)
-	if err != nil {
-		return false, err
-	}
-	updated, err := replaceProtocolBlock(current, surface.ProtocolBlockMarkdown())
-	if err != nil {
-		return false, err
-	}
-	return writeIfChanged(path, current, updated, checkOnly)
-}
-
-func replaceProtocolBlock(current []byte, replacement string) ([]byte, error) {
-	src := string(current)
-	start := strings.Index(src, surface.ProtocolBlockBeginMarker)
-	if start == -1 {
-		return nil, fmt.Errorf("missing begin marker %q", surface.ProtocolBlockBeginMarker)
-	}
-	end := strings.Index(src[start:], surface.ProtocolBlockEndMarker)
-	if end == -1 {
-		return nil, fmt.Errorf("missing end marker %q", surface.ProtocolBlockEndMarker)
-	}
-	end = start + end + len(surface.ProtocolBlockEndMarker)
-	if end < len(src) && src[end] == '\n' {
-		end++
-	}
-	out := src[:start] + replacement + src[end:]
-	return []byte(out), nil
 }
 
 func syncFullFile(path string, next []byte, checkOnly bool) (bool, error) {

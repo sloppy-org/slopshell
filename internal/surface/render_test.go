@@ -5,31 +5,6 @@ import (
 	"testing"
 )
 
-func TestProtocolMarkdownIncludesRequiredMarkers(t *testing.T) {
-	body := ProtocolBodyMarkdown()
-	if !strings.Contains(body, "Tabura Codex Protocol") {
-		t.Fatalf("ProtocolBodyMarkdown missing title")
-	}
-	if !strings.Contains(body, "canvas_session_open") {
-		t.Fatalf("ProtocolBodyMarkdown missing MCP tool list")
-	}
-
-	block := ProtocolBlockMarkdown()
-	if !strings.Contains(block, ProtocolBlockBeginMarker) {
-		t.Fatalf("ProtocolBlockMarkdown missing begin marker")
-	}
-	if !strings.Contains(block, ProtocolBlockEndMarker) {
-		t.Fatalf("ProtocolBlockMarkdown missing end marker")
-	}
-}
-
-func TestDefaultAgentsMarkdownHasTopHeader(t *testing.T) {
-	agents := DefaultAgentsMarkdown()
-	if !strings.HasPrefix(agents, "# AGENTS") {
-		t.Fatalf("DefaultAgentsMarkdown should start with # AGENTS")
-	}
-}
-
 func TestInterfacesMarkdownIncludesKnownRoutesAndTools(t *testing.T) {
 	doc := InterfacesMarkdown()
 	if !strings.Contains(doc, "POST /mcp") {

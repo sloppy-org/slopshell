@@ -118,12 +118,8 @@ func cmdBootstrap(args []string) int {
 		return 1
 	}
 	fmt.Printf("project prepared: %s\n", res.Paths.ProjectDir)
-	fmt.Printf("agents protocol: %s\n", res.Paths.AgentsPath)
-	fmt.Printf("tabura sidecar protocol: %s\n", filepath.Join(res.Paths.ProjectDir, ".tabura", "AGENTS.tabura.md"))
 	fmt.Printf("mcp config snippet: %s\n", res.Paths.MCPConfigPath)
-	if res.AgentsPreserved {
-		fmt.Println("existing AGENTS.md is preserved; tabura protocol is in sidecar")
-	}
+	fmt.Println("project AGENTS.md files are left untouched")
 	if res.GitInitialized {
 		fmt.Println("git initialized")
 	}

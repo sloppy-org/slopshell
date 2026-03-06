@@ -1,33 +1,60 @@
 # CLAUDE
 
+This file is the repo-local working guide for Tabura. The repository root `AGENTS.md` is a symlink to this file for tool compatibility.
+
+Critical boundary:
+- Tabura must not create, rewrite, or patch a project's `AGENTS.md`.
+- Project-local `AGENTS.md` and `CLAUDE.md` files are user-owned workspace content.
+- Tabura-specific behavior and prompt rules belong in Tabura's internal runtime/prompt code, not in generated project instruction files.
+
 ## Fast Path Rule
 
 For direct runtime requests, run the obvious command first, then verify.
-Do not scan source/docs unless the command fails.
+Do not scan source or docs unless the runtime command fails or the request is about code/doc changes.
 
-## Runtime Model (Current)
+## Runtime Model
 
-Tabura uses one monolithic runtime command for app operation:
-
+Current runtime shape:
 - `tabura server` starts both listeners in one process:
-  - Web listener (public-facing)
-  - MCP listener (local-only by default)
+  - web listener for the public UI/API
+  - MCP listener for local MCP and canvas relay
 - `tabura mcp-server` remains available for stdio MCP use.
 
-No separate `tabura-mcp.service` sidecars are used.
-No Helpy integration/runtime is active in Tabura.
-Tabura keeps five local sidecars:
-- `tabura-codex-app-server.service` for Codex app-server
-- `tabura-piper-tts.service` for Piper TTS over loopback HTTP
-- `tabura-intent.service` for local intent classification (`/classify` on `127.0.0.1:8425`)
-- `tabura-llm.service` for Qwen3 0.6B via llama.cpp (`/v1/chat/completions` on `127.0.0.1:8426`)
+Supported loopback sidecars and helpers:
+- `tabura-codex-app-server.service` for Codex app-server (`ws://127.0.0.1:8787`)
+- `tabura-piper-tts.service` for Piper TTS (`http://127.0.0.1:8424/v1/audio/speech`)
 - `tabura-stt.service` for voxtype STT (`/v1/audio/transcriptions` on `127.0.0.1:8427`)
+- `tabura-intent.service` for local intent classification (`/classify` on `127.0.0.1:8425`)
+- `tabura-llm.service` for the local Qwen routing/fallback layer (`/v1/chat/completions` via base URL `http://127.0.0.1:8426`)
+- `tabura-ptt.service` for the Linux desktop push-to-talk daemon (`tabura ptt-daemon`)
+
+Non-runtime notes:
+- No separate `tabura-mcp.service` sidecar is part of the current model.
+- No Helpy runtime is part of Tabura.
+- `scripts/install.sh` currently sets `TABURA_INTENT_CLASSIFIER_URL=off` and wires `TABURA_INTENT_LLM_URL=http://127.0.0.1:8426` for `tabura-web.service`.
+- Current Qwen profile defaults in code are `qwen3.5-9b` with profile options `qwen3.5-9b,qwen3.5-4b`.
+- `scripts/install-tabura-user-units.sh` enables the full local unit set, including `tabura-intent.service`, `tabura-llm.service`, `tabura-stt.service`, and `tabura-ptt.service`.
+
+## Project Bootstrap Contract
+
+`tabura bootstrap` prepares project-local Tabura state without taking ownership of project instructions.
+
+What bootstrap does:
+- creates `.tabura/` if needed
+- writes `.tabura/codex-mcp.toml`
+- ensures `.tabura/artifacts/` is gitignored
+
+What bootstrap must not do:
+- create `AGENTS.md`
+- overwrite `AGENTS.md`
+- create `.tabura/AGENTS.tabura.md`
+- inject protocol blocks into user docs
 
 ## Security Boundary
 
-- Web UI/API listener stays on port `8420` (typically routed publicly).
-- MCP listener stays on port `9420` and must bind loopback by default.
-- Web router does not expose MCP routes (`/mcp` must not be served by web listener).
+- Web UI/API listener stays on port `8420` by default.
+- MCP listener stays on port `9420` and binds loopback by default.
+- Web routes must not expose `/mcp`.
 - Non-loopback MCP bind is blocked unless `--unsafe-public-mcp` is explicitly set.
 
 ## Canvas + Chat Contract
@@ -35,37 +62,54 @@ Tabura keeps five local sidecars:
 One canvas mode only: file-backed rendering.
 
 Assistant output must be either:
-1. chat-only text (shown in chat and spoken), or
-2. two-part response where canvas content is file-backed (`:::file{path="..."}`) and rendered only on canvas.
+1. chat-only text, or
+2. file-backed canvas output via `:::file{path="..."}`.
 
 Rules:
-- Canvas content is never duplicated into chat speech.
-- Ephemeral canvas content is implemented via temporary files.
-- Multi-paragraph assistant output should be promoted to a temp canvas file and not shown/spoken in chat.
+- Canvas content is not duplicated into chat speech.
+- Ephemeral canvas content uses temporary files under `.tabura/artifacts/tmp`.
+- Long-response temp-file routing is part of the prompt contract and scratch-artifact support, but it is not currently hard-enforced by the backend render-plan stub.
+- Canvas operations should go through the Tabura MCP surface, not ad hoc filesystem-event assumptions.
 
-## Interaction
+## Interaction Model
 
-- Tap/left-click toggles voice recording.
-- Right-click opens floating text input (`#floating-input`).
+- Runtime input modes are `pen`, `voice`, and `keyboard`; current persisted default is `pen`.
+- Tap or left-click toggles voice recording.
+- Right-click opens floating text input at `#floating-input`.
 - Keyboard typing auto-activates input when nothing is focused.
 - Enter sends and clears input.
-- Ctrl long-press starts push-to-talk; release stops/sends.
-- Escape dismisses overlay/input; if nothing is open and artifact is visible, clears to tabula rasa.
+- Ctrl long-press starts push-to-talk; release stops and sends.
+- Escape dismisses overlay or input; if nothing is open and an artifact is visible, it clears to tabula rasa.
+- `#edge-left-tap` toggles the workspace/file sidebar used by PR and file-browsing flows.
+- Pen mode uses `#ink-layer` and `#ink-controls`; ink submission posts to `/api/ink/submit` and writes artifacts under `.tabura/artifacts/ink/`.
 
-Key selectors:
-- `#workspace`, `#canvas-column`, `.canvas-pane`
-- `#floating-input`, `#overlay`, `#indicator`
-- `#edge-top`, `#edge-right`
+Important selectors:
+- `#workspace`
+- `#canvas-column`
+- `.canvas-pane`
+- `#ink-layer`
+- `#ink-controls`
+- `#pr-file-pane`
+- `#pr-file-drawer-backdrop`
+- `#floating-input`
+- `#overlay`
+- `#indicator`
+- `#edge-left-tap`
+- `#edge-top`
+- `#edge-right`
 
-## Local Services (systemd --user)
+## Local Services
 
-Primary units:
+Core runtime user units:
 - `tabura-web.service`
 - `tabura-codex-app-server.service`
 - `tabura-piper-tts.service`
-- `tabura-stt.service` (voxtype STT sidecar)
-- `tabura-intent.service` (optional but recommended)
-- `tabura-llm.service` (optional for ambiguous-intent fallback)
+- `tabura-stt.service`
+- `tabura-intent.service`
+- `tabura-llm.service`
+
+Optional input helper:
+- `tabura-ptt.service`
 
 Quick status:
 
@@ -85,13 +129,24 @@ systemctl --user restart tabura-codex-app-server.service tabura-piper-tts.servic
 - MCP: `http://127.0.0.1:9420/mcp`
 - MCP canvas WS: `ws://127.0.0.1:9420/ws/canvas`
 - App-server: `ws://127.0.0.1:8787`
-- TTS (Piper): `http://127.0.0.1:8424`
-- Intent classifier: `http://127.0.0.1:8425/classify` (`TABURA_INTENT_CLASSIFIER_URL`, use `off` to disable)
-- Intent LLM fallback: `http://127.0.0.1:8426/v1/chat/completions` (`TABURA_INTENT_LLM_URL`, use `off` to disable)
-- STT (voxtype): `http://127.0.0.1:8427/v1/audio/transcriptions` (`TABURA_STT_URL`, use `off` to disable)
+- TTS base URL: `http://127.0.0.1:8424` (`/v1/audio/speech`)
+- Intent classifier base URL: `http://127.0.0.1:8425` (`/classify`)
+- Intent LLM fallback base URL: `http://127.0.0.1:8426` (Tabura calls `/v1/chat/completions`)
+- STT base URL: `http://127.0.0.1:8427` (`/v1/audio/transcriptions`)
 - Local canvas session: `local`
 
-## Start Local Web UI In Temporary Directory
+Environment toggles:
+- `TABURA_TTS_URL` overrides the TTS base URL
+- `TABURA_INTENT_CLASSIFIER_URL=off` disables classifier fallback input
+- `TABURA_INTENT_LLM_URL=off` disables intent LLM fallback
+- `TABURA_INTENT_LLM_MODEL` selects the local routing model id (default `local`)
+- `TABURA_INTENT_LLM_PROFILE` selects the active local routing profile (default `qwen3.5-9b`)
+- `TABURA_INTENT_LLM_PROFILE_OPTIONS` exposes selectable local routing profiles (default `qwen3.5-9b,qwen3.5-4b`)
+- `TABURA_STT_URL=off` disables STT sidecar usage
+
+## Local Dev Start
+
+Temporary local web runtime:
 
 ```bash
 TMP_ROOT="$(mktemp -d -t tabura-web-XXXXXX)"
@@ -115,15 +170,45 @@ Stop:
 kill "$PID"
 ```
 
-## Meeting Notes Privacy
+## Privacy Boundary
 
-Audio may exist in RAM for processing but is never persisted to disk or database.
-Full contract: `docs/meeting-notes-privacy.md`.
-Enforcement tests: `TestPrivacySchema*` and `TestPrivacySTT*` in `internal/web/server_security_test.go` and `internal/stt/transcribe_test.go`.
+Meeting-notes and speech handling are RAM-only for audio payloads.
 
-## Version Bump Policy
+Rules:
+- audio may exist in memory for processing
+- audio is not persisted to disk
+- audio is not persisted to SQLite
 
-Development uses `-dev` suffix; release strips suffix; then bump to next `-dev`.
+Primary reference:
+- `docs/meeting-notes-privacy.md`
+
+Primary enforcement tests:
+- `TestPrivacySchema*` in `internal/web/server_security_test.go`
+- `TestPrivacySTT*` in `internal/stt/transcribe_test.go`
+
+## Surface Generation
+
+Generated surface docs are limited to interface inventory.
+
+Current generated artifact:
+- `docs/interfaces.md`
+
+Check or refresh:
+
+```bash
+./scripts/sync-surface.sh --check
+./scripts/sync-surface.sh
+```
+
+`sync-surface` must not edit project instruction files.
+
+## Version Policy
+
+Development versions use `-dev`.
+Release flow:
+1. strip `-dev`
+2. release
+3. bump to next `-dev`
 
 The bump script updates:
 - `.zenodo.json`
@@ -132,7 +217,7 @@ The bump script updates:
 - `internal/web/server.go`
 - `internal/appserver/client.go`
 
-Run consistency check:
+Consistency check:
 
 ```bash
 scripts/check-version-consistency.sh
@@ -140,90 +225,82 @@ scripts/check-version-consistency.sh
 
 ## Code Map
 
-```
-cmd/tabura/              CLI entry point, flag parsing, server bootstrap
+```text
+cmd/tabura/              CLI entry point, bootstrap, server startup, stdio MCP
+cmd/surfacegen/          Generated interface doc sync
 internal/
-  web/                   HTTP/WS server (public-facing)
-    server.go            App struct, constructor, auth, router, lifecycle
-    server_relay.go      Canvas WS, MCP relay, file proxy
-    chat.go              Chat HTTP handlers, commands, plugin hooks
-    chat_queue.go        chatTurnTracker type, cancellation, session mgmt
-    chat_turn.go         Assistant turn execution, rendering decisions
-    chat_prompt.go       Prompt building, delegation hints, canvas context
-    chat_hub.go          Hub project orchestration
-    chat_intent.go       Intent classification, system action execution
-    chat_canvas.go       Canvas artifact file lifecycle, file watching
-    chat_model.go        Model profile resolution
-    chat_participant.go  Meeting participant capture (RAM-only audio)
-    chat_tts.go          TTS synthesis
-    chat_stt.go          STT WebSocket message handling
-    chat_stt_http.go     STT HTTP transcribe endpoint
-    chat_pr.go           GitHub PR review loading
-    chat_ws.go           chatWSConn type, TTS sequencing
-    ws_hub.go            wsHub type: WebSocket connection registry, broadcast
-    tunnel_registry.go   tunnelRegistry type: MCP tunnel/relay/serve state
-    stt_config.go        STT configuration persistence
-    stt_replacements.go  STT text replacement rules
-    hotword.go           Hotword detector asset status
-    static/              Embedded frontend (JS/CSS)
-  store/                 SQLite persistence (zero internal deps)
-    store.go             Store struct, types, constructor, migrations
-    store_auth.go        Admin password, auth sessions
-    store_project.go     Project CRUD, app state
-    store_host.go        Host CRUD, remote sessions
-    store_chat.go        Chat session/message operations
-    store_participant.go Participant session/segment/event tracking
-  mcp/                   MCP protocol server
-    server.go            Protocol dispatch, types, stdio transport
-    server_delegate.go   Delegate job lifecycle (start/poll/cancel)
-    server_tools.go      Tool implementations, resource reads
-  appserver/             Codex app-server WebSocket client
-  canvas/                In-memory canvas session/artifact state
-  stt/                   STT HTTP client, VAD, hallucination detection
-  plugins/               Legacy webhook compatibility runtime
+  appserver/             Codex app-server websocket client/session logic
+  canvas/                Canvas session/artifact state
   extensions/            Legacy manifest compatibility runtime
-  modelprofile/          Model alias resolution, reasoning config
-  serve/                 MCP HTTP server runtime
-  surface/               MCP tool/route definitions
-  ptt/                   Push-to-talk daemon (Linux evdev)
-  pty/                   PTY abstraction (Unix/Windows)
-  ptyd/                  PTY daemon application
-  update/                Binary auto-update
-  protocol/              Project bootstrap, AGENTS.md
   licensing/             License compliance tests
+  mcp/                   MCP protocol server and tool dispatch
+  modelprofile/          Model alias and reasoning-effort resolution
+  plugins/               Legacy webhook compatibility runtime
+  protocol/              Project bootstrap (.tabura, MCP config, gitignore)
+  ptt/                   Push-to-talk daemon integration
+  pty/                   PTY abstraction
+  ptyd/                  PTY daemon application
+  serve/                 MCP HTTP server runtime
+  store/                 SQLite persistence
+  stt/                   STT client, normalization, VAD/hallucination guards
+  surface/               MCP/web interface inventory for docs/tests
+  update/                Binary update flow
+  web/                   Public HTTP/WS runtime and UI coordination
+    chat.go              Chat HTTP handlers
+    chat_canvas.go       Canvas artifact file lifecycle
+    chat_hub.go          Hub project orchestration
+    chat_intent.go       Intent classification and system actions
+    chat_model.go        Model profile resolution per project
+    chat_participant.go  Meeting participant capture
+    chat_pr.go           PR review loading
+    chat_prompt.go       Internal prompt construction
+    chat_queue.go        Turn lifecycle and cancellation
+    chat_stt.go          STT websocket message handling
+    chat_stt_http.go     STT HTTP transcribe endpoint
+    chat_tts.go          TTS synthesis routing
+    chat_turn.go         Assistant turn execution and render routing
+    chat_ws.go           Chat websocket connection behavior
+    projects.go          Project CRUD, activation, bootstrap hookup
+    server.go            App wiring, router, lifecycle
+    server_relay.go      Canvas relay and file proxying
+    static/              Embedded frontend assets
 ```
 
-## Naming and Placement Conventions
+## Naming and Placement
 
-- **Package names**: lowercase, single word, noun describing the domain (`store`, `canvas`, `stt`). No `util`, `common`, `helpers`.
-- **File names**: `<domain>.go` for the primary file, `<domain>_<aspect>.go` for splits (e.g., `store_chat.go`, `server_delegate.go`). Tests: `<domain>_<aspect>_test.go`.
-- **web/ file naming**: HTTP handlers go in the file matching their route group (`chat.go` for `/api/chat/*`). Supporting logic gets a `_<aspect>` suffix (`chat_turn.go`, `chat_queue.go`).
-- **Concurrent-state types**: unexported types (`chatTurnTracker`, `wsHub`, `tunnelRegistry`) each own their own `sync.Mutex`. Live in the file that uses them most.
-- **Size limits**: files < 500 lines (hard limit 1,000), functions < 50 lines (hard limit 100).
-- **Interfaces**: define in the owning package, not in the consumer. Keep narrow (2-4 methods).
-- **Dependency direction**: leaf packages (`store`, `stt`, `canvas`, `appserver`, `modelprofile`) have zero internal deps. `mcp` and `serve` compose leaf packages. `web` composes everything.
+- Package names: lowercase, single-word, domain-specific nouns.
+- Primary files: `<domain>.go`; focused splits: `<domain>_<aspect>.go`.
+- Tests: `<domain>_test.go` or `<domain>_<aspect>_test.go`.
+- In `internal/web/`, route handlers belong in the file matching the route domain.
+- Concurrent state owners should use unexported tracker/registry types with their own mutex.
+- Keep leaf packages free of internal package dependencies where possible.
 
-## Direction Note
+Target limits:
+- files under 500 lines when practical, hard limit 1000
+- functions under 50 lines when practical, hard limit 100
+- interfaces narrow and owned by the defining package
 
-Active product direction is a public modular core, not a private extension or
-plugin ecosystem. Do not build new feature work around `internal/plugins` or
-`internal/extensions`; treat them as transitional compatibility code unless the
-task is explicitly about consolidating/removing them.
+## Product Direction
 
-## Adding a New Feature Module
+Active direction is a public modular core, not a private extension ecosystem.
 
-1. If it needs no `web` imports: create `internal/<name>/` with its own types, tests, and zero internal deps.
-2. If it's a new API surface: add handlers in `internal/web/<domain>.go`, register routes in `Router()`.
-3. If it manages concurrent state: define an unexported tracker/registry type with its own mutex. Add it as a field on `App`.
-4. If it integrates external HTTP services: define an interface in the relevant leaf package, implement it there, inject into `App` via the constructor.
+Implications:
+- new product behavior should land in normal public core packages
+- do not build new feature work around `internal/plugins` or `internal/extensions` unless the task is explicitly about compatibility or removal
+- internal prompt/runtime behavior should be implemented in code, not by mutating project instruction files
+
+## Adding New Work
+
+1. If the feature does not need `internal/web`, add a new leaf package under `internal/<name>/`.
+2. If it adds HTTP or WS API surface, put handlers in `internal/web/<domain>.go` and register them in the router.
+3. If it owns shared mutable state, give it a dedicated unexported tracker type with its own mutex.
+4. If it integrates an external HTTP service, define the interface in the owning leaf package and inject it into `web.App`.
 
 ## Testing Policy
 
-Every UI interaction flow must have a Playwright test.
+Every UI interaction flow needs a Playwright test.
 
-Playwright tests run inside the official `mcr.microsoft.com/playwright` container via `scripts/playwright.sh` (podman locally, docker in CI). No local browser install needed.
-
-Run before push:
+Standard pre-push checks:
 
 ```bash
 ./scripts/sync-surface.sh --check
@@ -231,50 +308,35 @@ go test ./...
 ./scripts/playwright.sh
 ```
 
-Single project or file:
+Playwright runs in the official container through `scripts/playwright.sh`.
 
-```bash
-./scripts/playwright.sh --project=chromium
-./scripts/playwright.sh tests/playwright/canvas.spec.ts
-```
-
-Current mock UI specs:
+Current Playwright specs:
+- `tests/playwright/artifact-context.spec.ts`
+- `tests/playwright/canvas-refresh.spec.ts`
 - `tests/playwright/canvas.spec.ts`
 - `tests/playwright/chat-voice-send.spec.ts`
-- `tests/playwright/artifact-context.spec.ts`
-- `tests/playwright/review-mode.spec.ts`
-- `tests/playwright/canvas-refresh.spec.ts`
-- `tests/playwright/hotword.spec.ts`
 - `tests/playwright/conversation-mode.spec.ts`
+- `tests/playwright/hotword.spec.ts`
+- `tests/playwright/hub-mode.spec.ts`
+- `tests/playwright/participant-capture.spec.ts`
+- `tests/playwright/pr-review-mode.spec.ts`
+- `tests/playwright/review-mode.spec.ts`
+- `tests/playwright/silent-mode.spec.ts`
 - `tests/playwright/ui-system.spec.ts`
 
-## Local E2E Tests (Real Services)
-
-Real end-to-end tests in `tests/e2e/` run against live services with no mocks or skips. Services down = test failure.
+Real-service E2E runs through `./scripts/e2e-local.sh`.
 
 Required services:
-- `tabura-web.service` on `:8420`
-- `tabura-piper-tts.service` on `:8424`
-- `tabura-stt.service` on `:8427`
-- `ffmpeg` installed
+- `tabura-web.service`
+- `tabura-piper-tts.service`
+- `tabura-stt.service`
+- `ffmpeg`
 
-Run all E2E tests:
-
-```bash
-./scripts/e2e-local.sh
-```
-
-Single spec:
-
-```bash
-./scripts/e2e-local.sh tests/e2e/voice-e2e.spec.ts
-```
-
-E2E specs:
-- `tests/e2e/app-load.spec.ts` — real app smoke test
-- `tests/e2e/stt-ws.spec.ts` — STT over WebSocket
-- `tests/e2e/tts-ws.spec.ts` — TTS over WebSocket
-- `tests/e2e/stt-http.spec.ts` — STT over HTTP
-- `tests/e2e/stt-tts-roundtrip.spec.ts` — full TTS->STT round-trip
-- `tests/e2e/stt-tts-system.spec.ts` — combined STT/TTS system tests
-- `tests/e2e/voice-e2e.spec.ts` — full browser voice flow (fake mic -> real VAD -> real STT)
+Current E2E specs:
+- `tests/e2e/app-load.spec.ts`
+- `tests/e2e/stt-http.spec.ts`
+- `tests/e2e/stt-tts-roundtrip.spec.ts`
+- `tests/e2e/stt-tts-system.spec.ts`
+- `tests/e2e/stt-ws.spec.ts`
+- `tests/e2e/tts-ws.spec.ts`
+- `tests/e2e/voice-e2e.spec.ts`

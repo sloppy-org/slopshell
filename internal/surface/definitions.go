@@ -2,11 +2,6 @@ package surface
 
 import "strings"
 
-const (
-	ProtocolBlockBeginMarker = "<!-- TABURA_PROTOCOL:BEGIN -->"
-	ProtocolBlockEndMarker   = "<!-- TABURA_PROTOCOL:END -->"
-)
-
 type ToolProperty struct {
 	Type        string
 	Description string

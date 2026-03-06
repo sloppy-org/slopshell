@@ -7,7 +7,7 @@
 Define a calm, document-first AI interaction model optimized for high-latency and e-ink style environments.
 
 Core constraints:
-- No persistent chat panel.
+- No always-visible chat panel.
 - No hidden autonomous actions.
 - Invocation is local to selected object.
 - User approval is required before applied changes.
@@ -18,10 +18,11 @@ Tap (left-click) anywhere on the canvas toggles voice recording. A recording dot
 Desktop equivalents: tap to toggle voice capture, or hold `Ctrl` (300ms) for push-to-talk.
 Right-click opens a floating text input at the cursor position.
 Keyboard typing (when nothing is focused) auto-activates text input.
+Pen mode is a first-class input mode for direct ink capture on the canvas; dirty ink shows explicit submit/clear controls and saves artifacts under `.tabura/artifacts/ink/`.
 
 On artifact: tap or right-click captures line context prepended to the message.
 
-No prompt bar, no chat panel, no visible chrome. Responses stream as ephemeral overlays.
+No always-visible prompt bar or chat panel. Chrome is edge-revealed. Responses stream as ephemeral overlays.
 
 ## Email Reply Interaction
 

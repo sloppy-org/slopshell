@@ -1,21 +1,19 @@
 package protocol
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
 
-func TestBootstrapProjectCreatesExpectedFiles(t *testing.T) {
+func TestBootstrapProjectCreatesExpectedFilesWithoutAgentsMutation(t *testing.T) {
 	projectDir := t.TempDir()
 
 	result, err := BootstrapProject(projectDir)
 	if err != nil {
 		t.Fatalf("BootstrapProject() error = %v", err)
-	}
-	if result.AgentsPreserved {
-		t.Fatalf("AgentsPreserved = true, want false")
 	}
 	if result.GitInitialized {
 		t.Fatalf("GitInitialized = true, want false")
@@ -23,25 +21,11 @@ func TestBootstrapProjectCreatesExpectedFiles(t *testing.T) {
 	if result.Paths.ProjectDir == "" {
 		t.Fatalf("ProjectDir should not be empty")
 	}
-
-	agentsBody, err := os.ReadFile(result.Paths.AgentsPath)
-	if err != nil {
-		t.Fatalf("read AGENTS.md: %v", err)
+	if _, err := os.Stat(filepath.Join(projectDir, "AGENTS.md")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("AGENTS.md should not be created, stat err = %v", err)
 	}
-	if !strings.Contains(string(agentsBody), "# AGENTS") {
-		t.Fatalf("AGENTS.md missing header")
-	}
-	if !strings.Contains(string(agentsBody), "TABURA_PROTOCOL:BEGIN") {
-		t.Fatalf("AGENTS.md missing protocol block")
-	}
-
-	sidecarPath := filepath.Join(projectDir, ".tabura", "AGENTS.tabura.md")
-	sidecarBody, err := os.ReadFile(sidecarPath)
-	if err != nil {
-		t.Fatalf("read sidecar AGENTS: %v", err)
-	}
-	if !strings.Contains(string(sidecarBody), "TABURA_PROTOCOL:BEGIN") {
-		t.Fatalf("sidecar AGENTS missing protocol block")
+	if _, err := os.Stat(filepath.Join(projectDir, ".tabura", "AGENTS.tabura.md")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("AGENTS.tabura.md should not be created, stat err = %v", err)
 	}
 
 	mcpBody, err := os.ReadFile(result.Paths.MCPConfigPath)
@@ -76,9 +60,6 @@ func TestBootstrapProjectPreservesExistingAgentsAndDetectsGit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BootstrapProject() error = %v", err)
 	}
-	if !result.AgentsPreserved {
-		t.Fatalf("AgentsPreserved = false, want true")
-	}
 	if !result.GitInitialized {
 		t.Fatalf("GitInitialized = false, want true")
 	}
@@ -89,6 +70,9 @@ func TestBootstrapProjectPreservesExistingAgentsAndDetectsGit(t *testing.T) {
 	}
 	if string(agentsBody) != initial {
 		t.Fatalf("AGENTS.md was unexpectedly modified")
+	}
+	if _, err := os.Stat(filepath.Join(projectDir, ".tabura", "AGENTS.tabura.md")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("AGENTS.tabura.md should not be created, stat err = %v", err)
 	}
 }
 

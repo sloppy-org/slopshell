@@ -5,20 +5,16 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/krystophny/tabura/internal/surface"
 )
 
 type Paths struct {
 	ProjectDir    string
-	AgentsPath    string
 	MCPConfigPath string
 }
 
 type Result struct {
-	Paths           Paths
-	GitInitialized  bool
-	AgentsPreserved bool
+	Paths          Paths
+	GitInitialized bool
 }
 
 func BootstrapProject(projectDir string) (Result, error) {
@@ -35,26 +31,15 @@ func BootstrapProject(projectDir string) (Result, error) {
 	}
 	paths := Paths{
 		ProjectDir:    abs,
-		AgentsPath:    filepath.Join(abs, "AGENTS.md"),
 		MCPConfigPath: filepath.Join(taburaDir, "codex-mcp.toml"),
 	}
-	agentsPreserved := true
-	if _, err := os.Stat(paths.AgentsPath); os.IsNotExist(err) {
-		agentsPreserved = false
-		_ = os.WriteFile(paths.AgentsPath, []byte(defaultAgents()), 0o644)
-	}
-	_ = os.WriteFile(filepath.Join(taburaDir, "AGENTS.tabura.md"), []byte(defaultAgents()), 0o644)
 	_ = os.WriteFile(paths.MCPConfigPath, []byte(fmt.Sprintf("[mcp_servers.tabura]\ncommand = \"tabura\"\nargs = [\"mcp-server\", \"--project-dir\", \"%s\"]\n", strings.ReplaceAll(abs, "\\", "\\\\"))), 0o644)
 	_ = ensureGitignore(abs)
 	gitInit := false
 	if _, err := os.Stat(filepath.Join(abs, ".git")); err == nil {
 		gitInit = true
 	}
-	return Result{Paths: paths, AgentsPreserved: agentsPreserved, GitInitialized: gitInit}, nil
-}
-
-func defaultAgents() string {
-	return surface.DefaultAgentsMarkdown()
+	return Result{Paths: paths, GitInitialized: gitInit}, nil
 }
 
 func ensureGitignore(projectDir string) error {
