@@ -315,3 +315,68 @@ test('participant capture drops oldest session chunks when RAM cap is reached', 
   expect(result.sessionBufferedBytes).toBeGreaterThan(44);
   expect(result.sessionBufferedBytes).toBeLessThanOrEqual(result.capBytes);
 });
+
+test('participant capture clears RAM buffers on error without touching web storage', async ({ page }) => {
+  const result = await page.evaluate(async () => {
+    const waitFor = async (check: () => boolean) => {
+      const deadline = Date.now() + 1_000;
+      while (Date.now() < deadline) {
+        if (check()) return;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      throw new Error('timed out waiting for participant buffer fill');
+    };
+    const beforeStorageKeys = Object.keys(window.localStorage).sort();
+    const beforeDBs = typeof indexedDB.databases === 'function'
+      ? (await indexedDB.databases()).map((db) => db.name || '').sort()
+      : [];
+    const vadMock = (window as any).__taburaVadMock;
+    const originalCreate = vadMock.create;
+    let callbacks: any = null;
+    vadMock.create = (next: any) => {
+      callbacks = next;
+      return {
+        start() {},
+        pause() {},
+        destroy() {},
+      };
+    };
+
+    try {
+      const { ParticipantCapture } = await import('/internal/web/static/participant-capture.js');
+      const ws = {
+        readyState: (window as any).WebSocket.OPEN,
+        sent: [] as any[],
+        send(data: any) {
+          this.sent.push(data);
+        },
+      };
+      const capture = new ParticipantCapture({ sessionRamCapMB: 0.02, maxSegmentDurationMS: 8_000 });
+      await capture.start(ws as any);
+      callbacks.onSpeechEnd(new Float32Array(1_600).fill(0.25));
+      await waitFor(() => capture.sessionBufferedChunks === 1);
+      capture.handleMessage({ type: 'participant_error', error: 'forced test error' });
+      const afterStorageKeys = Object.keys(window.localStorage).sort();
+      const afterDBs = typeof indexedDB.databases === 'function'
+        ? (await indexedDB.databases()).map((db) => db.name || '').sort()
+        : [];
+      return {
+        pendingSegmentSamples: capture.pendingSegmentSamples,
+        sessionBufferedChunks: capture.sessionBufferedChunks,
+        sessionBufferedBytes: capture.sessionBufferedBytes,
+        beforeStorageKeys,
+        afterStorageKeys,
+        beforeDBs,
+        afterDBs,
+      };
+    } finally {
+      vadMock.create = originalCreate;
+    }
+  });
+
+  expect(result.pendingSegmentSamples).toBe(0);
+  expect(result.sessionBufferedChunks).toBe(0);
+  expect(result.sessionBufferedBytes).toBe(0);
+  expect(result.afterStorageKeys).toEqual(result.beforeStorageKeys);
+  expect(result.afterDBs).toEqual(result.beforeDBs);
+});
