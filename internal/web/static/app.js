@@ -1,4 +1,5 @@
 import { marked } from './vendor/marked.esm.js';
+import { apiURL, wsURL } from './paths.js';
 import {
   renderCanvas,
   clearCanvas,
@@ -492,7 +493,7 @@ function setYoloModeLocal(enabled, { persist = true, render = true } = {}) {
 
 async function setYoloMode(enabled) {
   const next = Boolean(enabled);
-  const resp = await fetch('/api/runtime/yolo', {
+  const resp = await fetch(apiURL('runtime/yolo'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ enabled: next }),
@@ -1024,7 +1025,7 @@ function forceUiHardReload() {
 }
 
 async function fetchRuntimeMeta() {
-  const resp = await fetch('/api/runtime', {
+  const resp = await fetch(apiURL('runtime'), {
     cache: 'no-store',
     headers: { 'Cache-Control': 'no-cache' },
   });
@@ -1050,7 +1051,7 @@ function applyRuntimePreferences(runtime) {
 }
 
 async function updateRuntimePreferences(patch) {
-  const resp = await fetch('/api/runtime/preferences', {
+  const resp = await fetch(apiURL('runtime/preferences'), {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(patch || {}),
@@ -1082,7 +1083,7 @@ async function acknowledgeDisclaimer(version) {
   if (String(version || '').trim()) {
     payload.version = String(version || '').trim();
   }
-  const resp = await fetch('/api/runtime/disclaimer-ack', {
+  const resp = await fetch(apiURL('runtime/disclaimer-ack'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -1695,7 +1696,7 @@ function sttStop() {
   form.append('mime_type', mimeType);
   const controller = new AbortController();
   _sttAbortController = controller;
-  return fetch('/api/stt/transcribe', {
+  return fetch(apiURL('stt/transcribe'), {
     method: 'POST',
     body: form,
     signal: controller.signal,
@@ -2742,10 +2743,10 @@ async function loadWorkspaceBrowserPath(path = '') {
   renderPrReviewFileList();
   try {
     const urls = [
-      `/api/projects/${encodeURIComponent(projectID)}/files?path=${encodeURIComponent(requestedPath)}`,
+      apiURL(`projects/${encodeURIComponent(projectID)}/files?path=${encodeURIComponent(requestedPath)}`),
     ];
     if (projectID.toLowerCase() !== 'active') {
-      urls.push(`/api/projects/active/files?path=${encodeURIComponent(requestedPath)}`);
+      urls.push(apiURL(`projects/active/files?path=${encodeURIComponent(requestedPath)}`));
     }
 
     let payload = null;
@@ -2822,7 +2823,7 @@ async function openWorkspaceSidebarFile(path) {
 
   const sid = String(state.sessionId || 'local');
   try {
-    const resp = await fetch(`/api/files/${encodeURIComponent(sid)}/${encodeURIComponent(filePath)}`, { cache: 'no-store' });
+    const resp = await fetch(apiURL(`files/${encodeURIComponent(sid)}/${encodeURIComponent(filePath)}`), { cache: 'no-store' });
     if (!resp.ok) {
       const detail = (await resp.text()).trim() || `HTTP ${resp.status}`;
       throw new Error(detail);
@@ -3384,7 +3385,7 @@ function renderWelcomeSurface(payload) {
 }
 
 async function fetchProjectWelcome(projectID = 'active') {
-  const resp = await fetch(`/api/projects/${encodeURIComponent(projectID)}/welcome`, { cache: 'no-store' });
+  const resp = await fetch(apiURL(`projects/${encodeURIComponent(projectID)}/welcome`), { cache: 'no-store' });
   if (!resp.ok) {
     const detail = (await resp.text()).trim() || `HTTP ${resp.status}`;
     throw new Error(detail);
@@ -3520,7 +3521,7 @@ async function submitReviewBatch() {
         anchor: item.anchor || {},
       })),
     };
-    const resp = await fetch('/api/review/submit', {
+    const resp = await fetch(apiURL('review/submit'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -3548,7 +3549,7 @@ async function submitReviewBatch() {
 }
 
 async function fetchProjects() {
-  const resp = await fetch('/api/projects', { cache: 'no-store' });
+  const resp = await fetch(apiURL('projects'), { cache: 'no-store' });
   if (!resp.ok) throw new Error(`projects list failed: HTTP ${resp.status}`);
   const payload = await resp.json();
   const projects = Array.isArray(payload?.projects) ? payload.projects : [];
@@ -3783,7 +3784,7 @@ async function switchProjectChatModel(modelAlias, reasoningEffort = '') {
     if (includeEffort) {
       payload.reasoning_effort = nextEffort;
     }
-    const resp = await fetch(`/api/projects/${encodeURIComponent(project.id)}/chat-model`, {
+    const resp = await fetch(apiURL(`projects/${encodeURIComponent(project.id)}/chat-model`), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -3809,7 +3810,7 @@ async function switchProjectChatModel(modelAlias, reasoningEffort = '') {
 }
 
 async function activateProject(projectID) {
-  const resp = await fetch(`/api/projects/${encodeURIComponent(projectID)}/activate`, { method: 'POST' });
+  const resp = await fetch(apiURL(`projects/${encodeURIComponent(projectID)}/activate`), { method: 'POST' });
   if (!resp.ok) {
     const detail = (await resp.text()).trim() || `HTTP ${resp.status}`;
     throw new Error(detail);
@@ -3830,7 +3831,7 @@ async function loadChatHistory() {
   const host = chatHistoryEl();
   if (!host) return;
   host.innerHTML = '';
-  const resp = await fetch(`/api/chat/sessions/${encodeURIComponent(state.chatSessionId)}/history`);
+  const resp = await fetch(apiURL(`chat/sessions/${encodeURIComponent(state.chatSessionId)}/history`));
   if (!resp.ok) throw new Error(`chat history failed: HTTP ${resp.status}`);
   const payload = await resp.json();
   const session = payload?.session || {};
@@ -3857,7 +3858,7 @@ async function refreshAssistantActivity() {
   const targetSessionID = state.chatSessionId;
   assistantActivityInFlight = true;
   try {
-    const resp = await fetch(`/api/chat/sessions/${encodeURIComponent(targetSessionID)}/activity`, { cache: 'no-store' });
+    const resp = await fetch(apiURL(`chat/sessions/${encodeURIComponent(targetSessionID)}/activity`), { cache: 'no-store' });
     if (!resp.ok) {
       if (!hasLocalAssistantWork() && !state.assistantCancelInFlight) {
         state.assistantRemoteActiveCount = 0;
@@ -3977,9 +3978,7 @@ function openChatWs() {
   const turnToken = state.chatWsToken + 1;
   state.chatWsToken = turnToken;
   const targetSessionID = state.chatSessionId;
-  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const wsUrl = `${proto}//${location.host}/ws/chat/${encodeURIComponent(targetSessionID)}`;
-  const ws = new WebSocket(wsUrl);
+  const ws = new WebSocket(wsURL(`chat/${encodeURIComponent(targetSessionID)}`));
   ws.binaryType = 'arraybuffer';
   state.chatWs = ws;
 
@@ -4571,7 +4570,7 @@ async function submitMessage(text, options = {}) {
         throw abortError();
       }
     }
-    const resp = await fetch(`/api/chat/sessions/${encodeURIComponent(state.chatSessionId)}/messages`, {
+    const resp = await fetch(apiURL(`chat/sessions/${encodeURIComponent(state.chatSessionId)}/messages`), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -4682,7 +4681,7 @@ async function cancelActiveAssistantTurn(options = null) {
     timeoutId = window.setTimeout(() => {
       controller.abort();
     }, STOP_REQUEST_TIMEOUT_MS);
-    const resp = await fetch(`/api/chat/sessions/${encodeURIComponent(state.chatSessionId)}/cancel`, {
+    const resp = await fetch(apiURL(`chat/sessions/${encodeURIComponent(state.chatSessionId)}/cancel`), {
       method: 'POST',
       signal: controller.signal,
     });
@@ -4840,9 +4839,7 @@ function openCanvasWs() {
   const turnToken = state.canvasWsToken + 1;
   state.canvasWsToken = turnToken;
   const targetSessionID = String(state.sessionId || 'local');
-  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const wsUrl = `${proto}//${location.host}/ws/canvas/${encodeURIComponent(targetSessionID)}`;
-  const ws = new WebSocket(wsUrl);
+  const ws = new WebSocket(wsURL(`canvas/${encodeURIComponent(targetSessionID)}`));
   state.canvasWs = ws;
 
   ws.onopen = () => {
@@ -4870,7 +4867,7 @@ function openCanvasWs() {
 
 async function loadCanvasSnapshot(sessionID = state.sessionId) {
   try {
-    const resp = await fetch(`/api/canvas/${encodeURIComponent(sessionID)}/snapshot`);
+    const resp = await fetch(apiURL(`canvas/${encodeURIComponent(sessionID)}/snapshot`));
     if (!resp.ok) {
       if (!state.hasArtifact) {
         exitPrReviewMode();
@@ -6014,7 +6011,7 @@ async function init() {
 async function authGate() {
   const loginView = document.getElementById('view-login');
   const mainView = document.getElementById('view-main');
-  const resp = await fetch('/api/setup');
+  const resp = await fetch(apiURL('setup'));
   const data = await resp.json();
   if (data.authenticated) {
     if (loginView) loginView.style.display = 'none';
@@ -6043,7 +6040,7 @@ async function authGate() {
       const pw = loginPassword.value;
       if (!pw) return;
       try {
-        const r = await fetch('/api/login', {
+        const r = await fetch(apiURL('login'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ password: pw }),

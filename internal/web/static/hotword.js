@@ -1,11 +1,13 @@
-const ORT_LOCAL_URL = '/static/vad/ort.min.mjs';
+import { staticURL } from './paths.js';
+
+const ORT_LOCAL_URL = staticURL('vad/ort.min.mjs');
 let ort = null;
 async function loadOrt() {
   if (!ort) ort = await import(ORT_LOCAL_URL);
   return ort;
 }
 
-const HOTWORD_VENDOR_BASE = '/static/vendor/openwakeword';
+const HOTWORD_VENDOR_BASE = staticURL('vendor/openwakeword');
 const HOTWORD_MODEL_FILES = {
   mel: `${HOTWORD_VENDOR_BASE}/melspectrogram.onnx`,
   embedding: `${HOTWORD_VENDOR_BASE}/embedding_model.onnx`,
@@ -398,7 +400,7 @@ async function startOnnxMonitor(stream) {
 async function initOnnxModel() {
   await loadOrt();
   if (ort.env?.wasm) {
-    ort.env.wasm.wasmPaths = '/static/vad/';
+    ort.env.wasm.wasmPaths = staticURL('vad/');
     ort.env.wasm.numThreads = 1;
   }
 

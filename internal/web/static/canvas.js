@@ -1,5 +1,6 @@
 import { marked } from './vendor/marked.esm.js';
 import { AnnotationLayer, GlobalWorkerOptions, TextLayer, getDocument } from './vendor/pdf.mjs';
+import { apiURL } from './paths.js';
 
 const SOURCE_LANGUAGE_BY_EXT = {
   c: 'c',
@@ -1169,7 +1170,7 @@ function getPdfURL(event) {
   return {
     sid: pdfSid,
     path: pdfPath,
-    url: `/api/files/${encodeURIComponent(pdfSid)}/${encodeURIComponent(pdfPath)}`,
+    url: apiURL(`files/${encodeURIComponent(pdfSid)}/${encodeURIComponent(pdfPath)}`),
   };
 }
 
@@ -1473,7 +1474,7 @@ export function renderCanvas(event) {
     e.image.classList.add('is-active');
     const state = (window._taburaApp || {}).getState ? window._taburaApp.getState() : {};
     const sid = state.sessionId || '';
-    e.img.src = `/api/files/${encodeURIComponent(sid)}/${encodeURIComponent(event.path)}`;
+    e.img.src = apiURL(`files/${encodeURIComponent(sid)}/${encodeURIComponent(event.path)}`);
     e.img.alt = event.title || 'Image';
     activeTextEventId = null;
     activeArtifactTitle = event.title || '';

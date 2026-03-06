@@ -29,6 +29,43 @@ func TestWebRouterDoesNotExposeMCPRoute(t *testing.T) {
 	}
 }
 
+func TestServeIndexUsesRelativeStaticAssets(t *testing.T) {
+	app := newAuthedTestApp(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rr := httptest.NewRecorder()
+	app.Router().ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("GET / status = %d, want 200", rr.Code)
+	}
+	body := rr.Body.String()
+	for _, fragment := range []string{
+		`href="./static/style.css`,
+		`src="./static/app.js`,
+		`src="./static/polyfill.js"`,
+	} {
+		if !strings.Contains(body, fragment) {
+			t.Fatalf("GET / body missing %q", fragment)
+		}
+	}
+}
+
+func TestServeCanvasRedirectIsRelative(t *testing.T) {
+	app := newAuthedTestApp(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/canvas", nil)
+	rr := httptest.NewRecorder()
+	app.Router().ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusTemporaryRedirect {
+		t.Fatalf("GET /canvas status = %d, want %d", rr.Code, http.StatusTemporaryRedirect)
+	}
+	if got := rr.Header().Get("Location"); got != "./?desktop=1" {
+		t.Fatalf("GET /canvas Location = %q, want %q", got, "./?desktop=1")
+	}
+}
+
 // newTestWSConn creates a chatWSConn backed by a real websocket for testing.
 // The returned cleanup function closes both ends.
 func newTestWSConn(t *testing.T) (*chatWSConn, func()) {

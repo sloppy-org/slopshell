@@ -1,6 +1,8 @@
-// VAD assets served locally from /static/vad/ (fetched by scripts/fetch-vad-assets.sh).
-const VAD_BUNDLE_URL = '/static/vad/bundle.min.js';
-const VAD_ASSET_PATH = '/static/vad/';
+import { staticURL } from './paths.js';
+
+// VAD assets are served from the app's static mount, which may sit behind a proxy prefix.
+const VAD_BUNDLE_URL = staticURL('vad/bundle.min.js');
+const VAD_ASSET_PATH = staticURL('vad/');
 
 const state = {
   loaded: false,

@@ -439,10 +439,10 @@ func (a *App) serveIndex(w http.ResponseWriter, r *http.Request) {
 	page := string(data)
 	boot := strings.TrimSpace(a.bootID)
 	if boot != "" {
-		styleTag := `href="/static/style.css"`
-		styleTagVer := fmt.Sprintf(`href="/static/style.css?v=%s"`, url.QueryEscape(boot))
-		scriptTag := `src="/static/app.js"`
-		scriptTagVer := fmt.Sprintf(`src="/static/app.js?v=%s"`, url.QueryEscape(boot))
+		styleTag := `href="./static/style.css"`
+		styleTagVer := fmt.Sprintf(`href="./static/style.css?v=%s"`, url.QueryEscape(boot))
+		scriptTag := `src="./static/app.js"`
+		scriptTagVer := fmt.Sprintf(`src="./static/app.js?v=%s"`, url.QueryEscape(boot))
 		page = strings.Replace(page, styleTag, styleTagVer, 1)
 		page = strings.Replace(page, scriptTag, scriptTagVer, 1)
 	}
@@ -452,7 +452,8 @@ func (a *App) serveIndex(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) serveCanvas(w http.ResponseWriter, r *http.Request) {
-	http.Redirect(w, r, "/?desktop=1", http.StatusTemporaryRedirect)
+	w.Header().Set("Location", "./?desktop=1")
+	w.WriteHeader(http.StatusTemporaryRedirect)
 }
 
 func decodeJSON(r *http.Request, out interface{}) error {
