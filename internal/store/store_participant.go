@@ -47,6 +47,8 @@ type ParticipantRoomState struct {
 	UpdatedAt         int64  `json:"updated_at"`
 }
 
+var ErrParticipantSessionEnded = errors.New("participant session is ended")
+
 func (s *Store) AddParticipantSession(projectKey, configJSON string) (ParticipantSession, error) {
 	key := strings.TrimSpace(projectKey)
 	if key == "" {
@@ -122,6 +124,16 @@ func (s *Store) AddParticipantSegment(seg ParticipantSegment) (ParticipantSegmen
 	sessionID := strings.TrimSpace(seg.SessionID)
 	if sessionID == "" {
 		return ParticipantSegment{}, errors.New("session id is required")
+	}
+	var endedAt int64
+	if err := s.db.QueryRow(
+		`SELECT ended_at FROM participant_sessions WHERE id = ?`,
+		sessionID,
+	).Scan(&endedAt); err != nil {
+		return ParticipantSegment{}, err
+	}
+	if endedAt != 0 {
+		return ParticipantSegment{}, ErrParticipantSessionEnded
 	}
 	now := time.Now().Unix()
 	if seg.CommittedAt == 0 {

@@ -2,6 +2,7 @@ package web
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -100,6 +101,7 @@ func transcribeParticipantChunk(a *App, conn *chatWSConn, sessionID string, buf 
 	normalizedMimeType, normalizedData, normalizeErr := stt.NormalizeForWhisper(mimeType, buf)
 	if normalizeErr != nil {
 		log.Printf("participant normalize error: %v", normalizeErr)
+		writeParticipantErrorIfActive(conn, sessionID, fmt.Sprintf("audio normalization failed: %v", normalizeErr))
 		return
 	}
 
@@ -110,6 +112,7 @@ func transcribeParticipantChunk(a *App, conn *chatWSConn, sessionID string, buf 
 			return
 		}
 		log.Printf("participant transcribe error: %v", err)
+		writeParticipantErrorIfActive(conn, sessionID, fmt.Sprintf("transcription failed: %v", err))
 		return
 	}
 	text = strings.TrimSpace(text)
@@ -130,7 +133,11 @@ func transcribeParticipantChunk(a *App, conn *chatWSConn, sessionID string, buf 
 		Status:      "final",
 	})
 	if err != nil {
+		if errors.Is(err, store.ErrParticipantSessionEnded) {
+			return
+		}
 		log.Printf("participant store segment error: %v", err)
+		writeParticipantErrorIfActive(conn, sessionID, fmt.Sprintf("failed to store transcript segment: %v", err))
 		return
 	}
 
@@ -145,6 +152,20 @@ func transcribeParticipantChunk(a *App, conn *chatWSConn, sessionID string, buf 
 		StartTS:   seg.StartTS,
 		EndTS:     seg.EndTS,
 		LatencyMS: latencyMS,
+	})
+}
+
+func writeParticipantErrorIfActive(conn *chatWSConn, sessionID, errMsg string) {
+	conn.participantMu.Lock()
+	active := conn.participantActive && conn.participantSessionID == sessionID
+	conn.participantMu.Unlock()
+	if !active {
+		return
+	}
+	_ = conn.writeJSON(participantMessage{
+		Type:      "participant_error",
+		SessionID: sessionID,
+		Error:     errMsg,
 	})
 }
 

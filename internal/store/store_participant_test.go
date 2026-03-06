@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -136,6 +137,28 @@ func TestParticipantSegmentCRUD(t *testing.T) {
 	}
 	if results[0].Text != "hello meeting" {
 		t.Fatalf("search text = %q", results[0].Text)
+	}
+}
+
+func TestParticipantSegmentRejectsEndedSession(t *testing.T) {
+	s := newTestStore(t)
+
+	sess, err := s.AddParticipantSession("proj-ended", "{}")
+	if err != nil {
+		t.Fatalf("add session: %v", err)
+	}
+	if err := s.EndParticipantSession(sess.ID); err != nil {
+		t.Fatalf("end session: %v", err)
+	}
+
+	_, err = s.AddParticipantSegment(ParticipantSegment{
+		SessionID: sess.ID,
+		StartTS:   100,
+		EndTS:     110,
+		Text:      "late transcript",
+	})
+	if !errors.Is(err, ErrParticipantSessionEnded) {
+		t.Fatalf("AddParticipantSegment() error = %v, want %v", err, ErrParticipantSessionEnded)
 	}
 }
 

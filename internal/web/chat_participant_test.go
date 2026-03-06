@@ -5,12 +5,14 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/gorilla/websocket"
 	"github.com/krystophny/tabura/internal/store"
 )
 
@@ -24,6 +26,81 @@ func enableCompanionForTestProject(t *testing.T, app *App, projectKey string) {
 	cfg.CompanionEnabled = true
 	if err := app.saveCompanionConfig(project.ID, cfg); err != nil {
 		t.Fatalf("save companion config: %v", err)
+	}
+}
+
+func newParticipantTestWSConn(t *testing.T) (*chatWSConn, *websocket.Conn, func()) {
+	t.Helper()
+	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
+	serverConn := make(chan *websocket.Conn, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ws, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		serverConn <- ws
+	}))
+
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http")
+	clientConn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		srv.Close()
+		t.Fatalf("dial test websocket: %v", err)
+	}
+
+	var ws *websocket.Conn
+	select {
+	case ws = <-serverConn:
+	case <-time.After(2 * time.Second):
+		_ = clientConn.Close()
+		srv.Close()
+		t.Fatal("timed out waiting for server websocket")
+	}
+
+	cleanup := func() {
+		_ = ws.Close()
+		_ = clientConn.Close()
+		srv.Close()
+	}
+	return newChatWSConn(ws), clientConn, cleanup
+}
+
+func readParticipantMessage(t *testing.T, clientConn *websocket.Conn, timeout time.Duration) participantMessage {
+	t.Helper()
+	if err := clientConn.SetReadDeadline(time.Now().Add(timeout)); err != nil {
+		t.Fatalf("SetReadDeadline: %v", err)
+	}
+	defer func() {
+		_ = clientConn.SetReadDeadline(time.Time{})
+	}()
+
+	_, data, err := clientConn.ReadMessage()
+	if err != nil {
+		t.Fatalf("ReadMessage: %v", err)
+	}
+	var msg participantMessage
+	if err := json.Unmarshal(data, &msg); err != nil {
+		t.Fatalf("unmarshal participant message: %v", err)
+	}
+	return msg
+}
+
+func assertNoParticipantMessage(t *testing.T, clientConn *websocket.Conn, timeout time.Duration) {
+	t.Helper()
+	if err := clientConn.SetReadDeadline(time.Now().Add(timeout)); err != nil {
+		t.Fatalf("SetReadDeadline: %v", err)
+	}
+	defer func() {
+		_ = clientConn.SetReadDeadline(time.Time{})
+	}()
+
+	_, _, err := clientConn.ReadMessage()
+	if err == nil {
+		t.Fatal("unexpected participant message")
+	}
+	netErr, ok := err.(net.Error)
+	if !ok || !netErr.Timeout() {
+		t.Fatalf("ReadMessage error = %v, want timeout", err)
 	}
 }
 
@@ -560,6 +637,124 @@ func TestParticipantBinaryChunkTranscribesWAVSegmentImmediately(t *testing.T) {
 	if conn.participantBuf != nil {
 		t.Fatal("participantBuf should be cleared after immediate chunk transcription")
 	}
+}
+
+func TestParticipantBinaryChunkTranscribeFailureSendsParticipantError(t *testing.T) {
+	app := newAuthedTestApp(t)
+	t.Setenv("PATH", t.TempDir())
+	sttSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "forced sidecar failure", http.StatusBadGateway)
+	}))
+	defer sttSrv.Close()
+	app.sttURL = sttSrv.URL
+
+	project, err := app.ensureDefaultProjectRecord()
+	if err != nil {
+		t.Fatalf("ensureDefaultProjectRecord: %v", err)
+	}
+	enableCompanionForTestProject(t, app, project.ProjectKey)
+	chatSession, err := app.store.GetOrCreateChatSession(project.ProjectKey)
+	if err != nil {
+		t.Fatalf("GetOrCreateChatSession: %v", err)
+	}
+
+	conn, clientConn, cleanup := newParticipantTestWSConn(t)
+	defer cleanup()
+
+	handleParticipantStart(app, conn, chatSession.ID)
+	started := readParticipantMessage(t, clientConn, 2*time.Second)
+	if started.Type != "participant_started" {
+		t.Fatalf("start message type = %q, want participant_started", started.Type)
+	}
+
+	handleParticipantBinaryChunk(app, conn, buildParticipantSpeechWAV(240, 16000))
+
+	msg := readParticipantMessage(t, clientConn, 2*time.Second)
+	if msg.Type != "participant_error" {
+		t.Fatalf("message type = %q, want participant_error", msg.Type)
+	}
+	if !strings.Contains(msg.Error, "transcription failed") {
+		t.Fatalf("participant error = %q, want transcription failure", msg.Error)
+	}
+
+	segments, err := app.store.ListParticipantSegments(started.SessionID, 0, 0)
+	if err != nil {
+		t.Fatalf("ListParticipantSegments: %v", err)
+	}
+	if len(segments) != 0 {
+		t.Fatalf("segments count = %d, want 0 after failed transcription", len(segments))
+	}
+}
+
+func TestParticipantStopDropsLateTranscriptCommit(t *testing.T) {
+	app := newAuthedTestApp(t)
+	t.Setenv("PATH", t.TempDir())
+
+	requestStarted := make(chan struct{}, 1)
+	releaseResponse := make(chan struct{})
+	sttSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case requestStarted <- struct{}{}:
+		default:
+		}
+		<-releaseResponse
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"text":"late participant transcript"}`))
+	}))
+	defer sttSrv.Close()
+	app.sttURL = sttSrv.URL
+
+	project, err := app.ensureDefaultProjectRecord()
+	if err != nil {
+		t.Fatalf("ensureDefaultProjectRecord: %v", err)
+	}
+	enableCompanionForTestProject(t, app, project.ProjectKey)
+	chatSession, err := app.store.GetOrCreateChatSession(project.ProjectKey)
+	if err != nil {
+		t.Fatalf("GetOrCreateChatSession: %v", err)
+	}
+
+	conn, clientConn, cleanup := newParticipantTestWSConn(t)
+	defer cleanup()
+
+	handleParticipantStart(app, conn, chatSession.ID)
+	started := readParticipantMessage(t, clientConn, 2*time.Second)
+	if started.Type != "participant_started" {
+		t.Fatalf("start message type = %q, want participant_started", started.Type)
+	}
+
+	handleParticipantBinaryChunk(app, conn, buildParticipantSpeechWAV(240, 16000))
+
+	select {
+	case <-requestStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for participant STT request")
+	}
+
+	handleParticipantStop(app, conn)
+	stopped := readParticipantMessage(t, clientConn, 2*time.Second)
+	if stopped.Type != "participant_stopped" {
+		t.Fatalf("stop message type = %q, want participant_stopped", stopped.Type)
+	}
+
+	close(releaseResponse)
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		segments, err := app.store.ListParticipantSegments(started.SessionID, 0, 0)
+		if err != nil {
+			t.Fatalf("ListParticipantSegments: %v", err)
+		}
+		if len(segments) == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("segments count = %d, want 0 after stop", len(segments))
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	assertNoParticipantMessage(t, clientConn, 250*time.Millisecond)
 }
 
 func TestParticipantStartUsesChatSessionProjectKey(t *testing.T) {
