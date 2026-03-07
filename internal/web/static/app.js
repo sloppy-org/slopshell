@@ -21,13 +21,18 @@ import {
   buildContextPrefix, getLastInputPosition, setLastInputPosition,
 } from './ui.js';
 import {
-  configureConversation,
-  isConversationMode,
-  setConversationMode,
-  onTTSPlaybackComplete,
-  cancelConversationListen,
-  isConversationListenActive,
-} from './conversation.js';
+  configureLiveSession,
+  getLiveSessionSnapshot,
+  handleLiveSessionMessage,
+  isLiveSessionListenActive,
+  LIVE_SESSION_HOTWORD_DEFAULT,
+  LIVE_SESSION_MODE_DIALOGUE,
+  LIVE_SESSION_MODE_MEETING,
+  onLiveSessionTTSPlaybackComplete,
+  cancelLiveSessionListen,
+  startLiveSession,
+  stopLiveSession,
+} from './live-session.js';
 import {
   initHotword,
   startHotwordMonitor,
@@ -75,6 +80,11 @@ const state = {
   assistantCancelInFlight: false,
   assistantLastError: '',
   ttsPlaying: false,
+  liveSessionActive: false,
+  liveSessionMode: '',
+  liveSessionHotword: LIVE_SESSION_HOTWORD_DEFAULT,
+  liveSessionDialogueListenActive: false,
+  liveSessionDialogueListenTimer: null,
   conversationMode: false,
   conversationListenActive: false,
   conversationListenTimer: null,
@@ -438,13 +448,13 @@ class TTSPlayer {
         updateAssistantActivityIndicator();
       }
       if (playbackCompleted) {
-        onTTSPlaybackComplete();
+        onLiveSessionTTSPlaybackComplete();
       }
       return;
     }
     this._playing = true;
     if (!state.ttsPlaying) {
-      cancelConversationListen();
+      cancelLiveSessionListen();
       state.ttsPlaying = true;
       updateAssistantActivityIndicator();
     }
@@ -575,7 +585,7 @@ function scheduleHotwordRetry() {
 function canStartHotwordMonitor() {
   const mode = syncVoiceLifecycle('can-start-hotword');
   if (!state.hotwordEnabled) return false;
-  if (!state.conversationMode) return false;
+  if (!state.liveSessionActive) return false;
   if (!canSpeakTTS()) return false;
   if (mode === VOICE_LIFECYCLE.RECORDING || mode === VOICE_LIFECYCLE.STOPPING_RECORDING) return false;
   if (mode === VOICE_LIFECYCLE.TTS_PLAYING) return false;
@@ -677,20 +687,43 @@ async function initHotwordLifecycleWithOptions(options = {}) {
   return state.hotwordEnabled;
 }
 
-function applyConversationStateSnapshot(snapshot = null) {
-  const nextMode = snapshot && typeof snapshot === 'object'
-    ? Boolean(snapshot.conversationMode)
-    : isConversationMode();
-  const nextListenActive = snapshot && typeof snapshot === 'object'
-    ? Boolean(snapshot.conversationListenActive)
-    : isConversationListenActive();
-  const nextListenTimer = snapshot && typeof snapshot === 'object'
-    ? (snapshot.conversationListenTimer ?? null)
-    : null;
-  state.conversationMode = nextMode;
-  state.conversationListenActive = nextListenActive;
-  state.conversationListenTimer = nextListenTimer;
+function applyLiveSessionStateSnapshot(snapshot = null) {
+  const nextSnapshot = snapshot && typeof snapshot === 'object'
+    ? snapshot
+    : getLiveSessionSnapshot();
+  state.liveSessionActive = Boolean(nextSnapshot.liveSessionActive);
+  state.liveSessionMode = String(nextSnapshot.liveSessionMode || '').trim().toLowerCase();
+  state.liveSessionHotword = String(nextSnapshot.liveSessionHotword || LIVE_SESSION_HOTWORD_DEFAULT).trim() || LIVE_SESSION_HOTWORD_DEFAULT;
+  state.liveSessionDialogueListenActive = Boolean(nextSnapshot.liveSessionDialogueListenActive);
+  state.liveSessionDialogueListenTimer = nextSnapshot.liveSessionDialogueListenTimer ?? null;
+  state.conversationMode = state.liveSessionActive && state.liveSessionMode === LIVE_SESSION_MODE_DIALOGUE;
+  state.conversationListenActive = state.liveSessionDialogueListenActive;
+  state.conversationListenTimer = state.liveSessionDialogueListenTimer;
   requestHotwordSync();
+}
+
+function isDialogueLiveSession() {
+  return state.liveSessionActive && state.liveSessionMode === LIVE_SESSION_MODE_DIALOGUE;
+}
+
+function isMeetingLiveSession() {
+  return state.liveSessionActive && state.liveSessionMode === LIVE_SESSION_MODE_MEETING;
+}
+
+function liveSessionStatusSummary() {
+  if (!state.liveSessionActive) return '';
+  if (isDialogueLiveSession()) {
+    const lifecycle = syncVoiceLifecycle('live-dialogue-summary');
+    if (lifecycle === VOICE_LIFECYCLE.TTS_PLAYING) return 'Dialogue • Talking';
+    if (lifecycle === VOICE_LIFECYCLE.ASSISTANT_WORKING || lifecycle === VOICE_LIFECYCLE.AWAITING_TURN) return 'Dialogue • Thinking';
+    return 'Dialogue • Listening';
+  }
+  const runtimeState = normalizeCompanionRuntimeState(state.companionRuntimeState);
+  if (runtimeState === COMPANION_RUNTIME_STATES.TALKING) return 'Meeting • Talking';
+  if (runtimeState === COMPANION_RUNTIME_STATES.THINKING) return 'Meeting • Thinking';
+  if (runtimeState === COMPANION_RUNTIME_STATES.ERROR) return 'Meeting • Error';
+  if (runtimeState === COMPANION_RUNTIME_STATES.LISTENING) return 'Meeting • Listening';
+  return 'Meeting • Quiet';
 }
 
 function isMobileSilent() {
@@ -820,7 +853,7 @@ function setTTSSilentMode(silent, { persist = true, pinPanel = true } = {}) {
   const next = Boolean(silent);
   state.ttsSilent = next;
   if (next) {
-    cancelConversationListen();
+    cancelLiveSessionListen();
     stopTTSPlayback();
     document.body.classList.add('silent-mode');
     if (pinPanel && window.matchMedia('(max-width: 767px)').matches) {
@@ -880,28 +913,31 @@ function stopTTSPlayback() {
   requestHotwordSync();
 }
 
-configureConversation({
-  canStartConversationListen,
-  onConversationListenStateChange: (snapshot) => {
-    applyConversationStateSnapshot(snapshot);
+configureLiveSession({
+  canStartDialogueListen: canStartConversationListen,
+  onStateChange: (snapshot) => {
+    applyLiveSessionStateSnapshot(snapshot);
     renderEdgeTopModelButtons();
     updateAssistantActivityIndicator();
   },
-  onConversationListenTimeout: () => {
+  onDialogueListenTimeout: () => {
     requestHotwordSync();
     updateAssistantActivityIndicator();
   },
-  onConversationSpeechDetected: () => {
+  onDialogueSpeechDetected: () => {
     beginConversationVoiceCapture();
   },
-  onConversationListenCancelled: () => {
+  onDialogueListenCancelled: () => {
     requestHotwordSync();
     updateAssistantActivityIndicator();
+  },
+  onMeetingError: (message) => {
+    showStatus(`meeting failed: ${String(message || 'unknown error')}`);
   },
   getAudioContext: () => ttsAudioCtx,
   acquireMicStream,
 });
-applyConversationStateSnapshot();
+applyLiveSessionStateSnapshot();
 
 function ensureTTSChunker() {
   if (!ttsPlayer) {
@@ -1350,7 +1386,7 @@ function enterArtifactEditMode(clientX, clientY) {
   if (!isTextArtifactPaneActive()) return false;
   const editor = ensureArtifactEditor();
   if (!editor) return false;
-  cancelConversationListen();
+  cancelLiveSessionListen();
   hideTextInput();
   editor.value = String(getPreviousArtifactText() || '');
   editor.style.display = '';
@@ -1410,7 +1446,7 @@ function hasVisibleCanvasArtifact() {
 }
 
 function shouldShowCompanionIdleSurface() {
-  return Boolean(state.companionEnabled) && !hasVisibleCanvasArtifact() && !isHubActive();
+  return Boolean(state.companionEnabled) && !state.liveSessionActive && !hasVisibleCanvasArtifact() && !isHubActive();
 }
 
 function updateCompanionIdleSurface() {
@@ -2108,7 +2144,7 @@ async function beginVoiceCapture(x, y, anchor, options = {}) {
     showVoiceCaptureNotice(microphoneUnavailableMessage(), x, y);
     return;
   }
-  cancelConversationListen();
+  cancelLiveSessionListen();
   // Interrupt TTS playback when starting recording
   stopTTSPlayback();
 
@@ -2257,7 +2293,7 @@ async function stopVoiceCaptureAndSend() {
     remoteStopped = true;
     const transcript = String(result?.text || '').trim();
     if (!transcript) {
-      if (state.conversationMode && isHotwordCapture) {
+      if (isDialogueLiveSession() && isHotwordCapture) {
         state.voiceAwaitingTurn = false;
         reopenConversationListen = true;
         return;
@@ -2277,14 +2313,14 @@ async function stopVoiceCaptureAndSend() {
     const x = Number.isFinite(pos?.x) ? Number(pos.x) : null;
     const y = Number.isFinite(pos?.y) ? Number(pos.y) : null;
     showVoiceCaptureNotice(`voice capture failed: ${message}`, x, y);
-    if (state.conversationMode) {
+    if (isDialogueLiveSession()) {
       reopenConversationListen = true;
     }
   } finally {
     if (!remoteStopped) {
       sttCancel();
     }
-    if (state.conversationMode) {
+    if (state.liveSessionActive) {
       stopHotwordMonitor();
       state.hotwordActive = false;
     }
@@ -2296,11 +2332,11 @@ async function stopVoiceCaptureAndSend() {
       syncVoiceLifecycle('voice-capture-stop-finished');
     }
     updateAssistantActivityIndicator();
-    if (reopenConversationListen && state.conversationMode) {
+    if (reopenConversationListen && isDialogueLiveSession()) {
       // Re-open follow-up listen only after capture teardown has settled.
       window.setTimeout(() => {
-        if (!state.conversationMode) return;
-        onTTSPlaybackComplete();
+        if (!isDialogueLiveSession()) return;
+        onLiveSessionTTSPlaybackComplete();
       }, 0);
     }
   }
@@ -2314,7 +2350,7 @@ function cancelChatVoiceCapture() {
   state.voiceAwaitingTurn = false;
   abortPendingSubmit('voice_transcript');
   sttCancel();
-  if (state.conversationMode) {
+  if (state.liveSessionActive) {
     stopHotwordMonitor();
     state.hotwordActive = false;
   }
@@ -2465,7 +2501,7 @@ function deriveVoiceLifecycle() {
   if (isRecording()) return VOICE_LIFECYCLE.RECORDING;
   if (state.chatVoiceCapture?.stopping) return VOICE_LIFECYCLE.STOPPING_RECORDING;
   if (state.voiceAwaitingTurn) return VOICE_LIFECYCLE.AWAITING_TURN;
-  if (isConversationListenActive()) return VOICE_LIFECYCLE.LISTENING;
+  if (isLiveSessionListenActive()) return VOICE_LIFECYCLE.LISTENING;
   if (hasLocalStopCapableWork()) return VOICE_LIFECYCLE.ASSISTANT_WORKING;
   if (isTTSSpeaking()) return VOICE_LIFECYCLE.TTS_PLAYING;
   return VOICE_LIFECYCLE.IDLE;
@@ -2489,6 +2525,7 @@ function isUiReadyForStatus() {
 
 function canStartConversationListen() {
   if (!canSpeakTTS()) return false;
+  if (!isDialogueLiveSession()) return false;
   const mode = syncVoiceLifecycle('can-start-conversation');
   if (mode === VOICE_LIFECYCLE.RECORDING || mode === VOICE_LIFECYCLE.STOPPING_RECORDING) return false;
   if (mode === VOICE_LIFECYCLE.TTS_PLAYING) return false;
@@ -2509,7 +2546,7 @@ function currentIndicatorMode() {
   if (mode === VOICE_LIFECYCLE.RECORDING) return 'recording';
   if (mode === VOICE_LIFECYCLE.LISTENING) return 'listening';
   if (isStopCapableLifecycle(mode)) return 'play';
-  if (state.conversationMode && state.hotwordActive) return 'paused';
+  if (state.liveSessionActive && state.hotwordActive) return 'paused';
   if (state.indicatorSuppressedByCanvasUpdate) return '';
   return '';
 }
@@ -3994,6 +4031,51 @@ async function toggleCompanionIdleSurfacePreference() {
   }
 }
 
+async function activateLiveSession(mode) {
+  const normalized = String(mode || '').trim().toLowerCase();
+  if (normalized !== LIVE_SESSION_MODE_DIALOGUE && normalized !== LIVE_SESSION_MODE_MEETING) return false;
+  if (!activeProject() || isHubActive()) return false;
+  const wasMeeting = isMeetingLiveSession();
+  if (state.liveSessionActive) {
+    stopLiveSession();
+    applyLiveSessionStateSnapshot();
+  }
+  if (wasMeeting && normalized !== LIVE_SESSION_MODE_MEETING) {
+    await updateCompanionConfig({ companion_enabled: false }).catch(() => {});
+  }
+  if (normalized === LIVE_SESSION_MODE_MEETING) {
+    await updateCompanionConfig({ companion_enabled: true });
+    try {
+      const started = await startLiveSession(LIVE_SESSION_MODE_MEETING, state.chatWs);
+      applyLiveSessionStateSnapshot();
+      return started;
+    } catch (err) {
+      await updateCompanionConfig({ companion_enabled: false }).catch(() => {});
+      applyLiveSessionStateSnapshot();
+      throw err;
+    }
+  }
+  const started = await startLiveSession(LIVE_SESSION_MODE_DIALOGUE, state.chatWs);
+  applyLiveSessionStateSnapshot();
+  return started;
+}
+
+async function deactivateLiveSession(options = {}) {
+  const silent = Boolean(options?.silent);
+  const disableMeetingConfig = Boolean(options?.disableMeetingConfig);
+  const wasMeeting = isMeetingLiveSession();
+  stopLiveSession();
+  applyLiveSessionStateSnapshot();
+  if (disableMeetingConfig && wasMeeting) {
+    await updateCompanionConfig({ companion_enabled: false }).catch(() => {});
+  }
+  renderEdgeTopModelButtons();
+  updateAssistantActivityIndicator();
+  if (!silent) {
+    showStatus('live off');
+  }
+}
+
 function resolveInitialProjectID() {
   if (state.startupBehavior === 'hub_first') {
     const hub = hubProject();
@@ -4101,24 +4183,78 @@ function renderEdgeTopModelButtons() {
   effortWrap.appendChild(effortSelect);
   host.appendChild(effortWrap);
 
-  const convButton = document.createElement('button');
-  convButton.type = 'button';
-  convButton.className = 'edge-project-btn edge-model-btn edge-conv-btn';
-  convButton.textContent = 'conv';
-  convButton.setAttribute('aria-pressed', state.conversationMode ? 'true' : 'false');
-  if (state.conversationMode) {
-    convButton.classList.add('is-active');
+  const liveLabel = document.createElement('span');
+  liveLabel.className = 'edge-project-btn edge-model-btn edge-live-label';
+  liveLabel.textContent = 'Live';
+  host.appendChild(liveLabel);
+
+  const liveDisabled = !project || hubActive || state.projectSwitchInFlight || state.projectModelSwitchInFlight;
+  if (state.liveSessionActive) {
+    const liveStatus = document.createElement('span');
+    liveStatus.className = 'edge-project-btn edge-model-btn edge-live-status';
+    liveStatus.textContent = liveSessionStatusSummary();
+    host.appendChild(liveStatus);
+
+    if (state.hotwordEnabled) {
+      const hotwordBadge = document.createElement('span');
+      hotwordBadge.className = 'edge-project-btn edge-model-btn edge-live-hotword';
+      hotwordBadge.textContent = state.liveSessionHotword || LIVE_SESSION_HOTWORD_DEFAULT;
+      host.appendChild(hotwordBadge);
+    }
+
+    const stopButton = document.createElement('button');
+    stopButton.type = 'button';
+    stopButton.className = 'edge-project-btn edge-model-btn edge-live-stop-btn';
+    stopButton.textContent = 'Stop';
+    stopButton.disabled = liveDisabled;
+    stopButton.addEventListener('click', () => {
+      void deactivateLiveSession({ disableMeetingConfig: true });
+    });
+    host.appendChild(stopButton);
+  } else {
+    const dialogueButton = document.createElement('button');
+    dialogueButton.type = 'button';
+    dialogueButton.className = 'edge-project-btn edge-model-btn edge-live-dialogue-btn edge-conv-btn';
+    dialogueButton.textContent = 'Dialogue';
+    dialogueButton.disabled = liveDisabled || !ttsEnabled;
+    dialogueButton.addEventListener('click', () => {
+      void activateLiveSession(LIVE_SESSION_MODE_DIALOGUE)
+        .then((started) => {
+          renderEdgeTopModelButtons();
+          updateAssistantActivityIndicator();
+          if (started) {
+            showStatus('live dialogue on');
+          }
+        })
+        .catch((err) => {
+          const message = String(err?.message || err || 'live dialogue failed');
+          showStatus(`live dialogue failed: ${message}`);
+        });
+    });
+    host.appendChild(dialogueButton);
+
+    const meetingButton = document.createElement('button');
+    meetingButton.type = 'button';
+    meetingButton.className = 'edge-project-btn edge-model-btn edge-live-meeting-btn';
+    meetingButton.textContent = 'Meeting';
+    meetingButton.disabled = liveDisabled;
+    meetingButton.addEventListener('click', () => {
+      void activateLiveSession(LIVE_SESSION_MODE_MEETING)
+        .then((started) => {
+          renderEdgeTopModelButtons();
+          updateAssistantActivityIndicator();
+          if (started) {
+            showStatus('live meeting on');
+          }
+        })
+        .catch((err) => {
+          const message = String(err?.message || err || 'live meeting failed');
+          appendPlainMessage('system', `Live meeting failed: ${message}`);
+          showStatus(`live meeting failed: ${message}`);
+        });
+    });
+    host.appendChild(meetingButton);
   }
-  convButton.disabled = !ttsEnabled || state.projectSwitchInFlight || state.projectModelSwitchInFlight;
-  convButton.addEventListener('click', () => {
-    const next = !isConversationMode();
-    const enabled = setConversationMode(next);
-    applyConversationStateSnapshot();
-    renderEdgeTopModelButtons();
-    updateAssistantActivityIndicator();
-    showStatus(enabled ? 'companion mode on' : 'companion mode off');
-  });
-  host.appendChild(convButton);
 
   const yoloButton = document.createElement('button');
   yoloButton.type = 'button';
@@ -4523,7 +4659,7 @@ function startAssistantActivityWatcher() {
       requestMicRefresh();
       stopHotwordMonitor();
       state.hotwordActive = false;
-      cancelConversationListen();
+      cancelLiveSessionListen();
       releaseMicStream({ force: true });
       if (state.chatVoiceCapture) {
         cancelChatVoiceCapture();
@@ -4634,7 +4770,11 @@ function openChatWs() {
 
   ws.onclose = () => {
     if (turnToken !== state.chatWsToken || targetSessionID !== state.chatSessionId) return;
-    cancelConversationListen();
+    cancelLiveSessionListen();
+    if (isMeetingLiveSession()) {
+      stopLiveSession();
+      applyLiveSessionStateSnapshot();
+    }
     if (state.chatVoiceCapture || state.voiceAwaitingTurn) {
       cancelChatVoiceCapture();
       sttCancel();
@@ -4674,6 +4814,13 @@ function isVoiceOutputModePayload(payload) {
 function handleChatEvent(payload) {
   const type = String(payload?.type || '').trim();
   if (!type) return;
+
+  if (handleLiveSessionMessage(payload)) {
+    applyLiveSessionStateSnapshot();
+    renderEdgeTopModelButtons();
+    updateAssistantActivityIndicator();
+    return;
+  }
 
   if (type === 'companion_state') {
     const projectKey = String(payload?.project_key || '').trim();
@@ -4740,12 +4887,20 @@ function handleChatEvent(payload) {
     } else if (actionType === 'toggle_silent') {
       toggleTTSSilentMode();
     } else if (actionType === 'toggle_conversation') {
-      const next = !isConversationMode();
-      const enabled = setConversationMode(next);
-      applyConversationStateSnapshot();
-      renderEdgeTopModelButtons();
-      updateAssistantActivityIndicator();
-      showStatus(enabled ? 'companion mode on' : 'companion mode off');
+      const next = state.liveSessionActive ? '' : LIVE_SESSION_MODE_DIALOGUE;
+      const action = next
+        ? activateLiveSession(next)
+        : deactivateLiveSession({ disableMeetingConfig: true });
+      Promise.resolve(action)
+        .then(() => {
+          renderEdgeTopModelButtons();
+          updateAssistantActivityIndicator();
+          showStatus(next ? 'live dialogue on' : 'live off');
+        })
+        .catch((err) => {
+          const message = String(err?.message || err || 'live toggle failed');
+          showStatus(`live toggle failed: ${message}`);
+        });
     }
     return;
   }
@@ -4913,11 +5068,11 @@ function handleChatEvent(payload) {
       }
     }
     state.canvasActionThisTurn = false;
-    // If Companion Mode is active but no TTS was queued (e.g. TTS error,
+    // If live dialogue is active but no TTS was queued (e.g. TTS error,
     // empty md, or all text already spoken during streaming), kick the listen
-    // cycle so Companion Mode does not stall.
-    if (state.conversationMode && !ttsPlayer && shouldSpeakTurn) {
-      onTTSPlaybackComplete();
+    // cycle so the hands-free loop does not stall.
+    if (isDialogueLiveSession() && !ttsPlayer && shouldSpeakTurn) {
+      onLiveSessionTTSPlaybackComplete();
     }
     return;
   }
@@ -5016,8 +5171,8 @@ function handleChatEvent(payload) {
     void refreshAssistantActivity();
     updateOverlay(`**Error:** ${errText}`);
     window.setTimeout(() => hideOverlay(), 2000);
-    if (state.conversationMode) {
-      onTTSPlaybackComplete();
+    if (isDialogueLiveSession()) {
+      onLiveSessionTTSPlaybackComplete();
     }
   }
 }
@@ -5030,7 +5185,7 @@ async function switchProject(projectID) {
 
   state.projectSwitchInFlight = true;
   showStatus('switching project...');
-  cancelConversationListen();
+  await deactivateLiveSession({ silent: true, disableMeetingConfig: true });
   cancelChatVoiceCapture();
   closeChatWs();
   closeCanvasWs();
@@ -5135,7 +5290,7 @@ async function submitMessage(text, options = {}) {
     }
     return;
   }
-  cancelConversationListen();
+  cancelLiveSessionListen();
   startVoiceLifecycleOp('submit-message');
   let submitController = null;
   if (submitKind) {
@@ -5231,7 +5386,7 @@ async function submitMessage(text, options = {}) {
 }
 
 function forceVoiceLifecycleIdle(statusText = 'stopped') {
-  cancelConversationListen();
+  cancelLiveSessionListen();
   state.voiceTranscriptSubmitInFlight = false;
   abortPendingSubmit('voice_transcript');
   sttCancel();
@@ -5348,11 +5503,15 @@ async function cancelActiveAssistantTurnWithRetry(maxAttempts = 3, options = nul
 
 async function handleStopAction() {
   startVoiceLifecycleOp('stop-action');
-  if (isConversationListenActive()) {
-    cancelConversationListen();
+  if (isLiveSessionListenActive()) {
+    cancelLiveSessionListen();
     setVoiceLifecycle(VOICE_LIFECYCLE.IDLE, 'stop-listening');
     showStatus('ready');
     updateAssistantActivityIndicator();
+    return;
+  }
+  if (state.liveSessionActive && !state.chatVoiceCapture && !isAssistantWorking()) {
+    await deactivateLiveSession({ disableMeetingConfig: true });
     return;
   }
 
@@ -6182,9 +6341,9 @@ function bindUi() {
     };
 
     const handleWorkspaceTap = (target, x, y) => {
-      if (isConversationListenActive()) {
+      if (isLiveSessionListenActive()) {
         if (isVoiceInteractionTarget(target, x, y)) return;
-        cancelConversationListen();
+        cancelLiveSessionListen();
         if (isKeyboardInputMode()) {
           const anchor = state.hasArtifact && canvasText ? getAnchorFromPoint(x, y) : null;
           openComposerAt(x, y, anchor);
@@ -6308,7 +6467,7 @@ function bindUi() {
         return;
       }
       ev.preventDefault();
-      cancelConversationListen();
+      cancelLiveSessionListen();
       let anchor = null;
       if (state.hasArtifact && canvasText) {
         anchor = getAnchorFromPoint(ev.clientX, ev.clientY);
@@ -6321,7 +6480,7 @@ function bindUi() {
   const floatingInput = document.getElementById('floating-input');
   if (floatingInput instanceof HTMLTextAreaElement) {
     floatingInput.addEventListener('focus', () => {
-      cancelConversationListen();
+      cancelLiveSessionListen();
     });
     floatingInput.addEventListener('keydown', (ev) => {
       if (ev.key === 'Enter' && !ev.shiftKey) {
@@ -6351,7 +6510,7 @@ function bindUi() {
   const chatPaneInput = document.getElementById('chat-pane-input');
   if (chatPaneInput instanceof HTMLTextAreaElement) {
     chatPaneInput.addEventListener('focus', () => {
-      cancelConversationListen();
+      cancelLiveSessionListen();
     });
     chatPaneInput.addEventListener('keydown', (ev) => {
       if (ev.key === 'Enter' && !ev.shiftKey) {
@@ -6405,8 +6564,8 @@ function bindUi() {
       if (isInEdgeZone(ev.clientX, ev.clientY)) return;
       const edgeR = chatHistory.closest('.edge-panel');
       if (edgeR && !edgeR.classList.contains('edge-pinned')) return;
-      if (isConversationListenActive()) {
-        cancelConversationListen();
+      if (isLiveSessionListenActive()) {
+        cancelLiveSessionListen();
         void beginVoiceCaptureFromPoint(ev.clientX, ev.clientY);
         return;
       }
@@ -6491,8 +6650,8 @@ function bindUi() {
     // Control long-press for PTT
     if (ev.key === 'Control' && !ev.repeat) {
       if (state.chatCtrlHoldTimer || state.chatVoiceCapture) return;
-      if (isConversationListenActive()) {
-        cancelConversationListen();
+      if (isLiveSessionListenActive()) {
+        cancelLiveSessionListen();
       }
       state.chatCtrlHoldTimer = window.setTimeout(() => {
         state.chatCtrlHoldTimer = null;
@@ -6551,7 +6710,7 @@ function bindUi() {
       const cpInput = document.getElementById('chat-pane-input');
       const chatPaneOpen = edgeR && (edgeR.classList.contains('edge-active') || edgeR.classList.contains('edge-pinned'));
       if (chatPaneOpen && cpInput instanceof HTMLTextAreaElement && !window.matchMedia('(max-width: 767px)').matches) {
-        cancelConversationListen();
+        cancelLiveSessionListen();
         cpInput.focus();
         cpInput.value = ev.key;
         const caret = ev.key.length;
@@ -6565,7 +6724,7 @@ function bindUi() {
       }
       const cx = window.innerWidth / 2 - 130;
       const cy = window.innerHeight / 2;
-      cancelConversationListen();
+      cancelLiveSessionListen();
       openComposerAt(cx, cy, null, ev.key);
       ev.preventDefault();
       return;

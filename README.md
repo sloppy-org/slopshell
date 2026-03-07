@@ -5,7 +5,7 @@ Core paradigm:
 - Tap to talk, right-click to type, keyboard auto-activates. No visible chrome.
 - Responses stream as ephemeral overlays; document edits update in place with diff highlighting.
 - Edge panels (hover/swipe to reveal) for project switching and chat panel access.
-- Companion Mode is the active unified assistant surface for live meetings, 1:1 conversations, and workday assistance.
+- Live sessions are split into `Dialogue` and `Meeting`, with shared hotword and audio runtime behavior.
 
 License: MIT (`LICENSE`)
 Legal notice: Tabura is provided "as is" and "as available" without warranties, and to the maximum extent permitted by applicable law the authors/contributors accept no liability for damages, data loss, or misuse. You are solely responsible for backups, verification, and safe operation. See [`DISCLAIMER.md`](DISCLAIMER.md).
@@ -14,7 +14,7 @@ Legal notice: Tabura is provided "as is" and "as available" without warranties, 
 
 - **Spec hub**: [`docs/spec-index.md`](docs/spec-index.md)
 - **System architecture**: [`docs/architecture.md`](docs/architecture.md)
-- **Companion Mode whitepaper**: [`docs/companion-mode-whitepaper.md`](docs/companion-mode-whitepaper.md)
+- **Live session direction**: [`docs/companion-mode-whitepaper.md`](docs/companion-mode-whitepaper.md)
 - **Codex app-server integration**: [`docs/codex-app-server-pivot.md`](docs/codex-app-server-pivot.md)
 - **HTTP/MCP interface inventory**: [`docs/interfaces.md`](docs/interfaces.md)
 - **UI paradigm**: [`docs/object-scoped-intent-ui.md`](docs/object-scoped-intent-ui.md)
@@ -149,8 +149,8 @@ Zen canvas behavior:
 - Browser opens to tabula rasa (blank white screen) or last artifact.
 - Tap anywhere to start/stop voice recording. Right-click to type. Keyboard auto-activates.
 - Built-in VAD auto-stop detects utterance end and commits speech.
-- Companion Mode is botless, local-first, and Whisper-backed by default.
-- If no document is displayed, Companion Mode shows a full-screen minimal humanoid idle surface or optional black mode.
+- Live sessions are local-first and Whisper-backed by default.
+- The main canvas stays empty; live controls live in the hidden top edge panel.
 - Meetings and long-running jobs default to temporary projects with persisted text artifacts only.
 - Assistant output follows one path only:
   - chat-only (spoken), or

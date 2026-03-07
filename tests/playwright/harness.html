@@ -1014,7 +1014,7 @@
               window.__harnessLog.push({ type: 'participant', action: 'blocked' });
               setTimeout(() => {
                 if (ws.onmessage) {
-                  ws.onmessage({ data: JSON.stringify({ type: 'participant_error', error: 'companion mode is disabled' }) });
+                  ws.onmessage({ data: JSON.stringify({ type: 'participant_error', error: 'meeting mode is disabled' }) });
                 }
               }, 5);
               return;

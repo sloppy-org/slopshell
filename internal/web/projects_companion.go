@@ -365,7 +365,7 @@ func (a *App) disableCompanionCapture(projectKey string) {
 			return
 		}
 		_ = conn.writeJSON(participantMessage{Type: "participant_stopped", SessionID: stoppedSessionID})
-		_ = conn.writeJSON(participantMessage{Type: "participant_error", Error: "companion mode is disabled"})
+		_ = conn.writeJSON(participantMessage{Type: "participant_error", Error: "meeting mode is disabled"})
 	})
 
 	sessions, err := a.store.ListParticipantSessions(cleanProjectKey)

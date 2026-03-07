@@ -83,43 +83,34 @@ UI behavior targets minimal redraw and low-motion interaction:
 - use high-contrast text and structural markers for diffs
 - preserve document continuity over chat-like modality switching
 
-## Companion Mode
+## Live Sessions
 
-This section describes the active continuous assistant surface. Some voice-loop
-internals still use legacy conversation naming, but that behavior belongs to
-Companion Mode rather than a separate product surface.
+Tabura exposes exactly two live session types through the hidden top edge panel:
 
-Companion Mode is the single continuous assistant mode for:
+- `Dialogue`
+- `Meeting`
 
-- live in-person meetings
-- one-on-one conversations
-- solo workday assistant presence
-- online calls as one additional context source
+Shared baseline:
 
-Companion Mode is:
-
-- botless
 - local-first
 - Whisper-backed by default
-- manually toggled
-- always-transcribing for context
+- built-in `Alexa` hotword
+- one shared browser audio/runtime owner
+- no floating on-canvas launcher
 
-Default capture policy:
+`Dialogue` is for direct back-and-forth with Tabura:
 
-- microphone only
-- no separate meeting attendee/bot
-- no mandatory cloud recorder identity
+- hands-free after entry
+- lower turn-end latency
+- interruption and follow-up listening
+- full spoken requests without requiring the hotword
 
-Default flow:
-1. User explicitly enters Companion Mode.
-2. Tabura continuously transcribes microphone input for context.
-3. Directed-speech / command detection decides when the assistant should answer.
-4. Assistant responds via TTS playback unless silent mode is enabled.
-5. Transcript context continues even when the assistant stays silent.
+`Meeting` is for room context with selective replies:
 
-Idle surface:
-
-- if no document is displayed, show a full-screen minimal humanoid face
+- continuous transcription for context
+- stronger directed-speech gating before speaking
+- `Alexa` remains a direct trigger
+- microphone only, with no separate meeting bot identity
 - face states represent `idle`, `listening`, `thinking`, `talking`, and `error`
 - black mode is the alternate idle surface
 - if a canvas document is visible, the document takes precedence over the idle surface

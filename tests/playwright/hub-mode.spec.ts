@@ -170,16 +170,16 @@ test('system switch_model action updates project model state', async ({ page }) 
 
 test('system toggle actions update ui state', async ({ page }) => {
   const silentButton = page.locator('#edge-top-models .edge-silent-btn');
-  const convButton = page.locator('#edge-top-models .edge-conv-btn');
+  const dialogueButton = page.locator('#edge-top-models .edge-live-dialogue-btn');
 
   await expect(silentButton).not.toHaveClass(/is-active/);
-  await expect(convButton).not.toHaveClass(/is-active/);
+  await expect(dialogueButton).toBeVisible();
 
   await injectChatEvent(page, { type: 'system_action', action: { type: 'toggle_silent' } });
   await injectChatEvent(page, { type: 'system_action', action: { type: 'toggle_conversation' } });
 
   await expect(silentButton).toHaveClass(/is-active/);
-  await expect(convButton).toHaveClass(/is-active/);
+  await expect(page.locator('#edge-top-models .edge-live-status')).toContainText('Dialogue');
 });
 
 test('system switch_project action routes through project activation', async ({ page }) => {

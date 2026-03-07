@@ -30,8 +30,12 @@ async function waitReady(page: Page) {
 
 async function injectChatEvent(page: Page, payload: Record<string, unknown>) {
   await page.evaluate((eventPayload) => {
+    const app = (window as any)._taburaApp;
+    const sessionId = String(app?.getState?.().chatSessionId || '');
     const sessions = (window as any).__mockWsSessions || [];
-    const chatWs = sessions.find((ws: any) => typeof ws.url === 'string' && ws.url.includes('/ws/chat/'));
+    const chatWs = sessions.find((ws: any) => typeof ws.url === 'string'
+      && ws.url.includes('/ws/chat/')
+      && (!sessionId || ws.url.includes(`/ws/chat/${sessionId}`)));
     if (chatWs?.injectEvent) {
       chatWs.injectEvent(eventPayload);
     }
@@ -46,28 +50,55 @@ async function setConversationListenWindowMs(page: Page, ms: number) {
 
 async function waitForEdgeButtons(page: Page) {
   await expect.poll(async () => page.evaluate(() => {
-    const conv = document.querySelector('#edge-top-models .edge-conv-btn');
+    const dialogue = document.querySelector('#edge-top-models .edge-live-dialogue-btn');
     const silent = document.querySelector('#edge-top-models .edge-silent-btn');
-    return Boolean(conv && silent);
+    return Boolean(dialogue && silent);
   })).toBe(true);
 }
 
-async function setConversationMode(page: Page, enabled: boolean) {
-  await waitForEdgeButtons(page);
-  await page.evaluate((target) => {
-    const button = document.querySelector('#edge-top-models .edge-conv-btn');
-    if (!(button instanceof HTMLButtonElement)) {
-      throw new Error('companion mode button not found');
-    }
-    const current = button.getAttribute('aria-pressed') === 'true';
-    if (current !== target) {
+async function switchToTestProject(page: Page) {
+  await page.evaluate(() => {
+    const buttons = Array.from(document.querySelectorAll('#edge-top-projects .edge-project-btn'));
+    const button = buttons.find((node) => node.textContent?.trim().toLowerCase() === 'test');
+    if (button instanceof HTMLButtonElement) {
       button.click();
     }
-  }, enabled);
+  });
   await expect.poll(async () => page.evaluate(() => {
-    const button = document.querySelector('#edge-top-models .edge-conv-btn');
-    return button instanceof HTMLButtonElement ? button.getAttribute('aria-pressed') : 'false';
-  })).toBe(enabled ? 'true' : 'false');
+    const app = (window as any)._taburaApp;
+    const state = app?.getState?.();
+    const wsOpen = (window as any).WebSocket.OPEN;
+    if (String(state?.activeProjectId || '') !== 'test') return '';
+    return state?.chatWs?.readyState === wsOpen ? 'ready' : 'waiting';
+  })).toBe('ready');
+}
+
+async function setConversationMode(page: Page, enabled: boolean) {
+  if (enabled) {
+    await switchToTestProject(page);
+    await waitForEdgeButtons(page);
+    const dialogueButton = page.locator('#edge-top-models .edge-live-dialogue-btn');
+    await expect(dialogueButton).toBeEnabled();
+    await page.evaluate(() => {
+      const button = document.querySelector('#edge-top-models .edge-live-dialogue-btn');
+      if (!(button instanceof HTMLButtonElement)) {
+        throw new Error('dialogue button not found');
+      }
+      button.click();
+    });
+    await expect(page.locator('#edge-top-models .edge-live-status')).toContainText('Dialogue');
+    return;
+  }
+  const stopButton = page.locator('#edge-top-models .edge-live-stop-btn');
+  if (await stopButton.count()) {
+    await page.evaluate(() => {
+      const button = document.querySelector('#edge-top-models .edge-live-stop-btn');
+      if (button instanceof HTMLButtonElement) {
+        button.click();
+      }
+    });
+  }
+  await expect(page.locator('#edge-top-models .edge-live-dialogue-btn')).toBeVisible();
 }
 
 async function setSilentMode(page: Page, enabled: boolean) {
@@ -102,49 +133,26 @@ async function triggerVoiceAssistantTTS(page: Page, turnID: string, text = 'Hell
 
 test.beforeEach(async ({ page }) => {
   await waitReady(page);
-  await page.evaluate(() => {
-    window.localStorage.removeItem('tabura.companionMode');
-    window.localStorage.removeItem('tabura.conversationMode');
-  });
 });
 
-test('Companion Mode toggle persists in localStorage', async ({ page }) => {
+test('Live panel swaps Dialogue/Meeting choices for active status and Stop', async ({ page }) => {
+  await waitForEdgeButtons(page);
+  await expect(page.locator('#edge-top-models .edge-live-label')).toHaveText('Live');
+  await expect(page.locator('#edge-top-models .edge-live-dialogue-btn')).toBeVisible();
+  await expect(page.locator('#edge-top-models .edge-live-meeting-btn')).toBeVisible();
+
   await setConversationMode(page, true);
 
-  const persisted = await page.evaluate(() => window.localStorage.getItem('tabura.companionMode'));
-  expect(persisted).toBe('true');
-
-  await page.reload();
-  await page.waitForTimeout(200);
-  await waitForEdgeButtons(page);
-  await expect.poll(async () => page.evaluate(() => {
-    const button = document.querySelector('#edge-top-models .edge-conv-btn');
-    return button instanceof HTMLButtonElement ? button.getAttribute('aria-pressed') : 'false';
-  })).toBe('true');
-});
-
-test('Companion Mode reads the legacy localStorage key once and rewrites to the new key', async ({ page }) => {
-  await page.evaluate(() => {
-    window.localStorage.setItem('tabura.conversationMode', 'true');
-  });
-
-  await page.reload();
-  await page.waitForTimeout(200);
-  await waitForEdgeButtons(page);
-  await expect.poll(async () => page.evaluate(() => {
-    const button = document.querySelector('#edge-top-models .edge-conv-btn');
-    return button instanceof HTMLButtonElement ? button.getAttribute('aria-pressed') : 'false';
-  })).toBe('true');
+  await expect(page.locator('#edge-top-models .edge-live-status')).toContainText('Dialogue');
+  await expect(page.locator('#edge-top-models .edge-live-stop-btn')).toBeVisible();
+  await expect(page.locator('#edge-top-models .edge-live-dialogue-btn')).toHaveCount(0);
 
   await setConversationMode(page, false);
-  const keys = await page.evaluate(() => ({
-    legacy: window.localStorage.getItem('tabura.conversationMode'),
-    current: window.localStorage.getItem('tabura.companionMode'),
-  }));
-  expect(keys).toEqual({ legacy: null, current: 'false' });
+  await expect(page.locator('#edge-top-models .edge-live-dialogue-btn')).toBeVisible();
+  await expect(page.locator('#edge-top-models .edge-live-meeting-btn')).toBeVisible();
 });
 
-test('Companion Mode shows listening indicator after TTS playback completes', async ({ page }) => {
+test('Dialogue shows listening indicator after TTS playback completes', async ({ page }) => {
   await setConversationListenWindowMs(page, 1_200);
   await setConversationMode(page, true);
   await clearLog(page);
@@ -162,7 +170,7 @@ test('Companion Mode shows listening indicator after TTS playback completes', as
   })).toBe(true);
 });
 
-test('Companion Mode off does not open listening indicator after TTS', async ({ page }) => {
+test('Dialogue off does not open listening indicator after TTS', async ({ page }) => {
   await setConversationListenWindowMs(page, 1_200);
   await setConversationMode(page, false);
   await clearLog(page);
@@ -257,7 +265,7 @@ test('tap during conversation listen cancels listen and starts recording', async
   expect(stillListening).toBe(false);
 });
 
-test('PTT during conversation listen cancels listen and starts push-to-talk', async ({ page }) => {
+test('PTT during dialogue listen cancels listen and starts push-to-talk', async ({ page }) => {
   await setConversationListenWindowMs(page, 3_000);
   await setConversationMode(page, true);
   await page.evaluate(() => {
@@ -285,7 +293,7 @@ test('PTT during conversation listen cancels listen and starts push-to-talk', as
   }, { timeout: 3_000 }).toBe(true);
 });
 
-test('silent mode with conversation enabled does not open conversation listen', async ({ page }) => {
+test('silent mode with dialogue enabled does not open follow-up listen', async ({ page }) => {
   await setConversationListenWindowMs(page, 1_200);
   await setConversationMode(page, true);
   await setSilentMode(page, true);

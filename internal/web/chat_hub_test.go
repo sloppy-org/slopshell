@@ -253,8 +253,8 @@ func TestExecuteSystemActionToggleConversationReturnsCompanionMessage(t *testing
 	if err != nil {
 		t.Fatalf("execute toggle_conversation: %v", err)
 	}
-	if strings.TrimSpace(msg) != "Toggled Companion Mode." {
-		t.Fatalf("toggle conversation message = %q, want %q", msg, "Toggled Companion Mode.")
+	if strings.TrimSpace(msg) != "Toggled Live Dialogue." {
+		t.Fatalf("toggle conversation message = %q, want %q", msg, "Toggled Live Dialogue.")
 	}
 	if payload == nil {
 		t.Fatalf("expected toggle_conversation payload")

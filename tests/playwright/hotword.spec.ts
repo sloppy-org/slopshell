@@ -26,16 +26,16 @@ async function waitReady(page: Page, query = '') {
     return s.chatWs && s.chatWs.readyState === (window as any).WebSocket.OPEN;
   }, null, { timeout: 5_000 });
   await page.waitForTimeout(200);
-  await page.evaluate(() => {
-    window.localStorage.removeItem('tabura.companionMode');
-    window.localStorage.removeItem('tabura.conversationMode');
-  });
 }
 
 async function injectChatEvent(page: Page, payload: Record<string, unknown>) {
   await page.evaluate((eventPayload) => {
+    const app = (window as any)._taburaApp;
+    const sessionId = String(app?.getState?.().chatSessionId || '');
     const sessions = (window as any).__mockWsSessions || [];
-    const chatWs = sessions.find((ws: any) => typeof ws.url === 'string' && ws.url.includes('/ws/chat/'));
+    const chatWs = sessions.find((ws: any) => typeof ws.url === 'string'
+      && ws.url.includes('/ws/chat/')
+      && (!sessionId || ws.url.includes(`/ws/chat/${sessionId}`)));
     if (chatWs?.injectEvent) {
       chatWs.injectEvent(eventPayload);
     }
@@ -62,28 +62,55 @@ async function setConversationListenWindowMs(page: Page, ms: number) {
 
 async function waitForEdgeButtons(page: Page) {
   await expect.poll(async () => page.evaluate(() => {
-    const conv = document.querySelector('#edge-top-models .edge-conv-btn');
+    const dialogue = document.querySelector('#edge-top-models .edge-live-dialogue-btn');
     const silent = document.querySelector('#edge-top-models .edge-silent-btn');
-    return Boolean(conv && silent);
+    return Boolean(dialogue && silent);
   })).toBe(true);
 }
 
-async function setConversationMode(page: Page, enabled: boolean) {
-  await waitForEdgeButtons(page);
-  await page.evaluate((target) => {
-    const button = document.querySelector('#edge-top-models .edge-conv-btn');
-    if (!(button instanceof HTMLButtonElement)) {
-      throw new Error('companion mode button not found');
-    }
-    const current = button.getAttribute('aria-pressed') === 'true';
-    if (current !== target) {
+async function switchToTestProject(page: Page) {
+  await page.evaluate(() => {
+    const buttons = Array.from(document.querySelectorAll('#edge-top-projects .edge-project-btn'));
+    const button = buttons.find((node) => node.textContent?.trim().toLowerCase() === 'test');
+    if (button instanceof HTMLButtonElement) {
       button.click();
     }
-  }, enabled);
+  });
   await expect.poll(async () => page.evaluate(() => {
-    const button = document.querySelector('#edge-top-models .edge-conv-btn');
-    return button instanceof HTMLButtonElement ? button.getAttribute('aria-pressed') : 'false';
-  })).toBe(enabled ? 'true' : 'false');
+    const app = (window as any)._taburaApp;
+    const state = app?.getState?.();
+    const wsOpen = (window as any).WebSocket.OPEN;
+    if (String(state?.activeProjectId || '') !== 'test') return '';
+    return state?.chatWs?.readyState === wsOpen ? 'ready' : 'waiting';
+  })).toBe('ready');
+}
+
+async function setConversationMode(page: Page, enabled: boolean) {
+  if (enabled) {
+    await switchToTestProject(page);
+    await waitForEdgeButtons(page);
+    const dialogueButton = page.locator('#edge-top-models .edge-live-dialogue-btn');
+    await expect(dialogueButton).toBeEnabled();
+    await page.evaluate(() => {
+      const button = document.querySelector('#edge-top-models .edge-live-dialogue-btn');
+      if (!(button instanceof HTMLButtonElement)) {
+        throw new Error('dialogue button not found');
+      }
+      button.click();
+    });
+    await expect(page.locator('#edge-top-models .edge-live-status')).toContainText('Dialogue');
+    return;
+  }
+  const stopButton = page.locator('#edge-top-models .edge-live-stop-btn');
+  if (await stopButton.count()) {
+    await page.evaluate(() => {
+      const button = document.querySelector('#edge-top-models .edge-live-stop-btn');
+      if (button instanceof HTMLButtonElement) {
+        button.click();
+      }
+    });
+  }
+  await expect(page.locator('#edge-top-models .edge-live-dialogue-btn')).toBeVisible();
 }
 
 async function triggerHotword(page: Page) {
@@ -195,7 +222,7 @@ test('hotword empty transcript re-opens conversation listen window', async ({ pa
   await expect.poll(async () => page.evaluate(() => {
     const app = (window as any)._taburaApp;
     const s = app?.getState?.();
-    return Boolean(s?.conversationListenActive);
+    return Boolean(s?.liveSessionDialogueListenActive);
   }), { timeout: 4_000 }).toBe(true);
 });
 
@@ -247,7 +274,7 @@ test('hotword is paused while TTS playback is active', async ({ page }) => {
   expect(log.some((entry) => entry.type === 'hotword' && entry.action === 'stop')).toBe(true);
 });
 
-test('Companion Mode off keeps hotword disabled', async ({ page }) => {
+test('Dialogue off keeps hotword disabled', async ({ page }) => {
   await waitReady(page);
   await setConversationListenWindowMs(page, 1_200);
   await setConversationMode(page, false);
@@ -285,7 +312,7 @@ test('hotword init failure degrades gracefully with no crash', async ({ page }) 
   })).toBe(true);
 });
 
-test('Companion Mode with hotword active shows pause indicator', async ({ page }) => {
+test('Dialogue with hotword active shows pause indicator', async ({ page }) => {
   await waitReady(page);
   await setConversationMode(page, true);
   await waitForHotwordStart(page);
@@ -347,8 +374,9 @@ test('hotword re-arms after follow-up timeout and starts a second turn', async (
     if (!s) return false;
     const localActiveTurns = s.assistantActiveTurns?.size || 0;
     return hotwordActive
-      && Boolean(s.conversationMode)
-      && !Boolean(s.conversationListenActive)
+      && Boolean(s.liveSessionActive)
+      && String(s.liveSessionMode || '') === 'dialogue'
+      && !Boolean(s.liveSessionDialogueListenActive)
       && !Boolean(s.chatVoiceCapture)
       && !Boolean(s.ttsPlaying)
       && !Boolean(s.voiceAwaitingTurn)
