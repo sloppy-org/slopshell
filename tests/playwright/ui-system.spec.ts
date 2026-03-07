@@ -455,29 +455,22 @@ test.describe('turn lifecycle events', () => {
 
 
 // =============================================================================
-// Companion Mode: multi-turn loop
+// Live Dialogue: multi-turn loop
 // =============================================================================
 
-test.describe('Companion Mode multi-turn', () => {
+test.describe('Live Dialogue multi-turn', () => {
   async function waitForEdgeButtons(page: Page) {
     await expect.poll(async () => page.evaluate(() => {
-      const conv = document.querySelector('#edge-top-models .edge-conv-btn');
+      const dialogue = document.querySelector('#edge-top-models .edge-live-dialogue-btn');
       const silent = document.querySelector('#edge-top-models .edge-silent-btn');
-      return Boolean(conv && silent);
+      return Boolean(dialogue && silent);
     })).toBe(true);
   }
 
   async function enableConversationMode(page: Page) {
     await waitForEdgeButtons(page);
-    await page.evaluate(() => {
-      const button = document.querySelector('#edge-top-models .edge-conv-btn');
-      if (!(button instanceof HTMLButtonElement)) throw new Error('companion mode button not found');
-      if (button.getAttribute('aria-pressed') !== 'true') button.click();
-    });
-    await expect.poll(async () => page.evaluate(() => {
-      const button = document.querySelector('#edge-top-models .edge-conv-btn');
-      return button instanceof HTMLButtonElement ? button.getAttribute('aria-pressed') : 'false';
-    })).toBe('true');
+    await page.locator('#edge-top-models .edge-live-dialogue-btn').click();
+    await expect(page.locator('#edge-top-models .edge-live-status')).toContainText('Dialogue');
   }
 
   async function triggerVoiceAssistantTTS(page: Page, turnID: string, text = 'Hello there.') {
@@ -496,13 +489,11 @@ test.describe('Companion Mode multi-turn', () => {
     await waitReady(page);
     await injectCanvasModuleRef(page);
     await page.evaluate(() => {
-      window.localStorage.removeItem('tabura.conversationMode');
-      window.localStorage.removeItem('tabura.companionMode');
       (window as any).__taburaConversationListenMs = 1200;
     });
   });
 
-  test('TTS playback completion triggers listen window in Companion Mode', async ({ page }) => {
+  test('TTS playback completion triggers listen window in Dialogue', async ({ page }) => {
     await enableConversationMode(page);
     await clearLog(page);
 
@@ -539,7 +530,7 @@ test.describe('Companion Mode multi-turn', () => {
     });
     await page.waitForTimeout(500);
 
-    // Even with empty message, Companion Mode should not stall
+    // Even with empty message, Dialogue should not stall
     // (onTTSPlaybackComplete should have been called as recovery)
     // Verify no unhandled rejections
     const log = await getLog(page);
@@ -617,17 +608,14 @@ test.describe('project state persistence', () => {
     expect(stored).toBe(true);
   });
 
-  test('Companion Mode persists in localStorage', async ({ page }) => {
+  test('system toggle_conversation enters live dialogue', async ({ page }) => {
     await injectChatEvent(page, {
       type: 'system_action',
       action: { type: 'toggle_conversation' },
     });
     await page.waitForTimeout(200);
 
-    const stored = await page.evaluate(() => {
-      return localStorage.getItem('tabura.companionMode');
-    });
-    expect(stored).toBe('true');
+    await expect(page.locator('#edge-top-models .edge-live-status')).toContainText('Dialogue');
   });
 });
 

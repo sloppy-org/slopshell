@@ -65,7 +65,7 @@ Migration/support docs:
 
 - `internal/web/static/index.html`
 - `internal/web/static/app.js`
-- `internal/web/static/conversation.js`
+- `internal/web/static/live-session.js`
 - `internal/web/static/hotword.js`
 - `internal/web/static/zen.js`
 - `internal/web/static/canvas.js`

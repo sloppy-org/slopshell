@@ -43,7 +43,7 @@ func handleParticipantStart(a *App, conn *chatWSConn, chatSessionID string) {
 		projectKey = "default"
 	}
 	if !cfg.CompanionEnabled {
-		_ = conn.writeJSON(participantMessage{Type: "participant_error", Error: "companion mode is disabled"})
+		_ = conn.writeJSON(participantMessage{Type: "participant_error", Error: "meeting mode is disabled"})
 		return
 	}
 	cfgJSON, _ := json.Marshal(cfg)

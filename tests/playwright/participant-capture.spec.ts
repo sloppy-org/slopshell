@@ -145,7 +145,7 @@ test('participant config PUT cannot override audio_persistence', async ({ page }
   expect(config.capture_source).toBe('microphone');
 });
 
-test('participant WS start is blocked until companion mode is explicitly enabled', async ({ page }) => {
+test('meeting capture is blocked until meeting mode is explicitly enabled', async ({ page }) => {
   await clearLog(page);
 
   await page.evaluate(() => {
@@ -184,7 +184,7 @@ test('participant capture sends 16k wav segments and clears rolling buffer after
     };
 
     try {
-      const { ParticipantCapture } = await import('/internal/web/static/participant-capture.js');
+      const { MeetingLiveCapture } = await import('/internal/web/static/live-session.js');
       const ws = {
         readyState: (window as any).WebSocket.OPEN,
         sent: [] as any[],
@@ -192,7 +192,7 @@ test('participant capture sends 16k wav segments and clears rolling buffer after
           this.sent.push(data);
         },
       };
-      const capture = new ParticipantCapture({ sessionRamCapMB: 0.02, maxSegmentDurationMS: 8_000 });
+      const capture = new MeetingLiveCapture({ sessionRamCapMB: 0.02, maxSegmentDurationMS: 8_000 });
       await capture.start(ws as any);
       callbacks.onSpeechEnd(new Float32Array(1_600).fill(0.25));
       await waitFor(() => ws.sent.some((entry: any) => entry instanceof Blob) && capture.sessionBufferedChunks === 1);
@@ -245,7 +245,7 @@ test('participant capture zeroizes RAM buffers on stop', async ({ page }) => {
     };
 
     try {
-      const { ParticipantCapture } = await import('/internal/web/static/participant-capture.js');
+      const { MeetingLiveCapture } = await import('/internal/web/static/live-session.js');
       const ws = {
         readyState: (window as any).WebSocket.OPEN,
         sent: [] as any[],
@@ -253,7 +253,7 @@ test('participant capture zeroizes RAM buffers on stop', async ({ page }) => {
           this.sent.push(data);
         },
       };
-      const capture = new ParticipantCapture({ sessionRamCapMB: 0.02, maxSegmentDurationMS: 8_000 });
+      const capture = new MeetingLiveCapture({ sessionRamCapMB: 0.02, maxSegmentDurationMS: 8_000 });
       await capture.start(ws as any);
       callbacks.onSpeechEnd(new Float32Array(1_600).fill(0.25));
       await waitFor(() => capture.sessionBufferedChunks === 1 && capture.sessionBufferedBytes > 44);
@@ -312,7 +312,7 @@ test('participant capture drops oldest session chunks when RAM cap is reached', 
     };
 
     try {
-      const { ParticipantCapture } = await import('/internal/web/static/participant-capture.js');
+      const { MeetingLiveCapture } = await import('/internal/web/static/live-session.js');
       const ws = {
         readyState: (window as any).WebSocket.OPEN,
         sent: [] as any[],
@@ -321,7 +321,7 @@ test('participant capture drops oldest session chunks when RAM cap is reached', 
         },
       };
       const capMB = 0.005;
-      const capture = new ParticipantCapture({ sessionRamCapMB: capMB, maxSegmentDurationMS: 8_000 });
+      const capture = new MeetingLiveCapture({ sessionRamCapMB: capMB, maxSegmentDurationMS: 8_000 });
       await capture.start(ws as any);
       const segmentCount = () => ws.sent.filter((entry: any) => entry instanceof Blob).length;
       callbacks.onSpeechEnd(new Float32Array(1_600).fill(0.25));
@@ -374,7 +374,7 @@ test('participant capture clears RAM buffers on error without touching web stora
     };
 
     try {
-      const { ParticipantCapture } = await import('/internal/web/static/participant-capture.js');
+      const { MeetingLiveCapture } = await import('/internal/web/static/live-session.js');
       const ws = {
         readyState: (window as any).WebSocket.OPEN,
         sent: [] as any[],
@@ -382,7 +382,7 @@ test('participant capture clears RAM buffers on error without touching web stora
           this.sent.push(data);
         },
       };
-      const capture = new ParticipantCapture({ sessionRamCapMB: 0.02, maxSegmentDurationMS: 8_000 });
+      const capture = new MeetingLiveCapture({ sessionRamCapMB: 0.02, maxSegmentDurationMS: 8_000 });
       await capture.start(ws as any);
       callbacks.onSpeechEnd(new Float32Array(1_600).fill(0.25));
       await waitFor(() => capture.sessionBufferedChunks === 1);

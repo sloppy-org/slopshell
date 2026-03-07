@@ -206,28 +206,55 @@ async function waitForSTTAction(page: Page, action: string) {
 
 async function waitForEdgeButtons(page: Page) {
   await expect.poll(async () => page.evaluate(() => {
-    const conv = document.querySelector('#edge-top-models .edge-conv-btn');
+    const dialogue = document.querySelector('#edge-top-models .edge-live-dialogue-btn');
     const silent = document.querySelector('#edge-top-models .edge-silent-btn');
-    return Boolean(conv && silent);
+    return Boolean(dialogue && silent);
   })).toBe(true);
 }
 
-async function setConversationMode(page: Page, enabled: boolean) {
-  await waitForEdgeButtons(page);
-  await page.evaluate((target) => {
-    const button = document.querySelector('#edge-top-models .edge-conv-btn');
-    if (!(button instanceof HTMLButtonElement)) {
-      throw new Error('companion mode button not found');
-    }
-    const current = button.getAttribute('aria-pressed') === 'true';
-    if (current !== target) {
+async function switchToTestProject(page: Page) {
+  await page.evaluate(() => {
+    const buttons = Array.from(document.querySelectorAll('#edge-top-projects .edge-project-btn'));
+    const button = buttons.find((node) => node.textContent?.trim().toLowerCase() === 'test');
+    if (button instanceof HTMLButtonElement) {
       button.click();
     }
-  }, enabled);
+  });
   await expect.poll(async () => page.evaluate(() => {
-    const button = document.querySelector('#edge-top-models .edge-conv-btn');
-    return button instanceof HTMLButtonElement ? button.getAttribute('aria-pressed') : 'false';
-  })).toBe(enabled ? 'true' : 'false');
+    const app = (window as any)._taburaApp;
+    const state = app?.getState?.();
+    const wsOpen = (window as any).WebSocket.OPEN;
+    if (String(state?.activeProjectId || '') !== 'test') return '';
+    return state?.chatWs?.readyState === wsOpen ? 'ready' : 'waiting';
+  })).toBe('ready');
+}
+
+async function setConversationMode(page: Page, enabled: boolean) {
+  if (enabled) {
+    await switchToTestProject(page);
+    await waitForEdgeButtons(page);
+    const dialogueButton = page.locator('#edge-top-models .edge-live-dialogue-btn');
+    await expect(dialogueButton).toBeEnabled();
+    await page.evaluate(() => {
+      const button = document.querySelector('#edge-top-models .edge-live-dialogue-btn');
+      if (!(button instanceof HTMLButtonElement)) {
+        throw new Error('dialogue button not found');
+      }
+      button.click();
+    });
+    await expect(page.locator('#edge-top-models .edge-live-status')).toContainText('Dialogue');
+    return;
+  }
+  const stopButton = page.locator('#edge-top-models .edge-live-stop-btn');
+  if (await stopButton.count()) {
+    await page.evaluate(() => {
+      const button = document.querySelector('#edge-top-models .edge-live-stop-btn');
+      if (button instanceof HTMLButtonElement) {
+        button.click();
+      }
+    });
+  }
+  await expect(page.locator('#edge-top-models .edge-live-dialogue-btn')).toBeVisible();
 }
 
 function countGetUserMediaCalls(log: HarnessLogEntry[]): number {

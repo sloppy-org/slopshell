@@ -1445,6 +1445,32 @@ body.panel-motion-enabled {
   margin-left: 0.35rem;
 }
 
+.edge-live-label,
+.edge-live-status,
+.edge-live-hotword,
+.edge-live-stop-btn,
+.edge-live-dialogue-btn,
+.edge-live-meeting-btn {
+  margin-left: 0.35rem;
+}
+
+.edge-live-label,
+.edge-live-hotword,
+.edge-live-status {
+  cursor: default;
+}
+
+.edge-live-status {
+  background: #111827;
+  border-color: #111827;
+  color: #f9fafb;
+}
+
+.edge-live-hotword {
+  border-color: #0f766e;
+  color: #0f766e;
+}
+
 .edge-yolo-btn {
   margin-left: 0.35rem;
 }

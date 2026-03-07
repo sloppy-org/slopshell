@@ -95,14 +95,15 @@ Chat hook flow:
 2. Tabura receives `canvas_import_handoff` with `handoff_id`.
 3. Tabura peeks/consumes producer handoff payload and renders artifact.
 
-## Current Voice Runtime and Companion Mode
+## Current Voice Runtime and Live Sessions
 
-Current runtime behavior still includes a legacy wake-word follow-up loop, but
-it now sits within the active Companion Mode surface documented in
-[`companion-mode-whitepaper.md`](companion-mode-whitepaper.md).
+Tabura now exposes one `Live` entry point with two policy variants:
 
-Legacy conversation mode enables hands-free voice interaction via a wake word
-("alexa" using openWakeWord's `alexa_v0.1.onnx` model).
+- `Dialogue`
+- `Meeting`
+
+Both share the same browser-side live session owner, hotword pipeline, and
+voice capture path. The built-in hotword remains `Alexa`.
 
 Wake-word detection runs entirely in the browser using ONNX Runtime Web:
 - `melspectrogram.onnx` extracts mel features from raw audio.
@@ -118,17 +119,11 @@ Audio pipeline in `hotword.js`:
 - On wake-word detection, the app begins voice recording immediately (no intermediate listen window).
 
 State transitions:
-- **Paused** (black border + pause bars): legacy conversation mode on, waiting for wake word.
+- **Quiet**: meeting live session is active and listening for context.
+- **Paused** (black border + pause bars): a live session is active and waiting for `Alexa`.
 - **Recording** (red border + red dot): wake word detected or user tapped, capturing speech.
-- **Listening** (blue border + pulse): follow-up window after TTS response (6s).
+- **Listening** (blue border + pulse): dialogue follow-up window after TTS response.
 - Follow-up timeout returns to **Paused** and restarts hotword monitoring.
-
-Companion Mode extends this legacy path in several ways:
-- it is project-scoped instead of a free-floating toggle
-- it always transcribes for context while active
-- it targets live meetings, 1:1 conversations, and workday presence with one model
-- it uses a humanoid idle surface or optional black mode when no document is shown
-- meetings and long-running tasks are intended to become temporary projects
 
 Utterance filtering (server-side in `internal/stt/transcribe.go`):
 - Whisper hallucination blocklist (13 phrases).
