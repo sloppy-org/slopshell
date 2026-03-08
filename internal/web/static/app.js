@@ -10,6 +10,7 @@ import * as inkModule from './app-ink.js';
 import * as projectsModule from './app-projects.js';
 import * as projectStateModule from './app-project-state.js';
 import * as chatTransportModule from './app-chat-transport.js';
+import * as chatSubmitModule from './app-chat-submit.js';
 import * as canvasTransportModule from './app-canvas-transport.js';
 import * as canvasUiModule from './app-canvas-ui.js';
 import * as edgePanelsModule from './app-edge-panels.js';
@@ -28,6 +29,7 @@ setAppRefs({
   ...projectsModule,
   ...projectStateModule,
   ...chatTransportModule,
+  ...chatSubmitModule,
   ...canvasTransportModule,
   ...canvasUiModule,
   ...edgePanelsModule,

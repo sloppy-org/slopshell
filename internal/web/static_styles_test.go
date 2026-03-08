@@ -16,6 +16,7 @@ func TestStyleCSSImportsSplitStylesheets(t *testing.T) {
 		`@import url("./chat.css");`,
 		`@import url("./ink.css");`,
 		`@import url("./overlay.css");`,
+		`@import url("./companion.css");`,
 		`@import url("./items.css");`,
 		`@import url("./mobile.css");`,
 	}
@@ -51,6 +52,7 @@ func TestSplitStylesheetsExistAndStayBounded(t *testing.T) {
 		"chat.css",
 		"ink.css",
 		"overlay.css",
+		"companion.css",
 		"items.css",
 		"mobile.css",
 	}
