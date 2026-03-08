@@ -31,7 +31,7 @@ const (
 )
 
 const intentLLMSystemPrompt = `You are Tabura's local router. Output JSON only.
-Allowed actions: switch_project, switch_workspace, list_workspace_items, create_workspace_from_git, switch_model, toggle_silent, toggle_live_dialogue, cancel_work, show_status, shell, open_file_canvas, make_item, delegate_item, snooze_item, split_items, capture_idea, create_github_issue, create_github_issue_split, print_item, review_someday, triage_someday, promote_someday, toggle_someday_review_nudge, chat.
+Allowed actions: switch_project, switch_workspace, list_workspace_items, create_workspace_from_git, link_workspace_artifact, list_linked_artifacts, switch_model, toggle_silent, toggle_live_dialogue, cancel_work, show_status, shell, open_file_canvas, make_item, delegate_item, snooze_item, split_items, capture_idea, create_github_issue, create_github_issue_split, print_item, review_someday, triage_someday, promote_someday, toggle_someday_review_nudge, chat.
 Use {"action":"chat"} unless user clearly requests a system action.
 For current-information requests (weather, web search, news, prices, schedules, latest/current updates), use {"action":"chat"} and MUST NOT use shell.
 For shell-like requests use {"action":"shell","command":"..."}.
@@ -318,7 +318,7 @@ func normalizeSystemActionName(raw string) string {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "toggle_conversation":
 		return "toggle_live_dialogue"
-	case "switch_project", "switch_workspace", "list_workspace_items", "create_workspace_from_git", "switch_model", "toggle_silent", "toggle_live_dialogue", "cancel_work", "show_status", "shell", "open_file_canvas", "make_item", "delegate_item", "snooze_item", "split_items", "capture_idea", "create_github_issue", "create_github_issue_split", "print_item", "review_someday", "triage_someday", "promote_someday", "toggle_someday_review_nudge":
+	case "switch_project", "switch_workspace", "list_workspace_items", "create_workspace_from_git", "link_workspace_artifact", "list_linked_artifacts", "switch_model", "toggle_silent", "toggle_live_dialogue", "cancel_work", "show_status", "shell", "open_file_canvas", "make_item", "delegate_item", "snooze_item", "split_items", "capture_idea", "create_github_issue", "create_github_issue_split", "print_item", "review_someday", "triage_someday", "promote_someday", "toggle_someday_review_nudge":
 		return strings.ToLower(strings.TrimSpace(raw))
 	default:
 		return ""
@@ -765,6 +765,17 @@ func (a *App) classifyAndExecuteSystemAction(ctx context.Context, sessionID stri
 		message, payloads, err := a.executeSystemActionPlan(sessionID, session, trimmedText, enforced)
 		if err != nil {
 			return githubIssueActionFailurePrefix(enforced) + err.Error(), nil, true
+		}
+		return message, payloads, true
+	}
+	if inlineArtifactAction := parseInlineArtifactLinkIntent(trimmedText); inlineArtifactAction != nil {
+		enforced := enforceRoutingPolicy(trimmedText, []*SystemAction{inlineArtifactAction})
+		if len(enforced) == 0 {
+			return "", nil, false
+		}
+		message, payloads, err := a.executeSystemActionPlan(sessionID, session, trimmedText, enforced)
+		if err != nil {
+			return "I couldn't resolve the artifact linking request: " + err.Error(), nil, true
 		}
 		return message, payloads, true
 	}

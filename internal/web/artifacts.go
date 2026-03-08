@@ -2,6 +2,7 @@ package web
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/krystophny/tabura/internal/store"
@@ -20,13 +21,27 @@ func (a *App) handleArtifactList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	kind := store.ArtifactKind(strings.TrimSpace(r.URL.Query().Get("kind")))
+	workspaceIDText := strings.TrimSpace(r.URL.Query().Get("workspace_id"))
+	linkedOnly := strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("linked")), "true")
 	var (
 		artifacts []store.Artifact
 		err       error
 	)
-	if kind != "" {
+	switch {
+	case workspaceIDText != "":
+		workspaceID, parseErr := strconv.ParseInt(workspaceIDText, 10, 64)
+		if parseErr != nil || workspaceID <= 0 {
+			http.Error(w, "workspace_id must be a positive integer", http.StatusBadRequest)
+			return
+		}
+		if linkedOnly {
+			artifacts, err = a.store.ListLinkedArtifacts(workspaceID)
+		} else {
+			artifacts, err = a.store.ListArtifactsForWorkspace(workspaceID)
+		}
+	case kind != "":
 		artifacts, err = a.store.ListArtifactsByKind(kind)
-	} else {
+	default:
 		artifacts, err = a.store.ListArtifacts()
 	}
 	if err != nil {

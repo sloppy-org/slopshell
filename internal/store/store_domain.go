@@ -77,6 +77,12 @@ CREATE TABLE IF NOT EXISTS external_container_mappings (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_external_container_mappings_identity
   ON external_container_mappings(lower(provider), lower(container_type), lower(container_ref));
+CREATE TABLE IF NOT EXISTS workspace_artifact_links (
+  workspace_id INTEGER NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  artifact_id INTEGER NOT NULL REFERENCES artifacts(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (workspace_id, artifact_id)
+);
 CREATE TABLE IF NOT EXISTS external_bindings (
   id INTEGER PRIMARY KEY,
   account_id INTEGER NOT NULL REFERENCES external_accounts(id) ON DELETE CASCADE,
@@ -726,6 +732,15 @@ func (s *Store) GetArtifact(id int64) (Artifact, error) {
 	))
 }
 
+func sortArtifactsNewestFirst(artifacts []Artifact) {
+	sort.Slice(artifacts, func(i, j int) bool {
+		if artifacts[i].UpdatedAt == artifacts[j].UpdatedAt {
+			return artifacts[i].ID < artifacts[j].ID
+		}
+		return artifacts[i].UpdatedAt > artifacts[j].UpdatedAt
+	})
+}
+
 func (s *Store) ListArtifactsByKind(kind ArtifactKind) ([]Artifact, error) {
 	cleanKind := normalizeArtifactKind(kind)
 	if cleanKind == "" {
@@ -752,12 +767,7 @@ func (s *Store) ListArtifactsByKind(kind ArtifactKind) ([]Artifact, error) {
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].UpdatedAt == out[j].UpdatedAt {
-			return out[i].ID < out[j].ID
-		}
-		return out[i].UpdatedAt > out[j].UpdatedAt
-	})
+	sortArtifactsNewestFirst(out)
 	return out, nil
 }
 
@@ -781,12 +791,111 @@ func (s *Store) ListArtifacts() ([]Artifact, error) {
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].UpdatedAt == out[j].UpdatedAt {
-			return out[i].ID < out[j].ID
+	sortArtifactsNewestFirst(out)
+	return out, nil
+}
+
+func (s *Store) LinkArtifactToWorkspace(workspaceID, artifactID int64) error {
+	if _, err := s.GetWorkspace(workspaceID); err != nil {
+		return err
+	}
+	artifact, err := s.GetArtifact(artifactID)
+	if err != nil {
+		return err
+	}
+	if homeWorkspaceID, err := s.InferWorkspaceForArtifact(artifact); err != nil {
+		return err
+	} else if homeWorkspaceID != nil && *homeWorkspaceID == workspaceID {
+		return errors.New("artifact already belongs to workspace")
+	}
+	_, err = s.db.Exec(
+		`INSERT INTO workspace_artifact_links (workspace_id, artifact_id)
+		 VALUES (?, ?)
+		 ON CONFLICT(workspace_id, artifact_id) DO NOTHING`,
+		workspaceID,
+		artifactID,
+	)
+	return err
+}
+
+func (s *Store) ListArtifactWorkspaceLinks(workspaceID int64) ([]ArtifactWorkspaceLink, error) {
+	if _, err := s.GetWorkspace(workspaceID); err != nil {
+		return nil, err
+	}
+	rows, err := s.db.Query(
+		`SELECT workspace_id, artifact_id, created_at
+		 FROM workspace_artifact_links
+		 WHERE workspace_id = ?
+		 ORDER BY created_at DESC, artifact_id ASC`,
+		workspaceID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []ArtifactWorkspaceLink{}
+	for rows.Next() {
+		var link ArtifactWorkspaceLink
+		if err := rows.Scan(&link.WorkspaceID, &link.ArtifactID, &link.CreatedAt); err != nil {
+			return nil, err
 		}
-		return out[i].UpdatedAt > out[j].UpdatedAt
-	})
+		out = append(out, link)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) ListLinkedArtifacts(workspaceID int64) ([]Artifact, error) {
+	links, err := s.ListArtifactWorkspaceLinks(workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Artifact, 0, len(links))
+	for _, link := range links {
+		artifact, err := s.GetArtifact(link.ArtifactID)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				continue
+			}
+			return nil, err
+		}
+		out = append(out, artifact)
+	}
+	sortArtifactsNewestFirst(out)
+	return out, nil
+}
+
+func (s *Store) ListArtifactsForWorkspace(workspaceID int64) ([]Artifact, error) {
+	if _, err := s.GetWorkspace(workspaceID); err != nil {
+		return nil, err
+	}
+	artifacts, err := s.ListArtifacts()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Artifact, 0, len(artifacts))
+	seen := map[int64]struct{}{}
+	for _, artifact := range artifacts {
+		homeWorkspaceID, err := s.InferWorkspaceForArtifact(artifact)
+		if err != nil {
+			return nil, err
+		}
+		if homeWorkspaceID == nil || *homeWorkspaceID != workspaceID {
+			continue
+		}
+		out = append(out, artifact)
+		seen[artifact.ID] = struct{}{}
+	}
+	linked, err := s.ListLinkedArtifacts(workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	for _, artifact := range linked {
+		if _, ok := seen[artifact.ID]; ok {
+			continue
+		}
+		out = append(out, artifact)
+	}
+	sortArtifactsNewestFirst(out)
 	return out, nil
 }
 

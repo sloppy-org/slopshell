@@ -117,6 +117,12 @@ type ExternalContainerMapping struct {
 	Sphere        *string `json:"sphere,omitempty"`
 }
 
+type ArtifactWorkspaceLink struct {
+	WorkspaceID int64  `json:"workspace_id"`
+	ArtifactID  int64  `json:"artifact_id"`
+	CreatedAt   string `json:"created_at"`
+}
+
 type Actor struct {
 	ID        int64  `json:"id"`
 	Name      string `json:"name"`

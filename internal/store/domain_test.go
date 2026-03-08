@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
@@ -35,6 +36,7 @@ func TestStoreMigratesDomainTablesOnFreshDatabase(t *testing.T) {
 		"artifacts":                   {"id", "kind", "ref_path", "ref_url", "title", "meta_json", "created_at", "updated_at"},
 		"external_accounts":           {"id", "sphere", "provider", "label", "config_json", "enabled", "created_at", "updated_at"},
 		"external_container_mappings": {"id", "provider", "container_type", "container_ref", "workspace_id", "project_id", "sphere"},
+		"workspace_artifact_links":    {"workspace_id", "artifact_id", "created_at"},
 		"external_bindings":           {"id", "account_id", "provider", "object_type", "remote_id", "item_id", "artifact_id", "container_ref", "remote_updated_at", "last_synced_at"},
 		"items":                       {"id", "title", "state", "workspace_id", "artifact_id", "actor_id", "visible_after", "follow_up_at", "source", "source_ref", "created_at", "updated_at"},
 	} {
@@ -122,7 +124,7 @@ CREATE TABLE chat_messages (
 	if err != nil {
 		t.Fatalf("TableColumns() error: %v", err)
 	}
-	for _, table := range []string{"workspaces", "actors", "artifacts", "external_accounts", "external_container_mappings", "external_bindings", "items"} {
+	for _, table := range []string{"workspaces", "actors", "artifacts", "external_accounts", "external_container_mappings", "workspace_artifact_links", "external_bindings", "items"} {
 		if _, ok := columns[table]; !ok {
 			t.Fatalf("expected migrated table %s to exist", table)
 		}
@@ -237,6 +239,7 @@ func TestDomainTypesExposeJSONTags(t *testing.T) {
 		{name: "Workspace", typ: reflect.TypeOf(Workspace{})},
 		{name: "Actor", typ: reflect.TypeOf(Actor{})},
 		{name: "Artifact", typ: reflect.TypeOf(Artifact{})},
+		{name: "ArtifactWorkspaceLink", typ: reflect.TypeOf(ArtifactWorkspaceLink{})},
 		{name: "Item", typ: reflect.TypeOf(Item{})},
 	} {
 		for i := 0; i < tc.typ.NumField(); i++ {
@@ -1283,6 +1286,117 @@ func TestInferWorkspaceForArtifact(t *testing.T) {
 	}
 	if inferredUnknown != nil {
 		t.Fatalf("InferWorkspaceForArtifact(unknown github) = %v, want nil", *inferredUnknown)
+	}
+}
+
+func TestWorkspaceArtifactLinksIncludeLinkedArtifactsInWorkspaceListings(t *testing.T) {
+	s := newTestStore(t)
+
+	sourceDir := filepath.Join(t.TempDir(), "source")
+	targetDir := filepath.Join(t.TempDir(), "target")
+	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+		t.Fatalf("mkdir source: %v", err)
+	}
+	if err := os.MkdirAll(targetDir, 0o755); err != nil {
+		t.Fatalf("mkdir target: %v", err)
+	}
+	sourceWorkspace, err := s.CreateWorkspace("Source", sourceDir)
+	if err != nil {
+		t.Fatalf("CreateWorkspace(source) error: %v", err)
+	}
+	targetWorkspace, err := s.CreateWorkspace("Target", targetDir)
+	if err != nil {
+		t.Fatalf("CreateWorkspace(target) error: %v", err)
+	}
+	sourcePath := filepath.Join(sourceDir, "results.pdf")
+	if err := os.WriteFile(sourcePath, []byte("pdf"), 0o644); err != nil {
+		t.Fatalf("write results.pdf: %v", err)
+	}
+	sourceTitle := "results.pdf"
+	sourceArtifact, err := s.CreateArtifact(ArtifactKindPDF, &sourcePath, nil, &sourceTitle, nil)
+	if err != nil {
+		t.Fatalf("CreateArtifact(source) error: %v", err)
+	}
+	targetPath := filepath.Join(targetDir, "notes.md")
+	if err := os.WriteFile(targetPath, []byte("# notes\n"), 0o644); err != nil {
+		t.Fatalf("write notes.md: %v", err)
+	}
+	targetTitle := "notes.md"
+	targetArtifact, err := s.CreateArtifact(ArtifactKindMarkdown, &targetPath, nil, &targetTitle, nil)
+	if err != nil {
+		t.Fatalf("CreateArtifact(target) error: %v", err)
+	}
+
+	if err := s.LinkArtifactToWorkspace(targetWorkspace.ID, sourceArtifact.ID); err != nil {
+		t.Fatalf("LinkArtifactToWorkspace() error: %v", err)
+	}
+	if err := s.LinkArtifactToWorkspace(targetWorkspace.ID, sourceArtifact.ID); err != nil {
+		t.Fatalf("LinkArtifactToWorkspace(duplicate) error: %v", err)
+	}
+
+	links, err := s.ListArtifactWorkspaceLinks(targetWorkspace.ID)
+	if err != nil {
+		t.Fatalf("ListArtifactWorkspaceLinks() error: %v", err)
+	}
+	if len(links) != 1 || links[0].ArtifactID != sourceArtifact.ID {
+		t.Fatalf("ListArtifactWorkspaceLinks() = %+v, want source artifact %d", links, sourceArtifact.ID)
+	}
+
+	linked, err := s.ListLinkedArtifacts(targetWorkspace.ID)
+	if err != nil {
+		t.Fatalf("ListLinkedArtifacts() error: %v", err)
+	}
+	if len(linked) != 1 || linked[0].ID != sourceArtifact.ID {
+		t.Fatalf("ListLinkedArtifacts() = %+v, want source artifact %d", linked, sourceArtifact.ID)
+	}
+
+	targetArtifacts, err := s.ListArtifactsForWorkspace(targetWorkspace.ID)
+	if err != nil {
+		t.Fatalf("ListArtifactsForWorkspace(target) error: %v", err)
+	}
+	if len(targetArtifacts) != 2 {
+		t.Fatalf("ListArtifactsForWorkspace(target) len = %d, want 2", len(targetArtifacts))
+	}
+	targetSeen := map[int64]bool{}
+	for _, artifact := range targetArtifacts {
+		targetSeen[artifact.ID] = true
+	}
+	if !targetSeen[sourceArtifact.ID] || !targetSeen[targetArtifact.ID] {
+		t.Fatalf("ListArtifactsForWorkspace(target) ids = %#v", targetSeen)
+	}
+
+	sourceArtifacts, err := s.ListArtifactsForWorkspace(sourceWorkspace.ID)
+	if err != nil {
+		t.Fatalf("ListArtifactsForWorkspace(source) error: %v", err)
+	}
+	if len(sourceArtifacts) != 1 || sourceArtifacts[0].ID != sourceArtifact.ID {
+		t.Fatalf("ListArtifactsForWorkspace(source) = %+v, want source artifact only", sourceArtifacts)
+	}
+}
+
+func TestLinkArtifactToWorkspaceRejectsHomeWorkspace(t *testing.T) {
+	s := newTestStore(t)
+
+	workspaceDir := filepath.Join(t.TempDir(), "alpha")
+	if err := os.MkdirAll(workspaceDir, 0o755); err != nil {
+		t.Fatalf("mkdir alpha: %v", err)
+	}
+	workspace, err := s.CreateWorkspace("Alpha", workspaceDir)
+	if err != nil {
+		t.Fatalf("CreateWorkspace() error: %v", err)
+	}
+	refPath := filepath.Join(workspaceDir, "spec.md")
+	if err := os.WriteFile(refPath, []byte("# spec\n"), 0o644); err != nil {
+		t.Fatalf("write spec.md: %v", err)
+	}
+	title := "spec.md"
+	artifact, err := s.CreateArtifact(ArtifactKindMarkdown, &refPath, nil, &title, nil)
+	if err != nil {
+		t.Fatalf("CreateArtifact() error: %v", err)
+	}
+
+	if err := s.LinkArtifactToWorkspace(workspace.ID, artifact.ID); err == nil || err.Error() != "artifact already belongs to workspace" {
+		t.Fatalf("LinkArtifactToWorkspace(home) error = %v, want home-workspace rejection", err)
 	}
 }
 
