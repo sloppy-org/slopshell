@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -26,6 +27,11 @@ type HostConfig struct {
 
 type Store struct {
 	db *sql.DB
+
+	externalAccountLookupEnv       func(string) (string, bool)
+	externalAccountCommandRunner   externalAccountCommandRunner
+	externalAccountCredentialMu    sync.Mutex
+	externalAccountCredentialCache map[string]cachedExternalAccountCredential
 }
 
 type ChatSession struct {
@@ -78,7 +84,12 @@ func New(path string) (*Store, error) {
 		_ = db.Close()
 		return nil, err
 	}
-	s := &Store{db: db}
+	s := &Store{
+		db:                             db,
+		externalAccountLookupEnv:       os.LookupEnv,
+		externalAccountCommandRunner:   runExternalAccountCommand,
+		externalAccountCredentialCache: map[string]cachedExternalAccountCredential{},
+	}
 	if err := s.migrate(); err != nil {
 		_ = db.Close()
 		return nil, err

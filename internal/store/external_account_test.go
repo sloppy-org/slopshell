@@ -1,8 +1,11 @@
 package store
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -134,5 +137,149 @@ func TestExternalAccountCredentialHelpers(t *testing.T) {
 	wantPath := filepath.Join("/home/test/.config/tabura", "tokens", "gmail_work_gmail.json")
 	if tokenPath != wantPath {
 		t.Fatalf("ExternalAccountTokenPath() = %q, want %q", tokenPath, wantPath)
+	}
+}
+
+func TestResolveExternalAccountPasswordUsesEnvFirstAndCaches(t *testing.T) {
+	s := newTestStore(t)
+
+	account, err := s.CreateExternalAccount(SphereWork, ExternalProviderIMAP, "Work Mail", map[string]any{
+		"host":           "imap.example.com",
+		"username":       "alice@example.com",
+		"credential_ref": "bw://work-email-imap",
+	})
+	if err != nil {
+		t.Fatalf("CreateExternalAccount() error: %v", err)
+	}
+
+	envVar := ExternalAccountPasswordEnvVar(account.Provider, account.Label)
+	s.externalAccountLookupEnv = func(key string) (string, bool) {
+		if key != envVar {
+			t.Fatalf("env lookup key = %q, want %q", key, envVar)
+		}
+		return "env-secret", true
+	}
+	commandCalls := 0
+	s.externalAccountCommandRunner = func(_ context.Context, name string, args ...string) (string, error) {
+		commandCalls++
+		t.Fatalf("unexpected credential command: %s %v", name, args)
+		return "", nil
+	}
+
+	password, source, err := s.ResolveExternalAccountPassword(context.Background(), account.ID)
+	if err != nil {
+		t.Fatalf("ResolveExternalAccountPassword() error: %v", err)
+	}
+	if password != "env-secret" {
+		t.Fatalf("ResolveExternalAccountPassword() password = %q, want env-secret", password)
+	}
+	if source != externalAccountCredentialSourceEnv {
+		t.Fatalf("ResolveExternalAccountPassword() source = %q, want %q", source, externalAccountCredentialSourceEnv)
+	}
+	if commandCalls != 0 {
+		t.Fatalf("credential command calls = %d, want 0", commandCalls)
+	}
+
+	s.externalAccountLookupEnv = func(string) (string, bool) {
+		return "", false
+	}
+	password, source, err = s.ResolveExternalAccountPassword(context.Background(), account.ID)
+	if err != nil {
+		t.Fatalf("ResolveExternalAccountPassword() cached error: %v", err)
+	}
+	if password != "env-secret" {
+		t.Fatalf("cached password = %q, want env-secret", password)
+	}
+	if source != externalAccountCredentialSourceEnv {
+		t.Fatalf("cached source = %q, want %q", source, externalAccountCredentialSourceEnv)
+	}
+	if commandCalls != 0 {
+		t.Fatalf("credential command calls after cache = %d, want 0", commandCalls)
+	}
+}
+
+func TestResolveExternalAccountPasswordFallsBackToBitwardenAndCaches(t *testing.T) {
+	s := newTestStore(t)
+
+	account, err := s.CreateExternalAccount(SphereWork, ExternalProviderIMAP, "Work Mail", map[string]any{
+		"host":           "imap.example.com",
+		"username":       "alice@example.com",
+		"credential_ref": "bw://work-email-imap",
+	})
+	if err != nil {
+		t.Fatalf("CreateExternalAccount() error: %v", err)
+	}
+
+	s.externalAccountLookupEnv = func(string) (string, bool) {
+		return "", false
+	}
+	commandCalls := 0
+	s.externalAccountCommandRunner = func(_ context.Context, name string, args ...string) (string, error) {
+		commandCalls++
+		if name != "bw" {
+			t.Fatalf("command name = %q, want bw", name)
+		}
+		if len(args) != 3 || args[0] != "get" || args[1] != "password" || args[2] != "work-email-imap" {
+			t.Fatalf("command args = %#v, want bw get password work-email-imap", args)
+		}
+		return "bitwarden-secret\n", nil
+	}
+
+	password, source, err := s.ResolveExternalAccountPasswordForAccount(context.Background(), account)
+	if err != nil {
+		t.Fatalf("ResolveExternalAccountPasswordForAccount() error: %v", err)
+	}
+	if password != "bitwarden-secret" {
+		t.Fatalf("password = %q, want bitwarden-secret", password)
+	}
+	if source != externalAccountCredentialSourceBitwarden {
+		t.Fatalf("source = %q, want %q", source, externalAccountCredentialSourceBitwarden)
+	}
+	if commandCalls != 1 {
+		t.Fatalf("credential command calls = %d, want 1", commandCalls)
+	}
+
+	password, source, err = s.ResolveExternalAccountPasswordForAccount(context.Background(), account)
+	if err != nil {
+		t.Fatalf("ResolveExternalAccountPasswordForAccount() cached error: %v", err)
+	}
+	if password != "bitwarden-secret" {
+		t.Fatalf("cached password = %q, want bitwarden-secret", password)
+	}
+	if source != externalAccountCredentialSourceBitwarden {
+		t.Fatalf("cached source = %q, want %q", source, externalAccountCredentialSourceBitwarden)
+	}
+	if commandCalls != 1 {
+		t.Fatalf("credential command calls after cache = %d, want 1", commandCalls)
+	}
+}
+
+func TestResolveExternalAccountPasswordRejectsMissingOrUnsupportedCredentialConfig(t *testing.T) {
+	s := newTestStore(t)
+	s.externalAccountLookupEnv = func(string) (string, bool) {
+		return "", false
+	}
+
+	missingAccount, err := s.CreateExternalAccount(SphereWork, ExternalProviderIMAP, "Work Mail", map[string]any{
+		"host":     "imap.example.com",
+		"username": "alice@example.com",
+	})
+	if err != nil {
+		t.Fatalf("CreateExternalAccount(missing) error: %v", err)
+	}
+	if _, _, err := s.ResolveExternalAccountPassword(context.Background(), missingAccount.ID); !errors.Is(err, errExternalAccountPasswordUnavailable) {
+		t.Fatalf("ResolveExternalAccountPassword(missing) error = %v, want %v", err, errExternalAccountPasswordUnavailable)
+	}
+
+	unsupportedAccount, err := s.CreateExternalAccount(SphereWork, ExternalProviderIMAP, "Other Mail", map[string]any{
+		"host":           "imap.example.com",
+		"username":       "bob@example.com",
+		"credential_ref": "vault://other-mail",
+	})
+	if err != nil {
+		t.Fatalf("CreateExternalAccount(unsupported) error: %v", err)
+	}
+	if _, _, err := s.ResolveExternalAccountPassword(context.Background(), unsupportedAccount.ID); err == nil || !strings.Contains(err.Error(), `unsupported credential_ref "vault://other-mail"`) {
+		t.Fatalf("ResolveExternalAccountPassword(unsupported) error = %v, want unsupported credential_ref", err)
 	}
 }
