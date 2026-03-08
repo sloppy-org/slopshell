@@ -4,11 +4,38 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
-	"strconv"
 	"strings"
 
-	"github.com/go-chi/chi/v5"
+	"github.com/krystophny/tabura/internal/store"
 )
+
+type itemCreateRequest struct {
+	Title        string  `json:"title"`
+	State        string  `json:"state"`
+	WorkspaceID  *int64  `json:"workspace_id"`
+	ArtifactID   *int64  `json:"artifact_id"`
+	ActorID      *int64  `json:"actor_id"`
+	VisibleAfter *string `json:"visible_after"`
+	FollowUpAt   *string `json:"follow_up_at"`
+	Source       *string `json:"source"`
+	SourceRef    *string `json:"source_ref"`
+}
+
+type itemUpdateRequest struct {
+	Title        *string `json:"title"`
+	State        *string `json:"state"`
+	WorkspaceID  *int64  `json:"workspace_id"`
+	ArtifactID   *int64  `json:"artifact_id"`
+	ActorID      *int64  `json:"actor_id"`
+	VisibleAfter *string `json:"visible_after"`
+	FollowUpAt   *string `json:"follow_up_at"`
+	Source       *string `json:"source"`
+	SourceRef    *string `json:"source_ref"`
+}
+
+type itemStateRequest struct {
+	State string `json:"state"`
+}
 
 type itemAssignRequest struct {
 	ActorID int64 `json:"actor_id"`
@@ -30,21 +57,11 @@ var (
 )
 
 func parseItemIDParam(r *http.Request) (int64, error) {
-	itemID := strings.TrimSpace(chi.URLParam(r, "item_id"))
-	if itemID == "" {
-		return 0, errors.New("missing item_id")
-	}
-	return strconv.ParseInt(itemID, 10, 64)
+	return parseURLInt64Param(r, "item_id")
 }
 
 func itemResponseErrorStatus(err error) int {
-	if err == nil {
-		return http.StatusOK
-	}
-	if errors.Is(err, sql.ErrNoRows) {
-		return http.StatusNotFound
-	}
-	return http.StatusBadRequest
+	return domainResponseErrorStatus(err)
 }
 
 func writeItemStoreError(w http.ResponseWriter, err error) {
@@ -65,6 +82,177 @@ func (a *App) ensureActorExists(actorID int64) error {
 		return err
 	}
 	return nil
+}
+
+func (a *App) handleItemList(w http.ResponseWriter, r *http.Request) {
+	if !a.requireAuth(w, r) {
+		return
+	}
+	state := strings.TrimSpace(r.URL.Query().Get("state"))
+	var (
+		items []store.Item
+		err   error
+	)
+	if state != "" {
+		items, err = a.store.ListItemsByState(state)
+	} else {
+		items, err = a.store.ListItems()
+	}
+	if err != nil {
+		writeItemStoreError(w, err)
+		return
+	}
+	writeJSON(w, map[string]any{
+		"ok":    true,
+		"items": items,
+	})
+}
+
+func (a *App) handleItemCreate(w http.ResponseWriter, r *http.Request) {
+	if !a.requireAuth(w, r) {
+		return
+	}
+	var req itemCreateRequest
+	if err := decodeJSON(r, &req); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+	item, err := a.store.CreateItem(req.Title, store.ItemOptions{
+		State:        req.State,
+		WorkspaceID:  req.WorkspaceID,
+		ArtifactID:   req.ArtifactID,
+		ActorID:      req.ActorID,
+		VisibleAfter: req.VisibleAfter,
+		FollowUpAt:   req.FollowUpAt,
+		Source:       req.Source,
+		SourceRef:    req.SourceRef,
+	})
+	if err != nil {
+		writeItemStoreError(w, err)
+		return
+	}
+	writeJSON(w, map[string]any{
+		"ok":   true,
+		"item": item,
+	})
+}
+
+func (a *App) handleItemGet(w http.ResponseWriter, r *http.Request) {
+	if !a.requireAuth(w, r) {
+		return
+	}
+	itemID, err := parseItemIDParam(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	item, err := a.store.GetItem(itemID)
+	if err != nil {
+		writeItemStoreError(w, err)
+		return
+	}
+	writeJSON(w, map[string]any{
+		"ok":   true,
+		"item": item,
+	})
+}
+
+func (a *App) handleItemUpdate(w http.ResponseWriter, r *http.Request) {
+	if !a.requireAuth(w, r) {
+		return
+	}
+	itemID, err := parseItemIDParam(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	var req itemUpdateRequest
+	if err := decodeJSON(r, &req); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+	if req.ActorID != nil && *req.ActorID > 0 {
+		if err := a.ensureActorExists(*req.ActorID); err != nil {
+			if errors.Is(err, errItemActorNotFound) || errors.Is(err, errItemActorRequired) {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+	if err := a.store.UpdateItem(itemID, store.ItemUpdate{
+		Title:        req.Title,
+		State:        req.State,
+		WorkspaceID:  req.WorkspaceID,
+		ArtifactID:   req.ArtifactID,
+		ActorID:      req.ActorID,
+		VisibleAfter: req.VisibleAfter,
+		FollowUpAt:   req.FollowUpAt,
+		Source:       req.Source,
+		SourceRef:    req.SourceRef,
+	}); err != nil {
+		writeItemStoreError(w, err)
+		return
+	}
+	item, err := a.store.GetItem(itemID)
+	if err != nil {
+		writeItemStoreError(w, err)
+		return
+	}
+	writeJSON(w, map[string]any{
+		"ok":   true,
+		"item": item,
+	})
+}
+
+func (a *App) handleItemDelete(w http.ResponseWriter, r *http.Request) {
+	if !a.requireAuth(w, r) {
+		return
+	}
+	itemID, err := parseItemIDParam(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := a.store.DeleteItem(itemID); err != nil {
+		writeItemStoreError(w, err)
+		return
+	}
+	writeJSON(w, map[string]any{
+		"ok":      true,
+		"deleted": true,
+		"item_id": itemID,
+	})
+}
+
+func (a *App) handleItemStateUpdate(w http.ResponseWriter, r *http.Request) {
+	if !a.requireAuth(w, r) {
+		return
+	}
+	itemID, err := parseItemIDParam(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	var req itemStateRequest
+	if err := decodeJSON(r, &req); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+	if err := a.store.UpdateItemState(itemID, req.State); err != nil {
+		writeItemStoreError(w, err)
+		return
+	}
+	item, err := a.store.GetItem(itemID)
+	if err != nil {
+		writeItemStoreError(w, err)
+		return
+	}
+	writeJSON(w, map[string]any{
+		"ok":   true,
+		"item": item,
+	})
 }
 
 func (a *App) handleItemAssign(w http.ResponseWriter, r *http.Request) {

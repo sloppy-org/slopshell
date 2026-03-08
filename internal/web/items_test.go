@@ -3,6 +3,7 @@ package web
 import (
 	"database/sql"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"testing"
 
@@ -75,6 +76,130 @@ func TestItemAssignmentLifecycleAPI(t *testing.T) {
 	}
 	if gotItem.State != store.ItemStateDone {
 		t.Fatalf("completed State = %q, want %q", gotItem.State, store.ItemStateDone)
+	}
+}
+
+func TestItemCRUDAndStateAPI(t *testing.T) {
+	app := newAuthedTestApp(t)
+
+	workspace, err := app.store.CreateWorkspace("Default", filepath.Join(t.TempDir(), "workspace"))
+	if err != nil {
+		t.Fatalf("CreateWorkspace() error: %v", err)
+	}
+	artifactTitle := "Plan"
+	artifact, err := app.store.CreateArtifact(store.ArtifactKindMarkdown, nil, nil, &artifactTitle, nil)
+	if err != nil {
+		t.Fatalf("CreateArtifact() error: %v", err)
+	}
+	actor, err := app.store.CreateActor("Codex", store.ActorKindAgent)
+	if err != nil {
+		t.Fatalf("CreateActor() error: %v", err)
+	}
+
+	rrCreate := doAuthedJSONRequest(t, app.Router(), http.MethodPost, "/api/items", map[string]any{
+		"title":        "Wire REST endpoints",
+		"workspace_id": workspace.ID,
+		"artifact_id":  artifact.ID,
+		"source":       "github",
+		"source_ref":   "owner/repo#175",
+	})
+	if rrCreate.Code != http.StatusOK {
+		t.Fatalf("create item status = %d, want 200: %s", rrCreate.Code, rrCreate.Body.String())
+	}
+	createPayload := decodeJSONResponse(t, rrCreate)
+	itemPayload, ok := createPayload["item"].(map[string]any)
+	if !ok {
+		t.Fatalf("create item payload = %#v", createPayload)
+	}
+	itemID := int64(itemPayload["id"].(float64))
+
+	rrList := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/items?state=inbox", nil)
+	if rrList.Code != http.StatusOK {
+		t.Fatalf("list items status = %d, want 200: %s", rrList.Code, rrList.Body.String())
+	}
+	listPayload := decodeJSONResponse(t, rrList)
+	items, ok := listPayload["items"].([]any)
+	if !ok || len(items) != 1 {
+		t.Fatalf("list items payload = %#v", listPayload)
+	}
+
+	visibleAfter := "2026-03-10T09:00:00Z"
+	rrUpdate := doAuthedJSONRequest(t, app.Router(), http.MethodPut, "/api/items/"+itoa(itemID), map[string]any{
+		"title":         "Wire core REST endpoints",
+		"visible_after": visibleAfter,
+	})
+	if rrUpdate.Code != http.StatusOK {
+		t.Fatalf("update item status = %d, want 200: %s", rrUpdate.Code, rrUpdate.Body.String())
+	}
+	updated, err := app.store.GetItem(itemID)
+	if err != nil {
+		t.Fatalf("GetItem(updated) error: %v", err)
+	}
+	if updated.Title != "Wire core REST endpoints" {
+		t.Fatalf("updated title = %q, want %q", updated.Title, "Wire core REST endpoints")
+	}
+	if updated.VisibleAfter == nil || *updated.VisibleAfter != visibleAfter {
+		t.Fatalf("updated visible_after = %v, want %q", updated.VisibleAfter, visibleAfter)
+	}
+
+	rrAssign := doAuthedJSONRequest(t, app.Router(), http.MethodPut, "/api/items/"+itoa(itemID)+"/assign", map[string]any{
+		"actor_id": actor.ID,
+	})
+	if rrAssign.Code != http.StatusOK {
+		t.Fatalf("assign item status = %d, want 200: %s", rrAssign.Code, rrAssign.Body.String())
+	}
+
+	rrState := doAuthedJSONRequest(t, app.Router(), http.MethodPut, "/api/items/"+itoa(itemID)+"/state", map[string]any{
+		"state": store.ItemStateDone,
+	})
+	if rrState.Code != http.StatusOK {
+		t.Fatalf("item state status = %d, want 200: %s", rrState.Code, rrState.Body.String())
+	}
+	doneItem, err := app.store.GetItem(itemID)
+	if err != nil {
+		t.Fatalf("GetItem(done) error: %v", err)
+	}
+	if doneItem.State != store.ItemStateDone {
+		t.Fatalf("done state = %q, want %q", doneItem.State, store.ItemStateDone)
+	}
+
+	rrGet := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/items/"+itoa(itemID), nil)
+	if rrGet.Code != http.StatusOK {
+		t.Fatalf("get item status = %d, want 200: %s", rrGet.Code, rrGet.Body.String())
+	}
+
+	rrDelete := doAuthedJSONRequest(t, app.Router(), http.MethodDelete, "/api/items/"+itoa(itemID), nil)
+	if rrDelete.Code != http.StatusOK {
+		t.Fatalf("delete item status = %d, want 200: %s", rrDelete.Code, rrDelete.Body.String())
+	}
+
+	rrMissing := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/items/"+itoa(itemID), nil)
+	if rrMissing.Code != http.StatusNotFound {
+		t.Fatalf("deleted item status = %d, want 404: %s", rrMissing.Code, rrMissing.Body.String())
+	}
+}
+
+func TestItemDomainAPIRejectsConflictAndInvalidState(t *testing.T) {
+	app := newAuthedTestApp(t)
+
+	rrConflict := doAuthedJSONRequest(t, app.Router(), http.MethodPost, "/api/items", map[string]any{
+		"title":        "Bad foreign key",
+		"workspace_id": 999999,
+	})
+	if rrConflict.Code != http.StatusConflict {
+		t.Fatalf("create item conflict status = %d, want 409: %s", rrConflict.Code, rrConflict.Body.String())
+	}
+
+	item, err := app.store.CreateItem("Stateful item", store.ItemOptions{})
+	if err != nil {
+		t.Fatalf("CreateItem() error: %v", err)
+	}
+
+	rrBadState := doAuthedJSONRequest(t, app.Router(), http.MethodPut, "/api/items/"+itoa(item.ID)+"/state", map[string]any{
+		"state": "paused",
+	})
+	if rrBadState.Code != http.StatusBadRequest {
+		t.Fatalf("bad state status = %d, want 400: %s", rrBadState.Code, rrBadState.Body.String())
 	}
 }
 

@@ -673,6 +673,35 @@ func (s *Store) ListArtifactsByKind(kind ArtifactKind) ([]Artifact, error) {
 	return out, nil
 }
 
+func (s *Store) ListArtifacts() ([]Artifact, error) {
+	rows, err := s.db.Query(
+		`SELECT id, kind, ref_path, ref_url, title, meta_json, created_at, updated_at
+		 FROM artifacts`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Artifact
+	for rows.Next() {
+		artifact, err := scanArtifact(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, artifact)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].UpdatedAt == out[j].UpdatedAt {
+			return out[i].ID < out[j].ID
+		}
+		return out[i].UpdatedAt > out[j].UpdatedAt
+	})
+	return out, nil
+}
+
 func (s *Store) UpdateArtifact(id int64, updates ArtifactUpdate) error {
 	parts := []string{}
 	args := []any{}
@@ -889,6 +918,95 @@ func (s *Store) UpdateItemSource(id int64, source, sourceRef string) error {
 		cleanSourceRef,
 		id,
 	)
+	if err != nil {
+		return err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+func (s *Store) UpdateItem(id int64, updates ItemUpdate) error {
+	item, err := s.GetItem(id)
+	if err != nil {
+		return err
+	}
+
+	parts := []string{}
+	args := []any{}
+
+	if updates.Title != nil {
+		title := strings.TrimSpace(*updates.Title)
+		if title == "" {
+			return errors.New("item title is required")
+		}
+		parts = append(parts, "title = ?")
+		args = append(args, title)
+	}
+	if updates.State != nil {
+		next := normalizeItemState(*updates.State)
+		if err := validateItemTransition(item.State, next); err != nil {
+			return err
+		}
+		parts = append(parts, "state = ?")
+		args = append(args, next)
+	}
+	if updates.WorkspaceID != nil {
+		parts = append(parts, "workspace_id = ?")
+		args = append(args, nullablePositiveID(*updates.WorkspaceID))
+	}
+	if updates.ArtifactID != nil {
+		parts = append(parts, "artifact_id = ?")
+		args = append(args, nullablePositiveID(*updates.ArtifactID))
+	}
+	if updates.ActorID != nil {
+		parts = append(parts, "actor_id = ?")
+		args = append(args, nullablePositiveID(*updates.ActorID))
+	}
+	if updates.VisibleAfter != nil {
+		value, err := normalizeOptionalRFC3339String(updates.VisibleAfter)
+		if err != nil {
+			return err
+		}
+		parts = append(parts, "visible_after = ?")
+		args = append(args, value)
+	}
+	if updates.FollowUpAt != nil {
+		value, err := normalizeOptionalRFC3339String(updates.FollowUpAt)
+		if err != nil {
+			return err
+		}
+		parts = append(parts, "follow_up_at = ?")
+		args = append(args, value)
+	}
+	if updates.Source != nil {
+		sourceValue := strings.TrimSpace(*updates.Source)
+		sourceRefValue := strings.TrimSpace(nullStringValue(updates.SourceRef))
+		switch {
+		case sourceValue == "" && sourceRefValue != "":
+			return errors.New("item source and source_ref are required")
+		case sourceValue != "" && sourceRefValue == "":
+			return errors.New("item source and source_ref are required")
+		case sourceValue != "" && sourceRefValue != "":
+			if err := s.UpdateItemSource(id, sourceValue, sourceRefValue); err != nil {
+				return err
+			}
+		case sourceValue == "" && sourceRefValue == "":
+			parts = append(parts, "source = ?", "source_ref = ?")
+			args = append(args, nil, nil)
+		}
+	}
+	if len(parts) == 0 {
+		return nil
+	}
+	parts = append(parts, "updated_at = datetime('now')")
+	args = append(args, id)
+	res, err := s.db.Exec(`UPDATE items SET `+stringsJoin(parts, ", ")+` WHERE id = ?`, args...)
 	if err != nil {
 		return err
 	}
@@ -1351,4 +1469,62 @@ func (s *Store) ListItemsByState(state string) ([]Item, error) {
 		return out[i].UpdatedAt > out[j].UpdatedAt
 	})
 	return out, nil
+}
+
+func (s *Store) ListItems() ([]Item, error) {
+	rows, err := s.db.Query(
+		`SELECT id, title, state, workspace_id, artifact_id, actor_id, visible_after, follow_up_at, source, source_ref, created_at, updated_at
+		 FROM items`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Item
+	for rows.Next() {
+		item, err := scanItem(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].UpdatedAt == out[j].UpdatedAt {
+			return out[i].ID < out[j].ID
+		}
+		return out[i].UpdatedAt > out[j].UpdatedAt
+	})
+	return out, nil
+}
+
+func nullablePositiveID(id int64) any {
+	if id <= 0 {
+		return nil
+	}
+	return id
+}
+
+func nullStringValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+func normalizeOptionalRFC3339String(value *string) (any, error) {
+	if value == nil {
+		return nil, nil
+	}
+	clean := strings.TrimSpace(*value)
+	if clean == "" {
+		return nil, nil
+	}
+	normalized, err := normalizeRFC3339String(clean)
+	if err != nil {
+		return nil, errors.New("timestamps must be valid RFC3339")
+	}
+	return normalized, nil
 }

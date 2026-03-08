@@ -41,3 +41,12 @@ func doAuthedJSONRequest(t *testing.T, handler http.Handler, method, path string
 	handler.ServeHTTP(rr, req)
 	return rr
 }
+
+func decodeJSONResponse(t *testing.T, rr *httptest.ResponseRecorder) map[string]any {
+	t.Helper()
+	var payload map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode response body: %v\nbody=%s", err, rr.Body.String())
+	}
+	return payload
+}

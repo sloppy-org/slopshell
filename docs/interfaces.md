@@ -39,6 +39,27 @@ Runtime and chat session management:
 - `POST /api/chat/sessions/{session_id}/commands`
 - `POST /api/chat/sessions/{session_id}/cancel`
 
+Domain model API:
+- `GET /api/workspaces`
+- `POST /api/workspaces`
+- `GET /api/workspaces/{workspace_id}`
+- `DELETE /api/workspaces/{workspace_id}`
+- `GET /api/actors`
+- `POST /api/actors`
+- `GET /api/actors/{actor_id}`
+- `DELETE /api/actors/{actor_id}`
+- `GET /api/artifacts`
+- `POST /api/artifacts`
+- `GET /api/artifacts/{artifact_id}`
+- `DELETE /api/artifacts/{artifact_id}`
+- `GET /api/items`
+- `POST /api/items`
+- `GET /api/items/{item_id}`
+- `PUT /api/items/{item_id}`
+- `DELETE /api/items/{item_id}`
+- `PUT /api/items/{item_id}/state`
+- `PUT /api/items/{item_id}/assign`
+
 Canvas/files:
 - `GET /api/canvas/{session_id}/snapshot`
 - `GET /api/files/{session_id}/*`

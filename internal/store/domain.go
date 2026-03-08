@@ -30,6 +30,18 @@ type ArtifactUpdate struct {
 	MetaJSON *string       `json:"meta_json,omitempty"`
 }
 
+type ItemUpdate struct {
+	Title        *string `json:"title,omitempty"`
+	State        *string `json:"state,omitempty"`
+	WorkspaceID  *int64  `json:"workspace_id,omitempty"`
+	ArtifactID   *int64  `json:"artifact_id,omitempty"`
+	ActorID      *int64  `json:"actor_id,omitempty"`
+	VisibleAfter *string `json:"visible_after,omitempty"`
+	FollowUpAt   *string `json:"follow_up_at,omitempty"`
+	Source       *string `json:"source,omitempty"`
+	SourceRef    *string `json:"source_ref,omitempty"`
+}
+
 type ItemOptions struct {
 	State        string  `json:"state,omitempty"`
 	WorkspaceID  *int64  `json:"workspace_id,omitempty"`
