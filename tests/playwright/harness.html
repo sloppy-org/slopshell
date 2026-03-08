@@ -483,6 +483,15 @@
         },
       ],
     });
+    const mockPrDiff = (prNumber) => [
+      'diff --git a/src/review.js b/src/review.js',
+      'index 1111111..2222222 100644',
+      '--- a/src/review.js',
+      '+++ b/src/review.js',
+      `@@ -1 +1 @@`,
+      `-console.log("before ${prNumber}");`,
+      `+console.log("after ${prNumber}");`,
+    ].join('\n');
     window.__itemSidebarData = defaultItemSidebarData();
     window.__setItemSidebarData = (next) => {
       const incoming = next && typeof next === 'object' ? next : {};
@@ -994,6 +1003,49 @@
           payload: activityResponse,
         });
         return new Response(JSON.stringify(activityResponse), { status: 200 });
+      }
+      if (u.includes('/api/chat/sessions') && u.includes('/commands') && opts?.method === 'POST') {
+        let body = {};
+        try {
+          body = JSON.parse(String(opts?.body || '{}'));
+        } catch (_) {
+          body = {};
+        }
+        const command = String(body.command || '').trim();
+        window.__harnessLog.push({ type: 'command_sent', command });
+        const prMatch = command.match(/^\/?pr\s+(\d+)$/i);
+        if (prMatch) {
+          const prNumber = Number(prMatch[1]);
+          const app = window._taburaApp;
+          window.setTimeout(() => {
+            const canvasWs = app?.getState?.().canvasWs;
+            if (canvasWs && typeof canvasWs.injectEvent === 'function') {
+              canvasWs.injectEvent({
+                kind: 'text_artifact',
+                event_id: `evt-pr-command-${prNumber}`,
+                title: `.tabura/artifacts/pr/pr-${prNumber}.diff`,
+                text: mockPrDiff(prNumber),
+              });
+            }
+          }, 0);
+          return new Response(JSON.stringify({
+            ok: true,
+            kind: 'command',
+            result: {
+              name: 'pr',
+              pr_number: prNumber,
+              pr_title: `Harness PR ${prNumber}`,
+              pr_url: `https://github.com/owner/repo/pull/${prNumber}`,
+              files_changed: 1,
+              message: `Loaded PR #${prNumber}: Harness PR ${prNumber} (1 file).`,
+            },
+          }), { status: 200 });
+        }
+        return new Response(JSON.stringify({
+          ok: true,
+          kind: 'command',
+          result: { name: 'noop', message: 'Harness command' },
+        }), { status: 200 });
       }
       if (u.includes('/api/chat/') && u.includes('/messages') && opts?.method === 'POST') {
         const signal = opts?.signal;

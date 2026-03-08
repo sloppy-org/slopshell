@@ -3072,6 +3072,58 @@ function itemSourceLabel(item) {
   return '';
 }
 
+function parsePullRequestNumberFromSourceRef(raw) {
+  const match = String(raw || '').trim().match(/#PR-(\d+)$/i);
+  if (!match) return 0;
+  const number = Number(match[1]);
+  return Number.isInteger(number) && number > 0 ? number : 0;
+}
+
+async function openSidebarPRReview(prNumber) {
+  if (!Number.isInteger(Number(prNumber)) || Number(prNumber) <= 0 || !state.chatSessionId) {
+    return false;
+  }
+  state.prReviewAwaitingArtifact = true;
+  try {
+    const resp = await fetch(apiURL(`chat/sessions/${encodeURIComponent(state.chatSessionId)}/commands`), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ command: `/pr ${Number(prNumber)}` }),
+    });
+    if (!resp.ok) {
+      const detail = (await resp.text()).trim() || `HTTP ${resp.status}`;
+      throw new Error(detail);
+    }
+    const payload = await resp.json();
+    const commandName = String(payload?.result?.name || '').trim().toLowerCase();
+    if (payload?.kind === 'command' && commandName === 'pr') {
+      return true;
+    }
+    state.prReviewAwaitingArtifact = false;
+    throw new Error('unexpected PR review response');
+  } catch (err) {
+    state.prReviewAwaitingArtifact = false;
+    showStatus(`review open failed: ${String(err?.message || err || 'unknown error')}`);
+    return false;
+  }
+}
+
+async function openSidebarItem(item) {
+  state.itemSidebarActiveItemID = Number(item?.id || 0);
+  renderPrReviewFileList();
+  if (String(item?.artifact_kind || '').trim().toLowerCase() !== 'github_pr') {
+    return;
+  }
+  const prNumber = parsePullRequestNumberFromSourceRef(item?.source_ref);
+  if (prNumber <= 0) {
+    return;
+  }
+  const opened = await openSidebarPRReview(prNumber);
+  if (opened && isMobileViewport()) {
+    closeEdgePanels();
+  }
+}
+
 function itemKindLabel(item) {
   const artifactKind = String(item?.artifact_kind || '').trim().toLowerCase();
   if (artifactKind === 'idea_note') return 'idea';
@@ -3293,10 +3345,7 @@ function renderItemSidebarList(list) {
       badges: buildItemSidebarBadges(item),
       meta: formatSidebarAge(item?.updated_at || item?.created_at),
       active: Number(item?.id || 0) === Number(state.itemSidebarActiveItemID || 0),
-      onClick: () => {
-        state.itemSidebarActiveItemID = Number(item?.id || 0);
-        renderPrReviewFileList();
-      },
+      onClick: () => { void openSidebarItem(item); },
     }));
   });
 }

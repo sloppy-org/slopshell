@@ -174,6 +174,162 @@ func TestGitHubIssueSyncAPIRejectsWorkspaceWithoutGitHubRemote(t *testing.T) {
 	}
 }
 
+func TestGitHubPRReviewSyncAPI(t *testing.T) {
+	app := newAuthedTestApp(t)
+
+	repoDir := filepath.Join(t.TempDir(), "workspace")
+	initGitHubWorkspaceRepo(t, repoDir, "https://github.com/owner/tabula.git")
+	workspace, err := app.store.CreateWorkspace("Repo", repoDir)
+	if err != nil {
+		t.Fatalf("CreateWorkspace() error: %v", err)
+	}
+
+	var calls [][]string
+	var callCWDs []string
+	callCount := 0
+	app.ghCommandRunner = func(_ context.Context, cwd string, args ...string) (string, error) {
+		calls = append(calls, append([]string(nil), args...))
+		callCWDs = append(callCWDs, cwd)
+		callCount++
+		switch callCount {
+		case 1:
+			return `[
+				{"number":21,"title":"Review sidebar opens PR mode","url":"https://github.com/owner/tabula/pull/21","headRefName":"fix/review-sidebar","baseRefName":"main"}
+			]`, nil
+		case 2:
+			return `[]`, nil
+		case 3:
+			return `[
+				{"number":21,"title":"Review sidebar opens PR mode v2","url":"https://github.com/owner/tabula/pull/21","headRefName":"fix/review-sidebar","baseRefName":"main"}
+			]`, nil
+		default:
+			t.Fatalf("unexpected gh invocation %d", callCount)
+			return "", nil
+		}
+	}
+
+	rr := doAuthedJSONRequest(t, app.Router(), http.MethodPost, "/api/items/sync/github/reviews", map[string]any{
+		"workspace_id": workspace.ID,
+	})
+	if rr.Code != http.StatusOK {
+		t.Fatalf("first review sync status = %d, want 200: %s", rr.Code, rr.Body.String())
+	}
+	var first itemGitHubPRReviewSyncResponse
+	if err := json.NewDecoder(rr.Body).Decode(&first); err != nil {
+		t.Fatalf("decode first review sync response: %v", err)
+	}
+	if first.Synced != 1 || first.Requested != 1 || first.Closed != 0 {
+		t.Fatalf("first review sync response = %+v, want synced=1 requested=1 closed=0", first)
+	}
+
+	reviewItem, err := app.store.GetItemBySource("github", "owner/tabula#PR-21")
+	if err != nil {
+		t.Fatalf("GetItemBySource(review) error: %v", err)
+	}
+	if reviewItem.State != store.ItemStateInbox {
+		t.Fatalf("review item state = %q, want %q", reviewItem.State, store.ItemStateInbox)
+	}
+	if reviewItem.WorkspaceID == nil || *reviewItem.WorkspaceID != workspace.ID {
+		t.Fatalf("review item workspace = %v, want %d", reviewItem.WorkspaceID, workspace.ID)
+	}
+	if reviewItem.ArtifactID == nil {
+		t.Fatal("expected review item artifact")
+	}
+	reviewArtifact, err := app.store.GetArtifact(*reviewItem.ArtifactID)
+	if err != nil {
+		t.Fatalf("GetArtifact(review) error: %v", err)
+	}
+	if reviewArtifact.Kind != store.ArtifactKindGitHubPR {
+		t.Fatalf("review artifact kind = %q, want %q", reviewArtifact.Kind, store.ArtifactKindGitHubPR)
+	}
+	if reviewArtifact.RefURL == nil || *reviewArtifact.RefURL != "https://github.com/owner/tabula/pull/21" {
+		t.Fatalf("review artifact ref_url = %v, want PR URL", reviewArtifact.RefURL)
+	}
+	var reviewMeta map[string]any
+	if reviewArtifact.MetaJSON == nil {
+		t.Fatal("expected review artifact meta_json")
+	}
+	if err := json.Unmarshal([]byte(*reviewArtifact.MetaJSON), &reviewMeta); err != nil {
+		t.Fatalf("unmarshal review artifact meta_json: %v", err)
+	}
+	if reviewMeta["diff_url"] != "https://github.com/owner/tabula/pull/21.diff" {
+		t.Fatalf("review artifact diff_url = %v, want PR diff URL", reviewMeta["diff_url"])
+	}
+	if reviewMeta["head_ref_name"] != "fix/review-sidebar" || reviewMeta["base_ref_name"] != "main" {
+		t.Fatalf("review artifact refs = %#v, want head/base refs", reviewMeta)
+	}
+
+	rr = doAuthedJSONRequest(t, app.Router(), http.MethodPost, "/api/items/sync/github/reviews", map[string]any{
+		"workspace_id": workspace.ID,
+	})
+	if rr.Code != http.StatusOK {
+		t.Fatalf("second review sync status = %d, want 200: %s", rr.Code, rr.Body.String())
+	}
+	closedItem, err := app.store.GetItem(reviewItem.ID)
+	if err != nil {
+		t.Fatalf("GetItem(closed review) error: %v", err)
+	}
+	if closedItem.State != store.ItemStateDone {
+		t.Fatalf("closed review state = %q, want %q", closedItem.State, store.ItemStateDone)
+	}
+
+	rr = doAuthedJSONRequest(t, app.Router(), http.MethodPost, "/api/items/sync/github/reviews", map[string]any{
+		"workspace_id": workspace.ID,
+	})
+	if rr.Code != http.StatusOK {
+		t.Fatalf("third review sync status = %d, want 200: %s", rr.Code, rr.Body.String())
+	}
+	reopenedItem, err := app.store.GetItemBySource("github", "owner/tabula#PR-21")
+	if err != nil {
+		t.Fatalf("GetItemBySource(reopened review) error: %v", err)
+	}
+	if reopenedItem.ID != reviewItem.ID {
+		t.Fatalf("reopened review ID = %d, want %d", reopenedItem.ID, reviewItem.ID)
+	}
+	if reopenedItem.State != store.ItemStateInbox {
+		t.Fatalf("reopened review state = %q, want %q", reopenedItem.State, store.ItemStateInbox)
+	}
+	if reopenedItem.Title != "Review sidebar opens PR mode v2" {
+		t.Fatalf("reopened review title = %q, want updated title", reopenedItem.Title)
+	}
+
+	if len(calls) != 3 {
+		t.Fatalf("gh call count = %d, want 3", len(calls))
+	}
+	for i, args := range calls {
+		if callCWDs[i] != repoDir {
+			t.Fatalf("gh cwd[%d] = %q, want %q", i, callCWDs[i], repoDir)
+		}
+		command := strings.Join(args, " ")
+		if !strings.Contains(command, "pr list --search review-requested:@me --state open --limit 500") {
+			t.Fatalf("gh args[%d] = %q, want review-requested pr list", i, command)
+		}
+		if !strings.Contains(command, "--json number,title,url,headRefName,baseRefName") {
+			t.Fatalf("gh args[%d] = %q, want expected review json fields", i, command)
+		}
+	}
+}
+
+func TestGitHubPRReviewSyncAPIRejectsWorkspaceWithoutGitHubRemote(t *testing.T) {
+	app := newAuthedTestApp(t)
+
+	workspaceDir := filepath.Join(t.TempDir(), "workspace")
+	if err := exec.Command("git", "init", workspaceDir).Run(); err != nil {
+		t.Fatalf("git init %s: %v", workspaceDir, err)
+	}
+	workspace, err := app.store.CreateWorkspace("Repo", workspaceDir)
+	if err != nil {
+		t.Fatalf("CreateWorkspace() error: %v", err)
+	}
+
+	rr := doAuthedJSONRequest(t, app.Router(), http.MethodPost, "/api/items/sync/github/reviews", map[string]any{
+		"workspace_id": workspace.ID,
+	})
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("review sync without remote status = %d, want 400: %s", rr.Code, rr.Body.String())
+	}
+}
+
 func initGitHubWorkspaceRepo(t *testing.T, dirPath, remoteURL string) {
 	t.Helper()
 	if err := exec.Command("git", "init", dirPath).Run(); err != nil {

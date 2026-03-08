@@ -50,4 +50,39 @@ test.describe('item inbox sidebar', () => {
     await expect(page.locator('.sidebar-tab.is-active')).toContainText('Files');
     await expect(page.locator('#pr-file-list .pr-file-item .pr-file-name', { hasText: 'docs' })).toHaveCount(1);
   });
+
+  test('opening a PR review item enters PR review mode', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await waitReady(page);
+
+    await page.evaluate(() => {
+      (window as any).__setItemSidebarData({
+        inbox: [{
+          id: 144,
+          title: 'Review sidebar PR mapping',
+          state: 'inbox',
+          source: 'github',
+          source_ref: 'owner/repo#PR-144',
+          artifact_title: 'PR #144',
+          artifact_kind: 'github_pr',
+          actor_name: 'Alice',
+          created_at: '2026-03-08 10:00:00',
+          updated_at: '2026-03-08 10:05:00',
+        }],
+        waiting: [],
+      });
+    });
+
+    await page.locator('#edge-left-tap').click();
+    await page.locator('.sidebar-tab', { hasText: 'Inbox' }).click();
+    await expect(page.locator('#pr-file-list')).toContainText('Review sidebar PR mapping');
+    await page.locator('#pr-file-list .pr-file-item').first().click();
+
+    await expect(page.locator('body')).toHaveClass(/pr-review-mode/);
+    await expect(page.locator('#canvas-text')).toContainText('src/review.js');
+    await expect(page.locator('#pr-file-list .pr-file-item')).toHaveCount(1);
+
+    const log = await page.evaluate(() => (window as any).__harnessLog || []);
+    expect(log.some((entry: any) => entry?.type === 'command_sent' && entry?.command === '/pr 144')).toBe(true);
+  });
 });

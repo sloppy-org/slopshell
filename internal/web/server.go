@@ -405,6 +405,7 @@ func (a *App) Router() http.Handler {
 	r.Get("/api/items/done", a.handleItemDone)
 	r.Get("/api/items/counts", a.handleItemCounts)
 	r.Post("/api/items/sync/github", a.handleGitHubIssueSync)
+	r.Post("/api/items/sync/github/reviews", a.handleGitHubPRReviewSync)
 	r.Put("/api/items/{item_id}/assign", a.handleItemAssign)
 	r.Put("/api/items/{item_id}/unassign", a.handleItemUnassign)
 	r.Put("/api/items/{item_id}/complete", a.handleItemComplete)
