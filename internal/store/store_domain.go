@@ -110,7 +110,10 @@ CREATE INDEX IF NOT EXISTS idx_external_bindings_stale
 	if err := s.migrateItemTableStateSupport(); err != nil {
 		return err
 	}
-	return s.migrateItemProjectColumnSupport()
+	if err := s.migrateItemProjectColumnSupport(); err != nil {
+		return err
+	}
+	return s.migrateItemArtifactLinkSupport()
 }
 
 func normalizeWorkspaceName(name string) string {
@@ -1022,7 +1025,13 @@ func (s *Store) CreateItem(title string, opts ItemOptions) (Item, error) {
 		}
 		opts.WorkspaceID = inferredWorkspaceID
 	}
-	res, err := s.db.Exec(
+	tx, err := s.db.Begin()
+	if err != nil {
+		return Item{}, err
+	}
+	defer tx.Rollback()
+
+	res, err := tx.Exec(
 		`INSERT INTO items (
 			title, state, workspace_id, project_id, artifact_id, actor_id, visible_after, follow_up_at, source, source_ref
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -1042,6 +1051,12 @@ func (s *Store) CreateItem(title string, opts ItemOptions) (Item, error) {
 	}
 	id, err := res.LastInsertId()
 	if err != nil {
+		return Item{}, err
+	}
+	if err := s.syncPrimaryItemArtifactTx(tx, id, opts.ArtifactID); err != nil {
+		return Item{}, err
+	}
+	if err := tx.Commit(); err != nil {
 		return Item{}, err
 	}
 	return s.GetItem(id)
@@ -1117,24 +1132,7 @@ func (s *Store) UpsertItemFromSource(source, sourceRef, title string, workspaceI
 }
 
 func (s *Store) UpdateItemArtifact(id int64, artifactID *int64) error {
-	res, err := s.db.Exec(
-		`UPDATE items
-		 SET artifact_id = ?, updated_at = datetime('now')
-		 WHERE id = ?`,
-		artifactID,
-		id,
-	)
-	if err != nil {
-		return err
-	}
-	affected, err := res.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if affected == 0 {
-		return sql.ErrNoRows
-	}
-	return nil
+	return s.syncPrimaryItemArtifact(id, artifactID)
 }
 
 func (s *Store) UpdateItemSource(id int64, source, sourceRef string) error {
@@ -1179,6 +1177,8 @@ func (s *Store) UpdateItem(id int64, updates ItemUpdate) error {
 
 	parts := []string{}
 	args := []any{}
+	artifactUpdated := false
+	var artifactID *int64
 
 	if updates.Title != nil {
 		title := strings.TrimSpace(*updates.Title)
@@ -1205,8 +1205,11 @@ func (s *Store) UpdateItem(id int64, updates ItemUpdate) error {
 		args = append(args, normalizeOptionalProjectID(updates.ProjectID))
 	}
 	if updates.ArtifactID != nil {
-		parts = append(parts, "artifact_id = ?")
-		args = append(args, nullablePositiveID(*updates.ArtifactID))
+		artifactUpdated = true
+		if *updates.ArtifactID > 0 {
+			value := *updates.ArtifactID
+			artifactID = &value
+		}
 	}
 	if updates.ActorID != nil {
 		parts = append(parts, "actor_id = ?")
@@ -1245,21 +1248,28 @@ func (s *Store) UpdateItem(id int64, updates ItemUpdate) error {
 			args = append(args, nil, nil)
 		}
 	}
-	if len(parts) == 0 {
+	if len(parts) == 0 && !artifactUpdated {
 		return nil
 	}
-	parts = append(parts, "updated_at = datetime('now')")
-	args = append(args, id)
-	res, err := s.db.Exec(`UPDATE items SET `+stringsJoin(parts, ", ")+` WHERE id = ?`, args...)
-	if err != nil {
-		return err
+	if len(parts) > 0 {
+		parts = append(parts, "updated_at = datetime('now')")
+		args = append(args, id)
+		res, err := s.db.Exec(`UPDATE items SET `+stringsJoin(parts, ", ")+` WHERE id = ?`, args...)
+		if err != nil {
+			return err
+		}
+		affected, err := res.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if affected == 0 {
+			return sql.ErrNoRows
+		}
 	}
-	affected, err := res.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if affected == 0 {
-		return sql.ErrNoRows
+	if artifactUpdated {
+		if err := s.syncPrimaryItemArtifact(id, artifactID); err != nil {
+			return err
+		}
 	}
 	return nil
 }

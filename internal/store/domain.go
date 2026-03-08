@@ -125,6 +125,21 @@ type ArtifactWorkspaceLink struct {
 	CreatedAt   string `json:"created_at"`
 }
 
+type ItemArtifactLink struct {
+	ItemID     int64  `json:"item_id"`
+	ArtifactID int64  `json:"artifact_id"`
+	Role       string `json:"role"`
+	CreatedAt  string `json:"created_at"`
+}
+
+type ItemArtifact struct {
+	ItemID        int64    `json:"item_id"`
+	ArtifactID    int64    `json:"artifact_id"`
+	Role          string   `json:"role"`
+	LinkCreatedAt string   `json:"link_created_at"`
+	Artifact      Artifact `json:"artifact"`
+}
+
 type Actor struct {
 	ID        int64  `json:"id"`
 	Name      string `json:"name"`

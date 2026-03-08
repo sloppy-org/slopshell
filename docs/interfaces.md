@@ -64,6 +64,7 @@ Domain model API:
 - `GET /api/artifacts`
 - `POST /api/artifacts`
 - `GET /api/artifacts/{artifact_id}`
+- `GET /api/artifacts/{artifact_id}/items`
 - `DELETE /api/artifacts/{artifact_id}`
 - `GET /api/items`
 - `POST /api/items`
@@ -73,6 +74,9 @@ Domain model API:
 - `GET /api/items/done`
 - `GET /api/items/counts`
 - `GET /api/items/{item_id}`
+- `GET /api/items/{item_id}/artifacts`
+- `POST /api/items/{item_id}/artifacts`
+- `DELETE /api/items/{item_id}/artifacts/{artifact_id}`
 - `PUT /api/items/{item_id}`
 - `DELETE /api/items/{item_id}`
 - `PUT /api/items/{item_id}/state`

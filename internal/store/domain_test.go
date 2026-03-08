@@ -36,6 +36,7 @@ func TestStoreMigratesDomainTablesOnFreshDatabase(t *testing.T) {
 		"artifacts":                   {"id", "kind", "ref_path", "ref_url", "title", "meta_json", "created_at", "updated_at"},
 		"external_accounts":           {"id", "sphere", "provider", "label", "config_json", "enabled", "created_at", "updated_at"},
 		"external_container_mappings": {"id", "provider", "container_type", "container_ref", "workspace_id", "project_id", "sphere"},
+		"item_artifacts":              {"item_id", "artifact_id", "role", "created_at"},
 		"workspace_artifact_links":    {"workspace_id", "artifact_id", "created_at"},
 		"external_bindings":           {"id", "account_id", "provider", "object_type", "remote_id", "item_id", "artifact_id", "container_ref", "remote_updated_at", "last_synced_at"},
 		"items":                       {"id", "title", "state", "workspace_id", "project_id", "artifact_id", "actor_id", "visible_after", "follow_up_at", "source", "source_ref", "created_at", "updated_at"},
@@ -124,7 +125,7 @@ CREATE TABLE chat_messages (
 	if err != nil {
 		t.Fatalf("TableColumns() error: %v", err)
 	}
-	for _, table := range []string{"workspaces", "actors", "artifacts", "external_accounts", "external_container_mappings", "workspace_artifact_links", "external_bindings", "items"} {
+	for _, table := range []string{"workspaces", "actors", "artifacts", "external_accounts", "external_container_mappings", "item_artifacts", "workspace_artifact_links", "external_bindings", "items"} {
 		if _, ok := columns[table]; !ok {
 			t.Fatalf("expected migrated table %s to exist", table)
 		}
@@ -244,6 +245,8 @@ func TestDomainTypesExposeJSONTags(t *testing.T) {
 		{name: "Actor", typ: reflect.TypeOf(Actor{})},
 		{name: "Artifact", typ: reflect.TypeOf(Artifact{})},
 		{name: "ArtifactWorkspaceLink", typ: reflect.TypeOf(ArtifactWorkspaceLink{})},
+		{name: "ItemArtifactLink", typ: reflect.TypeOf(ItemArtifactLink{})},
+		{name: "ItemArtifact", typ: reflect.TypeOf(ItemArtifact{})},
 		{name: "Item", typ: reflect.TypeOf(Item{})},
 	} {
 		for i := 0; i < tc.typ.NumField(); i++ {
