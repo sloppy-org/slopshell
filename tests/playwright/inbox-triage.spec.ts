@@ -58,33 +58,40 @@ async function queueSidebarResponseDelay(
 
 async function touchPhase(page: Page, selector: string, phase: 'start' | 'move' | 'end', dx = 0, dy = 0) {
   await page.locator(selector).evaluate((el, payload) => {
-    const rect = (el as HTMLElement).getBoundingClientRect();
-    const startX = rect.left + 24;
-    const startY = rect.top + rect.height / 2;
-    const currentX = startX + Number(payload.dx || 0);
-    const currentY = startY + Number(payload.dy || 0);
     const target = el as HTMLElement;
-    const startTouch = new Touch({
+    const key = String(payload.selector || '');
+    const touchState = ((window as any).__playwrightTouchState ||= {});
+    const readOrigin = () => {
+      const existing = touchState[key];
+      if (existing && Number.isFinite(existing.startX) && Number.isFinite(existing.startY)) {
+        return existing;
+      }
+      const rect = target.getBoundingClientRect();
+      const origin = {
+        startX: rect.left + 24,
+        startY: rect.top + rect.height / 2,
+      };
+      touchState[key] = origin;
+      return origin;
+    };
+    const makeTouch = (clientX: number, clientY: number) => new Touch({
       identifier: 1,
       target,
-      clientX: startX,
-      clientY: startY,
-      pageX: startX,
-      pageY: startY,
-      screenX: startX,
-      screenY: startY,
-    });
-    const moveTouch = new Touch({
-      identifier: 1,
-      target,
-      clientX: currentX,
-      clientY: currentY,
-      pageX: currentX,
-      pageY: currentY,
-      screenX: currentX,
-      screenY: currentY,
+      clientX,
+      clientY,
+      pageX: clientX,
+      pageY: clientY,
+      screenX: clientX,
+      screenY: clientY,
     });
     if (payload.phase === 'start') {
+      const rect = target.getBoundingClientRect();
+      const origin = {
+        startX: rect.left + 24,
+        startY: rect.top + rect.height / 2,
+      };
+      touchState[key] = origin;
+      const startTouch = makeTouch(origin.startX, origin.startY);
       target.dispatchEvent(new TouchEvent('touchstart', {
         bubbles: true,
         cancelable: true,
@@ -94,6 +101,20 @@ async function touchPhase(page: Page, selector: string, phase: 'start' | 'move' 
       }));
       return;
     }
+    const origin = readOrigin();
+    const currentX = origin.startX + Number(payload.dx || 0);
+    const currentY = origin.startY + Number(payload.dy || 0);
+    const moveTouch = makeTouch(currentX, currentY);
+    const startTouch = new Touch({
+      identifier: 1,
+      target,
+      clientX: origin.startX,
+      clientY: origin.startY,
+      pageX: origin.startX,
+      pageY: origin.startY,
+      screenX: origin.startX,
+      screenY: origin.startY,
+    });
     if (payload.phase === 'move') {
       target.dispatchEvent(new TouchEvent('touchmove', {
         bubbles: true,
@@ -111,7 +132,8 @@ async function touchPhase(page: Page, selector: string, phase: 'start' | 'move' 
       changedTouches: [moveTouch],
       targetTouches: [],
     }));
-  }, { phase, dx, dy });
+    delete touchState[key];
+  }, { selector, phase, dx, dy });
 }
 
 test.describe('inbox triage interactions', () => {
