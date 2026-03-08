@@ -14,7 +14,7 @@ import {
 import {
   getUiState, setUiMode,
   showIndicatorMode, hideIndicator,
-  showTextInput, hideTextInput,
+  showTextInput, hideTextInput as hideTextInputUi,
   showOverlay, hideOverlay, updateOverlay,
   isOverlayVisible, isTextInputVisible, isRecording, setRecording,
   getInputAnchor, setInputAnchor, getAnchorFromPoint,
@@ -127,6 +127,7 @@ const state = {
   workspaceStepInFlight: false,
   prReviewAwaitingArtifact: false,
   artifactEditMode: false,
+  reviewCommentDraft: null,
   inkDraft: {
     strokes: [],
     activePointerId: null,
@@ -1049,6 +1050,115 @@ function showStatus(text) {
   if (el) el.textContent = text;
   const statusEl = document.getElementById('status-label');
   if (statusEl) statusEl.textContent = text;
+}
+
+function isDirectReviewCommentMode() {
+  return state.prReviewMode || state.chatMode === 'review';
+}
+
+function syncComposerPlaceholders() {
+  const placeholder = state.reviewCommentDraft ? 'Add review comment…' : '';
+  const floatingInput = document.getElementById('floating-input');
+  if (floatingInput instanceof HTMLTextAreaElement) {
+    floatingInput.placeholder = placeholder;
+  }
+  const chatPaneInput = document.getElementById('chat-pane-input');
+  if (chatPaneInput instanceof HTMLTextAreaElement) {
+    chatPaneInput.placeholder = placeholder || 'Message...';
+  }
+}
+
+function clearReviewCommentDraft() {
+  state.reviewCommentDraft = null;
+  syncComposerPlaceholders();
+}
+
+function hideTextInput() {
+  hideTextInputUi();
+  clearReviewCommentDraft();
+}
+
+function getSelectionCommentPoint(selection, fallbackEvent = null) {
+  if (selection?.rangeCount > 0) {
+    const rect = selection.getRangeAt(0).getBoundingClientRect();
+    if (rect && (rect.width > 0 || rect.height > 0)) {
+      return {
+        x: rect.left + Math.max(12, rect.width / 2),
+        y: rect.bottom + 14,
+      };
+    }
+  }
+  if (Number.isFinite(fallbackEvent?.clientX) && Number.isFinite(fallbackEvent?.clientY)) {
+    return {
+      x: Number(fallbackEvent.clientX),
+      y: Number(fallbackEvent.clientY) + 18,
+    };
+  }
+  return {
+    x: Math.floor(window.innerWidth / 2),
+    y: Math.floor(window.innerHeight / 2),
+  };
+}
+
+function beginDirectReviewComment(anchor, event = null) {
+  if (!anchor || !isDirectReviewCommentMode()) return false;
+  const normalizedAnchor = {
+    title: String(anchor.title || getActiveArtifactTitle() || '').trim(),
+    line: Number(anchor.line) || 0,
+    page: Number(anchor.page) || 0,
+    x: Number(anchor.x) || 0,
+    y: Number(anchor.y) || 0,
+    selectedText: String(anchor.selectedText || '').trim(),
+  };
+  state.reviewCommentDraft = { anchor: normalizedAnchor };
+  syncComposerPlaceholders();
+  setInputAnchor(normalizedAnchor);
+  const point = getSelectionCommentPoint(window.getSelection(), event);
+  openComposerAt(point.x, point.y, normalizedAnchor);
+  return true;
+}
+
+async function submitReviewComment(text) {
+  const trimmed = String(text || '').trim();
+  const draft = state.reviewCommentDraft;
+  if (!trimmed || !draft?.anchor) return false;
+  const projectID = String(activeProject()?.id || '').trim();
+  const title = String(draft.anchor.title || getActiveArtifactTitle() || '').trim();
+  const artifactPath = String(state.workspaceOpenFilePath || title).trim();
+  const payload = {
+    project_id: projectID,
+    artifact_kind: activeArtifactKindForInk(),
+    artifact_title: title,
+    artifact_path: artifactPath,
+    comments: [{
+      text: trimmed,
+      anchor: {
+        title,
+        line: Number(draft.anchor.line) || 0,
+        page: Number(draft.anchor.page) || 0,
+        selected_text: String(draft.anchor.selectedText || '').trim(),
+        x: Number(draft.anchor.x) || 0,
+        y: Number(draft.anchor.y) || 0,
+      },
+    }],
+  };
+  const resp = await fetch(apiURL('review/submit'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!resp.ok) {
+    const detail = (await resp.text()).trim() || `HTTP ${resp.status}`;
+    throw new Error(detail);
+  }
+  const responsePayload = await resp.json();
+  clearReviewCommentDraft();
+  setInputAnchor(null);
+  clearLineHighlight();
+  try { window.getSelection()?.removeAllRanges(); } catch (_) {}
+  const reviewPath = String(responsePayload?.review_markdown_path || '').trim();
+  showStatus(reviewPath ? `review saved: ${reviewPath}` : 'review saved');
+  return true;
 }
 
 function suppressSyntheticClick() {
@@ -2431,6 +2541,9 @@ function syncChatScroll(host) {
 function setChatMode(mode) {
   const normalized = String(mode || 'chat').toLowerCase();
   state.chatMode = normalized === 'plan' || normalized === 'review' ? normalized : 'chat';
+  if (state.chatMode !== 'review') {
+    clearReviewCommentDraft();
+  }
   const pill = document.getElementById('chat-mode-pill');
   if (pill) {
     pill.textContent = state.chatMode;
@@ -3204,6 +3317,7 @@ function exitPrReviewMode() {
   if (!state.prReviewMode && (!state.prReviewFiles || state.prReviewFiles.length === 0)) {
     return;
   }
+  clearReviewCommentDraft();
   state.prReviewMode = false;
   state.prReviewFiles = [];
   state.prReviewActiveIndex = 0;
@@ -6487,11 +6601,25 @@ function bindUi() {
         ev.preventDefault();
         const text = floatingInput.value.trim();
         if (text) {
-          state.lastInputOrigin = 'text';
+          const reviewCommentDraftActive = Boolean(state.reviewCommentDraft);
           floatingInput.value = '';
           floatingInput.blur();
-          hideTextInput();
+          if (reviewCommentDraftActive) {
+            hideTextInputUi();
+          } else {
+            hideTextInput();
+          }
           settleKeyboardAfterSubmit();
+          if (reviewCommentDraftActive) {
+            void submitReviewComment(text).catch((err) => {
+              clearReviewCommentDraft();
+              setInputAnchor(null);
+              clearLineHighlight();
+              showStatus(`review submit failed: ${String(err?.message || err || 'unknown error')}`);
+            });
+            return;
+          }
+          state.lastInputOrigin = 'text';
           void submitMessage(text);
         }
       }
@@ -6517,11 +6645,21 @@ function bindUi() {
         ev.preventDefault();
         const text = chatPaneInput.value.trim();
         if (text) {
-          state.lastInputOrigin = 'text';
+          const reviewCommentDraftActive = Boolean(state.reviewCommentDraft);
           chatPaneInput.value = '';
           chatPaneInput.style.height = '';
           chatPaneInput.blur();
           settleKeyboardAfterSubmit();
+          if (reviewCommentDraftActive) {
+            void submitReviewComment(text).catch((err) => {
+              clearReviewCommentDraft();
+              setInputAnchor(null);
+              clearLineHighlight();
+              showStatus(`review submit failed: ${String(err?.message || err || 'unknown error')}`);
+            });
+            return;
+          }
+          state.lastInputOrigin = 'text';
           void submitMessage(text);
         }
       }
@@ -6530,6 +6668,11 @@ function bindUi() {
         chatPaneInput.value = '';
         chatPaneInput.style.height = '';
         chatPaneInput.blur();
+        if (state.reviewCommentDraft) {
+          clearReviewCommentDraft();
+          setInputAnchor(null);
+          clearLineHighlight();
+        }
         settleKeyboardAfterSubmit();
       }
     });
@@ -6762,18 +6905,23 @@ function bindUi() {
   });
 
   // Text selection on artifact sets anchor
-  if (canvasText) {
-    canvasText.addEventListener('mouseup', () => {
+  const bindReviewSelection = (node) => {
+    if (!(node instanceof HTMLElement)) return;
+    node.addEventListener('mouseup', (ev) => {
       const sel = window.getSelection();
       if (!sel || sel.isCollapsed) return;
       const loc = getLocationFromSelection();
       if (loc) {
         setInputAnchor({ line: loc.line, title: loc.title, selectedText: loc.selectedText });
+        beginDirectReviewComment(loc, ev);
       }
     });
-  }
+  };
+  bindReviewSelection(canvasText);
+  bindReviewSelection(document.getElementById('canvas-pdf'));
 
   initEdgePanels();
+  syncComposerPlaceholders();
 }
 
 function showSplash() {

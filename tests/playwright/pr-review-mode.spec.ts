@@ -25,6 +25,10 @@ async function injectCanvasEvent(page: Page, payload: Record<string, unknown>) {
   }, payload);
 }
 
+async function harnessLog(page: Page) {
+  return page.evaluate(() => ((window as any).__harnessLog || []).slice());
+}
+
 async function horizontalFlip(page: Page, deltaX: number) {
   await page.locator('#canvas-viewport').evaluate((el, dX) => {
     const ev = new WheelEvent('wheel', {
@@ -139,6 +143,61 @@ test.describe('pr review canvas mode', () => {
 
     await page.keyboard.press('ArrowLeft');
     await expect(page.locator('#pr-file-list .pr-file-item.is-active .pr-file-name')).toContainText('docs/one.md');
+  });
+
+  test('opens a direct review comment composer from selected text', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await waitReady(page);
+    await page.evaluate(() => {
+      const app = (window as any)._taburaApp;
+      if (app && typeof app.getState === 'function') {
+        app.getState().inputMode = 'keyboard';
+      }
+      document.body.classList.remove('pen-input-mode');
+    });
+
+    await injectCanvasEvent(page, {
+      kind: 'text_artifact',
+      event_id: 'evt-pr-comment',
+      title: '.tabura/artifacts/pr/pr-21.diff',
+      text: twoFileDiff(),
+    });
+    await page.keyboard.press('ArrowRight');
+    await expect(page.locator('#canvas-text')).toContainText('src/two.js');
+
+    await page.evaluate(() => {
+      const line = document.querySelector('#canvas-text .hl-diff-line.hl-diff-add[data-file-path="src/two.js"][data-file-line="1"]');
+      if (!(line instanceof HTMLElement)) {
+        throw new Error('review line not found');
+      }
+      const range = document.createRange();
+      range.selectNodeContents(line);
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(range);
+      const rect = line.getBoundingClientRect();
+      line.dispatchEvent(new MouseEvent('mouseup', {
+        bubbles: true,
+        clientX: rect.left + Math.min(24, rect.width / 2),
+        clientY: rect.bottom - Math.min(4, rect.height / 2),
+      }));
+    });
+
+    const composer = page.locator('#floating-input');
+    await expect(composer).toBeVisible();
+    await expect(composer).toHaveAttribute('placeholder', 'Add review comment…');
+    await composer.fill('Please tighten this change.');
+    await composer.press('Enter');
+
+    await expect(page.locator('#status-text')).toContainText('review saved: .tabura/artifacts/reviews/test-review.md');
+    const log = await harnessLog(page);
+    const reviewSubmit = log.find((entry: any) => entry?.type === 'api_fetch' && entry?.action === 'review_submit');
+    expect(reviewSubmit).toBeTruthy();
+    expect(reviewSubmit.payload.comments[0].text).toBe('Please tighten this change.');
+    expect(String(reviewSubmit.payload.comments[0].anchor.title || '')).toBe('src/two.js');
+    expect(Number(reviewSubmit.payload.comments[0].anchor.line || 0)).toBe(1);
+    expect(String(reviewSubmit.payload.comments[0].anchor.selected_text || '')).toContain('console.log("after");');
+    expect(log.some((entry: any) => entry?.type === 'message_sent')).toBe(false);
   });
 
   test('supports horizontal canvas flip in pr mode', async ({ page }) => {

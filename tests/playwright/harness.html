@@ -803,6 +803,33 @@
           config: { ...window.__participantConfig },
         }), { status: 200 });
       }
+      if (u.includes('/api/review/submit') && opts?.method === 'POST') {
+        let body = {};
+        try { body = JSON.parse(String(opts?.body || '{}')); } catch (_) { body = {}; }
+        const projectId = String(body?.project_id || activeProjectId).trim() || activeProjectId;
+        const index = harnessProjects.findIndex((project) => project.id === projectId);
+        if (index >= 0) {
+          harnessProjects[index] = {
+            ...harnessProjects[index],
+            unread: false,
+            review_pending: false,
+          };
+        }
+        window.__harnessLog.push({
+          type: 'api_fetch',
+          action: 'review_submit',
+          method: opts?.method || 'POST',
+          url: u,
+          payload: body,
+        });
+        return new Response(JSON.stringify({
+          ok: true,
+          project_id: projectId,
+          review_markdown_path: '.tabura/artifacts/reviews/test-review.md',
+          revision_manifest_path: '.tabura/revisions/review/manifest.json',
+          revision_history_path: '.tabura/revisions/review/history.md',
+        }), { status: 200 });
+      }
       if (u.includes('/api/projects')) {
         const projects = harnessProjects.map((project) => cloneProject(project.id));
         return new Response(JSON.stringify({
