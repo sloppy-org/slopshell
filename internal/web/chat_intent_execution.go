@@ -290,6 +290,8 @@ func (a *App) executeSystemAction(sessionID string, session store.ChatSession, a
 		return status, nil, nil
 	case "capture_idea":
 		return a.captureIdeaItem(session, action)
+	case "refine_idea_note":
+		return a.refineConversationIdea(session, action)
 	case "make_item", "delegate_item", "snooze_item", "split_items":
 		return a.createConversationItem(sessionID, session, action)
 	case "link_workspace_artifact":

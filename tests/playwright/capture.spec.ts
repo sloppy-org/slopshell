@@ -40,9 +40,10 @@ test.describe('capture page', () => {
     expect(artifactRequests).toHaveLength(1);
     expect(artifactRequests[0].kind).toBe('idea_note');
     expect(artifactRequests[0].title).toBe('Voice memo from capture harness.');
-    expect(JSON.parse(String(artifactRequests[0].meta_json)).transcript).toBe(
-      'Voice memo from capture harness. Follow up tomorrow morning.',
-    );
+    const meta = JSON.parse(String(artifactRequests[0].meta_json));
+    expect(meta.transcript).toBe('Voice memo from capture harness. Follow up tomorrow morning.');
+    expect(meta.capture_mode).toBe('voice');
+    expect(meta.notes).toEqual(['Voice memo from capture harness. Follow up tomorrow morning.']);
 
     const itemRequests = await page.evaluate(() => (window as any).__captureRequests);
     expect(itemRequests).toHaveLength(1);

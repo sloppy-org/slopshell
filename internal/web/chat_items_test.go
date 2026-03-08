@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"encoding/json"
 	"net"
 	"os"
 	"path/filepath"
@@ -33,9 +34,14 @@ func TestParseInlineItemIntent(t *testing.T) {
 		wantActor  string
 		wantWhen   string
 		wantCount  int
+		wantKind   string
 	}{
 		{text: "idea: better swipe triage", wantAction: "capture_idea"},
 		{text: "new idea: add a review inbox", wantAction: "capture_idea"},
+		{text: "expand this idea", wantAction: "refine_idea_note", wantKind: "expand"},
+		{text: "add pros and cons", wantAction: "refine_idea_note", wantKind: "pros_cons"},
+		{text: "compare alternatives", wantAction: "refine_idea_note", wantKind: "alternatives"},
+		{text: "outline an implementation", wantAction: "refine_idea_note", wantKind: "implementation"},
 		{text: "make this an item", wantAction: "make_item"},
 		{text: "delegate this to Codex", wantAction: "delegate_item", wantActor: "Codex"},
 		{text: "remind me tomorrow", wantAction: "snooze_item", wantWhen: "2026-03-09T09:00:00Z"},
@@ -60,6 +66,9 @@ func TestParseInlineItemIntent(t *testing.T) {
 			}
 			if tc.wantCount != 0 && systemActionSplitCount(action.Params) != tc.wantCount {
 				t.Fatalf("count = %d, want %d", systemActionSplitCount(action.Params), tc.wantCount)
+			}
+			if tc.wantKind != "" && systemActionStringParam(action.Params, "kind") != tc.wantKind {
+				t.Fatalf("kind = %q, want %q", systemActionStringParam(action.Params, "kind"), tc.wantKind)
 			}
 		})
 	}
@@ -287,13 +296,24 @@ func TestClassifyAndExecuteSystemActionCaptureIdeaCreatesInboxItemFromUserInput(
 	if artifact.Kind != store.ArtifactKindIdeaNote {
 		t.Fatalf("artifact kind = %q, want %q", artifact.Kind, store.ArtifactKindIdeaNote)
 	}
-	if artifact.MetaJSON == nil || !containsAll(
-		*artifact.MetaJSON,
-		`"capture_mode":"voice"`,
-		`"transcript":"better swipe triage for waiting items. Capture the blockers too."`,
-		`"title":"Better swipe triage for waiting items."`,
-	) {
+	if artifact.MetaJSON == nil {
 		t.Fatalf("artifact meta_json = %v", artifact.MetaJSON)
+	}
+	meta := parseIdeaNoteMeta(artifact.MetaJSON, ideaNoteString(artifact.Title))
+	if meta.CaptureMode != chatInputModeVoice {
+		t.Fatalf("capture_mode = %q, want %q", meta.CaptureMode, chatInputModeVoice)
+	}
+	if meta.Transcript != "better swipe triage for waiting items. Capture the blockers too." {
+		t.Fatalf("transcript = %q", meta.Transcript)
+	}
+	if meta.Title != "Better swipe triage for waiting items." {
+		t.Fatalf("title = %q", meta.Title)
+	}
+	if meta.Workspace != "Default" {
+		t.Fatalf("workspace = %q, want Default", meta.Workspace)
+	}
+	if len(meta.Notes) != 1 || meta.Notes[0] != meta.Transcript {
+		t.Fatalf("notes = %#v", meta.Notes)
 	}
 }
 
@@ -333,6 +353,94 @@ func TestRunAssistantTurnCaptureIdeaPersistsAssistantConfirmation(t *testing.T) 
 	}
 	if !foundAssistant {
 		t.Fatalf("expected assistant confirmation in chat history, got %#v", messages)
+	}
+}
+
+func TestClassifyAndExecuteSystemActionRefineIdeaUpdatesArtifactAndCanvas(t *testing.T) {
+	app := newAuthedTestApp(t)
+	app.intentLLMURL = ""
+	app.intentClassifierURL = ""
+
+	project, err := app.ensureDefaultProjectRecord()
+	if err != nil {
+		t.Fatalf("ensure default project: %v", err)
+	}
+	if _, err := app.store.CreateWorkspace("Default", project.RootPath); err != nil {
+		t.Fatalf("CreateWorkspace() error: %v", err)
+	}
+	session, err := app.store.GetOrCreateChatSession(project.ProjectKey)
+	if err != nil {
+		t.Fatalf("chat session: %v", err)
+	}
+
+	if _, _, handled := app.classifyAndExecuteSystemAction(
+		context.Background(),
+		session.ID,
+		session,
+		"idea: better swipe triage for waiting items. Capture the blockers too.",
+	); !handled {
+		t.Fatal("expected idea capture to be handled")
+	}
+
+	item := mustFirstItemByState(t, app, store.ItemStateInbox)
+	if item.ArtifactID == nil {
+		t.Fatal("expected captured idea artifact")
+	}
+	artifact, err := app.store.GetArtifact(*item.ArtifactID)
+	if err != nil {
+		t.Fatalf("GetArtifact() error: %v", err)
+	}
+
+	mock := &canvasMCPMock{
+		artifactTitle: ideaNoteString(artifact.Title),
+		artifactKind:  "text_artifact",
+		artifactText:  renderIdeaNoteMarkdown(parseIdeaNoteMeta(artifact.MetaJSON, ideaNoteString(artifact.Title))),
+	}
+	server := mock.setupServer(t)
+	defer server.Close()
+	port := serverPort(t, server.Listener.Addr())
+	app.tunnels.setPort(app.canvasSessionIDForProject(project), port)
+
+	message, payloads, handled := app.classifyAndExecuteSystemAction(context.Background(), session.ID, session, "add pros and cons")
+	if !handled {
+		t.Fatal("expected idea refinement to be handled")
+	}
+	if message != "Updated idea note with Pros and Cons." {
+		t.Fatalf("message = %q", message)
+	}
+	if len(payloads) != 1 || strFromAny(payloads[0]["type"]) != "artifact_updated" {
+		t.Fatalf("payloads = %#v", payloads)
+	}
+
+	updatedArtifact, err := app.store.GetArtifact(*item.ArtifactID)
+	if err != nil {
+		t.Fatalf("GetArtifact() updated error: %v", err)
+	}
+	meta := parseIdeaNoteMeta(updatedArtifact.MetaJSON, ideaNoteString(updatedArtifact.Title))
+	if len(meta.Refinements) != 1 {
+		t.Fatalf("refinements len = %d, want 1", len(meta.Refinements))
+	}
+	if meta.Refinements[0].Heading != "Pros and Cons" {
+		t.Fatalf("heading = %q, want %q", meta.Refinements[0].Heading, "Pros and Cons")
+	}
+	if !strings.Contains(mock.lastShownContent, "## Pros and Cons") {
+		t.Fatalf("canvas content = %q", mock.lastShownContent)
+	}
+
+	if _, _, handled := app.classifyAndExecuteSystemAction(context.Background(), session.ID, session, "outline an implementation"); !handled {
+		t.Fatal("expected second idea refinement to be handled")
+	}
+	updatedArtifact, err = app.store.GetArtifact(*item.ArtifactID)
+	if err != nil {
+		t.Fatalf("GetArtifact() second update error: %v", err)
+	}
+	meta = parseIdeaNoteMeta(updatedArtifact.MetaJSON, ideaNoteString(updatedArtifact.Title))
+	if len(meta.Refinements) != 2 {
+		raw, _ := json.Marshal(meta)
+		t.Fatalf("refinements len = %d, want 2: %s", len(meta.Refinements), raw)
+	}
+	if !strings.Contains(mock.lastShownContent, "## Implementation Outline") {
+		t.Fatalf("canvas content = %q", mock.lastShownContent)
 	}
 }
 
