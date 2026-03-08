@@ -115,13 +115,19 @@ const state = {
   prReviewTitle: '',
   prReviewPRNumber: '',
   prReviewDrawerOpen: false,
-  fileSidebarMode: 'workspace',
+  fileSidebarMode: 'items',
   workspaceBrowserPath: '',
   workspaceBrowserEntries: [],
   workspaceBrowserLoading: false,
   workspaceBrowserError: '',
   workspaceOpenFilePath: '',
   workspaceStepInFlight: false,
+  itemSidebarView: 'inbox',
+  itemSidebarItems: [],
+  itemSidebarCounts: defaultItemSidebarCounts(),
+  itemSidebarLoading: false,
+  itemSidebarError: '',
+  itemSidebarActiveItemID: 0,
   prReviewAwaitingArtifact: false,
   artifactEditMode: false,
   inkDraft: {
@@ -220,6 +226,7 @@ const MEETING_REFERENCES_LABEL = 'Meeting References';
 let localMessageSeq = 0;
 const CHAT_CTRL_LONG_PRESS_MS = 180;
 const ARTIFACT_EDIT_LONG_TAP_MS = 420;
+const ITEM_SIDEBAR_VIEWS = ['inbox', 'waiting', 'someday', 'done'];
 // Frontend end-of-utterance policy:
 // - start/end speech from local mic energy
 // - pure VAD commit (no semantic EOU sidecar)
@@ -2934,7 +2941,244 @@ function workspaceCompanionEntries() {
   ];
 }
 
-function renderSidebarRow({ icon, label, active = false, meta = '', onClick }) {
+function defaultItemSidebarCounts() {
+  return {
+    inbox: 0,
+    waiting: 0,
+    someday: 0,
+    done: 0,
+  };
+}
+
+function normalizeItemSidebarView(rawView) {
+  const value = String(rawView || '').trim().toLowerCase();
+  if (ITEM_SIDEBAR_VIEWS.includes(value)) return value;
+  return 'inbox';
+}
+
+function itemSidebarEndpoint(view) {
+  const normalized = normalizeItemSidebarView(view);
+  if (normalized === 'done') return `items/${normalized}?limit=50`;
+  return `items/${normalized}`;
+}
+
+function normalizeItemSidebarCounts(rawCounts) {
+  const counts = defaultItemSidebarCounts();
+  if (!rawCounts || typeof rawCounts !== 'object') return counts;
+  ITEM_SIDEBAR_VIEWS.forEach((view) => {
+    const value = Number(rawCounts[view] ?? 0);
+    counts[view] = Number.isFinite(value) && value > 0 ? Math.trunc(value) : 0;
+  });
+  return counts;
+}
+
+function setInboxTriggerCount(count) {
+  const edgeLeftTap = document.getElementById('edge-left-tap');
+  if (!(edgeLeftTap instanceof HTMLElement)) return;
+  const value = Math.max(0, Number(count) || 0);
+  edgeLeftTap.dataset.inboxCount = value > 0 ? String(value) : '';
+  edgeLeftTap.classList.toggle('has-inbox-count', value > 0);
+}
+
+function applyItemSidebarCounts(rawCounts) {
+  state.itemSidebarCounts = normalizeItemSidebarCounts(rawCounts);
+  setInboxTriggerCount(state.itemSidebarCounts.inbox);
+}
+
+async function refreshItemSidebarCounts() {
+  const projectID = String(state.activeProjectId || '').trim();
+  if (!projectID) {
+    applyItemSidebarCounts(defaultItemSidebarCounts());
+    return false;
+  }
+  const resp = await fetch(apiURL('items/counts'), { cache: 'no-store' });
+  if (!resp.ok) {
+    const detail = (await resp.text()).trim() || `HTTP ${resp.status}`;
+    throw new Error(detail);
+  }
+  const payload = await resp.json();
+  if (projectID !== String(state.activeProjectId || '').trim()) return false;
+  applyItemSidebarCounts(payload?.counts);
+  return true;
+}
+
+async function loadItemSidebarView(view = state.itemSidebarView) {
+  const normalizedView = normalizeItemSidebarView(view);
+  const projectID = String(state.activeProjectId || '').trim();
+  state.itemSidebarView = normalizedView;
+  state.itemSidebarLoading = true;
+  state.itemSidebarError = '';
+  if (!state.prReviewMode) {
+    state.fileSidebarMode = 'items';
+  }
+  renderPrReviewFileList();
+  if (!projectID) {
+    state.itemSidebarItems = [];
+    state.itemSidebarLoading = false;
+    applyItemSidebarCounts(defaultItemSidebarCounts());
+    renderPrReviewFileList();
+    return false;
+  }
+  try {
+    const [itemsResp, countsResp] = await Promise.all([
+      fetch(apiURL(itemSidebarEndpoint(normalizedView)), { cache: 'no-store' }),
+      fetch(apiURL('items/counts'), { cache: 'no-store' }),
+    ]);
+    if (!itemsResp.ok) {
+      const detail = (await itemsResp.text()).trim() || `HTTP ${itemsResp.status}`;
+      throw new Error(detail);
+    }
+    if (!countsResp.ok) {
+      const detail = (await countsResp.text()).trim() || `HTTP ${countsResp.status}`;
+      throw new Error(detail);
+    }
+    const [itemsPayload, countsPayload] = await Promise.all([itemsResp.json(), countsResp.json()]);
+    if (projectID !== String(state.activeProjectId || '').trim()) return false;
+    state.itemSidebarItems = Array.isArray(itemsPayload?.items) ? itemsPayload.items : [];
+    state.itemSidebarLoading = false;
+    state.itemSidebarError = '';
+    applyItemSidebarCounts(countsPayload?.counts);
+    renderPrReviewFileList();
+    return true;
+  } catch (err) {
+    if (projectID !== String(state.activeProjectId || '').trim()) return false;
+    state.itemSidebarItems = [];
+    state.itemSidebarLoading = false;
+    state.itemSidebarError = String(err?.message || err || 'item list unavailable');
+    renderPrReviewFileList();
+    return false;
+  }
+}
+
+function sidebarTabLabel(view) {
+  if (view === 'waiting') return 'Waiting';
+  if (view === 'someday') return 'Someday';
+  if (view === 'done') return 'Done';
+  return 'Inbox';
+}
+
+function normalizeDisplayText(raw) {
+  return String(raw || '')
+    .trim()
+    .replace(/[._-]+/g, ' ')
+    .replace(/\s+/g, ' ');
+}
+
+function itemSourceLabel(item) {
+  const source = normalizeDisplayText(item?.source);
+  if (source) return source.toLowerCase();
+  const sourceRef = String(item?.source_ref || '').trim();
+  if (sourceRef.includes('#PR-')) return 'github';
+  return '';
+}
+
+function itemKindLabel(item) {
+  const artifactKind = String(item?.artifact_kind || '').trim().toLowerCase();
+  if (artifactKind === 'idea_note') return 'idea';
+  if (artifactKind === 'email') return 'email';
+  if (artifactKind === 'github_pr') return 'review';
+  if (artifactKind === 'github_issue') return 'task';
+  if (artifactKind === 'plan_note') return 'task';
+  const source = itemSourceLabel(item);
+  if (source === 'github') return 'task';
+  return 'task';
+}
+
+function itemIconForRow(item) {
+  const artifactKind = String(item?.artifact_kind || '').trim().toLowerCase();
+  const source = itemSourceLabel(item);
+  if (artifactKind === 'github_pr') return { icon: 'symbol', text: 'R' };
+  if (artifactKind === 'email') return { icon: 'symbol', text: '@' };
+  if (artifactKind === 'idea_note') return { icon: 'symbol', text: 'I' };
+  if (source === 'github') return { icon: 'symbol', text: '#' };
+  return { icon: 'symbol', text: 'T' };
+}
+
+function parseSidebarTimestamp(value) {
+  const text = String(value || '').trim();
+  if (!text) return null;
+  let normalized = text;
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(normalized)) {
+    normalized = `${normalized.replace(' ', 'T')}Z`;
+  }
+  const parsed = Date.parse(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function formatSidebarAge(value) {
+  const parsed = parseSidebarTimestamp(value);
+  if (parsed === null) return '';
+  const seconds = Math.max(0, Math.floor((Date.now() - parsed) / 1000));
+  if (seconds < 60) return 'now';
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`;
+  return `${Math.floor(seconds / 86400)}d`;
+}
+
+function buildItemSidebarSubtitle(item) {
+  const parts = [];
+  const artifactTitle = String(item?.artifact_title || '').trim();
+  if (artifactTitle) parts.push(artifactTitle);
+  const actorName = String(item?.actor_name || '').trim();
+  if (actorName) parts.push(actorName);
+  return parts.join(' · ');
+}
+
+function buildItemSidebarBadges(item) {
+  const badges = [];
+  const kind = itemKindLabel(item);
+  if (kind) badges.push(kind);
+  const source = itemSourceLabel(item);
+  if (source) badges.push(source);
+  const artifactKind = normalizeDisplayText(item?.artifact_kind).toLowerCase();
+  if (artifactKind && artifactKind !== kind) badges.push(artifactKind);
+  return badges.filter((badge, index, all) => badge && all.indexOf(badge) === index);
+}
+
+function renderSidebarTabs(list) {
+  const tabs = document.createElement('div');
+  tabs.className = 'sidebar-tabs';
+  ITEM_SIDEBAR_VIEWS.forEach((view) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'sidebar-tab';
+    if (state.fileSidebarMode !== 'workspace' && state.itemSidebarView === view) {
+      button.classList.add('is-active');
+    }
+    button.textContent = sidebarTabLabel(view);
+    const count = Number(state.itemSidebarCounts?.[view] || 0);
+    if (count > 0) {
+      const badge = document.createElement('span');
+      badge.className = 'sidebar-tab-count';
+      badge.textContent = String(count);
+      button.appendChild(badge);
+    }
+    button.addEventListener('click', () => {
+      state.fileSidebarMode = 'items';
+      state.itemSidebarView = view;
+      void loadItemSidebarView(view);
+    });
+    tabs.appendChild(button);
+  });
+  const filesButton = document.createElement('button');
+  filesButton.type = 'button';
+  filesButton.className = 'sidebar-tab';
+  if (state.fileSidebarMode === 'workspace') {
+    filesButton.classList.add('is-active');
+  }
+  filesButton.textContent = 'Files';
+  filesButton.addEventListener('click', () => {
+    state.fileSidebarMode = 'workspace';
+    renderPrReviewFileList();
+    if (!state.workspaceBrowserLoading && state.workspaceBrowserEntries.length === 0 && !state.workspaceBrowserError) {
+      void refreshWorkspaceBrowser(false);
+    }
+  });
+  tabs.appendChild(filesButton);
+  list.appendChild(tabs);
+}
+
+function renderSidebarRow({ icon, iconText = '', label, active = false, meta = '', subtitle = '', badges = [], onClick }) {
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'pr-file-item';
@@ -2944,13 +3188,41 @@ function renderSidebarRow({ icon, label, active = false, meta = '', onClick }) {
 
   const iconEl = document.createElement('span');
   iconEl.className = `chooser-icon icon-${icon}`;
+  iconEl.textContent = String(iconText || '');
+
+  const bodyEl = document.createElement('span');
+  bodyEl.className = 'sidebar-row-main';
 
   const labelEl = document.createElement('span');
   labelEl.className = 'pr-file-name';
   labelEl.textContent = String(label || '');
 
+  bodyEl.appendChild(labelEl);
+  if (subtitle || badges.length > 0) {
+    const secondaryEl = document.createElement('span');
+    secondaryEl.className = 'sidebar-row-secondary';
+    if (subtitle) {
+      const subtitleEl = document.createElement('span');
+      subtitleEl.className = 'sidebar-row-subtitle';
+      subtitleEl.textContent = String(subtitle);
+      secondaryEl.appendChild(subtitleEl);
+    }
+    if (badges.length > 0) {
+      const badgesEl = document.createElement('span');
+      badgesEl.className = 'sidebar-row-badges';
+      badges.forEach((badgeText) => {
+        const badgeEl = document.createElement('span');
+        badgeEl.className = 'sidebar-badge';
+        badgeEl.textContent = String(badgeText);
+        badgesEl.appendChild(badgeEl);
+      });
+      secondaryEl.appendChild(badgesEl);
+    }
+    bodyEl.appendChild(secondaryEl);
+  }
+
   button.appendChild(iconEl);
-  button.appendChild(labelEl);
+  button.appendChild(bodyEl);
   if (meta) {
     const metaEl = document.createElement('span');
     metaEl.className = 'pr-file-status';
@@ -2980,6 +3252,53 @@ function renderSidebarRow({ icon, label, active = false, meta = '', onClick }) {
     onClick(ev);
   });
   return button;
+}
+
+function renderItemSidebarList(list) {
+  if (state.itemSidebarLoading) {
+    list.appendChild(renderSidebarRow({
+      icon: 'symbol',
+      iconText: '…',
+      label: 'Loading items...',
+      onClick: () => {},
+    }));
+    return;
+  }
+  if (state.itemSidebarError) {
+    list.appendChild(renderSidebarRow({
+      icon: 'symbol',
+      iconText: '!',
+      label: `Error: ${state.itemSidebarError}`,
+      onClick: () => {},
+    }));
+    return;
+  }
+  const items = Array.isArray(state.itemSidebarItems) ? state.itemSidebarItems : [];
+  if (items.length === 0) {
+    list.appendChild(renderSidebarRow({
+      icon: 'symbol',
+      iconText: '0',
+      label: `No ${sidebarTabLabel(state.itemSidebarView).toLowerCase()} items.`,
+      onClick: () => {},
+    }));
+    return;
+  }
+  items.forEach((item) => {
+    const icon = itemIconForRow(item);
+    list.appendChild(renderSidebarRow({
+      icon: icon.icon,
+      iconText: icon.text,
+      label: String(item?.title || 'Untitled item'),
+      subtitle: buildItemSidebarSubtitle(item),
+      badges: buildItemSidebarBadges(item),
+      meta: formatSidebarAge(item?.updated_at || item?.created_at),
+      active: Number(item?.id || 0) === Number(state.itemSidebarActiveItemID || 0),
+      onClick: () => {
+        state.itemSidebarActiveItemID = Number(item?.id || 0);
+        renderPrReviewFileList();
+      },
+    }));
+  });
 }
 
 function renderWorkspaceFileList(list) {
@@ -3033,7 +3352,7 @@ function renderWorkspaceFileList(list) {
 
 function resetPrReviewUi() {
   document.body.classList.remove('pr-review-mode');
-  state.fileSidebarMode = 'workspace';
+  state.fileSidebarMode = 'items';
   setFileSidebarAvailability();
   renderPrReviewFileList();
 }
@@ -3045,7 +3364,7 @@ function renderPrReviewFileList() {
   if (state.prReviewMode) {
     state.fileSidebarMode = 'pr';
   }
-  const mode = state.fileSidebarMode === 'pr' && state.prReviewMode ? 'pr' : 'workspace';
+  const mode = state.fileSidebarMode === 'pr' && state.prReviewMode ? 'pr' : state.fileSidebarMode;
   list.innerHTML = '';
   if (mode === 'pr') {
     const files = Array.isArray(state.prReviewFiles) ? state.prReviewFiles : [];
@@ -3067,7 +3386,12 @@ function renderPrReviewFileList() {
     });
     return;
   }
-  renderWorkspaceFileList(list);
+  renderSidebarTabs(list);
+  if (mode === 'workspace') {
+    renderWorkspaceFileList(list);
+    return;
+  }
+  renderItemSidebarList(list);
 }
 
 async function loadWorkspaceBrowserPath(path = '') {
@@ -3083,9 +3407,6 @@ async function loadWorkspaceBrowserPath(path = '') {
   const requestedPath = normalizeWorkspaceBrowserPath(path);
   state.workspaceBrowserLoading = true;
   state.workspaceBrowserError = '';
-  if (!state.prReviewMode) {
-    state.fileSidebarMode = 'workspace';
-  }
   renderPrReviewFileList();
   try {
     const urls = [
@@ -5310,8 +5631,15 @@ async function switchProject(projectID) {
   clearCanvas();
   clearWelcomeSurface();
   resetCompanionState();
+  state.fileSidebarMode = 'items';
   state.workspaceOpenFilePath = '';
   state.workspaceStepInFlight = false;
+  state.itemSidebarItems = [];
+  state.itemSidebarCounts = defaultItemSidebarCounts();
+  state.itemSidebarLoading = false;
+  state.itemSidebarError = '';
+  state.itemSidebarActiveItemID = 0;
+  setInboxTriggerCount(0);
   hideCanvasColumn();
   hideOverlay();
   hideTextInput();
@@ -5323,6 +5651,7 @@ async function switchProject(projectID) {
     upsertProject(project);
     renderEdgeTopProjects();
     await refreshWorkspaceBrowser(true);
+    await loadItemSidebarView(state.itemSidebarView).catch(() => {});
     openCanvasWs();
     await showWelcomeForActiveProject(true);
     await loadChatHistory();
@@ -5828,9 +6157,12 @@ function edgePanelsAreOpen() {
 function toggleFileSidebarFromEdge() {
   if (!state.prReviewMode && !state.activeProjectId) return;
   if (!state.prReviewMode) {
-    state.fileSidebarMode = 'workspace';
-    if (!state.workspaceBrowserLoading && state.workspaceBrowserEntries.length === 0 && !state.workspaceBrowserError) {
-      void refreshWorkspaceBrowser(false);
+    if (state.fileSidebarMode === 'workspace') {
+      if (!state.workspaceBrowserLoading && state.workspaceBrowserEntries.length === 0 && !state.workspaceBrowserError) {
+        void refreshWorkspaceBrowser(false);
+      }
+    } else if (!state.itemSidebarLoading && state.itemSidebarItems.length === 0 && !state.itemSidebarError) {
+      void loadItemSidebarView(state.itemSidebarView);
     }
   }
   setPrReviewDrawerOpen(!state.prReviewDrawerOpen);

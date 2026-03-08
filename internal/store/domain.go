@@ -149,3 +149,10 @@ type Item struct {
 	CreatedAt    string  `json:"created_at"`
 	UpdatedAt    string  `json:"updated_at"`
 }
+
+type ItemSummary struct {
+	Item
+	ArtifactTitle *string       `json:"artifact_title,omitempty"`
+	ArtifactKind  *ArtifactKind `json:"artifact_kind,omitempty"`
+	ActorName     *string       `json:"actor_name,omitempty"`
+}

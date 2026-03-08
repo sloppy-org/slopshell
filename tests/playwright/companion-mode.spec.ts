@@ -159,12 +159,18 @@ async function clearCanvas(page: Page) {
   })).toBe(false);
 }
 
+async function switchSidebarToFiles(page: Page) {
+  await page.getByRole('button', { name: 'Files' }).click();
+  await expect(page.locator('.sidebar-tab.is-active')).toContainText('Files');
+}
+
 test('workspace sidebar exposes companion transcript, summary, and references viewer entries', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await waitReady(page);
 
   await page.locator('#edge-left-tap').click();
   await expect(page.locator('#pr-file-pane')).toHaveClass(/is-open/);
+  await switchSidebarToFiles(page);
   await expect(page.locator('#pr-file-list')).toContainText('Meeting Transcript');
   await expect(page.locator('#pr-file-list')).toContainText('Meeting Summary');
   await expect(page.locator('#pr-file-list')).toContainText('Meeting References');
@@ -203,6 +209,7 @@ test('companion idle surface tracks runtime state and hides behind open artifact
   }
 
   await page.locator('#edge-left-tap').click();
+  await switchSidebarToFiles(page);
   await page.getByRole('button', { name: 'Meeting Transcript' }).click();
   await expect(page.locator('#canvas-text')).toContainText('Harness companion transcript');
   await expect(page.locator('#companion-idle-surface')).toBeHidden();

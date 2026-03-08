@@ -66,6 +66,11 @@ Domain model API:
 - `DELETE /api/artifacts/{artifact_id}`
 - `GET /api/items`
 - `POST /api/items`
+- `GET /api/items/inbox`
+- `GET /api/items/waiting`
+- `GET /api/items/someday`
+- `GET /api/items/done`
+- `GET /api/items/counts`
 - `GET /api/items/{item_id}`
 - `PUT /api/items/{item_id}`
 - `DELETE /api/items/{item_id}`

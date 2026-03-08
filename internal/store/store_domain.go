@@ -303,6 +303,55 @@ func scanItem(
 	return out, nil
 }
 
+func scanItemSummary(
+	row interface {
+		Scan(dest ...any) error
+	},
+) (ItemSummary, error) {
+	var (
+		out                                         ItemSummary
+		workspaceID, artifactID, actorID            sql.NullInt64
+		visibleAfter, followUpAt, source, sourceRef sql.NullString
+		artifactTitle, artifactKind, actorName      sql.NullString
+	)
+	err := row.Scan(
+		&out.ID,
+		&out.Title,
+		&out.State,
+		&workspaceID,
+		&artifactID,
+		&actorID,
+		&visibleAfter,
+		&followUpAt,
+		&source,
+		&sourceRef,
+		&out.CreatedAt,
+		&out.UpdatedAt,
+		&artifactTitle,
+		&artifactKind,
+		&actorName,
+	)
+	if err != nil {
+		return ItemSummary{}, err
+	}
+	out.Title = strings.TrimSpace(out.Title)
+	out.State = normalizeItemState(out.State)
+	out.WorkspaceID = nullInt64Pointer(workspaceID)
+	out.ArtifactID = nullInt64Pointer(artifactID)
+	out.ActorID = nullInt64Pointer(actorID)
+	out.VisibleAfter = nullStringPointer(visibleAfter)
+	out.FollowUpAt = nullStringPointer(followUpAt)
+	out.Source = nullStringPointer(source)
+	out.SourceRef = nullStringPointer(sourceRef)
+	out.ArtifactTitle = nullStringPointer(artifactTitle)
+	if artifactKind.Valid {
+		normalized := normalizeArtifactKind(ArtifactKind(artifactKind.String))
+		out.ArtifactKind = &normalized
+	}
+	out.ActorName = nullStringPointer(actorName)
+	return out, nil
+}
+
 func nullStringPointer(v sql.NullString) *string {
 	if !v.Valid {
 		return nil
@@ -1508,6 +1557,126 @@ func (s *Store) ListItemsByState(state string) ([]Item, error) {
 		return out[i].UpdatedAt > out[j].UpdatedAt
 	})
 	return out, nil
+}
+
+const itemSummarySelect = `SELECT
+ i.id,
+ i.title,
+ i.state,
+ i.workspace_id,
+ i.artifact_id,
+ i.actor_id,
+ i.visible_after,
+ i.follow_up_at,
+ i.source,
+ i.source_ref,
+ i.created_at,
+ i.updated_at,
+ a.title,
+ a.kind,
+ actors.name
+FROM items i
+LEFT JOIN artifacts a ON a.id = i.artifact_id
+LEFT JOIN actors ON actors.id = i.actor_id`
+
+func sortItemSummaries(items []ItemSummary) {
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].UpdatedAt == items[j].UpdatedAt {
+			return items[i].ID < items[j].ID
+		}
+		return items[i].UpdatedAt > items[j].UpdatedAt
+	})
+}
+
+func (s *Store) listItemSummaries(query string, args ...any) ([]ItemSummary, error) {
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ItemSummary
+	for rows.Next() {
+		item, err := scanItemSummary(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	sortItemSummaries(out)
+	return out, nil
+}
+
+func (s *Store) ListInboxItems(now time.Time) ([]ItemSummary, error) {
+	cutoff := now.UTC().Format(time.RFC3339Nano)
+	return s.listItemSummaries(
+		itemSummarySelect+`
+ WHERE i.state = ?
+   AND (
+     i.visible_after IS NULL
+     OR trim(i.visible_after) = ''
+     OR datetime(i.visible_after) <= datetime(?)
+   )
+ ORDER BY i.updated_at DESC, i.id ASC`,
+		ItemStateInbox,
+		cutoff,
+	)
+}
+
+func (s *Store) ListWaitingItems() ([]ItemSummary, error) {
+	return s.listItemSummaries(itemSummarySelect+` WHERE i.state = ? ORDER BY i.updated_at DESC, i.id ASC`, ItemStateWaiting)
+}
+
+func (s *Store) ListSomedayItems() ([]ItemSummary, error) {
+	return s.listItemSummaries(itemSummarySelect+` WHERE i.state = ? ORDER BY i.updated_at DESC, i.id ASC`, ItemStateSomeday)
+}
+
+func (s *Store) ListDoneItems(limit int) ([]ItemSummary, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	return s.listItemSummaries(itemSummarySelect+` WHERE i.state = ? ORDER BY i.updated_at DESC, i.id ASC LIMIT ?`, ItemStateDone, limit)
+}
+
+func (s *Store) CountItemsByState(now time.Time) (map[string]int, error) {
+	counts := map[string]int{
+		ItemStateInbox:   0,
+		ItemStateWaiting: 0,
+		ItemStateSomeday: 0,
+		ItemStateDone:    0,
+	}
+	cutoff := now.UTC().Format(time.RFC3339Nano)
+	var inbox, waiting, someday, done int
+	if err := s.db.QueryRow(`
+SELECT
+  COALESCE(SUM(CASE
+    WHEN state = ?
+      AND (
+        visible_after IS NULL
+        OR trim(visible_after) = ''
+        OR datetime(visible_after) <= datetime(?)
+      )
+    THEN 1 ELSE 0 END), 0) AS inbox_count,
+  COALESCE(SUM(CASE WHEN state = ? THEN 1 ELSE 0 END), 0) AS waiting_count,
+  COALESCE(SUM(CASE WHEN state = ? THEN 1 ELSE 0 END), 0) AS someday_count,
+  COALESCE(SUM(CASE WHEN state = ? THEN 1 ELSE 0 END), 0) AS done_count
+FROM items
+`,
+		ItemStateInbox,
+		cutoff,
+		ItemStateWaiting,
+		ItemStateSomeday,
+		ItemStateDone,
+	).Scan(&inbox, &waiting, &someday, &done); err != nil {
+		return nil, err
+	}
+	counts[ItemStateInbox] = inbox
+	counts[ItemStateWaiting] = waiting
+	counts[ItemStateSomeday] = someday
+	counts[ItemStateDone] = done
+	return counts, nil
 }
 
 func (s *Store) ListItems() ([]Item, error) {

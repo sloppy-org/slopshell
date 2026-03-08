@@ -853,6 +853,116 @@ func TestResurfaceDueItems(t *testing.T) {
 	}
 }
 
+func TestItemStateSummariesAndCounts(t *testing.T) {
+	s := newTestStore(t)
+
+	now := time.Date(2026, time.March, 8, 10, 0, 0, 0, time.UTC)
+	past := now.Add(-1 * time.Hour).Format(time.RFC3339)
+	future := now.Add(2 * time.Hour).Format(time.RFC3339)
+	workspace, err := s.CreateWorkspace("Alpha", filepath.Join(t.TempDir(), "alpha"))
+	if err != nil {
+		t.Fatalf("CreateWorkspace() error: %v", err)
+	}
+	actor, err := s.CreateActor("Alice", ActorKindHuman)
+	if err != nil {
+		t.Fatalf("CreateActor() error: %v", err)
+	}
+	artifactTitle := "Inbox plan"
+	artifact, err := s.CreateArtifact(ArtifactKindIdeaNote, nil, nil, &artifactTitle, nil)
+	if err != nil {
+		t.Fatalf("CreateArtifact() error: %v", err)
+	}
+	visibleInbox, err := s.CreateItem("Visible inbox", ItemOptions{
+		State:        ItemStateInbox,
+		WorkspaceID:  &workspace.ID,
+		ArtifactID:   &artifact.ID,
+		ActorID:      &actor.ID,
+		VisibleAfter: &past,
+	})
+	if err != nil {
+		t.Fatalf("CreateItem(visible inbox) error: %v", err)
+	}
+	if _, err := s.CreateItem("Hidden inbox", ItemOptions{
+		State:        ItemStateInbox,
+		VisibleAfter: &future,
+	}); err != nil {
+		t.Fatalf("CreateItem(hidden inbox) error: %v", err)
+	}
+	waitingItem, err := s.CreateItem("Waiting item", ItemOptions{State: ItemStateWaiting})
+	if err != nil {
+		t.Fatalf("CreateItem(waiting) error: %v", err)
+	}
+	somedayItem, err := s.CreateItem("Someday item", ItemOptions{State: ItemStateSomeday})
+	if err != nil {
+		t.Fatalf("CreateItem(someday) error: %v", err)
+	}
+	doneItem, err := s.CreateItem("Done item", ItemOptions{State: ItemStateDone})
+	if err != nil {
+		t.Fatalf("CreateItem(done) error: %v", err)
+	}
+
+	inboxItems, err := s.ListInboxItems(now)
+	if err != nil {
+		t.Fatalf("ListInboxItems() error: %v", err)
+	}
+	if len(inboxItems) != 1 {
+		t.Fatalf("ListInboxItems() len = %d, want 1", len(inboxItems))
+	}
+	if inboxItems[0].ID != visibleInbox.ID {
+		t.Fatalf("ListInboxItems() ID = %d, want %d", inboxItems[0].ID, visibleInbox.ID)
+	}
+	if inboxItems[0].ArtifactTitle == nil || *inboxItems[0].ArtifactTitle != artifactTitle {
+		t.Fatalf("ListInboxItems() ArtifactTitle = %v, want %q", inboxItems[0].ArtifactTitle, artifactTitle)
+	}
+	if inboxItems[0].ArtifactKind == nil || *inboxItems[0].ArtifactKind != ArtifactKindIdeaNote {
+		t.Fatalf("ListInboxItems() ArtifactKind = %v, want %q", inboxItems[0].ArtifactKind, ArtifactKindIdeaNote)
+	}
+	if inboxItems[0].ActorName == nil || *inboxItems[0].ActorName != "Alice" {
+		t.Fatalf("ListInboxItems() ActorName = %v, want Alice", inboxItems[0].ActorName)
+	}
+
+	waitingItems, err := s.ListWaitingItems()
+	if err != nil {
+		t.Fatalf("ListWaitingItems() error: %v", err)
+	}
+	if len(waitingItems) != 1 || waitingItems[0].ID != waitingItem.ID {
+		t.Fatalf("ListWaitingItems() = %+v, want waiting item %d", waitingItems, waitingItem.ID)
+	}
+
+	somedayItems, err := s.ListSomedayItems()
+	if err != nil {
+		t.Fatalf("ListSomedayItems() error: %v", err)
+	}
+	if len(somedayItems) != 1 || somedayItems[0].ID != somedayItem.ID {
+		t.Fatalf("ListSomedayItems() = %+v, want someday item %d", somedayItems, somedayItem.ID)
+	}
+
+	doneItems, err := s.ListDoneItems(1)
+	if err != nil {
+		t.Fatalf("ListDoneItems() error: %v", err)
+	}
+	if len(doneItems) != 1 || doneItems[0].ID != doneItem.ID {
+		t.Fatalf("ListDoneItems() = %+v, want done item %d", doneItems, doneItem.ID)
+	}
+
+	counts, err := s.CountItemsByState(now)
+	if err != nil {
+		t.Fatalf("CountItemsByState() error: %v", err)
+	}
+	if got := counts[ItemStateInbox]; got != 1 {
+		t.Fatalf("CountItemsByState()[inbox] = %d, want 1", got)
+	}
+	if got := counts[ItemStateWaiting]; got != 1 {
+		t.Fatalf("CountItemsByState()[waiting] = %d, want 1", got)
+	}
+	if got := counts[ItemStateSomeday]; got != 1 {
+		t.Fatalf("CountItemsByState()[someday] = %d, want 1", got)
+	}
+	if got := counts[ItemStateDone]; got != 1 {
+		t.Fatalf("CountItemsByState()[done] = %d, want 1", got)
+	}
+}
+
 func TestFindWorkspaceContainingPathPrefersDeepestMatch(t *testing.T) {
 	s := newTestStore(t)
 

@@ -4,7 +4,9 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/krystophny/tabura/internal/store"
 )
@@ -43,6 +45,10 @@ type itemAssignRequest struct {
 
 type itemCompleteRequest struct {
 	ActorID int64 `json:"actor_id"`
+}
+
+type itemCountResponse struct {
+	Counts map[string]int `json:"counts"`
 }
 
 type itemTriageRequest struct {
@@ -105,6 +111,85 @@ func (a *App) handleItemList(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{
 		"ok":    true,
 		"items": items,
+	})
+}
+
+func (a *App) writeItemSummaryList(w http.ResponseWriter, items []store.ItemSummary) {
+	writeJSON(w, map[string]any{
+		"ok":    true,
+		"items": items,
+	})
+}
+
+func (a *App) handleItemInbox(w http.ResponseWriter, r *http.Request) {
+	if !a.requireAuth(w, r) {
+		return
+	}
+	items, err := a.store.ListInboxItems(time.Now())
+	if err != nil {
+		writeItemStoreError(w, err)
+		return
+	}
+	a.writeItemSummaryList(w, items)
+}
+
+func (a *App) handleItemWaiting(w http.ResponseWriter, r *http.Request) {
+	if !a.requireAuth(w, r) {
+		return
+	}
+	items, err := a.store.ListWaitingItems()
+	if err != nil {
+		writeItemStoreError(w, err)
+		return
+	}
+	a.writeItemSummaryList(w, items)
+}
+
+func (a *App) handleItemSomeday(w http.ResponseWriter, r *http.Request) {
+	if !a.requireAuth(w, r) {
+		return
+	}
+	items, err := a.store.ListSomedayItems()
+	if err != nil {
+		writeItemStoreError(w, err)
+		return
+	}
+	a.writeItemSummaryList(w, items)
+}
+
+func (a *App) handleItemDone(w http.ResponseWriter, r *http.Request) {
+	if !a.requireAuth(w, r) {
+		return
+	}
+	limit := 50
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value <= 0 {
+			http.Error(w, "limit must be a positive integer", http.StatusBadRequest)
+			return
+		}
+		limit = value
+	}
+	items, err := a.store.ListDoneItems(limit)
+	if err != nil {
+		writeItemStoreError(w, err)
+		return
+	}
+	a.writeItemSummaryList(w, items)
+}
+
+func (a *App) handleItemCounts(w http.ResponseWriter, r *http.Request) {
+	if !a.requireAuth(w, r) {
+		return
+	}
+	counts, err := a.store.CountItemsByState(time.Now())
+	if err != nil {
+		writeItemStoreError(w, err)
+		return
+	}
+	writeJSON(w, map[string]any{
+		"ok":     true,
+		"counts": counts,
 	})
 }
 

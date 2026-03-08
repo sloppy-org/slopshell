@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/krystophny/tabura/internal/store"
 )
@@ -176,6 +177,139 @@ func TestItemCRUDAndStateAPI(t *testing.T) {
 	rrMissing := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/items/"+itoa(itemID), nil)
 	if rrMissing.Code != http.StatusNotFound {
 		t.Fatalf("deleted item status = %d, want 404: %s", rrMissing.Code, rrMissing.Body.String())
+	}
+}
+
+func TestItemStateViewAPI(t *testing.T) {
+	app := newAuthedTestApp(t)
+
+	workspace, err := app.store.CreateWorkspace("Default", filepath.Join(t.TempDir(), "workspace"))
+	if err != nil {
+		t.Fatalf("CreateWorkspace() error: %v", err)
+	}
+	artifactTitle := "Inbox plan"
+	artifact, err := app.store.CreateArtifact(store.ArtifactKindIdeaNote, nil, nil, &artifactTitle, nil)
+	if err != nil {
+		t.Fatalf("CreateArtifact() error: %v", err)
+	}
+	actor, err := app.store.CreateActor("Alice", store.ActorKindHuman)
+	if err != nil {
+		t.Fatalf("CreateActor() error: %v", err)
+	}
+
+	past := time.Now().UTC().Add(-1 * time.Hour).Format(time.RFC3339)
+	future := time.Now().UTC().Add(1 * time.Hour).Format(time.RFC3339)
+	source := "github"
+	sourceRef := "owner/repo#177"
+	visibleInbox, err := app.store.CreateItem("Visible inbox", store.ItemOptions{
+		State:        store.ItemStateInbox,
+		WorkspaceID:  &workspace.ID,
+		ArtifactID:   &artifact.ID,
+		ActorID:      &actor.ID,
+		VisibleAfter: &past,
+		Source:       &source,
+		SourceRef:    &sourceRef,
+	})
+	if err != nil {
+		t.Fatalf("CreateItem(visible inbox) error: %v", err)
+	}
+	if _, err := app.store.CreateItem("Hidden inbox", store.ItemOptions{
+		State:        store.ItemStateInbox,
+		VisibleAfter: &future,
+	}); err != nil {
+		t.Fatalf("CreateItem(hidden inbox) error: %v", err)
+	}
+	waitingItem, err := app.store.CreateItem("Waiting item", store.ItemOptions{State: store.ItemStateWaiting})
+	if err != nil {
+		t.Fatalf("CreateItem(waiting) error: %v", err)
+	}
+	if _, err := app.store.CreateItem("Someday item", store.ItemOptions{State: store.ItemStateSomeday}); err != nil {
+		t.Fatalf("CreateItem(someday) error: %v", err)
+	}
+	doneItem, err := app.store.CreateItem("Done item", store.ItemOptions{State: store.ItemStateDone})
+	if err != nil {
+		t.Fatalf("CreateItem(done) error: %v", err)
+	}
+
+	rrInbox := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/items/inbox", nil)
+	if rrInbox.Code != http.StatusOK {
+		t.Fatalf("inbox status = %d, want 200: %s", rrInbox.Code, rrInbox.Body.String())
+	}
+	inboxPayload := decodeJSONResponse(t, rrInbox)
+	inboxItems, ok := inboxPayload["items"].([]any)
+	if !ok || len(inboxItems) != 1 {
+		t.Fatalf("inbox payload = %#v", inboxPayload)
+	}
+	inboxRow, ok := inboxItems[0].(map[string]any)
+	if !ok {
+		t.Fatalf("inbox row = %#v", inboxItems[0])
+	}
+	if got := int64(inboxRow["id"].(float64)); got != visibleInbox.ID {
+		t.Fatalf("inbox item id = %d, want %d", got, visibleInbox.ID)
+	}
+	if got := strFromAny(inboxRow["artifact_title"]); got != artifactTitle {
+		t.Fatalf("artifact_title = %q, want %q", got, artifactTitle)
+	}
+	if got := strFromAny(inboxRow["artifact_kind"]); got != string(store.ArtifactKindIdeaNote) {
+		t.Fatalf("artifact_kind = %q, want %q", got, store.ArtifactKindIdeaNote)
+	}
+	if got := strFromAny(inboxRow["actor_name"]); got != "Alice" {
+		t.Fatalf("actor_name = %q, want Alice", got)
+	}
+
+	rrWaiting := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/items/waiting", nil)
+	if rrWaiting.Code != http.StatusOK {
+		t.Fatalf("waiting status = %d, want 200: %s", rrWaiting.Code, rrWaiting.Body.String())
+	}
+	waitingPayload := decodeJSONResponse(t, rrWaiting)
+	waitingItems, ok := waitingPayload["items"].([]any)
+	if !ok || len(waitingItems) != 1 {
+		t.Fatalf("waiting payload = %#v", waitingPayload)
+	}
+	waitingRow, ok := waitingItems[0].(map[string]any)
+	if !ok || int64(waitingRow["id"].(float64)) != waitingItem.ID {
+		t.Fatalf("waiting row = %#v, want id %d", waitingRow, waitingItem.ID)
+	}
+
+	rrDone := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/items/done?limit=1", nil)
+	if rrDone.Code != http.StatusOK {
+		t.Fatalf("done status = %d, want 200: %s", rrDone.Code, rrDone.Body.String())
+	}
+	donePayload := decodeJSONResponse(t, rrDone)
+	doneItems, ok := donePayload["items"].([]any)
+	if !ok || len(doneItems) != 1 {
+		t.Fatalf("done payload = %#v", donePayload)
+	}
+	doneRow, ok := doneItems[0].(map[string]any)
+	if !ok || int64(doneRow["id"].(float64)) != doneItem.ID {
+		t.Fatalf("done row = %#v, want id %d", doneRow, doneItem.ID)
+	}
+
+	rrCounts := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/items/counts", nil)
+	if rrCounts.Code != http.StatusOK {
+		t.Fatalf("counts status = %d, want 200: %s", rrCounts.Code, rrCounts.Body.String())
+	}
+	countsPayload := decodeJSONResponse(t, rrCounts)
+	counts, ok := countsPayload["counts"].(map[string]any)
+	if !ok {
+		t.Fatalf("counts payload = %#v", countsPayload)
+	}
+	if got := int(counts[store.ItemStateInbox].(float64)); got != 1 {
+		t.Fatalf("counts[inbox] = %d, want 1", got)
+	}
+	if got := int(counts[store.ItemStateWaiting].(float64)); got != 1 {
+		t.Fatalf("counts[waiting] = %d, want 1", got)
+	}
+	if got := int(counts[store.ItemStateSomeday].(float64)); got != 1 {
+		t.Fatalf("counts[someday] = %d, want 1", got)
+	}
+	if got := int(counts[store.ItemStateDone].(float64)); got != 1 {
+		t.Fatalf("counts[done] = %d, want 1", got)
+	}
+
+	rrBadLimit := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/items/done?limit=bad", nil)
+	if rrBadLimit.Code != http.StatusBadRequest {
+		t.Fatalf("bad done limit status = %d, want 400: %s", rrBadLimit.Code, rrBadLimit.Body.String())
 	}
 }
 

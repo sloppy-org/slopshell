@@ -413,6 +413,84 @@
       test: { active_turns: 0, queued_turns: 0, is_working: false, status: 'idle' },
       hub: { active_turns: 0, queued_turns: 0, is_working: false, status: 'idle' },
     };
+    const defaultItemSidebarData = () => ({
+      inbox: [
+        {
+          id: 101,
+          title: 'Review parser cleanup',
+          state: 'inbox',
+          source: 'github',
+          source_ref: 'owner/repo#177',
+          artifact_title: 'Parser cleanup plan',
+          artifact_kind: 'idea_note',
+          actor_name: 'Alice',
+          created_at: '2026-03-08 09:40:00',
+          updated_at: '2026-03-08 09:58:00',
+        },
+        {
+          id: 102,
+          title: 'Answer triage email',
+          state: 'inbox',
+          source: 'exchange',
+          source_ref: 'msg-102',
+          artifact_title: 'Re: triage follow-up',
+          artifact_kind: 'email',
+          actor_name: 'Bob',
+          created_at: '2026-03-08 09:10:00',
+          updated_at: '2026-03-08 09:12:00',
+        },
+      ],
+      waiting: [
+        {
+          id: 201,
+          title: 'Await review feedback',
+          state: 'waiting',
+          source: 'github',
+          source_ref: 'owner/repo#144',
+          artifact_title: 'PR 144',
+          artifact_kind: 'github_pr',
+          actor_name: 'Codex',
+          created_at: '2026-03-07 14:00:00',
+          updated_at: '2026-03-08 08:30:00',
+        },
+      ],
+      someday: [
+        {
+          id: 301,
+          title: 'Sketch mobile inbox gestures',
+          state: 'someday',
+          source: '',
+          source_ref: '',
+          artifact_title: 'Gesture backlog',
+          artifact_kind: 'plan_note',
+          actor_name: '',
+          created_at: '2026-03-06 12:00:00',
+          updated_at: '2026-03-06 12:00:00',
+        },
+      ],
+      done: [
+        {
+          id: 401,
+          title: 'Ship capture flow',
+          state: 'done',
+          source: 'github',
+          source_ref: 'owner/repo#90',
+          artifact_title: 'Capture checklist',
+          artifact_kind: 'github_issue',
+          actor_name: 'Alice',
+          created_at: '2026-03-05 11:00:00',
+          updated_at: '2026-03-08 07:45:00',
+        },
+      ],
+    });
+    window.__itemSidebarData = defaultItemSidebarData();
+    window.__setItemSidebarData = (next) => {
+      const incoming = next && typeof next === 'object' ? next : {};
+      window.__itemSidebarData = {
+        ...defaultItemSidebarData(),
+        ...incoming,
+      };
+    };
     window.__participantConfig = {
       companion_enabled: false,
       language: 'en',
@@ -810,6 +888,25 @@
           interaction_policy: { decision: 'disabled', reason: 'harness' },
           config: { ...window.__participantConfig },
         }), { status: 200 });
+      }
+      if (u.includes('/api/items/counts')) {
+        const itemData = window.__itemSidebarData || defaultItemSidebarData();
+        const counts = {
+          inbox: Array.isArray(itemData.inbox) ? itemData.inbox.length : 0,
+          waiting: Array.isArray(itemData.waiting) ? itemData.waiting.length : 0,
+          someday: Array.isArray(itemData.someday) ? itemData.someday.length : 0,
+          done: Array.isArray(itemData.done) ? itemData.done.length : 0,
+        };
+        return new Response(JSON.stringify({ ok: true, counts }), { status: 200 });
+      }
+      if (u.includes('/api/items/inbox') || u.includes('/api/items/waiting') || u.includes('/api/items/someday') || u.includes('/api/items/done')) {
+        const itemData = window.__itemSidebarData || defaultItemSidebarData();
+        let key = 'inbox';
+        if (u.includes('/api/items/waiting')) key = 'waiting';
+        if (u.includes('/api/items/someday')) key = 'someday';
+        if (u.includes('/api/items/done')) key = 'done';
+        const items = Array.isArray(itemData[key]) ? itemData[key] : [];
+        return new Response(JSON.stringify({ ok: true, items }), { status: 200 });
       }
       if (u.includes('/api/projects')) {
         const projects = harnessProjects.map((project) => cloneProject(project.id));

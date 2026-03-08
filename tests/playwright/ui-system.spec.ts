@@ -1412,6 +1412,8 @@ test.describe('workspace file sidebar', () => {
     await dispatchTouchTap(page, 3, 333);
     await page.waitForTimeout(300);
 
+    await page.getByRole('button', { name: 'Files' }).click();
+    await expect(page.locator('.sidebar-tab.is-active')).toContainText('Files');
     const fileList = page.locator('#pr-file-list');
     const text = await fileList.textContent();
     // Harness returns docs/, NOTES.md, README.md

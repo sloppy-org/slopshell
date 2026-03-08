@@ -208,6 +208,7 @@ test.describe('pr review canvas mode', () => {
 
     await page.locator('#edge-left-tap').click();
     await expect(page.locator('#pr-file-pane')).toHaveClass(/is-open/);
+    await page.locator('.sidebar-tab', { hasText: 'Files' }).click();
     await expect(page.locator('#pr-file-list .pr-file-item .pr-file-name', { hasText: 'docs' })).toHaveCount(1);
 
     await page.locator('#pr-file-list .pr-file-item', { hasText: 'docs' }).click();
@@ -225,6 +226,7 @@ test.describe('pr review canvas mode', () => {
 
     await page.locator('#edge-left-tap').click();
     await expect(page.locator('#pr-file-pane')).toHaveClass(/is-open/);
+    await page.locator('.sidebar-tab', { hasText: 'Files' }).click();
     await page.locator('#pr-file-list .pr-file-item', { hasText: 'README.md' }).click();
     await page.waitForFunction(() => {
       const app = (window as any)._taburaApp;
@@ -252,6 +254,7 @@ test.describe('pr review canvas mode', () => {
 
     await page.locator('#edge-left-tap').click();
     await expect(page.locator('#pr-file-pane')).toHaveClass(/is-open/);
+    await page.locator('.sidebar-tab', { hasText: 'Files' }).click();
     await page.locator('#pr-file-list .pr-file-item', { hasText: 'README.md' }).click();
     await page.waitForFunction(() => {
       const app = (window as any)._taburaApp;
