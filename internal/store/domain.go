@@ -47,6 +47,7 @@ type ItemUpdate struct {
 	Title        *string `json:"title,omitempty"`
 	State        *string `json:"state,omitempty"`
 	WorkspaceID  *int64  `json:"workspace_id,omitempty"`
+	ProjectID    *string `json:"project_id,omitempty"`
 	ArtifactID   *int64  `json:"artifact_id,omitempty"`
 	ActorID      *int64  `json:"actor_id,omitempty"`
 	VisibleAfter *string `json:"visible_after,omitempty"`
@@ -58,6 +59,7 @@ type ItemUpdate struct {
 type ItemOptions struct {
 	State        string  `json:"state,omitempty"`
 	WorkspaceID  *int64  `json:"workspace_id,omitempty"`
+	ProjectID    *string `json:"project_id,omitempty"`
 	ArtifactID   *int64  `json:"artifact_id,omitempty"`
 	ActorID      *int64  `json:"actor_id,omitempty"`
 	VisibleAfter *string `json:"visible_after,omitempty"`
@@ -146,6 +148,7 @@ type Item struct {
 	Title        string  `json:"title"`
 	State        string  `json:"state"`
 	WorkspaceID  *int64  `json:"workspace_id,omitempty"`
+	ProjectID    *string `json:"project_id,omitempty"`
 	ArtifactID   *int64  `json:"artifact_id,omitempty"`
 	ActorID      *int64  `json:"actor_id,omitempty"`
 	VisibleAfter *string `json:"visible_after,omitempty"`

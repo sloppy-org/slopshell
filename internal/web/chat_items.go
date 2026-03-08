@@ -71,6 +71,9 @@ func parseInlineItemIntentWithInputMode(text string, now time.Time, inputMode st
 	if ideaPromotionApply := parseInlineIdeaPromotionApplyIntent(text); ideaPromotionApply != nil {
 		return ideaPromotionApply
 	}
+	if reassignment := parseInlineItemReassignmentIntent(text); reassignment != nil {
+		return reassignment
+	}
 	switch normalized {
 	case "make this an item", "track this", "add to inbox":
 		return &SystemAction{Action: "make_item", Params: map[string]interface{}{}}
@@ -230,7 +233,7 @@ func parseItemSplitCount(raw string) (int, bool) {
 
 func isItemSystemAction(action string) bool {
 	switch strings.ToLower(strings.TrimSpace(action)) {
-	case "make_item", "delegate_item", "snooze_item", "split_items", "capture_idea", "refine_idea_note", "promote_idea", "apply_idea_promotion", "create_github_issue", "create_github_issue_split", "print_item", "review_someday", "triage_someday", "promote_someday", "toggle_someday_review_nudge":
+	case "make_item", "delegate_item", "snooze_item", "split_items", "reassign_workspace", "reassign_project", "clear_workspace", "clear_project", "capture_idea", "refine_idea_note", "promote_idea", "apply_idea_promotion", "create_github_issue", "create_github_issue_split", "print_item", "review_someday", "triage_someday", "promote_someday", "toggle_someday_review_nudge":
 		return true
 	default:
 		return false
@@ -259,7 +262,7 @@ func itemActionFailurePrefix(action string) string {
 	switch strings.ToLower(strings.TrimSpace(action)) {
 	case "split_items":
 		return "I couldn't create the items: "
-	case "triage_someday", "promote_someday":
+	case "reassign_workspace", "reassign_project", "clear_workspace", "clear_project", "triage_someday", "promote_someday":
 		return "I couldn't update the item: "
 	}
 	return "I couldn't create the item: "

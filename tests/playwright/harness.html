@@ -418,6 +418,10 @@
       { id: 2, name: 'Bob', kind: 'human' },
       { id: 3, name: 'Codex', kind: 'agent' },
     ]);
+    const defaultItemSidebarWorkspaces = () => ([
+      { id: 1, name: 'Alpha', dir_path: '/tmp/alpha', is_active: true },
+      { id: 2, name: 'Beta', dir_path: '/tmp/beta', is_active: false },
+    ]);
     const defaultItemSidebarArtifacts = () => ({
       501: {
         id: 501,
@@ -557,6 +561,7 @@
     ].join('\n');
     window.__itemSidebarData = defaultItemSidebarData();
     window.__itemSidebarActors = defaultItemSidebarActors();
+    window.__itemSidebarWorkspaces = defaultItemSidebarWorkspaces();
     window.__itemSidebarArtifacts = defaultItemSidebarArtifacts();
     window.__meetingSummaryProposals = defaultMeetingSummaryProposals();
     window.__itemSidebarResponseDelays = {
@@ -577,6 +582,11 @@
       window.__itemSidebarActors = Array.isArray(next)
         ? next.map((actor) => ({ ...actor }))
         : defaultItemSidebarActors();
+    };
+    window.__setItemSidebarWorkspaces = (next) => {
+      window.__itemSidebarWorkspaces = Array.isArray(next)
+        ? next.map((workspace) => ({ ...workspace }))
+        : defaultItemSidebarWorkspaces();
     };
     window.__setItemSidebarArtifacts = (next) => {
       const source = next && typeof next === 'object' ? next : {};
@@ -658,6 +668,25 @@
       });
       window.__itemSidebarData = data;
       return removed;
+    }
+    function patchItemSidebarEntry(itemID, patch = {}) {
+      const data = window.__itemSidebarData || defaultItemSidebarData();
+      const states = ['inbox', 'waiting', 'someday', 'done'];
+      let updated = null;
+      states.forEach((stateKey) => {
+        const rows = Array.isArray(data[stateKey]) ? data[stateKey] : [];
+        const index = rows.findIndex((entry) => Number(entry?.id || 0) === Number(itemID));
+        if (index < 0) return;
+        updated = {
+          ...cloneItemSidebarEntry(rows[index]),
+          ...patch,
+          updated_at: '2026-03-08 15:00:00',
+        };
+        rows[index] = updated;
+        data[stateKey] = rows;
+      });
+      window.__itemSidebarData = data;
+      return updated;
     }
     function prependInboxItem(entry) {
       const data = window.__itemSidebarData || defaultItemSidebarData();
@@ -1137,6 +1166,10 @@
         if (delayMs > 0) await sleep(delayMs);
         return new Response(JSON.stringify({ ok: true, counts }), { status: 200 });
       }
+      if (u.includes('/api/workspaces')) {
+        const workspaces = Array.isArray(window.__itemSidebarWorkspaces) ? window.__itemSidebarWorkspaces : defaultItemSidebarWorkspaces();
+        return new Response(JSON.stringify({ ok: true, workspaces }), { status: 200 });
+      }
       if (/\/api\/items\/\d+\/triage(?:\?|$)/.test(u) && opts?.method === 'POST') {
         let body = {};
         try { body = JSON.parse(String(opts?.body || '{}')); } catch (_) { body = {}; }
@@ -1169,6 +1202,58 @@
         }
         if (action === 'delete') {
           return new Response(JSON.stringify({ ok: true, deleted: true, item_id: itemID }), { status: 200 });
+        }
+        return new Response(JSON.stringify({ ok: true, item }), { status: 200 });
+      }
+      if (/\/api\/items\/\d+\/workspace(?:\?|$)/.test(u) && opts?.method === 'PUT') {
+        let body = {};
+        try { body = JSON.parse(String(opts?.body || '{}')); } catch (_) { body = {}; }
+        const match = u.match(/\/api\/items\/(\d+)\/workspace(?:\?|$)/);
+        const itemID = Number(match?.[1] || 0);
+        const workspaceID = body.workspace_id == null ? null : Number(body.workspace_id || 0);
+        const workspaces = Array.isArray(window.__itemSidebarWorkspaces) ? window.__itemSidebarWorkspaces : defaultItemSidebarWorkspaces();
+        if (workspaceID !== null && !workspaces.some((workspace) => Number(workspace?.id || 0) === workspaceID)) {
+          return new Response('workspace not found', { status: 400 });
+        }
+        const existingRows = ['inbox', 'waiting', 'someday', 'done']
+          .flatMap((stateKey) => Array.isArray((window.__itemSidebarData || {})[stateKey]) ? (window.__itemSidebarData || {})[stateKey] : []);
+        const existing = existingRows.find((entry) => Number(entry?.id || 0) === itemID) || null;
+        const previousWorkspaceID = existing && existing.workspace_id != null ? Number(existing.workspace_id || 0) : null;
+        const item = patchItemSidebarEntry(itemID, { workspace_id: workspaceID });
+        window.__harnessLog.push({
+          type: 'api_fetch',
+          action: 'item_workspace',
+          method: opts?.method || 'PUT',
+          url: u,
+          payload: body,
+        });
+        if (!item) {
+          return new Response('item not found', { status: 404 });
+        }
+        const warning = previousWorkspaceID === null || previousWorkspaceID === workspaceID
+          ? ''
+          : 'Artifact link kept: the referenced file still points into the previous workspace.';
+        return new Response(JSON.stringify({ ok: true, item, warning }), { status: 200 });
+      }
+      if (/\/api\/items\/\d+\/project(?:\?|$)/.test(u) && opts?.method === 'PUT') {
+        let body = {};
+        try { body = JSON.parse(String(opts?.body || '{}')); } catch (_) { body = {}; }
+        const match = u.match(/\/api\/items\/(\d+)\/project(?:\?|$)/);
+        const itemID = Number(match?.[1] || 0);
+        const projectID = body.project_id == null ? '' : String(body.project_id || '').trim();
+        if (projectID && !harnessProjects.some((project) => String(project.id || '').trim() === projectID)) {
+          return new Response('project not found', { status: 400 });
+        }
+        const item = patchItemSidebarEntry(itemID, { project_id: projectID });
+        window.__harnessLog.push({
+          type: 'api_fetch',
+          action: 'item_project',
+          method: opts?.method || 'PUT',
+          url: u,
+          payload: body,
+        });
+        if (!item) {
+          return new Response('item not found', { status: 404 });
         }
         return new Response(JSON.stringify({ ok: true, item }), { status: 200 });
       }

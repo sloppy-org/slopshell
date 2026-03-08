@@ -229,6 +229,89 @@ export async function fetchItemSidebarActors() {
     .filter((actor) => actor.id > 0 && actor.name);
 }
 
+export async function fetchItemSidebarWorkspaces() {
+  const resp = await fetch(apiURL('workspaces'), { cache: 'no-store' });
+  if (!resp.ok) {
+    const detail = (await resp.text()).trim() || `HTTP ${resp.status}`;
+    throw new Error(detail);
+  }
+  const payload = await resp.json();
+  const workspaces = Array.isArray(payload?.workspaces) ? payload.workspaces : [];
+  return workspaces
+    .map((workspace) => ({
+      id: Number(workspace?.id || 0),
+      name: String(workspace?.name || '').trim(),
+    }))
+    .filter((workspace) => workspace.id > 0 && workspace.name);
+}
+
+export async function fetchItemSidebarProjects() {
+  const resp = await fetch(apiURL('projects'), { cache: 'no-store' });
+  if (!resp.ok) {
+    const detail = (await resp.text()).trim() || `HTTP ${resp.status}`;
+    throw new Error(detail);
+  }
+  const payload = await resp.json();
+  const projects = Array.isArray(payload?.projects) ? payload.projects : [];
+  return projects
+    .map((project) => ({
+      id: String(project?.id || '').trim(),
+      name: String(project?.name || '').trim(),
+    }))
+    .filter((project) => project.id && project.name && project.id !== 'hub');
+}
+
+export async function performItemSidebarWorkspaceUpdate(item, workspaceID = null, workspaceName = '') {
+  const itemID = Number(item?.id || 0);
+  if (itemID <= 0) return false;
+  const body = { workspace_id: workspaceID };
+  try {
+    const resp = await fetch(apiURL(`items/${encodeURIComponent(String(itemID))}/workspace`), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) {
+      const detail = (await resp.text()).trim() || `HTTP ${resp.status}`;
+      throw new Error(detail);
+    }
+    const payload = await resp.json();
+    state.itemSidebarActiveItemID = itemID;
+    await loadItemSidebarView(state.itemSidebarView);
+    const warning = String(payload?.warning || '').trim();
+    const label = workspaceID ? `workspace set to ${String(workspaceName || '').trim() || 'selected workspace'}` : 'workspace cleared';
+    showStatus(warning ? `${label}. ${warning}` : label);
+    return true;
+  } catch (err) {
+    showStatus(`workspace picker failed: ${String(err?.message || err || 'unknown error')}`);
+    return false;
+  }
+}
+
+export async function performItemSidebarProjectUpdate(item, projectID = '', projectName = '') {
+  const itemID = Number(item?.id || 0);
+  if (itemID <= 0) return false;
+  const body = { project_id: projectID || null };
+  try {
+    const resp = await fetch(apiURL(`items/${encodeURIComponent(String(itemID))}/project`), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) {
+      const detail = (await resp.text()).trim() || `HTTP ${resp.status}`;
+      throw new Error(detail);
+    }
+    state.itemSidebarActiveItemID = itemID;
+    await loadItemSidebarView(state.itemSidebarView);
+    showStatus(projectID ? `project set to ${String(projectName || '').trim() || 'selected project'}` : 'project cleared');
+    return true;
+  } catch (err) {
+    showStatus(`project picker failed: ${String(err?.message || err || 'unknown error')}`);
+    return false;
+  }
+}
+
 export async function performItemSidebarTriage(item, action, options = {}) {
   const itemID = Number(item?.id || 0);
   if (itemID <= 0) return false;
@@ -320,6 +403,68 @@ export async function showItemSidebarDelegateMenu(item, x, y) {
   }
 }
 
+export async function showItemSidebarWorkspaceMenu(item, x, y) {
+  try {
+    const workspaces = await fetchItemSidebarWorkspaces();
+    if (workspaces.length === 0) {
+      showStatus('no workspaces available');
+      return false;
+    }
+    const currentWorkspaceID = Number(item?.workspace_id || 0);
+    const entries = [];
+    if (currentWorkspaceID > 0) {
+      entries.push({
+        label: 'Clear workspace',
+        action: 'clear_workspace',
+        onClick: () => performItemSidebarWorkspaceUpdate(item, null, ''),
+      });
+    }
+    workspaces.forEach((workspace) => {
+      entries.push({
+        label: workspace.id === currentWorkspaceID ? `${workspace.name} (current)` : workspace.name,
+        action: 'reassign_workspace',
+        onClick: () => performItemSidebarWorkspaceUpdate(item, workspace.id, workspace.name),
+      });
+    });
+    showItemSidebarMenu(entries, x, y);
+    return true;
+  } catch (err) {
+    showStatus(`workspace picker failed: ${String(err?.message || err || 'unknown error')}`);
+    return false;
+  }
+}
+
+export async function showItemSidebarProjectMenu(item, x, y) {
+  try {
+    const projects = await fetchItemSidebarProjects();
+    if (projects.length === 0) {
+      showStatus('no projects available');
+      return false;
+    }
+    const currentProjectID = String(item?.project_id || '').trim();
+    const entries = [];
+    if (currentProjectID) {
+      entries.push({
+        label: 'Clear project',
+        action: 'clear_project',
+        onClick: () => performItemSidebarProjectUpdate(item, '', ''),
+      });
+    }
+    projects.forEach((project) => {
+      entries.push({
+        label: project.id === currentProjectID ? `${project.name} (current)` : project.name,
+        action: 'reassign_project',
+        onClick: () => performItemSidebarProjectUpdate(item, project.id, project.name),
+      });
+    });
+    showItemSidebarMenu(entries, x, y);
+    return true;
+  } catch (err) {
+    showStatus(`project picker failed: ${String(err?.message || err || 'unknown error')}`);
+    return false;
+  }
+}
+
 export function showItemSidebarActionMenu(item, x, y) {
   const view = normalizeItemSidebarView(state.itemSidebarView);
   const entries = view === 'someday'
@@ -335,6 +480,16 @@ export function showItemSidebarActionMenu(item, x, y) {
         onClick: () => performItemSidebarTriage(item, 'done'),
       },
       {
+        label: 'Workspace...',
+        action: 'workspace',
+        onClick: () => showItemSidebarWorkspaceMenu(item, x, y),
+      },
+      {
+        label: 'Project...',
+        action: 'project',
+        onClick: () => showItemSidebarProjectMenu(item, x, y),
+      },
+      {
         label: itemSidebarActionLabel('delete', item),
         action: 'delete',
         onClick: () => performItemSidebarTriage(item, 'delete'),
@@ -345,6 +500,16 @@ export function showItemSidebarActionMenu(item, x, y) {
         label: itemSidebarActionLabel('done', item),
         action: 'done',
         onClick: () => performItemSidebarTriage(item, 'done'),
+      },
+      {
+        label: 'Workspace...',
+        action: 'workspace',
+        onClick: () => showItemSidebarWorkspaceMenu(item, x, y),
+      },
+      {
+        label: 'Project...',
+        action: 'project',
+        onClick: () => showItemSidebarProjectMenu(item, x, y),
       },
       {
         label: itemSidebarActionLabel('later', item),

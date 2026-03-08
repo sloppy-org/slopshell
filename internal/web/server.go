@@ -417,6 +417,8 @@ func (a *App) Router() http.Handler {
 	r.Put("/api/items/{item_id}/assign", a.handleItemAssign)
 	r.Put("/api/items/{item_id}/unassign", a.handleItemUnassign)
 	r.Put("/api/items/{item_id}/complete", a.handleItemComplete)
+	r.Put("/api/items/{item_id}/workspace", a.handleItemWorkspaceUpdate)
+	r.Put("/api/items/{item_id}/project", a.handleItemProjectUpdate)
 	r.Put("/api/items/{item_id}/state", a.handleItemStateUpdate)
 	r.Post("/api/items/{item_id}/triage", a.handleItemTriage)
 	r.Get("/api/items/{item_id}/print", a.handleItemPrint)

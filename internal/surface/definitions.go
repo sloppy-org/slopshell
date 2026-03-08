@@ -160,6 +160,8 @@ var WebRouteSections = []RouteSection{
 			"DELETE /api/items/{item_id}",
 			"PUT /api/items/{item_id}/state",
 			"PUT /api/items/{item_id}/assign",
+			"PUT /api/items/{item_id}/workspace",
+			"PUT /api/items/{item_id}/project",
 		},
 	},
 	{

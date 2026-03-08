@@ -31,13 +31,13 @@ const (
 )
 
 const intentLLMSystemPrompt = `You are Tabura's local router. Output JSON only.
-Allowed actions: switch_project, switch_workspace, list_workspace_items, list_workspaces, create_workspace, create_workspace_from_git, rename_workspace, delete_workspace, show_workspace_details, link_workspace_artifact, list_linked_artifacts, switch_model, toggle_silent, toggle_live_dialogue, cancel_work, show_status, shell, open_file_canvas, make_item, delegate_item, snooze_item, split_items, capture_idea, refine_idea_note, promote_idea, apply_idea_promotion, create_github_issue, create_github_issue_split, print_item, review_someday, triage_someday, promote_someday, toggle_someday_review_nudge, chat.
+Allowed actions: switch_project, switch_workspace, list_workspace_items, list_workspaces, create_workspace, create_workspace_from_git, rename_workspace, delete_workspace, show_workspace_details, link_workspace_artifact, list_linked_artifacts, switch_model, toggle_silent, toggle_live_dialogue, cancel_work, show_status, shell, open_file_canvas, make_item, delegate_item, snooze_item, split_items, reassign_workspace, reassign_project, clear_workspace, clear_project, capture_idea, refine_idea_note, promote_idea, apply_idea_promotion, create_github_issue, create_github_issue_split, print_item, review_someday, triage_someday, promote_someday, toggle_someday_review_nudge, chat.
 Use {"action":"chat"} unless user clearly requests a system action.
 For current-information requests (weather, web search, news, prices, schedules, latest/current updates), use {"action":"chat"} and MUST NOT use shell.
 For shell-like requests use {"action":"shell","command":"..."}.
 For open/show/display file requests, end with {"action":"open_file_canvas","path":"..."}.
 If exact path is uncertain, use multi-step {"actions":[...]}: shell search first, then open_file_canvas with path="$last_shell_path".
-For item materialization and idea/someday-review requests use make_item, delegate_item, snooze_item, split_items, capture_idea, refine_idea_note, promote_idea, apply_idea_promotion, create_github_issue, create_github_issue_split, review_someday, triage_someday, promote_someday, or toggle_someday_review_nudge.
+For item materialization and idea/someday-review requests use make_item, delegate_item, snooze_item, split_items, reassign_workspace, reassign_project, clear_workspace, clear_project, capture_idea, refine_idea_note, promote_idea, apply_idea_promotion, create_github_issue, create_github_issue_split, review_someday, triage_someday, promote_someday, or toggle_someday_review_nudge.
 Prefer case-insensitive filename search (for example -iname) and use single quotes inside JSON command strings.`
 
 type localIntentClassifierResponse struct {
@@ -318,7 +318,7 @@ func normalizeSystemActionName(raw string) string {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "toggle_conversation":
 		return "toggle_live_dialogue"
-	case "switch_project", "switch_workspace", "list_workspace_items", "list_workspaces", "create_workspace", "create_workspace_from_git", "rename_workspace", "delete_workspace", "show_workspace_details", "link_workspace_artifact", "list_linked_artifacts", "switch_model", "toggle_silent", "toggle_live_dialogue", "cancel_work", "show_status", "shell", "open_file_canvas", "make_item", "delegate_item", "snooze_item", "split_items", "capture_idea", "refine_idea_note", "promote_idea", "apply_idea_promotion", "create_github_issue", "create_github_issue_split", "print_item", "review_someday", "triage_someday", "promote_someday", "toggle_someday_review_nudge":
+	case "switch_project", "switch_workspace", "list_workspace_items", "list_workspaces", "create_workspace", "create_workspace_from_git", "rename_workspace", "delete_workspace", "show_workspace_details", "link_workspace_artifact", "list_linked_artifacts", "switch_model", "toggle_silent", "toggle_live_dialogue", "cancel_work", "show_status", "shell", "open_file_canvas", "make_item", "delegate_item", "snooze_item", "split_items", "reassign_workspace", "reassign_project", "clear_workspace", "clear_project", "capture_idea", "refine_idea_note", "promote_idea", "apply_idea_promotion", "create_github_issue", "create_github_issue_split", "print_item", "review_someday", "triage_someday", "promote_someday", "toggle_someday_review_nudge":
 		return strings.ToLower(strings.TrimSpace(raw))
 	default:
 		return ""

@@ -244,6 +244,56 @@ test.describe('inbox triage interactions', () => {
     expect(triageCalls.map((entry: any) => entry?.payload?.action)).toEqual(['done', 'delete', 'delegate', 'later']);
   });
 
+  test('desktop context menu workspace and project pickers reassign the active item', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await waitReady(page);
+    await page.evaluate(() => {
+      (window as any).__setItemSidebarWorkspaces([
+        { id: 1, name: 'Alpha', dir_path: '/tmp/alpha', is_active: true },
+        { id: 2, name: 'Beta', dir_path: '/tmp/beta', is_active: false },
+      ]);
+    });
+    await openInbox(page);
+    await setInboxItems(page, [{
+      ...parserInboxItem,
+      workspace_id: 1,
+      project_id: '',
+    }]);
+
+    const row = page.locator('#pr-file-list .pr-file-item[data-item-id="101"]');
+
+    await row.click({ button: 'right' });
+    await expect(page.locator('#item-sidebar-menu')).toContainText('Workspace...');
+    await page.locator('#item-sidebar-menu .item-sidebar-menu-item', { hasText: 'Workspace...' }).click();
+    await expect(page.locator('#item-sidebar-menu')).toContainText('Beta');
+    await page.locator('#item-sidebar-menu .item-sidebar-menu-item', { hasText: 'Beta' }).click();
+    await expect.poll(async () => {
+      return page.evaluate(() => {
+        const log = (window as any).__harnessLog || [];
+        return log.some((entry: any) => entry?.action === 'item_workspace');
+      });
+    }).toBe(true);
+
+    await row.click({ button: 'right' });
+    await expect(page.locator('#item-sidebar-menu')).toContainText('Project...');
+    await page.locator('#item-sidebar-menu .item-sidebar-menu-item', { hasText: 'Project...' }).click();
+    await expect(page.locator('#item-sidebar-menu')).toContainText('Test');
+    await page.locator('#item-sidebar-menu .item-sidebar-menu-item', { hasText: 'Test' }).click();
+    await expect.poll(async () => {
+      return page.evaluate(() => {
+        const log = (window as any).__harnessLog || [];
+        return log.some((entry: any) => entry?.action === 'item_project');
+      });
+    }).toBe(true);
+
+    const itemState = await page.evaluate(() => {
+      const data = (window as any).__itemSidebarData || {};
+      return Array.isArray(data.inbox) ? data.inbox[0] : null;
+    });
+    expect(itemState?.workspace_id).toBe(2);
+    expect(itemState?.project_id).toBe('test');
+  });
+
   test('stale inbox reload does not resurrect a triaged item', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await waitReady(page);

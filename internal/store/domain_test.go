@@ -38,7 +38,7 @@ func TestStoreMigratesDomainTablesOnFreshDatabase(t *testing.T) {
 		"external_container_mappings": {"id", "provider", "container_type", "container_ref", "workspace_id", "project_id", "sphere"},
 		"workspace_artifact_links":    {"workspace_id", "artifact_id", "created_at"},
 		"external_bindings":           {"id", "account_id", "provider", "object_type", "remote_id", "item_id", "artifact_id", "container_ref", "remote_updated_at", "last_synced_at"},
-		"items":                       {"id", "title", "state", "workspace_id", "artifact_id", "actor_id", "visible_after", "follow_up_at", "source", "source_ref", "created_at", "updated_at"},
+		"items":                       {"id", "title", "state", "workspace_id", "project_id", "artifact_id", "actor_id", "visible_after", "follow_up_at", "source", "source_ref", "created_at", "updated_at"},
 	} {
 		got := make(map[string]bool, len(columns[table]))
 		for _, name := range columns[table] {
@@ -70,7 +70,7 @@ func TestStoreMigratesDomainTablesOnFreshDatabase(t *testing.T) {
 	if err := rows.Err(); err != nil {
 		t.Fatalf("iterate foreign keys: %v", err)
 	}
-	for _, table := range []string{"workspaces", "artifacts", "actors"} {
+	for _, table := range []string{"workspaces", "projects", "artifacts", "actors"} {
 		if !targets[table] {
 			t.Fatalf("items missing foreign key to %s", table)
 		}
@@ -196,24 +196,25 @@ func TestItemSchemaAllowsNilOptionalFields(t *testing.T) {
 	}
 
 	var (
-		title                                       string
-		workspaceID, artifactID, actorID            sql.NullInt64
-		visibleAfter, followUpAt, source, sourceRef sql.NullString
+		title                               string
+		workspaceID, artifactID, actorID    sql.NullInt64
+		projectID, visibleAfter, followUpAt sql.NullString
+		source, sourceRef                   sql.NullString
 	)
 	err = s.db.QueryRow(`
-SELECT title, workspace_id, artifact_id, actor_id, visible_after, follow_up_at, source, source_ref
+SELECT title, workspace_id, project_id, artifact_id, actor_id, visible_after, follow_up_at, source, source_ref
 FROM items
 WHERE id = ?
-`, id).Scan(&title, &workspaceID, &artifactID, &actorID, &visibleAfter, &followUpAt, &source, &sourceRef)
+`, id).Scan(&title, &workspaceID, &projectID, &artifactID, &actorID, &visibleAfter, &followUpAt, &source, &sourceRef)
 	if err != nil {
 		t.Fatalf("query item: %v", err)
 	}
 	if title != "triage me" {
 		t.Fatalf("title = %q, want triage me", title)
 	}
-	if workspaceID.Valid || artifactID.Valid || actorID.Valid || visibleAfter.Valid || followUpAt.Valid || source.Valid || sourceRef.Valid {
-		t.Fatalf("expected optional fields to remain NULL, got workspace=%v artifact=%v actor=%v visible_after=%v follow_up_at=%v source=%v source_ref=%v",
-			workspaceID, artifactID, actorID, visibleAfter, followUpAt, source, sourceRef)
+	if workspaceID.Valid || projectID.Valid || artifactID.Valid || actorID.Valid || visibleAfter.Valid || followUpAt.Valid || source.Valid || sourceRef.Valid {
+		t.Fatalf("expected optional fields to remain NULL, got workspace=%v project=%v artifact=%v actor=%v visible_after=%v follow_up_at=%v source=%v source_ref=%v",
+			workspaceID, projectID, artifactID, actorID, visibleAfter, followUpAt, source, sourceRef)
 	}
 }
 
@@ -222,6 +223,9 @@ func TestItemSchemaEnforcesForeignKeys(t *testing.T) {
 
 	if _, err := s.db.Exec(`INSERT INTO items (title, workspace_id) VALUES ('invalid', 999)`); err == nil {
 		t.Fatal("expected foreign key violation for missing workspace")
+	}
+	if _, err := s.db.Exec(`INSERT INTO items (title, project_id) VALUES ('invalid', 'missing-project')`); err == nil {
+		t.Fatal("expected foreign key violation for missing project")
 	}
 	if _, err := s.db.Exec(`INSERT INTO items (title, artifact_id) VALUES ('invalid', 999)`); err == nil {
 		t.Fatal("expected foreign key violation for missing artifact")

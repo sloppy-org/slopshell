@@ -308,6 +308,8 @@ func (a *App) executeSystemAction(sessionID string, session store.ChatSession, a
 		return a.applyIdeaPromotion(session, action)
 	case "make_item", "delegate_item", "snooze_item", "split_items":
 		return a.createConversationItem(sessionID, session, action)
+	case "reassign_workspace", "reassign_project", "clear_workspace", "clear_project":
+		return a.executeItemReassignmentAction(session, action)
 	case "link_workspace_artifact":
 		return a.linkWorkspaceArtifact(session, action)
 	case "list_linked_artifacts":

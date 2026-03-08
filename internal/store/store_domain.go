@@ -18,6 +18,7 @@ const itemsTableSchema = `CREATE TABLE IF NOT EXISTS items (
   title TEXT NOT NULL,
   state TEXT NOT NULL DEFAULT 'inbox' CHECK (state IN ('inbox', 'waiting', 'someday', 'done')),
   workspace_id INTEGER REFERENCES workspaces(id) ON DELETE SET NULL,
+  project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
   artifact_id INTEGER REFERENCES artifacts(id) ON DELETE SET NULL,
   actor_id INTEGER REFERENCES actors(id) ON DELETE SET NULL,
   visible_after TEXT,
@@ -106,7 +107,10 @@ CREATE INDEX IF NOT EXISTS idx_external_bindings_stale
 	if _, err := s.db.Exec(itemsTableSchema); err != nil {
 		return err
 	}
-	return s.migrateItemTableStateSupport()
+	if err := s.migrateItemTableStateSupport(); err != nil {
+		return err
+	}
+	return s.migrateItemProjectColumnSupport()
 }
 
 func normalizeWorkspaceName(name string) string {
@@ -203,10 +207,10 @@ func (s *Store) migrateItemTableStateSupport() error {
 	}
 	if _, err := tx.Exec(`
 INSERT INTO items (
-	id, title, state, workspace_id, artifact_id, actor_id, visible_after, follow_up_at, source, source_ref, created_at, updated_at
+	id, title, state, workspace_id, project_id, artifact_id, actor_id, visible_after, follow_up_at, source, source_ref, created_at, updated_at
 )
 SELECT
-	id, title, state, workspace_id, artifact_id, actor_id, visible_after, follow_up_at, source, source_ref, created_at, updated_at
+	id, title, state, workspace_id, NULL, artifact_id, actor_id, visible_after, follow_up_at, source, source_ref, created_at, updated_at
 FROM items_legacy
 `); err != nil {
 		return err
@@ -215,6 +219,18 @@ FROM items_legacy
 		return err
 	}
 	return tx.Commit()
+}
+
+func (s *Store) migrateItemProjectColumnSupport() error {
+	tableColumns, err := s.tableColumnSet("items")
+	if err != nil {
+		return err
+	}
+	if tableColumns["items"]["project_id"] {
+		return nil
+	}
+	_, err = s.db.Exec(`ALTER TABLE items ADD COLUMN project_id TEXT REFERENCES projects(id) ON DELETE SET NULL`)
+	return err
 }
 
 func scanWorkspace(
@@ -276,15 +292,17 @@ func scanItem(
 	},
 ) (Item, error) {
 	var (
-		out                                         Item
-		workspaceID, artifactID, actorID            sql.NullInt64
-		visibleAfter, followUpAt, source, sourceRef sql.NullString
+		out                                 Item
+		workspaceID, artifactID, actorID    sql.NullInt64
+		projectID, visibleAfter, followUpAt sql.NullString
+		source, sourceRef                   sql.NullString
 	)
 	err := row.Scan(
 		&out.ID,
 		&out.Title,
 		&out.State,
 		&workspaceID,
+		&projectID,
 		&artifactID,
 		&actorID,
 		&visibleAfter,
@@ -300,6 +318,7 @@ func scanItem(
 	out.Title = strings.TrimSpace(out.Title)
 	out.State = normalizeItemState(out.State)
 	out.WorkspaceID = nullInt64Pointer(workspaceID)
+	out.ProjectID = nullStringPointer(projectID)
 	out.ArtifactID = nullInt64Pointer(artifactID)
 	out.ActorID = nullInt64Pointer(actorID)
 	out.VisibleAfter = nullStringPointer(visibleAfter)
@@ -315,16 +334,18 @@ func scanItemSummary(
 	},
 ) (ItemSummary, error) {
 	var (
-		out                                         ItemSummary
-		workspaceID, artifactID, actorID            sql.NullInt64
-		visibleAfter, followUpAt, source, sourceRef sql.NullString
-		artifactTitle, artifactKind, actorName      sql.NullString
+		out                                    ItemSummary
+		workspaceID, artifactID, actorID       sql.NullInt64
+		projectID, visibleAfter, followUpAt    sql.NullString
+		source, sourceRef                      sql.NullString
+		artifactTitle, artifactKind, actorName sql.NullString
 	)
 	err := row.Scan(
 		&out.ID,
 		&out.Title,
 		&out.State,
 		&workspaceID,
+		&projectID,
 		&artifactID,
 		&actorID,
 		&visibleAfter,
@@ -343,6 +364,7 @@ func scanItemSummary(
 	out.Title = strings.TrimSpace(out.Title)
 	out.State = normalizeItemState(out.State)
 	out.WorkspaceID = nullInt64Pointer(workspaceID)
+	out.ProjectID = nullStringPointer(projectID)
 	out.ArtifactID = nullInt64Pointer(artifactID)
 	out.ActorID = nullInt64Pointer(actorID)
 	out.VisibleAfter = nullStringPointer(visibleAfter)
@@ -1002,11 +1024,12 @@ func (s *Store) CreateItem(title string, opts ItemOptions) (Item, error) {
 	}
 	res, err := s.db.Exec(
 		`INSERT INTO items (
-			title, state, workspace_id, artifact_id, actor_id, visible_after, follow_up_at, source, source_ref
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			title, state, workspace_id, project_id, artifact_id, actor_id, visible_after, follow_up_at, source, source_ref
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		cleanTitle,
 		cleanState,
 		opts.WorkspaceID,
+		normalizeOptionalProjectID(opts.ProjectID),
 		opts.ArtifactID,
 		opts.ActorID,
 		normalizeOptionalString(opts.VisibleAfter),
@@ -1026,7 +1049,7 @@ func (s *Store) CreateItem(title string, opts ItemOptions) (Item, error) {
 
 func (s *Store) GetItem(id int64) (Item, error) {
 	return scanItem(s.db.QueryRow(
-		`SELECT id, title, state, workspace_id, artifact_id, actor_id, visible_after, follow_up_at, source, source_ref, created_at, updated_at
+		`SELECT id, title, state, workspace_id, project_id, artifact_id, actor_id, visible_after, follow_up_at, source, source_ref, created_at, updated_at
 		 FROM items
 		 WHERE id = ?`,
 		id,
@@ -1040,7 +1063,7 @@ func (s *Store) GetItemBySource(source, sourceRef string) (Item, error) {
 		return Item{}, errors.New("item source and source_ref are required")
 	}
 	return scanItem(s.db.QueryRow(
-		`SELECT id, title, state, workspace_id, artifact_id, actor_id, visible_after, follow_up_at, source, source_ref, created_at, updated_at
+		`SELECT id, title, state, workspace_id, project_id, artifact_id, actor_id, visible_after, follow_up_at, source, source_ref, created_at, updated_at
 		 FROM items
 		 WHERE source = ? AND source_ref = ?`,
 		cleanSource,
@@ -1064,10 +1087,11 @@ func (s *Store) UpsertItemFromSource(source, sourceRef, title string, workspaceI
 	case err == nil:
 		res, err := s.db.Exec(
 			`UPDATE items
-			 SET title = ?, workspace_id = ?, updated_at = datetime('now')
-			 WHERE id = ?`,
+			 SET title = ?, workspace_id = ?, project_id = ?, updated_at = datetime('now')
+		 WHERE id = ?`,
 			cleanTitle,
 			workspaceID,
+			normalizeOptionalProjectID(existing.ProjectID),
 			existing.ID,
 		)
 		if err != nil {
@@ -1175,6 +1199,10 @@ func (s *Store) UpdateItem(id int64, updates ItemUpdate) error {
 	if updates.WorkspaceID != nil {
 		parts = append(parts, "workspace_id = ?")
 		args = append(args, nullablePositiveID(*updates.WorkspaceID))
+	}
+	if updates.ProjectID != nil {
+		parts = append(parts, "project_id = ?")
+		args = append(args, normalizeOptionalProjectID(updates.ProjectID))
 	}
 	if updates.ArtifactID != nil {
 		parts = append(parts, "artifact_id = ?")
@@ -1658,7 +1686,7 @@ func (s *Store) ListItemsByState(state string) ([]Item, error) {
 		return nil, errors.New("invalid item state")
 	}
 	rows, err := s.db.Query(
-		`SELECT id, title, state, workspace_id, artifact_id, actor_id, visible_after, follow_up_at, source, source_ref, created_at, updated_at
+		`SELECT id, title, state, workspace_id, project_id, artifact_id, actor_id, visible_after, follow_up_at, source, source_ref, created_at, updated_at
 		 FROM items
 		 WHERE state = ?`,
 		cleanState,
@@ -1692,6 +1720,7 @@ const itemSummarySelect = `SELECT
  i.title,
  i.state,
  i.workspace_id,
+ i.project_id,
  i.artifact_id,
  i.actor_id,
  i.visible_after,
@@ -1809,7 +1838,7 @@ FROM items
 
 func (s *Store) ListItems() ([]Item, error) {
 	rows, err := s.db.Query(
-		`SELECT id, title, state, workspace_id, artifact_id, actor_id, visible_after, follow_up_at, source, source_ref, created_at, updated_at
+		`SELECT id, title, state, workspace_id, project_id, artifact_id, actor_id, visible_after, follow_up_at, source, source_ref, created_at, updated_at
 		 FROM items`,
 	)
 	if err != nil {
