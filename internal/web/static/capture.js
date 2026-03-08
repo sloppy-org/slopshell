@@ -5,10 +5,11 @@
   const recordLabel = recordButton ? recordButton.querySelector('.capture-record-label') : null;
   const recordHint = recordButton ? recordButton.querySelector('.capture-record-hint') : null;
   const saveButton = document.getElementById('capture-save');
+  const retryButton = document.getElementById('capture-retry');
   const resetButton = document.getElementById('capture-reset');
   const statusNode = document.getElementById('capture-status');
 
-  if (!page || !noteInput || !recordButton || !recordLabel || !recordHint || !saveButton || !resetButton || !statusNode) {
+  if (!page || !noteInput || !recordButton || !recordLabel || !recordHint || !saveButton || !retryButton || !resetButton || !statusNode) {
     return;
   }
 
@@ -16,11 +17,13 @@
     statusTimer: 0,
     recording: false,
     saving: false,
+    transcribing: false,
     discardRecording: false,
     mediaStream: null,
     mediaRecorder: null,
     audioChunks: [],
     audioBlob: null,
+    pendingTranscript: '',
   };
 
   function clearStatusTimer() {
@@ -57,8 +60,19 @@
       recordHint.textContent = 'Tap again to stop.';
       return;
     }
+    if (cleanState === 'transcribing') {
+      recordLabel.textContent = 'Transcribing';
+      recordHint.textContent = 'Saving the voice memo into your inbox.';
+      return;
+    }
     recordLabel.textContent = 'Record';
-    recordHint.textContent = state.audioBlob ? 'Recording captured. Type a note or clear to reset.' : 'Tap once to start, again to stop.';
+    if (state.audioBlob) {
+      recordHint.textContent = state.pendingTranscript
+        ? 'Memo captured. Retry save or clear to discard.'
+        : 'Memo captured. Retry transcription or clear to discard.';
+      return;
+    }
+    recordHint.textContent = 'Tap once to start, again to stop.';
   }
 
   function normalizeNote(raw) {
@@ -80,7 +94,13 @@
 
   function updateSaveState() {
     const hasNote = normalizeNote(noteInput.value) !== '';
-    saveButton.disabled = state.saving || !hasNote;
+    const busy = state.saving || state.transcribing;
+    noteInput.disabled = busy;
+    recordButton.disabled = busy;
+    retryButton.hidden = !(state.audioBlob && !state.recording && !state.transcribing);
+    retryButton.disabled = busy || !state.audioBlob;
+    resetButton.disabled = busy;
+    saveButton.disabled = busy || !hasNote;
   }
 
   function releaseMediaStream() {
@@ -101,9 +121,127 @@
     state.mediaRecorder = null;
     releaseMediaStream();
     setCaptureState('idle');
-    if (state.audioBlob) {
-      setStatus('Recording captured.', 'success');
+    updateSaveState();
+  }
+
+  function clearVoiceMemoState() {
+    state.audioChunks = [];
+    state.audioBlob = null;
+    state.pendingTranscript = '';
+  }
+
+  function voiceMemoErrorMessage(reason) {
+    switch (String(reason || '').trim()) {
+      case 'recording_too_short':
+        return 'Recording too short. Retry this memo.';
+      case 'likely_noise':
+      case 'no_speech_detected':
+      case 'empty_transcript':
+        return 'No speech was detected. Retry this memo.';
+      default:
+        return 'Transcription failed. Retry this memo.';
+    }
+  }
+
+  async function postJSON(url, payload) {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+    let data = {};
+    try {
+      data = await response.json();
+    } catch (_) {
+      data = {};
+    }
+    if (!response.ok) {
+      throw new Error(String(data && data.error ? data.error : `HTTP ${response.status}`));
+    }
+    return data;
+  }
+
+  async function transcribeVoiceMemo(blob) {
+    const mimeType = String(blob && blob.type ? blob.type : 'audio/webm').trim() || 'audio/webm';
+    const payload = new FormData();
+    payload.append('file', blob, `capture${mimeType.startsWith('audio/') ? '' : '.bin'}`);
+    payload.append('mime_type', mimeType);
+    const response = await fetch('./api/stt/transcribe', {
+      method: 'POST',
+      body: payload,
+    });
+    let data = {};
+    try {
+      data = await response.json();
+    } catch (_) {
+      data = {};
+    }
+    if (!response.ok) {
+      throw new Error('transcription_http_error');
+    }
+    const transcript = normalizeNote(data && data.text);
+    if (!transcript) {
+      throw new Error(voiceMemoErrorMessage(data && data.reason));
+    }
+    return transcript;
+  }
+
+  async function saveVoiceMemo(transcript) {
+    const title = deriveItemTitle(transcript);
+    if (!title) {
+      throw new Error('Transcription was empty after cleanup. Retry this memo.');
+    }
+    const artifactPayload = await postJSON('./api/artifacts', {
+      kind: 'idea_note',
+      title,
+      meta_json: JSON.stringify({
+        transcript,
+        source: 'capture_stt',
+      }),
+    });
+    const artifactID = Number(artifactPayload && artifactPayload.artifact && artifactPayload.artifact.id);
+    if (!Number.isFinite(artifactID) || artifactID <= 0) {
+      throw new Error('artifact_create_failed');
+    }
+    await postJSON('./api/items', {
+      title,
+      artifact_id: artifactID,
+    });
+    return title;
+  }
+
+  async function processVoiceMemo() {
+    if (!state.audioBlob || state.saving || state.transcribing) {
+      return;
+    }
+    clearStatusTimer();
+    state.transcribing = true;
+    updateSaveState();
+    setCaptureState('transcribing');
+    setStatus(state.pendingTranscript ? 'Saving voice memo...' : 'Transcribing...', '');
+    try {
+      const transcript = state.pendingTranscript || await transcribeVoiceMemo(state.audioBlob);
+      state.pendingTranscript = transcript;
+      const title = await saveVoiceMemo(transcript);
+      clearVoiceMemoState();
+      setCaptureState('idle');
+      setStatus(`Saved: ${title}`, 'success');
       scheduleStatusClear(1800);
+    } catch (error) {
+      setCaptureState('idle');
+      const message = String(error && error.message ? error.message : error);
+      if (message === 'transcription_http_error') {
+        setStatus('Transcription failed. Retry this memo.', 'error');
+      } else if (message === 'artifact_create_failed' || /^HTTP \d+$/.test(message)) {
+        setStatus('Saving voice memo failed. Retry this memo.', 'error');
+      } else {
+        setStatus(message, 'error');
+      }
+    } finally {
+      state.transcribing = false;
+      updateSaveState();
     }
   }
 
@@ -121,10 +259,10 @@
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const recorder = new window.MediaRecorder(stream);
       state.recording = true;
+      clearVoiceMemoState();
       state.mediaStream = stream;
       state.mediaRecorder = recorder;
       state.audioChunks = [];
-      state.audioBlob = null;
       recorder.addEventListener('dataavailable', (event) => {
         if (event.data) {
           state.audioChunks.push(event.data);
@@ -137,16 +275,21 @@
         }
         state.discardRecording = false;
         finishRecording();
+        if (state.audioBlob) {
+          void processVoiceMemo();
+        }
       });
       recorder.start();
       setStatus('', '');
       setCaptureState('recording');
+      updateSaveState();
     } catch (error) {
       releaseMediaStream();
       state.recording = false;
       state.mediaRecorder = null;
       setCaptureState('idle');
       setStatus(`Voice capture failed: ${String(error && error.message ? error.message : error)}`, 'error');
+      updateSaveState();
     }
   }
 
@@ -170,8 +313,7 @@
     }
     state.recording = false;
     state.mediaRecorder = null;
-    state.audioChunks = [];
-    state.audioBlob = null;
+    clearVoiceMemoState();
     releaseMediaStream();
     noteInput.value = '';
     setCaptureState('idle');
@@ -195,20 +337,11 @@
     setCaptureState('saving');
     setStatus('Saving...', '');
     try {
-      const response = await fetch('./api/items', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          title,
-        }),
+      await postJSON('./api/items', {
+        title,
       });
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
       noteInput.value = '';
-      state.audioBlob = null;
+      clearVoiceMemoState();
       setCaptureState('idle');
       setStatus(`Saved: ${title}`, 'success');
       scheduleStatusClear(1800);
@@ -232,12 +365,16 @@
   saveButton.addEventListener('click', () => {
     void saveCapture();
   });
+  retryButton.addEventListener('click', () => {
+    void processVoiceMemo();
+  });
   resetButton.addEventListener('click', resetCapture);
 
   updateSaveState();
   setCaptureState('idle');
   window.__taburaCapture = {
     deriveItemTitle,
+    voiceMemoErrorMessage,
     resetCapture,
   };
 })();

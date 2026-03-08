@@ -23,6 +23,67 @@ test.describe('capture page', () => {
     expect(requests[0].title).toBe('Follow up with the review queue tomorrow morning.');
   });
 
+  test('transcribes a voice memo and saves an artifact-backed inbox item', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/tests/playwright/capture-harness.html');
+
+    await page.locator('#capture-record').click({ force: true });
+    await page.locator('#capture-record').click({ force: true });
+
+    await expect(page.locator('#capture-status')).toContainText('Saved: Voice memo from capture harness.');
+    await expect(page.locator('#capture-retry')).toBeHidden();
+
+    const transcribeRequests = await page.evaluate(() => (window as any).__captureTranscribeRequests);
+    expect(transcribeRequests).toHaveLength(1);
+
+    const artifactRequests = await page.evaluate(() => (window as any).__captureArtifactRequests);
+    expect(artifactRequests).toHaveLength(1);
+    expect(artifactRequests[0].kind).toBe('idea_note');
+    expect(artifactRequests[0].title).toBe('Voice memo from capture harness.');
+    expect(JSON.parse(String(artifactRequests[0].meta_json)).transcript).toBe(
+      'Voice memo from capture harness. Follow up tomorrow morning.',
+    );
+
+    const itemRequests = await page.evaluate(() => (window as any).__captureRequests);
+    expect(itemRequests).toHaveLength(1);
+    expect(itemRequests[0].title).toBe('Voice memo from capture harness.');
+    expect(itemRequests[0].artifact_id).toBe(1);
+
+    const fetchRequests = await page.evaluate(() => (window as any).__captureFetchRequests);
+    expect(fetchRequests).toHaveLength(3);
+    expect(fetchRequests.some((request: { url: string }) => request.url.includes('/api/chat/'))).toBe(false);
+  });
+
+  test('keeps the memo available for retry after transcription failure', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/tests/playwright/capture-harness.html');
+
+    await page.evaluate(() => {
+      (window as any).__setCaptureTranscribeResponses([
+        { status: 502, body: { error: 'sidecar unavailable' } },
+        { status: 200, body: { text: 'Retry worked after the STT sidecar came back.' } },
+      ]);
+    });
+
+    await page.locator('#capture-record').click({ force: true });
+    await page.locator('#capture-record').click({ force: true });
+
+    await expect(page.locator('#capture-status')).toContainText('Transcription failed. Retry this memo.');
+    await expect(page.locator('#capture-retry')).toBeVisible();
+
+    await page.locator('#capture-retry').click();
+
+    await expect(page.locator('#capture-status')).toContainText('Saved: Retry worked after the STT sidecar came back.');
+    await expect(page.locator('#capture-retry')).toBeHidden();
+
+    const transcribeRequests = await page.evaluate(() => (window as any).__captureTranscribeRequests);
+    expect(transcribeRequests).toHaveLength(2);
+
+    const itemRequests = await page.evaluate(() => (window as any).__captureRequests);
+    expect(itemRequests).toHaveLength(1);
+    expect(itemRequests[0].title).toBe('Retry worked after the STT sidecar came back.');
+  });
+
   test('toggles record state with the large capture button', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/tests/playwright/capture-harness.html');
@@ -35,6 +96,6 @@ test.describe('capture page', () => {
     await page.locator('#capture-record').click({ force: true });
     await expect(page.locator('body')).toHaveAttribute('data-capture-state', 'idle');
     await expect(page.locator('#capture-record')).toHaveAttribute('aria-pressed', 'false');
-    await expect(page.locator('#capture-status')).toContainText('Recording captured.');
+    await expect(page.locator('#capture-status')).toContainText('Saved: Voice memo from capture harness.');
   });
 });

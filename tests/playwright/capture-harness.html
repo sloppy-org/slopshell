@@ -32,6 +32,7 @@
 
       <div class="capture-actions">
         <button id="capture-save" class="capture-save" type="button" disabled>Save</button>
+        <button id="capture-retry" class="capture-retry" type="button" hidden>Retry voice memo</button>
         <button id="capture-reset" class="capture-reset" type="button">Clear</button>
       </div>
 
@@ -41,24 +42,73 @@
 
   <script>
     (() => {
-      const savedRequests = [];
-      window.__captureRequests = savedRequests;
+      const itemRequests = [];
+      const artifactRequests = [];
+      const transcribeRequests = [];
+      const fetchRequests = [];
+      let transcribeResponses = [
+        { status: 200, body: { text: 'Voice memo from capture harness. Follow up tomorrow morning.' } },
+      ];
+
+      window.__captureRequests = itemRequests;
+      window.__captureArtifactRequests = artifactRequests;
+      window.__captureTranscribeRequests = transcribeRequests;
+      window.__captureFetchRequests = fetchRequests;
+      window.__setCaptureTranscribeResponses = (responses) => {
+        if (!Array.isArray(responses) || responses.length === 0) {
+          transcribeResponses = [
+            { status: 200, body: { text: 'Voice memo from capture harness. Follow up tomorrow morning.' } },
+          ];
+          return;
+        }
+        transcribeResponses = responses.map((entry) => ({
+          status: Number(entry && entry.status) || 200,
+          body: entry && typeof entry.body === 'object' ? entry.body : {},
+        }));
+      };
+
+      function nextTranscribeResponse() {
+        if (transcribeResponses.length > 1) {
+          return transcribeResponses.shift();
+        }
+        return transcribeResponses[0];
+      }
 
       window.fetch = async (url, options = {}) => {
+        fetchRequests.push({
+          url: String(url),
+          method: options.method || 'GET',
+        });
+        if (String(url).includes('/api/stt/transcribe')) {
+          transcribeRequests.push({
+            method: options.method || 'GET',
+          });
+          const next = nextTranscribeResponse();
+          return new Response(JSON.stringify(next.body), {
+            status: next.status,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        if (String(url).includes('/api/artifacts')) {
+          const payload = options && options.body ? JSON.parse(String(options.body)) : {};
+          artifactRequests.push(payload);
+          return new Response(JSON.stringify({
+            ok: true,
+            artifact: { id: artifactRequests.length, title: payload.title || '', kind: payload.kind || '' },
+          }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
         if (String(url).includes('/api/items')) {
           const payload = options && options.body ? JSON.parse(String(options.body)) : {};
-          savedRequests.push(payload);
-          return {
+          itemRequests.push(payload);
+          return new Response(JSON.stringify({
             ok: true,
-            status: 200,
-            json: async () => ({ ok: true, item: { id: savedRequests.length, title: payload.title || '' } }),
-          };
+            item: { id: itemRequests.length, title: payload.title || '' },
+          }), { status: 200, headers: { 'Content-Type': 'application/json' } });
         }
-        return {
-          ok: true,
+        return new Response(JSON.stringify({ ok: true }), {
           status: 200,
-          json: async () => ({ ok: true }),
-        };
+          headers: { 'Content-Type': 'application/json' },
+        });
       };
 
       class FakeTrack {

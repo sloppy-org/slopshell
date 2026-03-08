@@ -104,6 +104,7 @@ body::before {
 
 .capture-record:focus-visible,
 .capture-save:focus-visible,
+.capture-retry:focus-visible,
 .capture-reset:focus-visible,
 #capture-note:focus-visible {
   outline: 3px solid rgba(29, 122, 82, 0.24);
@@ -168,6 +169,7 @@ body::before {
 }
 
 .capture-save,
+.capture-retry,
 .capture-reset {
   min-height: 52px;
   border-radius: 999px;
@@ -194,6 +196,17 @@ body::before {
   border: 1px solid var(--capture-line);
   background: rgba(255, 255, 255, 0.58);
   color: var(--capture-ink);
+}
+
+.capture-retry {
+  padding: 0 20px;
+  border: 1px solid rgba(210, 95, 55, 0.28);
+  background: rgba(210, 95, 55, 0.08);
+  color: var(--capture-accent-strong);
+}
+
+.capture-retry[hidden] {
+  display: none;
 }
 
 .capture-status {
@@ -231,6 +244,10 @@ body[data-capture-state="recording"] .capture-card {
 
 body[data-capture-state="saving"] .capture-card {
   box-shadow: 0 28px 80px rgba(21, 88, 67, 0.18);
+}
+
+body[data-capture-state="transcribing"] .capture-card {
+  box-shadow: 0 28px 80px rgba(166, 63, 31, 0.18);
 }
 
 @keyframes capturePulse {
