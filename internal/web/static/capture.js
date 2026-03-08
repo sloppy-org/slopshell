@@ -335,11 +335,16 @@
     if (!title) {
       throw new Error('Transcription was empty after cleanup. Retry this memo.');
     }
+    const capturedAt = new Date().toISOString();
     const artifactPayload = await postJSON('./api/artifacts', {
       kind: 'idea_note',
       title,
       meta_json: JSON.stringify({
+        title,
         transcript,
+        capture_mode: 'voice',
+        captured_at: capturedAt,
+        notes: [transcript],
         source: 'capture_stt',
       }),
     });

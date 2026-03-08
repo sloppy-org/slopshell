@@ -126,6 +126,19 @@ test.describe('inbox triage interactions', () => {
     await expect(page.locator('#canvas-text')).toContainText('Break parser cleanup into a small refactor');
   });
 
+  test('idea items open as structured idea notes on canvas', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await waitReady(page);
+    await openInbox(page);
+
+    await page.locator('#pr-file-list .pr-file-item[data-item-id="101"]').click();
+
+    await expect(page.locator('#canvas-text')).toContainText('Parser cleanup plan');
+    await expect(page.locator('#canvas-text')).toContainText('Notes');
+    await expect(page.locator('#canvas-text')).toContainText('Context');
+    await expect(page.locator('#canvas-text')).toContainText('Workspace: Default');
+  });
+
   test('touch gestures expose feedback and commit done, delete, delegate, and later', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await waitReady(page);

@@ -3360,9 +3360,64 @@ function parseSidebarArtifactMeta(raw) {
   }
 }
 
+function ideaRefinementHeading(entry) {
+  const explicit = String(entry?.heading || '').trim();
+  if (explicit) return explicit;
+  const kind = String(entry?.kind || '').trim().toLowerCase();
+  if (kind === 'expand') return 'Expansion';
+  if (kind === 'pros_cons') return 'Pros and Cons';
+  if (kind === 'alternatives') return 'Alternatives';
+  if (kind === 'implementation') return 'Implementation Outline';
+  return 'Idea Notes';
+}
+
+function buildIdeaNoteMarkdown(title, artifactMeta) {
+  const noteTitle = String(artifactMeta?.title || title || 'Idea').trim() || 'Idea';
+  const notes = Array.isArray(artifactMeta?.notes)
+    ? artifactMeta.notes.map((entry) => String(entry || '').trim()).filter(Boolean)
+    : [];
+  const transcript = String(artifactMeta?.transcript || '').trim();
+  if (notes.length === 0 && transcript) {
+    notes.push(transcript);
+  }
+  const detail = [
+    `# ${noteTitle}`,
+    '',
+    '## Notes',
+  ];
+  if (notes.length > 0) {
+    notes.forEach((note) => {
+      detail.push(`- ${note}`);
+    });
+  } else {
+    detail.push('- No notes yet.');
+  }
+  detail.push('', '## Context');
+  const captureMode = String(artifactMeta?.capture_mode || '').trim();
+  if (captureMode) detail.push(`- Captured: ${captureMode}`);
+  const workspace = String(artifactMeta?.workspace || '').trim();
+  if (workspace) detail.push(`- Workspace: ${workspace}`);
+  const capturedAt = String(artifactMeta?.captured_at || '').trim();
+  if (capturedAt) detail.push(`- Date: ${capturedAt}`);
+  if (detail[detail.length - 1] === '## Context') {
+    detail.push('- Date: unavailable');
+  }
+  const refinements = Array.isArray(artifactMeta?.refinements) ? artifactMeta.refinements : [];
+  refinements.forEach((entry) => {
+    const body = String(entry?.body || '').trim();
+    if (!body) return;
+    detail.push('', `## ${ideaRefinementHeading(entry)}`, '', body);
+  });
+  return detail.join('\n');
+}
+
 function buildSidebarItemFallbackText(item, artifact = null) {
   const artifactMeta = parseSidebarArtifactMeta(artifact?.meta_json || '');
   const title = String(artifact?.title || item?.artifact_title || item?.title || 'Item').trim() || 'Item';
+  const artifactKind = String(artifact?.kind || item?.artifact_kind || '').trim().toLowerCase();
+  if (artifactKind === 'idea_note') {
+    return buildIdeaNoteMarkdown(title, artifactMeta);
+  }
   const detail = [
     `# ${title}`,
     '',

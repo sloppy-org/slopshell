@@ -62,6 +62,9 @@ func parseInlineItemIntentWithInputMode(text string, now time.Time, inputMode st
 			},
 		}
 	}
+	if ideaRefinement := parseInlineIdeaRefinementIntent(text); ideaRefinement != nil {
+		return ideaRefinement
+	}
 	switch normalized {
 	case "make this an item", "track this", "add to inbox":
 		return &SystemAction{Action: "make_item", Params: map[string]interface{}{}}
@@ -221,7 +224,7 @@ func parseItemSplitCount(raw string) (int, bool) {
 
 func isItemSystemAction(action string) bool {
 	switch strings.ToLower(strings.TrimSpace(action)) {
-	case "make_item", "delegate_item", "snooze_item", "split_items", "capture_idea", "create_github_issue", "create_github_issue_split", "print_item", "review_someday", "triage_someday", "promote_someday", "toggle_someday_review_nudge":
+	case "make_item", "delegate_item", "snooze_item", "split_items", "capture_idea", "refine_idea_note", "create_github_issue", "create_github_issue_split", "print_item", "review_someday", "triage_someday", "promote_someday", "toggle_someday_review_nudge":
 		return true
 	default:
 		return false
@@ -234,6 +237,8 @@ func itemActionFailurePrefix(action string) string {
 		return "I couldn't create the GitHub issue: "
 	case "capture_idea":
 		return "I couldn't capture the idea: "
+	case "refine_idea_note":
+		return "I couldn't update the idea note: "
 	case "print_item":
 		return "I couldn't prepare the print view: "
 	case "review_someday":
@@ -617,21 +622,6 @@ func (a *App) resolveActorByName(name string) (store.Actor, error) {
 	}
 }
 
-func ideaArtifactMeta(title, transcript, inputMode string, capturedAt time.Time) (*string, error) {
-	payload := map[string]string{
-		"title":        title,
-		"transcript":   transcript,
-		"capture_mode": normalizeChatInputMode(inputMode),
-		"captured_at":  capturedAt.UTC().Format(time.RFC3339),
-	}
-	raw, err := json.Marshal(payload)
-	if err != nil {
-		return nil, err
-	}
-	meta := string(raw)
-	return &meta, nil
-}
-
 func ideaCaptureConfirmation(title string) string {
 	clean := strings.TrimSpace(title)
 	if clean == "" {
@@ -667,7 +657,13 @@ func (a *App) captureIdeaItem(session store.ChatSession, action *SystemAction) (
 	}
 	inputMode := normalizeChatInputMode(systemActionStringParam(action.Params, "input_mode"))
 	capturedAt := time.Now().UTC()
-	metaJSON, err := ideaArtifactMeta(title, ideaText, inputMode, capturedAt)
+	workspaceName := ""
+	if workspaceID != nil {
+		if workspace, workspaceErr := a.store.GetWorkspace(*workspaceID); workspaceErr == nil {
+			workspaceName = workspace.Name
+		}
+	}
+	metaJSON, err := ideaArtifactMeta(title, ideaText, inputMode, workspaceName, capturedAt)
 	if err != nil {
 		return "", nil, err
 	}
