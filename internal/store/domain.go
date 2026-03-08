@@ -3,6 +3,9 @@ package store
 type ArtifactKind string
 
 const (
+	SphereWork    = "work"
+	SpherePrivate = "private"
+
 	ActorKindHuman = "human"
 	ActorKindAgent = "agent"
 
@@ -16,6 +19,15 @@ const (
 	ArtifactKindTranscript  ArtifactKind = "transcript"
 	ArtifactKindPlanNote    ArtifactKind = "plan_note"
 	ArtifactKindIdeaNote    ArtifactKind = "idea_note"
+
+	ExternalProviderGmail          = "gmail"
+	ExternalProviderIMAP           = "imap"
+	ExternalProviderGoogleCalendar = "google_calendar"
+	ExternalProviderICS            = "ics"
+	ExternalProviderTodoist        = "todoist"
+	ExternalProviderEvernote       = "evernote"
+	ExternalProviderBear           = "bear"
+	ExternalProviderExchange       = "exchange"
 
 	ItemStateInbox   = "inbox"
 	ItemStateWaiting = "waiting"
@@ -61,6 +73,25 @@ type Workspace struct {
 	IsActive  bool   `json:"is_active"`
 	CreatedAt string `json:"created_at"`
 	UpdatedAt string `json:"updated_at"`
+}
+
+type ExternalAccount struct {
+	ID         int64  `json:"id"`
+	Sphere     string `json:"sphere"`
+	Provider   string `json:"provider"`
+	Label      string `json:"label"`
+	ConfigJSON string `json:"config_json"`
+	Enabled    bool   `json:"enabled"`
+	CreatedAt  string `json:"created_at"`
+	UpdatedAt  string `json:"updated_at"`
+}
+
+type ExternalAccountUpdate struct {
+	Sphere   *string        `json:"sphere,omitempty"`
+	Provider *string        `json:"provider,omitempty"`
+	Label    *string        `json:"label,omitempty"`
+	Config   map[string]any `json:"config,omitempty"`
+	Enabled  *bool          `json:"enabled,omitempty"`
 }
 
 type Actor struct {

@@ -30,10 +30,11 @@ func TestStoreMigratesDomainTablesOnFreshDatabase(t *testing.T) {
 		t.Fatalf("TableColumns() error: %v", err)
 	}
 	for table, want := range map[string][]string{
-		"workspaces": {"id", "name", "dir_path", "is_active", "created_at", "updated_at"},
-		"actors":     {"id", "name", "kind", "created_at"},
-		"artifacts":  {"id", "kind", "ref_path", "ref_url", "title", "meta_json", "created_at", "updated_at"},
-		"items":      {"id", "title", "state", "workspace_id", "artifact_id", "actor_id", "visible_after", "follow_up_at", "source", "source_ref", "created_at", "updated_at"},
+		"workspaces":        {"id", "name", "dir_path", "is_active", "created_at", "updated_at"},
+		"actors":            {"id", "name", "kind", "created_at"},
+		"artifacts":         {"id", "kind", "ref_path", "ref_url", "title", "meta_json", "created_at", "updated_at"},
+		"external_accounts": {"id", "sphere", "provider", "label", "config_json", "enabled", "created_at", "updated_at"},
+		"items":             {"id", "title", "state", "workspace_id", "artifact_id", "actor_id", "visible_after", "follow_up_at", "source", "source_ref", "created_at", "updated_at"},
 	} {
 		got := make(map[string]bool, len(columns[table]))
 		for _, name := range columns[table] {
@@ -119,7 +120,7 @@ CREATE TABLE chat_messages (
 	if err != nil {
 		t.Fatalf("TableColumns() error: %v", err)
 	}
-	for _, table := range []string{"workspaces", "actors", "artifacts", "items"} {
+	for _, table := range []string{"workspaces", "actors", "artifacts", "external_accounts", "items"} {
 		if _, ok := columns[table]; !ok {
 			t.Fatalf("expected migrated table %s to exist", table)
 		}

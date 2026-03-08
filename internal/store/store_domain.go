@@ -54,6 +54,18 @@ CREATE TABLE IF NOT EXISTS artifacts (
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS external_accounts (
+  id INTEGER PRIMARY KEY,
+  sphere TEXT NOT NULL CHECK (sphere IN ('work', 'private')),
+  provider TEXT NOT NULL,
+  label TEXT NOT NULL,
+  config_json TEXT NOT NULL DEFAULT '{}',
+  enabled INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_external_accounts_identity
+  ON external_accounts(lower(sphere), lower(provider), lower(label));
 `
 	if _, err := s.db.Exec(schema); err != nil {
 		return err
