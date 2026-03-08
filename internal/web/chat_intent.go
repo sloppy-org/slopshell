@@ -36,7 +36,7 @@ const (
 )
 
 const intentLLMSystemPrompt = `You are Tabura's local router. Output JSON only.
-Allowed actions: switch_project, switch_model, toggle_silent, toggle_live_dialogue, cancel_work, show_status, shell, open_file_canvas, make_item, delegate_item, snooze_item, split_items, create_github_issue, create_github_issue_split, chat.
+Allowed actions: switch_project, switch_workspace, list_workspace_items, switch_model, toggle_silent, toggle_live_dialogue, cancel_work, show_status, shell, open_file_canvas, make_item, delegate_item, snooze_item, split_items, create_github_issue, create_github_issue_split, chat.
 Use {"action":"chat"} unless user clearly requests a system action.
 For current-information requests (weather, web search, news, prices, schedules, latest/current updates), use {"action":"chat"} and MUST NOT use shell.
 For shell-like requests use {"action":"shell","command":"..."}.
@@ -323,7 +323,7 @@ func normalizeSystemActionName(raw string) string {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "toggle_conversation":
 		return "toggle_live_dialogue"
-	case "switch_project", "switch_model", "toggle_silent", "toggle_live_dialogue", "cancel_work", "show_status", "shell", "open_file_canvas", "make_item", "delegate_item", "snooze_item", "split_items", "create_github_issue", "create_github_issue_split":
+	case "switch_project", "switch_workspace", "list_workspace_items", "switch_model", "toggle_silent", "toggle_live_dialogue", "cancel_work", "show_status", "shell", "open_file_canvas", "make_item", "delegate_item", "snooze_item", "split_items", "create_github_issue", "create_github_issue_split":
 		return strings.ToLower(strings.TrimSpace(raw))
 	default:
 		return ""
@@ -773,6 +773,17 @@ func (a *App) classifyAndExecuteSystemAction(ctx context.Context, sessionID stri
 		message, payloads, err := a.executeSystemActionPlan(sessionID, session, trimmedText, enforced)
 		if err != nil {
 			return githubIssueActionFailurePrefix(enforced) + err.Error(), nil, true
+		}
+		return message, payloads, true
+	}
+	if inlineWorkspaceAction := parseInlineWorkspaceIntent(trimmedText); inlineWorkspaceAction != nil {
+		enforced := enforceRoutingPolicy(trimmedText, []*SystemAction{inlineWorkspaceAction})
+		if len(enforced) == 0 {
+			return "", nil, false
+		}
+		message, payloads, err := a.executeSystemActionPlan(sessionID, session, trimmedText, enforced)
+		if err != nil {
+			return "I couldn't resolve the workspace request: " + err.Error(), nil, true
 		}
 		return message, payloads, true
 	}
@@ -1320,6 +1331,44 @@ func (a *App) executeSystemAction(sessionID string, session store.ChatSession, a
 		return fmt.Sprintf("Switched to %s.", activated.Name), map[string]interface{}{
 			"type":       "switch_project",
 			"project_id": activated.ID,
+		}, nil
+	case "switch_workspace":
+		workspace, err := a.resolveWorkspaceReference(session.ProjectKey, systemActionWorkspaceRef(action.Params))
+		if err != nil {
+			return "", nil, err
+		}
+		if err := a.store.SetActiveWorkspace(workspace.ID); err != nil {
+			return "", nil, err
+		}
+		return fmt.Sprintf("Switched to workspace %s.", workspace.Name), map[string]interface{}{
+			"type":         "switch_workspace",
+			"workspace_id": workspace.ID,
+			"name":         workspace.Name,
+			"dir_path":     workspace.DirPath,
+		}, nil
+	case "list_workspace_items":
+		workspace, err := a.resolveWorkspaceReference(session.ProjectKey, systemActionWorkspaceRef(action.Params))
+		if err != nil {
+			return "", nil, err
+		}
+		items, err := a.listOpenWorkspaceItems(workspace.ID)
+		if err != nil {
+			return "", nil, err
+		}
+		itemIDs := make([]int64, 0, len(items))
+		titles := make([]string, 0, len(items))
+		for _, item := range items {
+			itemIDs = append(itemIDs, item.ID)
+			titles = append(titles, item.Title)
+		}
+		return summarizeWorkspaceItems(workspace, items), map[string]interface{}{
+			"type":         "list_workspace_items",
+			"workspace_id": workspace.ID,
+			"name":         workspace.Name,
+			"dir_path":     workspace.DirPath,
+			"item_ids":     itemIDs,
+			"item_titles":  titles,
+			"item_count":   len(items),
 		}, nil
 	case "switch_model":
 		targetProject, err := a.systemActionTargetProject(session)

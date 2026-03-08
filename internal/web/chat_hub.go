@@ -27,7 +27,7 @@ const (
 
 const hubSystemPrompt = `You are Tabura Hub, a fast coordinator.
 For system actions output JSON only: {"action":"<action>", ...params}.
-Allowed actions: switch_project, switch_model, toggle_silent, toggle_live_dialogue, shell, open_file_canvas, cancel_work, show_status, chat.
+Allowed actions: switch_project, switch_workspace, list_workspace_items, switch_model, toggle_silent, toggle_live_dialogue, shell, open_file_canvas, cancel_work, show_status, chat.
 You may return multi-step actions via {"actions":[...]}.
 For current-information requests (weather, web search, news, prices, schedules, latest/current updates), MUST use chat and MUST NOT use shell.
 For uncertain open/show-file requests: shell search first, then open_file_canvas with path="$last_shell_path".

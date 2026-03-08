@@ -68,6 +68,7 @@ func (a *App) runAssistantTurn(sessionID string, outputMode string, localOnly bo
 		a.broadcastChatEvent(sessionID, map[string]interface{}{"type": "error", "error": "empty prompt"})
 		return
 	}
+	prompt = a.applyWorkspacePromptContext(session.ProjectKey, prompt)
 	prompt, err = a.applyPreAssistantPromptHook(context.Background(), sessionID, session.ProjectKey, outputMode, session.Mode, prompt)
 	if err != nil {
 		errText := err.Error()
@@ -316,6 +317,7 @@ func (a *App) runAssistantTurnLegacy(sessionID string, session store.ChatSession
 		a.broadcastChatEvent(sessionID, map[string]interface{}{"type": "error", "error": "empty prompt"})
 		return
 	}
+	prompt = a.applyWorkspacePromptContext(session.ProjectKey, prompt)
 	var err error
 	prompt, err = a.applyPreAssistantPromptHook(context.Background(), sessionID, session.ProjectKey, outputMode, session.Mode, prompt)
 	if err != nil {
