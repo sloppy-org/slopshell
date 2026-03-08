@@ -1,9 +1,15 @@
 package web
 
 import (
+	"bytes"
+	"encoding/binary"
 	"encoding/json"
+	"math"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -223,6 +229,79 @@ func TestPrivacySTTResultContainsOnlyText(t *testing.T) {
 	}
 }
 
+func TestPrivacySTTHTTPCaptureRejectsOversizedUploadWithoutTempFiles(t *testing.T) {
+	app := newAuthedTestApp(t)
+	app.sttURL = "http://127.0.0.1:1"
+
+	scopedTmp := t.TempDir()
+	t.Setenv("TMPDIR", scopedTmp)
+
+	before, err := listScopedEntries(scopedTmp)
+	if err != nil {
+		t.Fatalf("list temp dir before: %v", err)
+	}
+
+	tooLarge := bytes.Repeat([]byte("a"), stt.MaxAudioBytes+(2*1024*1024))
+	rr := doAuthedMultipartAudioRequest(t, app.Router(), "/api/stt/transcribe", "audio.webm", "audio/webm", tooLarge)
+	if rr.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("POST /api/stt/transcribe status = %d, want %d: %s", rr.Code, http.StatusRequestEntityTooLarge, rr.Body.String())
+	}
+
+	after, err := listScopedEntries(scopedTmp)
+	if err != nil {
+		t.Fatalf("list temp dir after: %v", err)
+	}
+	for _, path := range diffScopedEntries(before, after) {
+		t.Errorf("oversized upload created unexpected temp file: %s", path)
+	}
+}
+
+func TestPrivacySTTHTTPCaptureReturnsOnlyTextWithoutTempFiles(t *testing.T) {
+	app := newAuthedTestApp(t)
+
+	sttSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(map[string]any{"text": "  captured idea  "}); err != nil {
+			t.Fatalf("encode stt response: %v", err)
+		}
+	}))
+	defer sttSrv.Close()
+	app.sttURL = sttSrv.URL
+
+	scopedTmp := t.TempDir()
+	t.Setenv("TMPDIR", scopedTmp)
+
+	before, err := listScopedEntries(scopedTmp)
+	if err != nil {
+		t.Fatalf("list temp dir before: %v", err)
+	}
+
+	audio := buildSpeechLikeWAV(16000, 240, 0.75)
+	rr := doAuthedMultipartAudioRequest(t, app.Router(), "/api/stt/transcribe", "audio.wav", "audio/wav", audio)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("POST /api/stt/transcribe status = %d, want 200: %s", rr.Code, rr.Body.String())
+	}
+
+	var payload map[string]string
+	if err := json.Unmarshal(rr.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode STT response: %v", err)
+	}
+	if len(payload) != 1 {
+		t.Fatalf("STT response fields = %v, want only text", payload)
+	}
+	if payload["text"] != "captured idea" {
+		t.Fatalf("STT response text = %q, want %q", payload["text"], "captured idea")
+	}
+
+	after, err := listScopedEntries(scopedTmp)
+	if err != nil {
+		t.Fatalf("list temp dir after: %v", err)
+	}
+	for _, path := range diffScopedEntries(before, after) {
+		t.Errorf("capture upload created unexpected temp file: %s", path)
+	}
+}
+
 func TestPrivacyNoChatMessageAudioContent(t *testing.T) {
 	app := newAuthedTestApp(t)
 
@@ -254,4 +333,96 @@ func TestPrivacyNoChatMessageAudioContent(t *testing.T) {
 			}
 		}
 	}
+}
+
+func doAuthedMultipartAudioRequest(t *testing.T, handler http.Handler, path, filename, mimeType string, audio []byte) *httptest.ResponseRecorder {
+	t.Helper()
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", filename)
+	if err != nil {
+		t.Fatalf("CreateFormFile: %v", err)
+	}
+	if _, err := part.Write(audio); err != nil {
+		t.Fatalf("write audio: %v", err)
+	}
+	if err := writer.WriteField("mime_type", mimeType); err != nil {
+		t.Fatalf("WriteField(mime_type): %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close multipart writer: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(body.Bytes()))
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.AddCookie(&http.Cookie{Name: SessionCookie, Value: testAuthToken})
+
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	return rr
+}
+
+func buildSpeechLikeWAV(sampleRate, durationMS int, amplitude float64) []byte {
+	if sampleRate <= 0 {
+		sampleRate = 16000
+	}
+	if durationMS <= 0 {
+		durationMS = 240
+	}
+	if amplitude <= 0 {
+		amplitude = 0.75
+	}
+	if amplitude > 1 {
+		amplitude = 1
+	}
+
+	totalSamples := sampleRate * durationMS / 1000
+	dataSize := totalSamples * 2
+	out := make([]byte, 44+dataSize)
+
+	copy(out[0:4], "RIFF")
+	binary.LittleEndian.PutUint32(out[4:8], uint32(36+dataSize))
+	copy(out[8:12], "WAVE")
+	copy(out[12:16], "fmt ")
+	binary.LittleEndian.PutUint32(out[16:20], 16)
+	binary.LittleEndian.PutUint16(out[20:22], 1)
+	binary.LittleEndian.PutUint16(out[22:24], 1)
+	binary.LittleEndian.PutUint32(out[24:28], uint32(sampleRate))
+	binary.LittleEndian.PutUint32(out[28:32], uint32(sampleRate*2))
+	binary.LittleEndian.PutUint16(out[32:34], 2)
+	binary.LittleEndian.PutUint16(out[34:36], 16)
+	copy(out[36:40], "data")
+	binary.LittleEndian.PutUint32(out[40:44], uint32(dataSize))
+
+	pos := 44
+	for i := 0; i < totalSamples; i++ {
+		t := float64(i) / float64(sampleRate)
+		sample := int16(amplitude * 32767.0 * math.Sin(2*math.Pi*220*t))
+		binary.LittleEndian.PutUint16(out[pos:pos+2], uint16(sample))
+		pos += 2
+	}
+	return out
+}
+
+func listScopedEntries(dir string) (map[string]struct{}, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]struct{}, len(entries))
+	for _, entry := range entries {
+		out[filepath.Join(dir, entry.Name())] = struct{}{}
+	}
+	return out, nil
+}
+
+func diffScopedEntries(before, after map[string]struct{}) []string {
+	var added []string
+	for path := range after {
+		if _, ok := before[path]; !ok {
+			added = append(added, path)
+		}
+	}
+	return added
 }
