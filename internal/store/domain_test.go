@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"sync"
 	"testing"
+	"time"
 
 	_ "modernc.org/sqlite"
 )
@@ -590,5 +591,87 @@ func TestDomainConcurrentWorkspaceCreates(t *testing.T) {
 	}
 	if len(workspaces) != count {
 		t.Fatalf("ListWorkspaces() len = %d, want %d", len(workspaces), count)
+	}
+}
+
+func TestResurfaceDueItems(t *testing.T) {
+	s := newTestStore(t)
+
+	now := time.Date(2026, time.March, 8, 10, 0, 0, 0, time.UTC)
+	past := now.Add(-30 * time.Minute).Format(time.RFC3339)
+	future := now.Add(30 * time.Minute).Format(time.RFC3339)
+
+	pastVisible, err := s.CreateItem("past visible_after", ItemOptions{
+		State:        ItemStateWaiting,
+		VisibleAfter: &past,
+	})
+	if err != nil {
+		t.Fatalf("CreateItem(past visible_after) error: %v", err)
+	}
+	pastFollowUp, err := s.CreateItem("past follow_up_at", ItemOptions{
+		State:      ItemStateWaiting,
+		FollowUpAt: &past,
+	})
+	if err != nil {
+		t.Fatalf("CreateItem(past follow_up_at) error: %v", err)
+	}
+	futureWaiting, err := s.CreateItem("future waiting", ItemOptions{
+		State:        ItemStateWaiting,
+		VisibleAfter: &future,
+		FollowUpAt:   &future,
+	})
+	if err != nil {
+		t.Fatalf("CreateItem(future waiting) error: %v", err)
+	}
+	bothTimes, err := s.CreateItem("both timestamps", ItemOptions{
+		State:        ItemStateWaiting,
+		VisibleAfter: &future,
+		FollowUpAt:   &past,
+	})
+	if err != nil {
+		t.Fatalf("CreateItem(both timestamps) error: %v", err)
+	}
+	inboxItem, err := s.CreateItem("already inbox", ItemOptions{
+		State:        ItemStateInbox,
+		VisibleAfter: &past,
+	})
+	if err != nil {
+		t.Fatalf("CreateItem(already inbox) error: %v", err)
+	}
+	doneItem, err := s.CreateItem("already done", ItemOptions{
+		State:        ItemStateDone,
+		VisibleAfter: &past,
+	})
+	if err != nil {
+		t.Fatalf("CreateItem(already done) error: %v", err)
+	}
+
+	count, err := s.ResurfaceDueItems(now)
+	if err != nil {
+		t.Fatalf("ResurfaceDueItems() error: %v", err)
+	}
+	if count != 3 {
+		t.Fatalf("ResurfaceDueItems() count = %d, want 3", count)
+	}
+
+	for _, tc := range []struct {
+		name string
+		id   int64
+		want string
+	}{
+		{name: "past visible_after", id: pastVisible.ID, want: ItemStateInbox},
+		{name: "past follow_up_at", id: pastFollowUp.ID, want: ItemStateInbox},
+		{name: "both timestamps", id: bothTimes.ID, want: ItemStateInbox},
+		{name: "future waiting", id: futureWaiting.ID, want: ItemStateWaiting},
+		{name: "already inbox", id: inboxItem.ID, want: ItemStateInbox},
+		{name: "already done", id: doneItem.ID, want: ItemStateDone},
+	} {
+		item, err := s.GetItem(tc.id)
+		if err != nil {
+			t.Fatalf("GetItem(%s) error: %v", tc.name, err)
+		}
+		if item.State != tc.want {
+			t.Fatalf("%s state = %q, want %q", tc.name, item.State, tc.want)
+		}
 	}
 }

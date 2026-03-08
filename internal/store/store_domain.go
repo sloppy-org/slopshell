@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 )
 
 func (s *Store) migrateDomainTables() error {
@@ -786,6 +787,32 @@ func (s *Store) UpdateItemTimes(id int64, visibleAfter, followUpAt *string) erro
 		return sql.ErrNoRows
 	}
 	return nil
+}
+
+func (s *Store) ResurfaceDueItems(now time.Time) (int, error) {
+	cutoff := now.UTC().Format(time.RFC3339Nano)
+	res, err := s.db.Exec(
+		`UPDATE items
+		 SET state = ?, updated_at = datetime('now')
+		 WHERE state = ?
+		   AND (
+		     (visible_after IS NOT NULL AND trim(visible_after) <> '' AND datetime(visible_after) <= datetime(?))
+		     OR
+		     (follow_up_at IS NOT NULL AND trim(follow_up_at) <> '' AND datetime(follow_up_at) <= datetime(?))
+		   )`,
+		ItemStateInbox,
+		ItemStateWaiting,
+		cutoff,
+		cutoff,
+	)
+	if err != nil {
+		return 0, err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	return int(affected), nil
 }
 
 func (s *Store) DeleteItem(id int64) error {
