@@ -2,9 +2,16 @@
 
 > **Legal notice:** Tabura is provided "as is" and "as available" without warranties, and to the maximum extent permitted by applicable law the authors/contributors accept no liability for damages, data loss, or misuse. You are solely responsible for backups, verification, and safe operation. See [`DISCLAIMER.md`](/DISCLAIMER.md).
 
-This document formalizes the audio privacy guarantees for Tabura's speech-to-text pipeline.
+This document formalizes the audio privacy guarantees for Tabura's speech-to-text pipeline, including meeting capture, tap-to-talk transcription, and capture-mode voice memos.
 
 **Key invariant: audio exists only in RAM during processing and is never persisted to disk or database.**
+
+## Capture Retention Policy
+
+- Captured voice memos follow the same RAM-only policy as meeting capture.
+- Uploaded audio is normalized and transcribed in memory, then discarded immediately.
+- Only transcript text may persist as an artifact or chat message. The original recording must not be stored for replay.
+- Oversized or invalid uploads must be rejected without creating multipart temp files on disk.
 
 ## Meeting Consent Boundary
 
