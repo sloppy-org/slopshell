@@ -61,6 +61,11 @@ const extendInkStroke = (...args) => refs.extendInkStroke(...args);
 const resetInkDraftState = (...args) => refs.resetInkDraftState(...args);
 const getEdgeTapSizePx = (...args) => refs.getEdgeTapSizePx(...args);
 const getTopEdgeTapSizePx = (...args) => refs.getTopEdgeTapSizePx(...args);
+const isKeyboardInputMode = (...args) => refs.isKeyboardInputMode(...args);
+const submitInkDraft = (...args) => refs.submitInkDraft(...args);
+const shouldStopInUiClick = (...args) => refs.shouldStopInUiClick(...args);
+const hideItemSidebarMenu = (...args) => refs.hideItemSidebarMenu(...args);
+const stepPrReviewFile = (...args) => refs.stepPrReviewFile(...args);
 
 let bootstrapStarted = false;
 let bootstrapErrorShown = false;

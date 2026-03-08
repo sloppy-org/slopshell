@@ -14,6 +14,8 @@ const applyIPhoneFrameCorners = (...args) => refs.applyIPhoneFrameCorners(...arg
 const isFocusedTextInput = (...args) => refs.isFocusedTextInput(...args);
 const isIPhoneStandalone = (...args) => refs.isIPhoneStandalone(...args);
 const setSyncKeyboardStateNow = (...args) => refs.setSyncKeyboardStateNow(...args);
+const stepCanvasFile = (...args) => refs.stepCanvasFile(...args);
+const suppressSyntheticClick = (...args) => refs.suppressSyntheticClick(...args);
 
 // Edge panel logic
 let edgeTopTimer = null;
@@ -225,7 +227,7 @@ export function initEdgePanels() {
       }
       ev.preventDefault();
       edgeLeftLastTouchAt = Date.now();
-      sidebarEdgeTapAt = Date.now();
+      state.sidebarEdgeTapAt = Date.now();
       toggleFileSidebarFromEdge();
     }, { passive: false });
   }

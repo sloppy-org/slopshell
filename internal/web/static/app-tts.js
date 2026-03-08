@@ -11,6 +11,9 @@ const beginConversationVoiceCapture = (...args) => refs.beginConversationVoiceCa
 const acquireMicStream = (...args) => refs.acquireMicStream(...args);
 const isStopCapableLifecycle = (...args) => refs.isStopCapableLifecycle(...args);
 const syncVoiceLifecycle = (...args) => refs.syncVoiceLifecycle(...args);
+const parseOptionalBoolean = (...args) => refs.parseOptionalBoolean(...args);
+const normalizeCompanionRuntimeState = (...args) => refs.normalizeCompanionRuntimeState(...args);
+const getTTSAudioContext = (...args) => refs.getTTSAudioContext(...args);
 
 // --- Block stripping & TTS infrastructure ---
 
@@ -160,7 +163,7 @@ export class TTSPlayer {
   }
   _ensureCtx() {
     if (!this._ctx) {
-      this._ctx = ttsAudioCtx;
+      this._ctx = getTTSAudioContext();
     }
     return this._ctx;
   }

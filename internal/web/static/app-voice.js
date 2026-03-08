@@ -17,6 +17,20 @@ const persistLastView = (...args) => refs.persistLastView(...args);
 const exitArtifactEditMode = (...args) => refs.exitArtifactEditMode(...args);
 const showVoiceCaptureNotice = (...args) => refs.showVoiceCaptureNotice(...args);
 const microphoneUnavailableMessage = (...args) => refs.microphoneUnavailableMessage(...args);
+const startVoiceLifecycleOp = (...args) => refs.startVoiceLifecycleOp(...args);
+const setVoiceLifecycle = (...args) => refs.setVoiceLifecycle(...args);
+const updateAssistantActivityIndicator = (...args) => refs.updateAssistantActivityIndicator(...args);
+const isUiReadyForStatus = (...args) => refs.isUiReadyForStatus(...args);
+const syncVoiceLifecycle = (...args) => refs.syncVoiceLifecycle(...args);
+
+const VOICE_VAD_AUTO_SEND_DEFAULT = true;
+const VOICE_VAD_AUTO_SEND_STORAGE_KEY = 'tabura.voiceVadAutoSend';
+const VOICE_VAD_AUTO_SEND_QUERY_PARAM = 'voice_vad_auto_send';
+const VOICE_VAD_NO_SPEECH_MS = 4000;
+const VOICE_VAD_MAX_RECORDING_HARD_MS = 240000;
+const HOTWORD_VAD_NO_SPEECH_MS = 7000;
+const VOICE_VAD_RECORDER_CHUNK_MS = 250;
+const VOICE_CAPTURE_STOP_FLUSH_TIMEOUT_MS = 1500;
 
 export function newMediaRecorder(stream) {
   const candidates = [

@@ -14,6 +14,20 @@ const defaultItemSidebarCounts = (...args) => refs.defaultItemSidebarCounts(...a
 const closeEdgePanels = (...args) => refs.closeEdgePanels(...args);
 const itemSidebarGestureAction = (...args) => refs.itemSidebarGestureAction(...args);
 const itemSidebarActionLabel = (...args) => refs.itemSidebarActionLabel(...args);
+const hideItemSidebarMenu = (...args) => refs.hideItemSidebarMenu(...args);
+const applyItemSidebarCounts = (...args) => refs.applyItemSidebarCounts(...args);
+const itemSidebarEndpoint = (...args) => refs.itemSidebarEndpoint(...args);
+const openSidebarArtifactItem = (...args) => refs.openSidebarArtifactItem(...args);
+const isMobileViewport = (...args) => refs.isMobileViewport(...args);
+const suppressSyntheticClick = (...args) => refs.suppressSyntheticClick(...args);
+const showItemSidebarDelegateMenu = (...args) => refs.showItemSidebarDelegateMenu(...args);
+const performItemSidebarTriage = (...args) => refs.performItemSidebarTriage(...args);
+const performItemSidebarStateUpdate = (...args) => refs.performItemSidebarStateUpdate(...args);
+const normalizeWorkspaceBrowserPath = (...args) => refs.normalizeWorkspaceBrowserPath(...args);
+const loadWorkspaceBrowserPath = (...args) => refs.loadWorkspaceBrowserPath(...args);
+const parentWorkspaceBrowserPath = (...args) => refs.parentWorkspaceBrowserPath(...args);
+const workspaceCompanionEntries = (...args) => refs.workspaceCompanionEntries(...args);
+const openWorkspaceSidebarFile = (...args) => refs.openWorkspaceSidebarFile(...args);
 
 export async function openItemSidebarView(view = state.itemSidebarView) {
   state.fileSidebarMode = 'items';
@@ -446,7 +460,7 @@ export function renderSidebarRow({
       ev.preventDefault();
       return;
     }
-    if (Date.now() - sidebarEdgeTapAt < 600) return;
+    if (Date.now() - Number(state.sidebarEdgeTapAt || 0) < 600) return;
     onClick(ev);
   });
   return button;

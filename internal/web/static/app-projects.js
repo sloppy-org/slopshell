@@ -43,6 +43,8 @@ const reasoningEffortOptionsForAlias = (...args) => refs.reasoningEffortOptionsF
 const normalizeProjectChatModelAlias = (...args) => refs.normalizeProjectChatModelAlias(...args);
 const renderToolPalette = (...args) => refs.renderToolPalette(...args);
 const isTemporaryProjectKind = (...args) => refs.isTemporaryProjectKind(...args);
+const shouldRenderAssistantHistoryInChat = (...args) => refs.shouldRenderAssistantHistoryInChat(...args);
+const hasLocalAssistantWork = (...args) => refs.hasLocalAssistantWork(...args);
 
 export async function fetchProjects() {
   const resp = await fetch(apiURL('projects'), { cache: 'no-store' });

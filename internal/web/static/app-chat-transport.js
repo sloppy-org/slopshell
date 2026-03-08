@@ -62,6 +62,31 @@ const upsertProject = (...args) => refs.upsertProject(...args);
 const defaultItemSidebarCounts = (...args) => refs.defaultItemSidebarCounts(...args);
 const setInboxTriggerCount = (...args) => refs.setInboxTriggerCount(...args);
 const resetAssistantTurnTracking = (...args) => refs.resetAssistantTurnTracking(...args);
+const startVoiceLifecycleOp = (...args) => refs.startVoiceLifecycleOp(...args);
+const setVoiceLifecycle = (...args) => refs.setVoiceLifecycle(...args);
+const shouldStopInUiClick = (...args) => refs.shouldStopInUiClick(...args);
+const handleSTTWSMessage = (...args) => refs.handleSTTWSMessage(...args);
+const sttCancel = (...args) => refs.sttCancel(...args);
+const switchProjectChatModel = (...args) => refs.switchProjectChatModel(...args);
+const parseOptionalBoolean = (...args) => refs.parseOptionalBoolean(...args);
+const setSomedayReviewNudgeEnabled = (...args) => refs.setSomedayReviewNudgeEnabled(...args);
+const openPrintView = (...args) => refs.openPrintView(...args);
+const renderApprovalRequestCard = (...args) => refs.renderApprovalRequestCard(...args);
+const resolveApprovalRequestCard = (...args) => refs.resolveApprovalRequestCard(...args);
+const cleanForOverlay = (...args) => refs.cleanForOverlay(...args);
+const formatItemCompletedLabel = (...args) => refs.formatItemCompletedLabel(...args);
+const appendAssistantProgressForTurn = (...args) => refs.appendAssistantProgressForTurn(...args);
+const nextLocalMessageId = (...args) => refs.nextLocalMessageId(...args);
+const stopChatVoiceMedia = (...args) => refs.stopChatVoiceMedia(...args);
+const isAssistantWorking = (...args) => refs.isAssistantWorking(...args);
+const isVoiceTranscriptSubmitPending = (...args) => refs.isVoiceTranscriptSubmitPending(...args);
+const isTTSSpeaking = (...args) => refs.isTTSSpeaking(...args);
+const hasLocalStopCapableWork = (...args) => refs.hasLocalStopCapableWork(...args);
+const hasPendingOverlayTurn = (...args) => refs.hasPendingOverlayTurn(...args);
+const hasRemoteAssistantWork = (...args) => refs.hasRemoteAssistantWork(...args);
+
+const STOP_REQUEST_TIMEOUT_MS = 3500;
+const VOICE_TRANSCRIPT_SUBMIT_GUARD_MS = 220;
 
 export function closeChatWs() {
   state.chatWsToken += 1;

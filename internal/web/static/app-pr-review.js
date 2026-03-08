@@ -13,6 +13,7 @@ const closeEdgePanels = (...args) => refs.closeEdgePanels(...args);
 const renderSidebarTabs = (...args) => refs.renderSidebarTabs(...args);
 const renderSidebarRow = (...args) => refs.renderSidebarRow(...args);
 const renderWorkspaceFileList = (...args) => refs.renderWorkspaceFileList(...args);
+const clearWelcomeSurface = (...args) => refs.clearWelcomeSurface(...args);
 
 export function isMobileViewport() {
   return window.matchMedia('(max-width: 767px)').matches;
@@ -114,7 +115,6 @@ export function parseUnifiedDiffFiles(diffText) {
   }];
 }
 
-let sidebarEdgeTapAt = 0;
 export function setPrReviewDrawerOpen(open) {
   const shouldOpen = Boolean(open) && (state.prReviewMode || Boolean(state.activeProjectId));
   state.prReviewDrawerOpen = shouldOpen;

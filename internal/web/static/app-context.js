@@ -162,6 +162,7 @@ export const state = {
   workspaceBrowserError: '',
   workspaceOpenFilePath: '',
   workspaceStepInFlight: false,
+  sidebarEdgeTapAt: 0,
   itemSidebarView: 'inbox',
   itemSidebarItems: [],
   itemSidebarCounts: { inbox: 0, waiting: 0, someday: 0, done: 0 },

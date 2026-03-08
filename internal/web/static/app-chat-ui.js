@@ -14,6 +14,10 @@ const showCanvasColumn = (...args) => refs.showCanvasColumn(...args);
 const chatHistoryEl = (...args) => refs.chatHistoryEl(...args);
 const syncChatScroll = (...args) => refs.syncChatScroll(...args);
 const setTTSSilentMode = (...args) => refs.setTTSSilentMode(...args);
+const sendChatWsJSON = (...args) => refs.sendChatWsJSON(...args);
+const parseOptionalBoolean = (...args) => refs.parseOptionalBoolean(...args);
+const updateRuntimePreferences = (...args) => refs.updateRuntimePreferences(...args);
+const normalizeInputMode = (...args) => refs.normalizeInputMode(...args);
 
 const MATH_SEGMENT_TOKEN_PREFIX = '@@TABURA_CHAT_MATH_SEGMENT_';
 let localMessageSeq = 0;

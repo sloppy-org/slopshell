@@ -9,6 +9,8 @@ let runtimeReloadTimer = null;
 let runtimeReloadInFlight = false;
 let runtimeReloadRequested = false;
 let panelMotionWatchersAttached = false;
+let suppressClickUntil = 0;
+const MATH_SEGMENT_TOKEN_PREFIX = '@@TABURA_CHAT_MATH_SEGMENT_';
 const renderEdgeTopModelButtons = (...args) => refs.renderEdgeTopModelButtons(...args);
 const updateAssistantActivityIndicator = (...args) => refs.updateAssistantActivityIndicator(...args);
 const beginConversationVoiceCapture = (...args) => refs.beginConversationVoiceCapture(...args);
@@ -26,6 +28,8 @@ const canStartLiveDialogueListen = (...args) => refs.canStartLiveDialogueListen(
 const requestHotwordSync = (...args) => refs.requestHotwordSync(...args);
 const applyLiveSessionStateSnapshot = (...args) => refs.applyLiveSessionStateSnapshot(...args);
 const syncInputModeBodyState = (...args) => refs.syncInputModeBodyState(...args);
+const isLikelyIOS = (...args) => refs.isLikelyIOS(...args);
+const shouldStopInUiClick = (...args) => refs.shouldStopInUiClick(...args);
 
 export function mediaQueryMatches(query) {
   if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
@@ -193,6 +197,9 @@ export function toggleTTSSilentMode() {
 // running until the page is closed.
 const ttsAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
 setHotwordAudioContext(ttsAudioCtx);
+export function getTTSAudioContext() {
+  return ttsAudioCtx;
+}
 export function unlockAudioContext() {
   if (ttsAudioCtx.state === 'suspended') {
     ttsAudioCtx.resume().catch(() => {}).finally(() => {

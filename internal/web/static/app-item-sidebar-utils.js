@@ -9,6 +9,8 @@ const loadItemSidebarView = (...args) => refs.loadItemSidebarView(...args);
 const appendPlainMessage = (...args) => refs.appendPlainMessage(...args);
 const applyCanvasArtifactEvent = (...args) => refs.applyCanvasArtifactEvent(...args);
 const normalizeDisplayText = (...args) => refs.normalizeDisplayText(...args);
+const readSomedayReviewNudgeLastShownAt = (...args) => refs.readSomedayReviewNudgeLastShownAt(...args);
+const persistSomedayReviewNudgeLastShownAt = (...args) => refs.persistSomedayReviewNudgeLastShownAt(...args);
 
 export function defaultItemSidebarCounts() {
   return {
