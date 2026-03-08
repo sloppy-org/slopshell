@@ -198,6 +198,56 @@ test.describe('tabula rasa button', () => {
   });
 });
 
+test.describe('floating tool palette', () => {
+  test.beforeEach(async ({ page }) => {
+    await waitReady(page);
+  });
+
+  test('renders icon-only interaction controls outside the top panel', async ({ page }) => {
+    await expect(page.locator('#tool-palette')).toBeVisible();
+
+    const snapshot = await page.evaluate(() => {
+      const paletteButtons = Array.from(document.querySelectorAll('#tool-palette .tool-palette-btn')).map((button) => ({
+        mode: button.getAttribute('data-mode'),
+        label: button.getAttribute('aria-label'),
+        text: String(button.textContent || '').trim(),
+      }));
+      const topButtonTexts = Array.from(document.querySelectorAll('#edge-top-models button')).map((button) => String(button.textContent || '').trim());
+      const topModels = document.getElementById('edge-top-models');
+      return {
+        paletteButtons,
+        topButtonTexts,
+        dialogueButtons: document.querySelectorAll('#edge-top-models .edge-live-dialogue-btn').length,
+        topOverflows: topModels ? (topModels.scrollWidth > topModels.clientWidth + 1) : null,
+      };
+    });
+
+    expect(snapshot.paletteButtons.map((button) => button.mode)).toEqual(['voice', 'pen', 'keyboard']);
+    expect(snapshot.paletteButtons.every((button) => button.text === '')).toBe(true);
+    expect(snapshot.topButtonTexts).not.toContain('voice');
+    expect(snapshot.topButtonTexts).not.toContain('pen');
+    expect(snapshot.topButtonTexts).not.toContain('kbd');
+    expect(snapshot.dialogueButtons).toBe(1);
+    expect(snapshot.topOverflows).toBe(false);
+  });
+
+  test('palette clicks switch the active interaction mode', async ({ page }) => {
+    await clearLog(page);
+
+    const keyboardButton = page.locator('#tool-palette .tool-palette-btn[data-mode="keyboard"]');
+    const penButton = page.locator('#tool-palette .tool-palette-btn[data-mode="pen"]');
+
+    await keyboardButton.click();
+    await waitForLogEntry(page, 'api_fetch', 'runtime_preferences');
+
+    await expect(keyboardButton).toHaveAttribute('aria-pressed', 'true');
+    await expect(penButton).toHaveAttribute('aria-pressed', 'false');
+
+    const inputMode = await page.evaluate(() => (window as any)._taburaApp?.getState?.().inputMode);
+    expect(inputMode).toBe('keyboard');
+  });
+});
+
 
 // =============================================================================
 // Image artifact rendering

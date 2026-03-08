@@ -139,6 +139,24 @@ const state = {
   companionProjectKey: '',
 };
 
+const TOOL_PALETTE_MODES = [
+  {
+    id: 'voice',
+    label: 'Voice mode',
+    icon: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v8"/><path d="M8.5 8.5a3.5 3.5 0 0 1 7 0V12a3.5 3.5 0 0 1-7 0Z"/><path d="M6 11.5a6 6 0 0 0 12 0"/><path d="M12 17.5V21"/><path d="M9 21h6"/></svg>',
+  },
+  {
+    id: 'pen',
+    label: 'Pen mode',
+    icon: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 20 4.5-1 9-9a2.1 2.1 0 0 0-3-3l-9 9Z"/><path d="m13 7 4 4"/><path d="M4 20h5"/></svg>',
+  },
+  {
+    id: 'keyboard',
+    label: 'Keyboard mode',
+    icon: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M6 10h.01"/><path d="M9 10h.01"/><path d="M12 10h.01"/><path d="M15 10h.01"/><path d="M18 10h.01"/><path d="M6 14h12"/></svg>',
+  },
+];
+
 export function getState() {
   return state;
 }
@@ -1105,6 +1123,41 @@ function isPenInputMode() {
 
 function isKeyboardInputMode() {
   return state.inputMode === 'keyboard' || state.inputMode === 'typing';
+}
+
+function renderToolPalette() {
+  const host = document.getElementById('tool-palette');
+  if (!(host instanceof HTMLElement)) return;
+  host.replaceChildren();
+  const disabled = state.projectSwitchInFlight || state.projectModelSwitchInFlight;
+  for (const mode of TOOL_PALETTE_MODES) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'tool-palette-btn';
+    button.dataset.mode = mode.id;
+    button.setAttribute('aria-label', mode.label);
+    button.setAttribute('title', mode.label);
+    button.setAttribute('aria-pressed', state.inputMode === mode.id ? 'true' : 'false');
+    if (state.inputMode === mode.id) {
+      button.classList.add('is-active');
+    }
+    button.disabled = disabled;
+    button.innerHTML = mode.icon;
+    button.addEventListener('click', () => {
+      updateRuntimePreferences({ input_mode: mode.id })
+        .then(() => {
+          if (mode.id !== 'pen') {
+            clearInkDraft();
+          }
+          renderInkControls();
+          showStatus(`${mode.id} mode on`);
+        })
+        .catch((err) => {
+          showStatus(`input mode failed: ${String(err?.message || err || 'unknown error')}`);
+        });
+    });
+    host.appendChild(button);
+  }
 }
 
 async function fetchRuntimeMeta() {
@@ -4211,7 +4264,7 @@ function renderEdgeTopModelButtons() {
   } else {
     const dialogueButton = document.createElement('button');
     dialogueButton.type = 'button';
-    dialogueButton.className = 'edge-project-btn edge-model-btn edge-live-dialogue-btn edge-conv-btn';
+    dialogueButton.className = 'edge-project-btn edge-model-btn edge-live-dialogue-btn';
     dialogueButton.textContent = 'Dialogue';
     dialogueButton.disabled = liveDisabled || !ttsEnabled;
     dialogueButton.addEventListener('click', () => {
@@ -4295,37 +4348,6 @@ function renderEdgeTopModelButtons() {
   });
   host.appendChild(blackButton);
 
-  const inputModes = [
-    { id: 'voice', label: 'voice' },
-    { id: 'pen', label: 'pen' },
-    { id: 'keyboard', label: 'kbd' },
-  ];
-  for (const mode of inputModes) {
-    const inputButton = document.createElement('button');
-    inputButton.type = 'button';
-    inputButton.className = 'edge-project-btn edge-model-btn';
-    inputButton.textContent = mode.label;
-    inputButton.setAttribute('aria-pressed', state.inputMode === mode.id ? 'true' : 'false');
-    if (state.inputMode === mode.id) {
-      inputButton.classList.add('is-active');
-    }
-    inputButton.disabled = state.projectSwitchInFlight || state.projectModelSwitchInFlight;
-    inputButton.addEventListener('click', () => {
-      updateRuntimePreferences({ input_mode: mode.id })
-        .then(() => {
-          if (mode.id !== 'pen') {
-            clearInkDraft();
-          }
-          renderInkControls();
-          showStatus(`${mode.id} mode on`);
-        })
-        .catch((err) => {
-          showStatus(`input mode failed: ${String(err?.message || err || 'unknown error')}`);
-      });
-    });
-    host.appendChild(inputButton);
-  }
-
   const temporarySourceProjectID = project && !isHubProject(project) ? String(project.id || '').trim() : '';
   const temporaryButtons = isTemporaryProjectKind(project?.kind)
     ? [
@@ -4361,6 +4383,7 @@ function renderEdgeTopModelButtons() {
     button.addEventListener('click', action.onClick);
     host.appendChild(button);
   }
+  renderToolPalette();
 }
 
 async function switchProjectChatModel(modelAlias, reasoningEffort = '') {

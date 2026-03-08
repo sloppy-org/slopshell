@@ -328,6 +328,67 @@ body.file-sidebar-enabled #pr-file-drawer-backdrop.is-open {
   font-weight: 600;
 }
 
+.tool-palette {
+  position: fixed;
+  left: 50%;
+  bottom: calc(1rem + var(--safe-area-bottom));
+  transform: translateX(-50%);
+  z-index: 395;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.5rem;
+  border: 1px solid rgba(17, 24, 39, 0.16);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.16);
+  backdrop-filter: blur(10px);
+}
+
+.tool-palette-btn {
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: #334155;
+  padding: 0;
+  cursor: pointer;
+}
+
+.tool-palette-btn:hover,
+.tool-palette-btn:focus-visible {
+  border-color: rgba(15, 23, 42, 0.16);
+  background: rgba(241, 245, 249, 0.96);
+  color: #0f172a;
+}
+
+.tool-palette-btn.is-active {
+  border-color: #0f172a;
+  background: #0f172a;
+  color: #f8fafc;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.22);
+}
+
+.tool-palette-btn:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.tool-palette-btn svg {
+  width: 22px;
+  height: 22px;
+  display: block;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .companion-idle-surface {
   --companion-bg: radial-gradient(circle at top, #f5f1e8 0%, #e7e1d5 42%, #d8d0c1 100%);
   --companion-panel: rgba(255, 252, 246, 0.78);
@@ -1401,8 +1462,9 @@ body.panel-motion-enabled {
   display: flex;
   gap: 0.35rem;
   align-items: center;
-  flex-wrap: nowrap;
-  overflow-x: auto;
+  flex-wrap: wrap;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .edge-model-btn {
@@ -1438,10 +1500,6 @@ body.panel-motion-enabled {
 }
 
 .edge-silent-btn {
-  margin-left: 0.35rem;
-}
-
-.edge-conv-btn {
   margin-left: 0.35rem;
 }
 
@@ -1702,6 +1760,13 @@ body.panel-motion-enabled {
 
   .edge-top {
     height: calc(200px + var(--safe-area-top));
+  }
+
+  .tool-palette {
+    left: auto;
+    right: calc(0.75rem + var(--safe-area-right));
+    bottom: calc(0.75rem + var(--safe-area-bottom));
+    transform: none;
   }
 }
 
