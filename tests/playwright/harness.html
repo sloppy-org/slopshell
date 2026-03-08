@@ -413,12 +413,52 @@
       test: { active_turns: 0, queued_turns: 0, is_working: false, status: 'idle' },
       hub: { active_turns: 0, queued_turns: 0, is_working: false, status: 'idle' },
     };
+    const defaultItemSidebarActors = () => ([
+      { id: 1, name: 'Alice', kind: 'human' },
+      { id: 2, name: 'Bob', kind: 'human' },
+      { id: 3, name: 'Codex', kind: 'agent' },
+    ]);
+    const defaultItemSidebarArtifacts = () => ({
+      501: {
+        id: 501,
+        kind: 'idea_note',
+        title: 'Parser cleanup plan',
+        meta_json: JSON.stringify({
+          transcript: 'Break parser cleanup into a small refactor, a test pass, and one cleanup issue.',
+        }),
+      },
+      502: {
+        id: 502,
+        kind: 'email',
+        title: 'Re: triage follow-up',
+        meta_json: JSON.stringify({
+          body: 'Need a response before tomorrow morning. Confirm whether the review packet is ready.',
+        }),
+      },
+      503: {
+        id: 503,
+        kind: 'plan_note',
+        title: 'Gesture backlog',
+        meta_json: JSON.stringify({
+          text: 'Sketch quick triage affordances for small touch screens.',
+        }),
+      },
+      504: {
+        id: 504,
+        kind: 'github_issue',
+        title: 'Capture checklist',
+        meta_json: JSON.stringify({
+          text: 'Close the remaining capture tasks before cutting the release.',
+        }),
+      },
+    });
     const defaultItemSidebarData = () => ({
       inbox: [
         {
           id: 101,
           title: 'Review parser cleanup',
           state: 'inbox',
+          artifact_id: 501,
           source: 'github',
           source_ref: 'owner/repo#177',
           artifact_title: 'Parser cleanup plan',
@@ -431,6 +471,7 @@
           id: 102,
           title: 'Answer triage email',
           state: 'inbox',
+          artifact_id: 502,
           source: 'exchange',
           source_ref: 'msg-102',
           artifact_title: 'Re: triage follow-up',
@@ -445,6 +486,7 @@
           id: 201,
           title: 'Await review feedback',
           state: 'waiting',
+          artifact_id: 0,
           source: 'github',
           source_ref: 'owner/repo#144',
           artifact_title: 'PR 144',
@@ -459,6 +501,7 @@
           id: 301,
           title: 'Sketch mobile inbox gestures',
           state: 'someday',
+          artifact_id: 503,
           source: '',
           source_ref: '',
           artifact_title: 'Gesture backlog',
@@ -473,6 +516,7 @@
           id: 401,
           title: 'Ship capture flow',
           state: 'done',
+          artifact_id: 504,
           source: 'github',
           source_ref: 'owner/repo#90',
           artifact_title: 'Capture checklist',
@@ -493,6 +537,8 @@
       `+console.log("after ${prNumber}");`,
     ].join('\n');
     window.__itemSidebarData = defaultItemSidebarData();
+    window.__itemSidebarActors = defaultItemSidebarActors();
+    window.__itemSidebarArtifacts = defaultItemSidebarArtifacts();
     window.__setItemSidebarData = (next) => {
       const incoming = next && typeof next === 'object' ? next : {};
       window.__itemSidebarData = {
@@ -500,6 +546,62 @@
         ...incoming,
       };
     };
+    window.__setItemSidebarActors = (next) => {
+      window.__itemSidebarActors = Array.isArray(next)
+        ? next.map((actor) => ({ ...actor }))
+        : defaultItemSidebarActors();
+    };
+    window.__setItemSidebarArtifacts = (next) => {
+      const source = next && typeof next === 'object' ? next : {};
+      window.__itemSidebarArtifacts = Object.keys(source).reduce((acc, key) => {
+        acc[key] = { ...source[key] };
+        return acc;
+      }, {});
+    };
+    function cloneItemSidebarEntry(entry) {
+      return entry && typeof entry === 'object' ? { ...entry } : {};
+    }
+    function moveItemSidebarEntry(itemID, nextState, patch = {}) {
+      const data = window.__itemSidebarData || defaultItemSidebarData();
+      const states = ['inbox', 'waiting', 'someday', 'done'];
+      let found = null;
+      states.forEach((stateKey) => {
+        const rows = Array.isArray(data[stateKey]) ? data[stateKey] : [];
+        const index = rows.findIndex((entry) => Number(entry?.id || 0) === Number(itemID));
+        if (index >= 0) {
+          found = cloneItemSidebarEntry(rows[index]);
+          rows.splice(index, 1);
+          data[stateKey] = rows;
+        }
+      });
+      if (!found) return null;
+      const updated = {
+        ...found,
+        ...patch,
+        state: nextState,
+        updated_at: '2026-03-08 15:00:00',
+      };
+      if (!Array.isArray(data[nextState])) data[nextState] = [];
+      data[nextState] = [updated].concat(data[nextState]);
+      window.__itemSidebarData = data;
+      return updated;
+    }
+    function deleteItemSidebarEntry(itemID) {
+      const data = window.__itemSidebarData || defaultItemSidebarData();
+      const states = ['inbox', 'waiting', 'someday', 'done'];
+      let removed = null;
+      states.forEach((stateKey) => {
+        const rows = Array.isArray(data[stateKey]) ? data[stateKey] : [];
+        const index = rows.findIndex((entry) => Number(entry?.id || 0) === Number(itemID));
+        if (index >= 0) {
+          removed = cloneItemSidebarEntry(rows[index]);
+          rows.splice(index, 1);
+          data[stateKey] = rows;
+        }
+      });
+      window.__itemSidebarData = data;
+      return removed;
+    }
     window.__participantConfig = {
       companion_enabled: false,
       language: 'en',
@@ -907,6 +1009,57 @@
           done: Array.isArray(itemData.done) ? itemData.done.length : 0,
         };
         return new Response(JSON.stringify({ ok: true, counts }), { status: 200 });
+      }
+      if (/\/api\/items\/\d+\/triage(?:\?|$)/.test(u) && opts?.method === 'POST') {
+        let body = {};
+        try { body = JSON.parse(String(opts?.body || '{}')); } catch (_) { body = {}; }
+        const match = u.match(/\/api\/items\/(\d+)\/triage(?:\?|$)/);
+        const itemID = Number(match?.[1] || 0);
+        const action = String(body.action || '').trim().toLowerCase();
+        const actors = Array.isArray(window.__itemSidebarActors) ? window.__itemSidebarActors : [];
+        let item = null;
+        if (action === 'done') {
+          item = moveItemSidebarEntry(itemID, 'done');
+        } else if (action === 'later') {
+          item = moveItemSidebarEntry(itemID, 'waiting', { visible_after: String(body.visible_after || '') });
+        } else if (action === 'delegate') {
+          const actor = actors.find((entry) => Number(entry?.id || 0) === Number(body.actor_id || 0));
+          item = moveItemSidebarEntry(itemID, 'waiting', { actor_name: String(actor?.name || '') });
+        } else if (action === 'someday') {
+          item = moveItemSidebarEntry(itemID, 'someday');
+        } else if (action === 'delete') {
+          item = deleteItemSidebarEntry(itemID);
+        }
+        window.__harnessLog.push({
+          type: 'api_fetch',
+          action: 'item_triage',
+          method: opts?.method || 'POST',
+          url: u,
+          payload: body,
+        });
+        if (!item) {
+          return new Response('item not found', { status: 404 });
+        }
+        if (action === 'delete') {
+          return new Response(JSON.stringify({ ok: true, deleted: true, item_id: itemID }), { status: 200 });
+        }
+        return new Response(JSON.stringify({ ok: true, item }), { status: 200 });
+      }
+      if (u.includes('/api/actors')) {
+        const actors = Array.isArray(window.__itemSidebarActors) ? window.__itemSidebarActors : [];
+        return new Response(JSON.stringify({ ok: true, actors }), { status: 200 });
+      }
+      if (/\/api\/artifacts\/\d+(?:\?|$)/.test(u)) {
+        const match = u.match(/\/api\/artifacts\/(\d+)(?:\?|$)/);
+        const artifactID = Number(match?.[1] || 0);
+        const artifacts = window.__itemSidebarArtifacts && typeof window.__itemSidebarArtifacts === 'object'
+          ? window.__itemSidebarArtifacts
+          : {};
+        const artifact = artifacts[String(artifactID)] || artifacts[artifactID];
+        if (!artifact) {
+          return new Response('artifact not found', { status: 404 });
+        }
+        return new Response(JSON.stringify({ ok: true, artifact }), { status: 200 });
       }
       if (u.includes('/api/items/inbox') || u.includes('/api/items/waiting') || u.includes('/api/items/someday') || u.includes('/api/items/done')) {
         const itemData = window.__itemSidebarData || defaultItemSidebarData();

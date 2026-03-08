@@ -128,6 +128,7 @@ const state = {
   itemSidebarLoading: false,
   itemSidebarError: '',
   itemSidebarActiveItemID: 0,
+  itemSidebarMenuOpen: false,
   prReviewAwaitingArtifact: false,
   artifactEditMode: false,
   inkDraft: {
@@ -227,6 +228,11 @@ let localMessageSeq = 0;
 const CHAT_CTRL_LONG_PRESS_MS = 180;
 const ARTIFACT_EDIT_LONG_TAP_MS = 420;
 const ITEM_SIDEBAR_VIEWS = ['inbox', 'waiting', 'someday', 'done'];
+const ITEM_SIDEBAR_GESTURE_CANCEL_PX = 12;
+const ITEM_SIDEBAR_GESTURE_COMMIT_PX = 50;
+const ITEM_SIDEBAR_GESTURE_LONG_PX = 150;
+const ITEM_SIDEBAR_DEFAULT_LATER_HOUR_UTC = 9;
+const ITEM_SIDEBAR_MENU_ID = 'item-sidebar-menu';
 // Frontend end-of-utterance policy:
 // - start/end speech from local mic energy
 // - pure VAD commit (no semantic EOU sidecar)
@@ -3002,9 +3008,332 @@ async function refreshItemSidebarCounts() {
   return true;
 }
 
+function isEmailSidebarItem(item) {
+  return String(item?.artifact_kind || '').trim().toLowerCase() === 'email';
+}
+
+function itemSidebarActionLabel(action, item = null) {
+  const normalized = String(action || '').trim().toLowerCase();
+  if (normalized === 'done') {
+    return isEmailSidebarItem(item) ? 'Archive' : 'Done';
+  }
+  if (normalized === 'delete') return 'Delete';
+  if (normalized === 'delegate') return 'Delegate';
+  if (normalized === 'later') return 'Later';
+  return '';
+}
+
+function itemSidebarStatusText(action, item = null, actorName = '') {
+  const label = itemSidebarActionLabel(action, item).toLowerCase();
+  if (String(action || '').trim().toLowerCase() === 'delegate' && String(actorName || '').trim()) {
+    return `delegated to ${String(actorName || '').trim()}`;
+  }
+  if (!label) return 'updated';
+  if (label === 'later') return 'moved to later';
+  return `${label}d`;
+}
+
+function defaultItemSidebarLaterVisibleAfter(now = new Date()) {
+  const base = new Date(now);
+  base.setUTCDate(base.getUTCDate() + 1);
+  base.setUTCHours(ITEM_SIDEBAR_DEFAULT_LATER_HOUR_UTC, 0, 0, 0);
+  return base.toISOString();
+}
+
+function itemSidebarGestureAction(dx) {
+  const offset = Number(dx) || 0;
+  if (offset >= ITEM_SIDEBAR_GESTURE_LONG_PX) {
+    return { action: 'delete', label: 'Delete' };
+  }
+  if (offset >= ITEM_SIDEBAR_GESTURE_COMMIT_PX) {
+    return { action: 'done', label: 'Done' };
+  }
+  if (offset <= -ITEM_SIDEBAR_GESTURE_LONG_PX) {
+    return { action: 'later', label: 'Later' };
+  }
+  if (offset <= -ITEM_SIDEBAR_GESTURE_COMMIT_PX) {
+    return { action: 'delegate', label: 'Delegate' };
+  }
+  return null;
+}
+
+function itemSidebarMenuEl() {
+  let menu = document.getElementById(ITEM_SIDEBAR_MENU_ID);
+  if (menu instanceof HTMLElement) return menu;
+  menu = document.createElement('div');
+  menu.id = ITEM_SIDEBAR_MENU_ID;
+  menu.className = 'item-sidebar-menu';
+  menu.setAttribute('role', 'menu');
+  menu.setAttribute('aria-hidden', 'true');
+  document.body.appendChild(menu);
+  return menu;
+}
+
+function hideItemSidebarMenu() {
+  const menu = document.getElementById(ITEM_SIDEBAR_MENU_ID);
+  if (!(menu instanceof HTMLElement)) return;
+  menu.innerHTML = '';
+  menu.classList.remove('is-open');
+  menu.setAttribute('aria-hidden', 'true');
+  state.itemSidebarMenuOpen = false;
+}
+
+function positionItemSidebarMenu(menu, x, y) {
+  if (!(menu instanceof HTMLElement)) return;
+  menu.style.left = '0px';
+  menu.style.top = '0px';
+  menu.style.maxHeight = `${Math.max(160, window.innerHeight - 24)}px`;
+  menu.classList.add('is-open');
+  menu.setAttribute('aria-hidden', 'false');
+  const rect = menu.getBoundingClientRect();
+  const maxLeft = Math.max(12, window.innerWidth - rect.width - 12);
+  const maxTop = Math.max(12, window.innerHeight - rect.height - 12);
+  const left = Math.min(Math.max(12, Number(x) || 12), maxLeft);
+  const top = Math.min(Math.max(12, Number(y) || 12), maxTop);
+  menu.style.left = `${left}px`;
+  menu.style.top = `${top}px`;
+  state.itemSidebarMenuOpen = true;
+}
+
+function showItemSidebarMenu(entries, x, y) {
+  const items = Array.isArray(entries) ? entries.filter((entry) => entry && entry.label) : [];
+  if (items.length === 0) {
+    hideItemSidebarMenu();
+    return;
+  }
+  const menu = itemSidebarMenuEl();
+  menu.innerHTML = '';
+  items.forEach((entry) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'item-sidebar-menu-item';
+    if (entry.action) {
+      button.dataset.action = String(entry.action);
+    }
+    button.textContent = String(entry.label || '');
+    button.addEventListener('click', (event) => {
+      event.preventDefault();
+      const handler = typeof entry.onClick === 'function' ? entry.onClick : null;
+      hideItemSidebarMenu();
+      if (handler) {
+        void Promise.resolve(handler());
+      }
+    });
+    menu.appendChild(button);
+  });
+  positionItemSidebarMenu(menu, x, y);
+}
+
+async function fetchItemSidebarActors() {
+  const resp = await fetch(apiURL('actors'), { cache: 'no-store' });
+  if (!resp.ok) {
+    const detail = (await resp.text()).trim() || `HTTP ${resp.status}`;
+    throw new Error(detail);
+  }
+  const payload = await resp.json();
+  const actors = Array.isArray(payload?.actors) ? payload.actors : [];
+  return actors
+    .map((actor) => ({
+      id: Number(actor?.id || 0),
+      name: String(actor?.name || '').trim(),
+    }))
+    .filter((actor) => actor.id > 0 && actor.name);
+}
+
+async function performItemSidebarTriage(item, action, options = {}) {
+  const itemID = Number(item?.id || 0);
+  if (itemID <= 0) return false;
+  const normalizedAction = String(action || '').trim().toLowerCase();
+  if (!normalizedAction) return false;
+  const body = { action: normalizedAction };
+  let actorName = '';
+  if (normalizedAction === 'later') {
+    body.visible_after = defaultItemSidebarLaterVisibleAfter(options.now || new Date());
+  } else if (normalizedAction === 'delegate') {
+    const actorID = Number(options.actorID || 0);
+    if (actorID <= 0) return false;
+    body.actor_id = actorID;
+    actorName = String(options.actorName || '').trim();
+  }
+  try {
+    const resp = await fetch(apiURL(`items/${encodeURIComponent(String(itemID))}/triage`), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) {
+      const detail = (await resp.text()).trim() || `HTTP ${resp.status}`;
+      throw new Error(detail);
+    }
+    if (normalizedAction === 'delete') {
+      if (state.itemSidebarActiveItemID === itemID) {
+        state.itemSidebarActiveItemID = 0;
+      }
+    } else {
+      state.itemSidebarActiveItemID = itemID;
+    }
+    await loadItemSidebarView(state.itemSidebarView);
+    showStatus(itemSidebarStatusText(normalizedAction, item, actorName));
+    return true;
+  } catch (err) {
+    showStatus(`item action failed: ${String(err?.message || err || 'unknown error')}`);
+    return false;
+  }
+}
+
+async function showItemSidebarDelegateMenu(item, x, y) {
+  try {
+    const actors = await fetchItemSidebarActors();
+    if (actors.length === 0) {
+      showStatus('no actors available');
+      return false;
+    }
+    showItemSidebarMenu(
+      actors.map((actor) => ({
+        label: actor.name,
+        action: 'delegate',
+        onClick: () => performItemSidebarTriage(item, 'delegate', {
+          actorID: actor.id,
+          actorName: actor.name,
+        }),
+      })),
+      x,
+      y,
+    );
+    return true;
+  } catch (err) {
+    showStatus(`delegate picker failed: ${String(err?.message || err || 'unknown error')}`);
+    return false;
+  }
+}
+
+function showItemSidebarActionMenu(item, x, y) {
+  const entries = [
+    {
+      label: itemSidebarActionLabel('done', item),
+      action: 'done',
+      onClick: () => performItemSidebarTriage(item, 'done'),
+    },
+    {
+      label: itemSidebarActionLabel('later', item),
+      action: 'later',
+      onClick: () => performItemSidebarTriage(item, 'later'),
+    },
+    {
+      label: itemSidebarActionLabel('delegate', item),
+      action: 'delegate',
+      onClick: () => showItemSidebarDelegateMenu(item, x, y),
+    },
+    {
+      label: itemSidebarActionLabel('delete', item),
+      action: 'delete',
+      onClick: () => performItemSidebarTriage(item, 'delete'),
+    },
+  ];
+  showItemSidebarMenu(entries, x, y);
+}
+
+function parseSidebarArtifactMeta(raw) {
+  const text = String(raw || '').trim();
+  if (!text) return {};
+  try {
+    const parsed = JSON.parse(text);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+function buildSidebarItemFallbackText(item, artifact = null) {
+  const artifactMeta = parseSidebarArtifactMeta(artifact?.meta_json || '');
+  const title = String(artifact?.title || item?.artifact_title || item?.title || 'Item').trim() || 'Item';
+  const detail = [
+    `# ${title}`,
+    '',
+    `- Item: ${String(item?.title || title).trim() || title}`,
+    `- Kind: ${normalizeDisplayText(artifact?.kind || item?.artifact_kind || 'note') || 'note'}`,
+  ];
+  const sourceRef = String(item?.source_ref || '').trim();
+  if (sourceRef) detail.push(`- Source: ${sourceRef}`);
+  const refURL = String(artifact?.ref_url || '').trim();
+  if (refURL) detail.push(`- Link: ${refURL}`);
+  const body = String(
+    artifactMeta.transcript
+    || artifactMeta.text
+    || artifactMeta.body
+    || artifactMeta.summary
+    || artifactMeta.content
+    || '',
+  ).trim();
+  if (body) {
+    detail.push('', '## Details', '', body);
+  }
+  return detail.join('\n');
+}
+
+async function openSidebarArtifactItem(item) {
+  const artifactID = Number(item?.artifact_id || 0);
+  if (artifactID <= 0) {
+    applyCanvasArtifactEvent({
+      kind: 'text_artifact',
+      event_id: `sidebar-item-${Number(item?.id || 0)}-${Date.now()}`,
+      title: String(item?.title || 'Item'),
+      text: buildSidebarItemFallbackText(item),
+    });
+    return true;
+  }
+  const resp = await fetch(apiURL(`artifacts/${encodeURIComponent(String(artifactID))}`), { cache: 'no-store' });
+  if (!resp.ok) {
+    const detail = (await resp.text()).trim() || `HTTP ${resp.status}`;
+    throw new Error(detail);
+  }
+  const payload = await resp.json();
+  const artifact = payload?.artifact || {};
+  const refPath = String(artifact?.ref_path || '').trim();
+  const artifactKind = String(artifact?.kind || item?.artifact_kind || '').trim().toLowerCase();
+  if (refPath && !refPath.startsWith('/')) {
+    if (artifactKind === 'pdf' || artifactKind === 'pdf_artifact' || refPath.toLowerCase().endsWith('.pdf')) {
+      applyCanvasArtifactEvent({
+        kind: 'pdf_artifact',
+        event_id: `sidebar-item-${artifactID}-${Date.now()}`,
+        title: String(artifact?.title || item?.artifact_title || item?.title || refPath),
+        path: refPath,
+      });
+      return true;
+    }
+    if (SIDEBAR_IMAGE_EXTENSIONS.has(`.${String(refPath.split('.').pop() || '').toLowerCase()}`)) {
+      applyCanvasArtifactEvent({
+        kind: 'image_artifact',
+        event_id: `sidebar-item-${artifactID}-${Date.now()}`,
+        title: String(artifact?.title || item?.artifact_title || item?.title || refPath),
+        path: refPath,
+      });
+      return true;
+    }
+  }
+  applyCanvasArtifactEvent({
+    kind: 'text_artifact',
+    event_id: `sidebar-item-${artifactID}-${Date.now()}`,
+    title: String(artifact?.title || item?.artifact_title || item?.title || 'Item'),
+    text: buildSidebarItemFallbackText(item, artifact),
+  });
+  return true;
+}
+
+function activeItemSidebarShortcutTarget() {
+  if (state.prReviewMode || state.fileSidebarMode !== 'items' || state.itemSidebarView !== 'inbox') {
+    return null;
+  }
+  const items = Array.isArray(state.itemSidebarItems) ? state.itemSidebarItems : [];
+  if (items.length === 0) return null;
+  const activeID = Number(state.itemSidebarActiveItemID || 0);
+  return items.find((item) => Number(item?.id || 0) === activeID) || items[0];
+}
+
 async function loadItemSidebarView(view = state.itemSidebarView) {
   const normalizedView = normalizeItemSidebarView(view);
   const projectID = String(state.activeProjectId || '').trim();
+  hideItemSidebarMenu();
   state.itemSidebarView = normalizedView;
   state.itemSidebarLoading = true;
   state.itemSidebarError = '';
@@ -3112,6 +3441,14 @@ async function openSidebarItem(item) {
   state.itemSidebarActiveItemID = Number(item?.id || 0);
   renderPrReviewFileList();
   if (String(item?.artifact_kind || '').trim().toLowerCase() !== 'github_pr') {
+    try {
+      const opened = await openSidebarArtifactItem(item);
+      if (opened && isMobileViewport()) {
+        closeEdgePanels();
+      }
+    } catch (err) {
+      showStatus(`item open failed: ${String(err?.message || err || 'unknown error')}`);
+    }
     return;
   }
   const prNumber = parsePullRequestNumberFromSourceRef(item?.source_ref);
@@ -3230,12 +3567,26 @@ function renderSidebarTabs(list) {
   list.appendChild(tabs);
 }
 
-function renderSidebarRow({ icon, iconText = '', label, active = false, meta = '', subtitle = '', badges = [], onClick }) {
+function renderSidebarRow({
+  icon,
+  iconText = '',
+  label,
+  active = false,
+  meta = '',
+  subtitle = '',
+  badges = [],
+  item = null,
+  triageEnabled = false,
+  onClick,
+}) {
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'pr-file-item';
   if (active) {
     button.classList.add('is-active');
+  }
+  if (item && Number(item?.id || 0) > 0) {
+    button.dataset.itemId = String(Number(item.id));
   }
 
   const iconEl = document.createElement('span');
@@ -3281,20 +3632,108 @@ function renderSidebarRow({ icon, iconText = '', label, active = false, meta = '
     metaEl.textContent = String(meta);
     button.appendChild(metaEl);
   }
+
+  const resetSwipeUi = () => {
+    button.style.removeProperty('--swipe-offset');
+    delete button.dataset.triageAction;
+    delete button.dataset.triageLabel;
+  };
+
+  const applySwipeUi = (dx) => {
+    const limited = Math.max(-220, Math.min(220, Number(dx) || 0));
+    const action = itemSidebarGestureAction(limited);
+    button.style.setProperty('--swipe-offset', `${limited}px`);
+    if (action) {
+      button.dataset.triageAction = action.action;
+      button.dataset.triageLabel = itemSidebarActionLabel(action.action, item);
+    } else {
+      delete button.dataset.triageAction;
+      delete button.dataset.triageLabel;
+    }
+    return action;
+  };
+
   let lastTouchAt = 0;
-  let touchStartY = 0;
+  let touchState = null;
   button.addEventListener('touchstart', (ev) => {
     const t = ev.touches && ev.touches[0];
-    if (t) touchStartY = t.clientY;
+    if (!t) return;
+    hideItemSidebarMenu();
+    touchState = {
+      startX: t.clientX,
+      startY: t.clientY,
+      currentX: t.clientX,
+      currentY: t.clientY,
+      swiping: false,
+    };
+    resetSwipeUi();
   }, { passive: true });
+  if (triageEnabled && item) {
+    button.addEventListener('touchmove', (ev) => {
+      if (!touchState) return;
+      const t = ev.touches && ev.touches[0];
+      if (!t) return;
+      touchState.currentX = t.clientX;
+      touchState.currentY = t.clientY;
+      const dx = t.clientX - touchState.startX;
+      const dy = t.clientY - touchState.startY;
+      if (!touchState.swiping) {
+        if (Math.abs(dx) < ITEM_SIDEBAR_GESTURE_CANCEL_PX || Math.abs(dx) < Math.abs(dy)) {
+          return;
+        }
+        touchState.swiping = true;
+      }
+      ev.preventDefault();
+      applySwipeUi(dx);
+    }, { passive: false });
+    button.addEventListener('touchcancel', () => {
+      touchState = null;
+      resetSwipeUi();
+    });
+    button.addEventListener('contextmenu', (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      state.itemSidebarActiveItemID = Number(item?.id || 0);
+      showItemSidebarActionMenu(item, ev.clientX, ev.clientY);
+    });
+  }
   button.addEventListener('touchend', (ev) => {
     const t = ev.changedTouches && ev.changedTouches[0];
-    if (t && Math.abs(t.clientY - touchStartY) > 10) return;
+    const current = touchState;
+    touchState = null;
+    if (!t || !current) {
+      return;
+    }
+    const dx = t.clientX - current.startX;
+    const dy = t.clientY - current.startY;
+    const gestureAction = triageEnabled ? itemSidebarGestureAction(dx) : null;
+    if (gestureAction && current.swiping) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      lastTouchAt = Date.now();
+      suppressSyntheticClick();
+      resetSwipeUi();
+      if (gestureAction.action === 'delegate') {
+        void showItemSidebarDelegateMenu(item, t.clientX, t.clientY);
+      } else {
+        void performItemSidebarTriage(item, gestureAction.action);
+      }
+      return;
+    }
+    resetSwipeUi();
+    if (Math.abs(dx) > ITEM_SIDEBAR_GESTURE_CANCEL_PX || Math.abs(dy) > 10) {
+      return;
+    }
     ev.preventDefault();
     ev.stopPropagation();
     lastTouchAt = Date.now();
     onClick(ev);
   }, { passive: false });
+  if (item) {
+    button.addEventListener('focus', () => {
+      state.itemSidebarActiveItemID = Number(item?.id || 0);
+    });
+  }
   button.addEventListener('click', (ev) => {
     if (Date.now() - lastTouchAt < 700) {
       ev.preventDefault();
@@ -3345,9 +3784,41 @@ function renderItemSidebarList(list) {
       badges: buildItemSidebarBadges(item),
       meta: formatSidebarAge(item?.updated_at || item?.created_at),
       active: Number(item?.id || 0) === Number(state.itemSidebarActiveItemID || 0),
+      item,
+      triageEnabled: state.itemSidebarView === 'inbox',
       onClick: () => { void openSidebarItem(item); },
     }));
   });
+}
+
+function handleItemSidebarKeyboardShortcut(ev) {
+  const sidebarTarget = activeItemSidebarShortcutTarget();
+  if (!sidebarTarget) return false;
+  if (!document.body.classList.contains('file-sidebar-open')) return false;
+  const key = String(ev.key || '');
+  let action = '';
+  if (key === 'Backspace') {
+    action = 'delete';
+  } else if (key === 'd' || key === 'D') {
+    action = 'done';
+  } else if (key === 'l' || key === 'L') {
+    action = 'later';
+  } else if (key === 'g' || key === 'G') {
+    action = 'delegate';
+  } else {
+    return false;
+  }
+  ev.preventDefault();
+  if (action === 'delegate') {
+    const row = document.querySelector(`#pr-file-list .pr-file-item[data-item-id="${Number(sidebarTarget.id)}"]`);
+    const rect = row instanceof HTMLElement ? row.getBoundingClientRect() : null;
+    const x = rect ? rect.right - 12 : 24;
+    const y = rect ? rect.top + Math.min(rect.height, 48) : 24;
+    void showItemSidebarDelegateMenu(sidebarTarget, x, y);
+    return true;
+  }
+  void performItemSidebarTriage(sidebarTarget, action);
+  return true;
 }
 
 function renderWorkspaceFileList(list) {
@@ -7077,6 +7548,10 @@ function bindUi() {
   // Click outside overlay/input -> dismiss
   document.addEventListener('mousedown', (ev) => {
     if (!(ev.target instanceof Element)) return;
+    const sidebarMenu = document.getElementById(ITEM_SIDEBAR_MENU_ID);
+    if (state.itemSidebarMenuOpen && sidebarMenu instanceof HTMLElement && !sidebarMenu.contains(ev.target)) {
+      hideItemSidebarMenu();
+    }
     // Dismiss overlay on click outside
     if (isOverlayVisible()) {
       const overlay = document.getElementById('overlay');
@@ -7113,6 +7588,10 @@ function bindUi() {
       }
       if (isTextInputVisible()) {
         hideTextInput();
+        return;
+      }
+      if (state.itemSidebarMenuOpen) {
+        hideItemSidebarMenu();
         return;
       }
       if (state.inkDraft.dirty) {
@@ -7175,6 +7654,7 @@ function bindUi() {
     if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
     if (isEditableTarget(ev.target)) return;
     if (state.artifactEditMode) return;
+    if (handleItemSidebarKeyboardShortcut(ev)) return;
 
     if (ev.key === 'ArrowRight') {
       if (stepCanvasFile(1)) {
