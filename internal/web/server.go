@@ -91,6 +91,7 @@ type App struct {
 	newGoogleCalendarReader func(context.Context) (googleCalendarReader, error)
 	newICSCalendarReader    func() (icsCalendarReader, error)
 	newEmailSyncProvider    func(context.Context, store.ExternalAccount) (emailSyncProvider, error)
+	newContactSyncProvider  func(context.Context, store.ExternalAccount) (contactSyncProvider, error)
 
 	upgrader websocket.Upgrader
 

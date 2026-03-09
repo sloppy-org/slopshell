@@ -17,9 +17,13 @@ import (
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/gmail/v1"
 	"google.golang.org/api/option"
+	people "google.golang.org/api/people/v1"
 )
 
-const gmailScope = gmail.GmailModifyScope
+var gmailScopes = []string{
+	gmail.GmailModifyScope,
+	people.ContactsReadonlyScope,
+}
 
 func configDir() string {
 	return defaultTaburaConfigDir()
@@ -66,7 +70,7 @@ func NewGmailWithFiles(credentialsPath, tokenPath string) (*GmailClient, error) 
 		return nil, fmt.Errorf("configure Gmail credentials at %s first: %w", credentialsPath, err)
 	}
 
-	config, err := google.ConfigFromJSON(credBytes, gmailScope)
+	config, err := google.ConfigFromJSON(credBytes, gmailScopes...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse credentials: %w", err)
 	}
@@ -111,7 +115,7 @@ func (c *GmailClient) ExchangeCode(ctx context.Context, code string) error {
 	return os.WriteFile(c.tokenPath, tokenBytes, 0o600)
 }
 
-func (c *GmailClient) getService(ctx context.Context) (*gmail.Service, error) {
+func (c *GmailClient) getTokenSource(ctx context.Context) (oauth2.TokenSource, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -119,7 +123,6 @@ func (c *GmailClient) getService(ctx context.Context) (*gmail.Service, error) {
 		return nil, fmt.Errorf("gmail is not authenticated; token file %s is missing", c.tokenPath)
 	}
 
-	// Refresh token if expired
 	tokenSource := c.config.TokenSource(ctx, c.token)
 	newToken, err := tokenSource.Token()
 	if err != nil {
@@ -133,6 +136,14 @@ func (c *GmailClient) getService(ctx context.Context) (*gmail.Service, error) {
 		_ = os.WriteFile(c.tokenPath, tokenBytes, 0o600)
 	}
 
+	return tokenSource, nil
+}
+
+func (c *GmailClient) getService(ctx context.Context) (*gmail.Service, error) {
+	tokenSource, err := c.getTokenSource(ctx)
+	if err != nil {
+		return nil, err
+	}
 	return gmail.NewService(ctx, option.WithTokenSource(tokenSource))
 }
 

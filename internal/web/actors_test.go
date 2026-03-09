@@ -11,8 +11,12 @@ func TestActorCRUDAPI(t *testing.T) {
 	app := newAuthedTestApp(t)
 
 	rrCreate := doAuthedJSONRequest(t, app.Router(), http.MethodPost, "/api/actors", map[string]any{
-		"name": "Codex",
-		"kind": store.ActorKindAgent,
+		"name":         "Codex",
+		"kind":         store.ActorKindAgent,
+		"email":        "codex@example.com",
+		"provider":     "manual",
+		"provider_ref": "codex-local",
+		"meta_json":    `{"organization":"OpenAI"}`,
 	})
 	if rrCreate.Code != http.StatusCreated {
 		t.Fatalf("create actor status = %d, want 201: %s", rrCreate.Code, rrCreate.Body.String())
@@ -23,6 +27,12 @@ func TestActorCRUDAPI(t *testing.T) {
 		t.Fatalf("create actor payload = %#v", createPayload)
 	}
 	actorID := int64(actorPayload["id"].(float64))
+	if got := strFromAny(actorPayload["email"]); got != "codex@example.com" {
+		t.Fatalf("create actor email = %q, want codex@example.com", got)
+	}
+	if got := strFromAny(actorPayload["provider"]); got != "manual" {
+		t.Fatalf("create actor provider = %q, want manual", got)
+	}
 
 	rrList := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/actors", nil)
 	if rrList.Code != http.StatusOK {

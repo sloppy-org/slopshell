@@ -15,6 +15,7 @@ import (
 type fakeEmailSyncProvider struct {
 	listFunc  func(email.SearchOptions) ([]string, error)
 	messages  map[string]*providerdata.EmailMessage
+	contacts  []providerdata.Contact
 	listCalls []email.SearchOptions
 }
 
@@ -38,6 +39,10 @@ func (f *fakeEmailSyncProvider) GetMessages(_ context.Context, messageIDs []stri
 
 func (f *fakeEmailSyncProvider) Close() error {
 	return nil
+}
+
+func (f *fakeEmailSyncProvider) ListContacts(_ context.Context) ([]providerdata.Contact, error) {
+	return append([]providerdata.Contact(nil), f.contacts...), nil
 }
 
 func TestSourceSyncRunnerPollsGmailAndIMAPAccounts(t *testing.T) {
@@ -76,6 +81,13 @@ func TestSourceSyncRunnerPollsGmailAndIMAPAccounts(t *testing.T) {
 				Labels:     []string{"INBOX"},
 			},
 		},
+		contacts: []providerdata.Contact{{
+			ProviderRef:  "people/c1",
+			Name:         "Ada Lovelace",
+			Email:        "ada@example.com",
+			Organization: "Analytical Engines",
+			Phones:       []string{"+1 555 0100"},
+		}},
 	}
 	imapProvider := &fakeEmailSyncProvider{
 		listFunc: func(opts email.SearchOptions) ([]string, error) {
@@ -110,6 +122,15 @@ func TestSourceSyncRunnerPollsGmailAndIMAPAccounts(t *testing.T) {
 			return imapProvider, nil
 		default:
 			t.Fatalf("unexpected account id: %d", account.ID)
+			return nil, nil
+		}
+	}
+	app.newContactSyncProvider = func(_ context.Context, account store.ExternalAccount) (contactSyncProvider, error) {
+		switch account.ID {
+		case gmailAccount.ID:
+			return gmailProvider, nil
+		default:
+			t.Fatalf("unexpected contact sync account id: %d", account.ID)
 			return nil, nil
 		}
 	}
@@ -189,6 +210,75 @@ func TestSourceSyncRunnerPollsGmailAndIMAPAccounts(t *testing.T) {
 	}
 	if gmailBinding.ItemID == nil || gmailBinding.ArtifactID == nil {
 		t.Fatalf("gmail binding = %#v, want item and artifact ids", gmailBinding)
+	}
+	gmailItem, err = app.store.GetItem(*gmailBinding.ItemID)
+	if err != nil {
+		t.Fatalf("GetItem(gmail binding) error: %v", err)
+	}
+	if gmailItem.ActorID == nil {
+		t.Fatal("gmail item actor_id = nil, want sender actor")
+	}
+	gmailActor, err := app.store.GetActor(*gmailItem.ActorID)
+	if err != nil {
+		t.Fatalf("GetActor(gmail sender) error: %v", err)
+	}
+	if gmailActor.Email == nil || *gmailActor.Email != "ada@example.com" {
+		t.Fatalf("gmail actor email = %v, want ada@example.com", gmailActor.Email)
+	}
+	if gmailActor.ProviderRef == nil || *gmailActor.ProviderRef != "people/c1" {
+		t.Fatalf("gmail actor provider_ref = %v, want people/c1", gmailActor.ProviderRef)
+	}
+	imapActor, err := app.store.GetActorByEmail("bob@example.com")
+	if err != nil {
+		t.Fatalf("GetActorByEmail(imap sender) error: %v", err)
+	}
+	if imapActor.Provider == nil || *imapActor.Provider != store.ExternalProviderIMAP {
+		t.Fatalf("imap actor provider = %v, want imap", imapActor.Provider)
+	}
+	if got := int64FromAny(gmailMeta["sender_actor_id"]); got != gmailActor.ID {
+		t.Fatalf("gmail sender_actor_id = %d, want %d", got, gmailActor.ID)
+	}
+}
+
+func TestSourceSyncRunnerPollsExchangeContacts(t *testing.T) {
+	app := newAuthedTestApp(t)
+
+	account, err := app.store.CreateExternalAccount(store.SphereWork, store.ExternalProviderExchange, "Work Exchange", map[string]any{
+		"client_id": "client-id",
+		"tenant_id": "tenant-id",
+	})
+	if err != nil {
+		t.Fatalf("CreateExternalAccount(exchange) error: %v", err)
+	}
+
+	app.newContactSyncProvider = func(_ context.Context, externalAccount store.ExternalAccount) (contactSyncProvider, error) {
+		if externalAccount.ID != account.ID {
+			t.Fatalf("unexpected external account id: %d", externalAccount.ID)
+		}
+		return &fakeEmailSyncProvider{
+			contacts: []providerdata.Contact{{
+				ProviderRef:  "exchange-contact-1",
+				Name:         "Carol",
+				Email:        "carol@example.com",
+				Organization: "Example Corp",
+			}},
+		}, nil
+	}
+	app.sourceSync = app.newSourceSyncRunner()
+
+	result, err := app.syncSourcesNow(context.Background())
+	if err != nil {
+		t.Fatalf("syncSourcesNow() error: %v", err)
+	}
+	if len(result.Accounts) != 1 {
+		t.Fatalf("len(result.Accounts) = %d, want 1", len(result.Accounts))
+	}
+	actor, err := app.store.GetActorByProviderRef(store.ExternalProviderExchange, "exchange-contact-1")
+	if err != nil {
+		t.Fatalf("GetActorByProviderRef(exchange) error: %v", err)
+	}
+	if actor.Email == nil || *actor.Email != "carol@example.com" {
+		t.Fatalf("exchange actor email = %v, want carol@example.com", actor.Email)
 	}
 }
 

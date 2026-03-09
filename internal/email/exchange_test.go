@@ -251,7 +251,7 @@ func TestExchangeClientFallsBackToDeviceCodeFlow(t *testing.T) {
 			if err := r.ParseForm(); err != nil {
 				t.Fatalf("ParseForm() error: %v", err)
 			}
-			if got := r.Form.Get("scope"); got != "offline_access Mail.ReadWrite" {
+			if got := r.Form.Get("scope"); got != "offline_access Mail.ReadWrite Contacts.Read" {
 				t.Fatalf("scope = %q", got)
 			}
 			writeJSON(t, w, map[string]any{

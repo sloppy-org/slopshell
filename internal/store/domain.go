@@ -97,6 +97,13 @@ type Workspace struct {
 	UpdatedAt string  `json:"updated_at"`
 }
 
+type ActorOptions struct {
+	Email       *string `json:"email,omitempty"`
+	Provider    *string `json:"provider,omitempty"`
+	ProviderRef *string `json:"provider_ref,omitempty"`
+	MetaJSON    *string `json:"meta_json,omitempty"`
+}
+
 type ExternalAccount struct {
 	ID         int64  `json:"id"`
 	Sphere     string `json:"sphere"`
@@ -161,10 +168,14 @@ type ItemArtifact struct {
 }
 
 type Actor struct {
-	ID        int64  `json:"id"`
-	Name      string `json:"name"`
-	Kind      string `json:"kind"`
-	CreatedAt string `json:"created_at"`
+	ID          int64   `json:"id"`
+	Name        string  `json:"name"`
+	Kind        string  `json:"kind"`
+	Email       *string `json:"email,omitempty"`
+	Provider    *string `json:"provider,omitempty"`
+	ProviderRef *string `json:"provider_ref,omitempty"`
+	MetaJSON    *string `json:"meta_json,omitempty"`
+	CreatedAt   string  `json:"created_at"`
 }
 
 type Artifact struct {

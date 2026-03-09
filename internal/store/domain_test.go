@@ -32,7 +32,7 @@ func TestStoreMigratesDomainTablesOnFreshDatabase(t *testing.T) {
 	}
 	for table, want := range map[string][]string{
 		"workspaces":                  {"id", "name", "dir_path", "project_id", "sphere", "is_active", "created_at", "updated_at"},
-		"actors":                      {"id", "name", "kind", "created_at"},
+		"actors":                      {"id", "name", "kind", "email", "provider", "provider_ref", "meta_json", "created_at"},
 		"artifacts":                   {"id", "kind", "ref_path", "ref_url", "title", "meta_json", "created_at", "updated_at"},
 		"external_accounts":           {"id", "sphere", "provider", "label", "config_json", "enabled", "created_at", "updated_at"},
 		"external_container_mappings": {"id", "provider", "container_type", "container_ref", "workspace_id", "project_id", "sphere"},
@@ -331,9 +331,16 @@ func TestDomainCRUDRoundTrip(t *testing.T) {
 		t.Fatal("expected missing workspace rename error")
 	}
 
-	human, err := s.CreateActor("Alice", ActorKindHuman)
+	humanEmail := "alice@example.com"
+	humanProvider := "manual"
+	humanMetaJSON := `{"organization":"Acme"}`
+	human, err := s.CreateActorWithOptions("Alice", ActorKindHuman, ActorOptions{
+		Email:    &humanEmail,
+		Provider: &humanProvider,
+		MetaJSON: &humanMetaJSON,
+	})
 	if err != nil {
-		t.Fatalf("CreateActor(Alice) error: %v", err)
+		t.Fatalf("CreateActorWithOptions(Alice) error: %v", err)
 	}
 	agent, err := s.CreateActor("Codex", ActorKindAgent)
 	if err != nil {
@@ -349,6 +356,15 @@ func TestDomainCRUDRoundTrip(t *testing.T) {
 	if len(actors) != 2 {
 		t.Fatalf("ListActors() len = %d, want 2", len(actors))
 	}
+	if actors[0].Email == nil || *actors[0].Email != "alice@example.com" {
+		t.Fatalf("ListActors()[0].Email = %v, want alice@example.com", actors[0].Email)
+	}
+	if actors[0].Provider == nil || *actors[0].Provider != "manual" {
+		t.Fatalf("ListActors()[0].Provider = %v, want manual", actors[0].Provider)
+	}
+	if actors[0].MetaJSON == nil || *actors[0].MetaJSON != humanMetaJSON {
+		t.Fatalf("ListActors()[0].MetaJSON = %v, want %q", actors[0].MetaJSON, humanMetaJSON)
+	}
 	if actors[0].Name != "Alice" || actors[1].Name != "Codex" {
 		t.Fatalf("ListActors() names = %#v, want Alice/Codex", []string{actors[0].Name, actors[1].Name})
 	}
@@ -358,6 +374,36 @@ func TestDomainCRUDRoundTrip(t *testing.T) {
 	}
 	if gotActor.Kind != ActorKindAgent {
 		t.Fatalf("GetActor().Kind = %q, want %q", gotActor.Kind, ActorKindAgent)
+	}
+	contactMetaJSON := `{"organization":"Example Corp","phones":["+1 555 0100"]}`
+	contact, err := s.UpsertActorContact("Alice Example", "alice@example.com", ExternalProviderGmail, "people/c123", &contactMetaJSON)
+	if err != nil {
+		t.Fatalf("UpsertActorContact(create) error: %v", err)
+	}
+	if contact.Email == nil || *contact.Email != "alice@example.com" {
+		t.Fatalf("UpsertActorContact(create).Email = %v, want alice@example.com", contact.Email)
+	}
+	if contact.ID != human.ID {
+		t.Fatalf("UpsertActorContact(create).ID = %d, want %d", contact.ID, human.ID)
+	}
+	if contact.Provider == nil || *contact.Provider != ExternalProviderGmail {
+		t.Fatalf("UpsertActorContact(create).Provider = %v, want %q", contact.Provider, ExternalProviderGmail)
+	}
+	updatedContact, err := s.UpsertActorContact("Alice Updated", "Alice@Example.com", ExternalProviderExchange, "exchange-7", nil)
+	if err != nil {
+		t.Fatalf("UpsertActorContact(update) error: %v", err)
+	}
+	if updatedContact.ID != contact.ID {
+		t.Fatalf("UpsertActorContact(update).ID = %d, want %d", updatedContact.ID, contact.ID)
+	}
+	if updatedContact.ProviderRef == nil || *updatedContact.ProviderRef != "exchange-7" {
+		t.Fatalf("UpsertActorContact(update).ProviderRef = %v, want exchange-7", updatedContact.ProviderRef)
+	}
+	if _, err := s.GetActorByEmail("ALICE@example.com"); err != nil {
+		t.Fatalf("GetActorByEmail() error: %v", err)
+	}
+	if _, err := s.GetActorByProviderRef(ExternalProviderExchange, "exchange-7"); err != nil {
+		t.Fatalf("GetActorByProviderRef() error: %v", err)
 	}
 
 	refPath := filepath.Join(t.TempDir(), "artifact.md")

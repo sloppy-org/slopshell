@@ -205,7 +205,7 @@ func normalizeExchangeConfig(cfg ExchangeConfig) ExchangeConfig {
 		cfg.TokenPath = ExchangeTokenPath(cfg.ConfigDir, cfg.Label)
 	}
 	if len(cfg.Scopes) == 0 {
-		cfg.Scopes = []string{"offline_access", "Mail.ReadWrite"}
+		cfg.Scopes = []string{"offline_access", "Mail.ReadWrite", "Contacts.Read"}
 	}
 	cleanScopes := make([]string, 0, len(cfg.Scopes))
 	for _, scope := range cfg.Scopes {
@@ -631,4 +631,8 @@ func maxInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func (c *ExchangeClient) Close() error {
+	return nil
 }

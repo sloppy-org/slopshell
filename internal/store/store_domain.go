@@ -44,6 +44,10 @@ CREATE TABLE IF NOT EXISTS actors (
   id INTEGER PRIMARY KEY,
   name TEXT NOT NULL,
   kind TEXT NOT NULL CHECK (kind IN ('human', 'agent')),
+  email TEXT,
+  provider TEXT,
+  provider_ref TEXT,
+  meta_json TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE TABLE IF NOT EXISTS artifacts (
@@ -126,6 +130,9 @@ CREATE INDEX IF NOT EXISTS idx_external_bindings_stale
 	if err := s.migrateItemSphereSupport(); err != nil {
 		return err
 	}
+	if err := s.migrateActorContactSupport(); err != nil {
+		return err
+	}
 	return s.migrateItemArtifactLinkSupport()
 }
 
@@ -158,6 +165,80 @@ func normalizeActorKind(kind string) string {
 	default:
 		return ""
 	}
+}
+
+func normalizeActorEmail(email string) string {
+	clean := strings.ToLower(strings.TrimSpace(email))
+	if clean == "" {
+		return ""
+	}
+	return clean
+}
+
+func normalizeActorProvider(provider string) string {
+	clean := strings.TrimSpace(provider)
+	switch {
+	case clean == "":
+		return ""
+	case strings.EqualFold(clean, "manual"):
+		return "manual"
+	default:
+		return normalizeExternalAccountProvider(clean)
+	}
+}
+
+func normalizeOptionalJSON(metaJSON *string) (any, error) {
+	if metaJSON == nil {
+		return nil, nil
+	}
+	clean := strings.TrimSpace(*metaJSON)
+	if clean == "" {
+		return nil, nil
+	}
+	if !json.Valid([]byte(clean)) {
+		return nil, errors.New("meta_json must be valid JSON")
+	}
+	return clean, nil
+}
+
+func (s *Store) migrateActorContactSupport() error {
+	columns, err := s.tableColumnNames("actors")
+	if err != nil {
+		return err
+	}
+	hasColumn := func(target string) bool {
+		for _, column := range columns {
+			if column == target {
+				return true
+			}
+		}
+		return false
+	}
+	for _, migration := range []struct {
+		column string
+		sql    string
+	}{
+		{column: "email", sql: `ALTER TABLE actors ADD COLUMN email TEXT`},
+		{column: "provider", sql: `ALTER TABLE actors ADD COLUMN provider TEXT`},
+		{column: "provider_ref", sql: `ALTER TABLE actors ADD COLUMN provider_ref TEXT`},
+		{column: "meta_json", sql: `ALTER TABLE actors ADD COLUMN meta_json TEXT`},
+	} {
+		if hasColumn(migration.column) {
+			continue
+		}
+		if _, err := s.db.Exec(migration.sql); err != nil {
+			return err
+		}
+	}
+	if _, err := s.db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_actors_email
+		ON actors(lower(email))
+		WHERE email IS NOT NULL AND trim(email) <> ''`); err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_actors_provider_ref
+		ON actors(lower(provider), provider_ref)
+		WHERE provider IS NOT NULL AND trim(provider) <> '' AND provider_ref IS NOT NULL AND trim(provider_ref) <> ''`)
+	return err
 }
 
 func normalizeSphere(raw string) string {
@@ -426,12 +507,29 @@ func scanActor(
 	},
 ) (Actor, error) {
 	var out Actor
-	err := row.Scan(&out.ID, &out.Name, &out.Kind, &out.CreatedAt)
+	var email, provider, providerRef, metaJSON sql.NullString
+	err := row.Scan(&out.ID, &out.Name, &out.Kind, &email, &provider, &providerRef, &metaJSON, &out.CreatedAt)
 	if err != nil {
 		return Actor{}, err
 	}
 	out.Name = normalizeActorName(out.Name)
 	out.Kind = normalizeActorKind(out.Kind)
+	out.Email = nullStringPointer(email)
+	if out.Email != nil {
+		clean := normalizeActorEmail(*out.Email)
+		out.Email = &clean
+	}
+	out.Provider = nullStringPointer(provider)
+	if out.Provider != nil {
+		clean := normalizeActorProvider(*out.Provider)
+		if clean == "" {
+			out.Provider = nil
+		} else {
+			out.Provider = &clean
+		}
+	}
+	out.ProviderRef = nullStringPointer(providerRef)
+	out.MetaJSON = nullStringPointer(metaJSON)
 	return out, nil
 }
 

@@ -310,7 +310,7 @@ func emailMessageContainerRef(message *providerdata.EmailMessage) *string {
 	return nil
 }
 
-func emailArtifactMetaJSON(message *providerdata.EmailMessage) (string, error) {
+func emailArtifactMetaJSON(message *providerdata.EmailMessage, senderActor *store.Actor) (string, error) {
 	payload := map[string]any{
 		"thread_id":  strings.TrimSpace(message.ThreadID),
 		"subject":    strings.TrimSpace(message.Subject),
@@ -324,6 +324,12 @@ func emailArtifactMetaJSON(message *providerdata.EmailMessage) (string, error) {
 	}
 	if snippet := strings.TrimSpace(message.Snippet); snippet != "" {
 		payload["snippet"] = snippet
+	}
+	if senderActor != nil {
+		payload["sender_actor_id"] = senderActor.ID
+		if senderActor.Email != nil {
+			payload["sender_email"] = *senderActor.Email
+		}
 	}
 	raw, err := json.Marshal(payload)
 	if err != nil {
@@ -340,12 +346,35 @@ func copyInt64Pointer(value *int64) *int64 {
 	return &out
 }
 
+func (a *App) syncManagedEmailAccount(ctx context.Context, account store.ExternalAccount) (int, error) {
+	messageCount, err := a.syncEmailAccount(ctx, account)
+	if err != nil {
+		return 0, err
+	}
+	if _, err := a.syncContactAccount(ctx, account); err != nil {
+		return 0, err
+	}
+	return messageCount, nil
+}
+
+func (a *App) upsertMessageSenderActor(account store.ExternalAccount, message *providerdata.EmailMessage) (*store.Actor, error) {
+	if message == nil {
+		return nil, nil
+	}
+	contact := parseSenderContact(message.Sender)
+	return a.upsertContactActor(account, contact)
+}
+
 func (a *App) persistEmailMessage(ctx context.Context, sink tabsync.Sink, account store.ExternalAccount, message *providerdata.EmailMessage, followUp bool) (emailPersistedMessage, error) {
 	if message == nil || strings.TrimSpace(message.ID) == "" {
 		return emailPersistedMessage{}, nil
 	}
+	senderActor, err := a.upsertMessageSenderActor(account, message)
+	if err != nil {
+		return emailPersistedMessage{}, err
+	}
 	title := emailMessageTitle(message)
-	metaJSON, err := emailArtifactMetaJSON(message)
+	metaJSON, err := emailArtifactMetaJSON(message, senderActor)
 	if err != nil {
 		return emailPersistedMessage{}, err
 	}
@@ -390,10 +419,15 @@ func (a *App) persistEmailMessage(ctx context.Context, sink tabsync.Sink, accoun
 	source := account.Provider
 	sourceRef := "message:" + strings.TrimSpace(message.ID)
 	artifactID := artifact.ID
+	var actorID *int64
+	if senderActor != nil {
+		actorID = &senderActor.ID
+	}
 	_, err = sink.UpsertItem(ctx, store.Item{
 		Title:      title,
 		State:      store.ItemStateInbox,
 		ArtifactID: &artifactID,
+		ActorID:    actorID,
 		Source:     &source,
 		SourceRef:  &sourceRef,
 	}, binding)

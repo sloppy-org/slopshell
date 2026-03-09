@@ -1,10 +1,18 @@
 package web
 
-import "net/http"
+import (
+	"net/http"
+
+	"github.com/krystophny/tabura/internal/store"
+)
 
 type actorCreateRequest struct {
-	Name string `json:"name"`
-	Kind string `json:"kind"`
+	Name        string  `json:"name"`
+	Kind        string  `json:"kind"`
+	Email       *string `json:"email"`
+	Provider    *string `json:"provider"`
+	ProviderRef *string `json:"provider_ref"`
+	MetaJSON    *string `json:"meta_json"`
 }
 
 func (a *App) handleActorList(w http.ResponseWriter, r *http.Request) {
@@ -30,7 +38,12 @@ func (a *App) handleActorCreate(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
-	actor, err := a.store.CreateActor(req.Name, req.Kind)
+	actor, err := a.store.CreateActorWithOptions(req.Name, req.Kind, store.ActorOptions{
+		Email:       req.Email,
+		Provider:    req.Provider,
+		ProviderRef: req.ProviderRef,
+		MetaJSON:    req.MetaJSON,
+	})
 	if err != nil {
 		writeDomainStoreError(w, err)
 		return

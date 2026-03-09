@@ -76,13 +76,17 @@ func (a *App) newSourceSyncRunner() sourceSyncRunner {
 	for _, provider := range []*accountSyncProvider{
 		{
 			name:        store.ExternalProviderGmail,
-			syncAccount: a.syncEmailAccount,
+			syncAccount: a.syncManagedEmailAccount,
 			onSynced:    a.handleSourceSyncCount,
 		},
 		{
 			name:        store.ExternalProviderIMAP,
 			syncAccount: a.syncEmailAccount,
 			onSynced:    a.handleSourceSyncCount,
+		},
+		{
+			name:        store.ExternalProviderExchange,
+			syncAccount: a.syncContactAccount,
 		},
 		{
 			name:        store.ExternalProviderTodoist,

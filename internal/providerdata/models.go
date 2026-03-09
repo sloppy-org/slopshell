@@ -53,3 +53,11 @@ type Event struct {
 	Attendees   []string
 	Recurring   bool
 }
+
+type Contact struct {
+	ProviderRef  string
+	Name         string
+	Email        string
+	Organization string
+	Phones       []string
+}
