@@ -348,6 +348,21 @@ func emailMessageContainerRef(message *providerdata.EmailMessage, mappings []sto
 	return &ref
 }
 
+func emailMessageBody(message *providerdata.EmailMessage) string {
+	if message == nil {
+		return ""
+	}
+	if message.BodyText != nil {
+		if body := strings.TrimSpace(*message.BodyText); body != "" {
+			return body
+		}
+	}
+	if snippet := strings.TrimSpace(message.Snippet); snippet != "" {
+		return snippet
+	}
+	return ""
+}
+
 func emailArtifactMetaJSON(message *providerdata.EmailMessage, senderActor *store.Actor) (string, error) {
 	payload := map[string]any{
 		"thread_id":  strings.TrimSpace(message.ThreadID),
@@ -362,6 +377,9 @@ func emailArtifactMetaJSON(message *providerdata.EmailMessage, senderActor *stor
 	}
 	if snippet := strings.TrimSpace(message.Snippet); snippet != "" {
 		payload["snippet"] = snippet
+	}
+	if body := emailMessageBody(message); body != "" {
+		payload["body"] = body
 	}
 	if senderActor != nil {
 		payload["sender_actor_id"] = senderActor.ID

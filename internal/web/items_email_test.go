@@ -596,6 +596,8 @@ func TestSyncEmailAccountCreatesThreadArtifactsAndLinksEmailItems(t *testing.T) 
 	if err != nil {
 		t.Fatalf("CreateExternalAccount() error: %v", err)
 	}
+	firstBody := "Please review the contract summary."
+	secondBody := "The archive copy is attached."
 
 	provider := &fakeEmailSyncProvider{
 		listFunc: func(opts email.SearchOptions) ([]string, error) {
@@ -619,6 +621,7 @@ func TestSyncEmailAccountCreatesThreadArtifactsAndLinksEmailItems(t *testing.T) 
 				Recipients: []string{"legal@example.com"},
 				Date:       time.Date(2026, time.March, 9, 10, 0, 0, 0, time.UTC),
 				Labels:     []string{"INBOX"},
+				BodyText:   &firstBody,
 			},
 			"gmail-2": {
 				ID:         "gmail-2",
@@ -629,6 +632,7 @@ func TestSyncEmailAccountCreatesThreadArtifactsAndLinksEmailItems(t *testing.T) 
 				Date:       time.Date(2026, time.March, 8, 9, 0, 0, 0, time.UTC),
 				Labels:     []string{"Archive"},
 				IsRead:     true,
+				BodyText:   &secondBody,
 			},
 		},
 	}
@@ -660,6 +664,17 @@ func TestSyncEmailAccountCreatesThreadArtifactsAndLinksEmailItems(t *testing.T) 
 	}
 	if got := strFromAny(threadMeta["subject"]); got != "Contract review" {
 		t.Fatalf("subject = %q, want Contract review", got)
+	}
+	messages, ok := threadMeta["messages"].([]any)
+	if !ok || len(messages) != 2 {
+		t.Fatalf("thread messages = %#v, want 2 entries", threadMeta["messages"])
+	}
+	firstMessage, ok := messages[0].(map[string]any)
+	if !ok {
+		t.Fatalf("thread first message = %#v", messages[0])
+	}
+	if got := strFromAny(firstMessage["body"]); got != "Please review the contract summary." {
+		t.Fatalf("thread first message body = %q, want contract summary", got)
 	}
 
 	item, err := app.store.GetItemBySource(store.ExternalProviderGmail, "message:gmail-1")
@@ -761,6 +776,82 @@ func TestSyncEmailAccountExtractsThreadActionItems(t *testing.T) {
 	}
 	if sendItem.ArtifactID == nil || meetingItem.ArtifactID == nil || *sendItem.ArtifactID != threads[0].ID || *meetingItem.ArtifactID != threads[0].ID {
 		t.Fatalf("action artifact ids = %v and %v, want thread artifact %d", sendItem.ArtifactID, meetingItem.ArtifactID, threads[0].ID)
+	}
+}
+
+func TestSyncEmailAccountOnlyCreatesInboxItemsForFollowUpMessages(t *testing.T) {
+	app := newAuthedTestApp(t)
+	account, err := app.store.CreateExternalAccount(store.SphereWork, store.ExternalProviderGmail, "Work Gmail", nil)
+	if err != nil {
+		t.Fatalf("CreateExternalAccount() error: %v", err)
+	}
+
+	staleSourceRef := "thread:thread-recent:action:schedule-the-status-review"
+	_, err = app.store.CreateItem("Schedule the status review", store.ItemOptions{
+		State:     store.ItemStateInbox,
+		Source:    stringPointer(store.ExternalProviderGmail),
+		SourceRef: &staleSourceRef,
+	})
+	if err != nil {
+		t.Fatalf("CreateItem(stale action) error: %v", err)
+	}
+
+	body := "Please schedule the status review."
+	provider := &fakeEmailSyncProvider{
+		listFunc: func(opts email.SearchOptions) ([]string, error) {
+			switch {
+			case opts.IsRead != nil && !*opts.IsRead:
+				return nil, nil
+			case opts.IsFlagged != nil && *opts.IsFlagged:
+				return nil, nil
+			case !opts.Since.IsZero():
+				return []string{"gmail-recent"}, nil
+			default:
+				return nil, nil
+			}
+		},
+		messages: map[string]*providerdata.EmailMessage{
+			"gmail-recent": {
+				ID:         "gmail-recent",
+				ThreadID:   "thread-recent",
+				Subject:    "Status review",
+				Sender:     "Ada <ada@example.com>",
+				Recipients: []string{"team@example.com"},
+				Date:       time.Date(2026, time.March, 9, 7, 30, 0, 0, time.UTC),
+				Labels:     []string{"Updates"},
+				BodyText:   &body,
+				IsRead:     true,
+			},
+		},
+	}
+	app.newEmailSyncProvider = func(context.Context, store.ExternalAccount) (emailSyncProvider, error) {
+		return provider, nil
+	}
+
+	if _, err := app.syncEmailAccount(context.Background(), account); err != nil {
+		t.Fatalf("syncEmailAccount() error: %v", err)
+	}
+
+	if _, err := app.store.GetItemBySource(store.ExternalProviderGmail, "message:gmail-recent"); err == nil {
+		t.Fatal("recent non-follow-up message created inbox item, want no item")
+	}
+	if _, err := app.store.GetItemBySource(store.ExternalProviderGmail, staleSourceRef); err == nil {
+		t.Fatal("stale inbox action item still exists after sync")
+	}
+
+	artifacts, err := app.store.ListArtifactsByKind(store.ArtifactKindEmail)
+	if err != nil {
+		t.Fatalf("ListArtifactsByKind(email) error: %v", err)
+	}
+	if len(artifacts) != 1 {
+		t.Fatalf("len(email artifacts) = %d, want 1", len(artifacts))
+	}
+	var emailMeta map[string]any
+	if err := json.Unmarshal([]byte(strFromPointer(artifacts[0].MetaJSON)), &emailMeta); err != nil {
+		t.Fatalf("Unmarshal(email meta) error: %v", err)
+	}
+	if got := strFromAny(emailMeta["body"]); got != body {
+		t.Fatalf("email body = %q, want %q", got, body)
 	}
 }
 

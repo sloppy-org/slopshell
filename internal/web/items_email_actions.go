@@ -16,6 +16,11 @@ type extractedEmailAction struct {
 	FollowUpAt *string
 }
 
+type emailActionTarget struct {
+	ArtifactID int64
+	Action     extractedEmailAction
+}
+
 var (
 	emailActionDatePhrasePattern = regexp.MustCompile(`(?i)\b(?:by|before|due|deadline:?|no later than)\s+([A-Za-z]{3,9}\s+\d{1,2}(?:,\s*\d{4})?|\d{4}-\d{2}-\d{2}|tomorrow)\b`)
 	emailActionSentenceRequest   = regexp.MustCompile(`(?i)\b(?:please|kindly|can you|could you|would you|need you to|i need you to|we need to|let's|let us|can we|could we|would we)\s+(.+)$`)
@@ -27,12 +32,31 @@ func (a *App) persistEmailActionItems(account store.ExternalAccount, threads []e
 	if a != nil && a.calendarNow != nil {
 		now = a.calendarNow().UTC()
 	}
+	desired := make(map[string]emailActionTarget)
 	for _, thread := range threads {
+		if !thread.HasFollowUp {
+			continue
+		}
 		actions := extractEmailThreadActions(now, thread)
 		for _, action := range actions {
-			if err := a.upsertEmailActionItem(account, thread.Artifact.ID, action); err != nil {
-				return err
+			desired[action.SourceRef] = emailActionTarget{
+				ArtifactID: thread.Artifact.ID,
+				Action:     action,
 			}
+		}
+	}
+	if err := a.deleteStaleEmailActionInboxItems(account.Provider, desired); err != nil {
+		return err
+	}
+	sourceRefs := make([]string, 0, len(desired))
+	for sourceRef := range desired {
+		sourceRefs = append(sourceRefs, sourceRef)
+	}
+	sort.Strings(sourceRefs)
+	for _, sourceRef := range sourceRefs {
+		target := desired[sourceRef]
+		if err := a.upsertEmailActionItem(account, target.ArtifactID, target.Action); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -130,6 +154,11 @@ func emailActionSourceRef(threadID, title string) string {
 	return "thread:" + strings.TrimSpace(threadID) + ":action:" + slugifyEmailActionTitle(title)
 }
 
+func isEmailActionSourceRef(sourceRef string) bool {
+	ref := strings.TrimSpace(sourceRef)
+	return strings.HasPrefix(ref, "thread:") && strings.Contains(ref, ":action:")
+}
+
 func slugifyEmailActionTitle(title string) string {
 	var b strings.Builder
 	lastDash := false
@@ -197,6 +226,26 @@ func parseEmailFollowUpDate(base time.Time, value string) (time.Time, bool) {
 		return time.Date(year, parsed.Month(), parsed.Day(), 9, 0, 0, 0, time.UTC), true
 	}
 	return time.Time{}, false
+}
+
+func (a *App) deleteStaleEmailActionInboxItems(provider string, desired map[string]emailActionTarget) error {
+	items, err := a.store.ListItemsByStateFiltered(store.ItemStateInbox, store.ItemListFilter{Source: provider})
+	if err != nil {
+		return err
+	}
+	for _, item := range items {
+		sourceRef := strings.TrimSpace(strFromPointer(item.SourceRef))
+		if !isEmailActionSourceRef(sourceRef) {
+			continue
+		}
+		if _, ok := desired[sourceRef]; ok {
+			continue
+		}
+		if err := a.store.DeleteItem(item.ID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (a *App) upsertEmailActionItem(account store.ExternalAccount, artifactID int64, action extractedEmailAction) error {

@@ -494,7 +494,35 @@
         kind: 'email',
         title: 'Re: triage follow-up',
         meta_json: JSON.stringify({
+          subject: 'Re: triage follow-up',
+          sender: 'Ada <ada@example.com>',
+          recipients: ['team@example.com'],
+          date: '2026-03-08T10:06:00Z',
           body: 'Need a response before tomorrow morning. Confirm whether the review packet is ready.',
+        }),
+      },
+      505: {
+        id: 505,
+        kind: 'email_thread',
+        title: 'Urgent follow-up',
+        meta_json: JSON.stringify({
+          subject: 'Urgent follow-up',
+          message_count: 2,
+          participants: ['Ada <ada@example.com>', 'Bob <bob@example.com>'],
+          messages: [
+            {
+              sender: 'Ada <ada@example.com>',
+              recipients: ['Bob <bob@example.com>'],
+              date: '2026-03-08T10:04:00Z',
+              body: 'Need a response before tomorrow morning.',
+            },
+            {
+              sender: 'Bob <bob@example.com>',
+              recipients: ['Ada <ada@example.com>'],
+              date: '2026-03-08T10:05:00Z',
+              body: 'I can confirm the review packet is ready.',
+            },
+          ],
         }),
       },
       503: {

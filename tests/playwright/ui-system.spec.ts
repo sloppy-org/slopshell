@@ -646,6 +646,34 @@ test.describe('floating tool palette', () => {
     }).toBe('annotate');
   });
 
+  test('email thread artifacts opened from the sidebar render thread text on annotate surface', async ({ page }) => {
+    await page.evaluate(() => {
+      (window as any).__setItemSidebarData({
+        inbox: [{
+          id: 903,
+          title: 'Answer urgent follow-up',
+          state: 'inbox',
+          artifact_id: 505,
+          artifact_kind: 'email_thread',
+          artifact_title: 'Urgent follow-up',
+          updated_at: '2026-03-08 10:07:00',
+        }],
+      });
+    });
+
+    await page.locator('#edge-left-tap').click();
+    await page.locator('.sidebar-tab', { hasText: 'Inbox' }).click();
+    await page.locator('#pr-file-list .pr-file-item').first().click();
+
+    await expect(page.locator('#canvas-text')).toContainText('Need a response before tomorrow morning.');
+    await expect(page.locator('#canvas-text')).toContainText('I can confirm the review packet is ready.');
+    await expect(page.locator('#canvas-text')).not.toContainText('- Kind:');
+    await expect(page.locator('#tool-palette')).toBeVisible();
+    await expect.poll(async () => {
+      return page.evaluate(() => (window as any)._taburaApp?.getState?.().interaction.surface);
+    }).toBe('annotate');
+  });
+
   test('text artifacts default to editor mode and can switch back to annotate', async ({ page }) => {
     await injectCanvasEvent(page, {
       kind: 'text_artifact',

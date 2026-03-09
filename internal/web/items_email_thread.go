@@ -22,9 +22,10 @@ type emailPersistedMessage struct {
 }
 
 type emailThreadRecord struct {
-	ThreadID string
-	Artifact store.Artifact
-	Messages []emailPersistedMessage
+	ThreadID    string
+	Artifact    store.Artifact
+	Messages    []emailPersistedMessage
+	HasFollowUp bool
 }
 
 func emailThreadIDForMessage(message *providerdata.EmailMessage) string {
@@ -156,11 +157,36 @@ func emailThreadContainerRef(messages []emailPersistedMessage, mappings []store.
 }
 
 func emailThreadMetaJSON(threadID string, messages []emailPersistedMessage) (string, error) {
+	messagePayload := make([]map[string]any, 0, len(messages))
+	for _, persisted := range sortEmailMessagesByDate(messages) {
+		if persisted.Message == nil {
+			continue
+		}
+		record := map[string]any{
+			"id":         strings.TrimSpace(persisted.Message.ID),
+			"subject":    strings.TrimSpace(persisted.Message.Subject),
+			"sender":     strings.TrimSpace(persisted.Message.Sender),
+			"recipients": append([]string(nil), persisted.Message.Recipients...),
+			"labels":     append([]string(nil), persisted.Message.Labels...),
+			"is_read":    persisted.Message.IsRead,
+		}
+		if !persisted.Message.Date.IsZero() {
+			record["date"] = persisted.Message.Date.UTC().Format(time.RFC3339)
+		}
+		if snippet := strings.TrimSpace(persisted.Message.Snippet); snippet != "" {
+			record["snippet"] = snippet
+		}
+		if body := emailMessageBody(persisted.Message); body != "" {
+			record["body"] = body
+		}
+		messagePayload = append(messagePayload, record)
+	}
 	payload := map[string]any{
 		"thread_id":     strings.TrimSpace(threadID),
 		"message_count": len(messages),
 		"participants":  emailThreadParticipants(messages),
 		"subject":       emailThreadTitle(messages),
+		"messages":      messagePayload,
 	}
 	raw, err := json.Marshal(payload)
 	if err != nil {
@@ -219,10 +245,18 @@ func (a *App) persistEmailThreads(ctx context.Context, sink tabsync.Sink, accoun
 				return nil, err
 			}
 		}
+		hasFollowUp := false
+		for _, persisted := range group {
+			if persisted.FollowUpItem {
+				hasFollowUp = true
+				break
+			}
+		}
 		out = append(out, emailThreadRecord{
-			ThreadID: threadID,
-			Artifact: artifact,
-			Messages: sortEmailMessagesByDate(group),
+			ThreadID:    threadID,
+			Artifact:    artifact,
+			Messages:    sortEmailMessagesByDate(group),
+			HasFollowUp: hasFollowUp,
 		})
 	}
 	return out, nil
