@@ -20,7 +20,7 @@
   position: absolute;
   right: calc(0.75rem + var(--safe-area-right));
   bottom: calc(0.75rem + var(--safe-area-bottom));
-  z-index: 390;
+  z-index: 398;
   display: flex;
   gap: 0.65rem;
   padding: 0.65rem 0.75rem;

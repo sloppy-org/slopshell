@@ -678,30 +678,6 @@ export function bindUi() {
     if (state.artifactEditMode) return;
     if (handleItemSidebarKeyboardShortcut(ev)) return;
 
-    const toolByKey = {
-      '1': 'pointer',
-      '2': 'highlight',
-      '3': 'ink',
-      '4': 'text_note',
-      '5': 'prompt',
-      p: 'pointer',
-      P: 'pointer',
-      h: 'highlight',
-      H: 'highlight',
-      i: 'ink',
-      I: 'ink',
-      t: 'text_note',
-      T: 'text_note',
-      q: 'prompt',
-      Q: 'prompt',
-    };
-    const shortcutTool = toolByKey[ev.key];
-    if (shortcutTool) {
-      ev.preventDefault();
-      void selectInteractionTool(shortcutTool);
-      return;
-    }
-
     if (ev.key === 'ArrowRight') {
       if (stepCanvasFile(1)) {
         ev.preventDefault();
@@ -728,9 +704,8 @@ export function bindUi() {
       }
     }
 
-    // Auto-activate text input on printable key
+    // Route printable keys into an active composer before treating them as tool shortcuts.
     if (ev.key.length === 1 && !isTextInputVisible()) {
-      // Route to chat pane input when chat pane is open (desktop only)
       const edgeR = document.getElementById('edge-right');
       const cpInput = document.getElementById('chat-pane-input');
       const chatPaneOpen = edgeR && (edgeR.classList.contains('edge-active') || edgeR.classList.contains('edge-pinned'));
@@ -744,14 +719,37 @@ export function bindUi() {
         ev.preventDefault();
         return;
       }
-      if (!prefersTextComposer()) {
+      if (prefersTextComposer()) {
+        const cx = window.innerWidth / 2 - 130;
+        const cy = window.innerHeight / 2;
+        cancelLiveSessionListen();
+        openComposerAt(cx, cy, null, ev.key);
+        ev.preventDefault();
         return;
       }
-      const cx = window.innerWidth / 2 - 130;
-      const cy = window.innerHeight / 2;
-      cancelLiveSessionListen();
-      openComposerAt(cx, cy, null, ev.key);
+    }
+
+    const toolByKey = {
+      '1': 'pointer',
+      '2': 'highlight',
+      '3': 'ink',
+      '4': 'text_note',
+      '5': 'prompt',
+      p: 'pointer',
+      P: 'pointer',
+      h: 'highlight',
+      H: 'highlight',
+      i: 'ink',
+      I: 'ink',
+      t: 'text_note',
+      T: 'text_note',
+      q: 'prompt',
+      Q: 'prompt',
+    };
+    const shortcutTool = toolByKey[ev.key];
+    if (shortcutTool) {
       ev.preventDefault();
+      void selectInteractionTool(shortcutTool);
       return;
     }
 
