@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './live';
 import { SERVER_URL, authenticate, authFetch } from './helpers';
 
 test.describe('app load smoke test', () => {

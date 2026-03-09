@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './live';
 import { authenticate } from './helpers';
 
 test.describe('full browser voice flow', () => {

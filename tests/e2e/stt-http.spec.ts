@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './live';
 import { authenticate, synthesizePiperWav, transcodeWavToM4A, postSTTTranscribeAPI, buildWavSilence } from './helpers';
 
 test.describe('STT over HTTP', () => {
