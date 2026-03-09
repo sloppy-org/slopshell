@@ -1,7 +1,7 @@
 import { expect, test } from './live';
 import { authenticate, synthesizePiperWav, transcodeWavToM4A, postSTTTranscribeAPI, buildWavSilence } from './helpers';
 
-test.describe('STT over HTTP', () => {
+test.describe('STT over HTTP @local-only', () => {
   let sessionToken: string;
 
   test.beforeAll(async () => {

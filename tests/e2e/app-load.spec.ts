@@ -1,4 +1,4 @@
-import { expect, test } from './live';
+import { applySessionCookie, expect, test } from './live';
 import { SERVER_URL, authenticate, authFetch } from './helpers';
 
 test.describe('app load smoke test', () => {
@@ -11,16 +11,7 @@ test.describe('app load smoke test', () => {
   test('page loads without console errors', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (err) => errors.push(err.message));
-
-    const headers: Record<string, string> = {};
-    if (sessionToken) {
-      await page.context().addCookies([{
-        name: 'tabura_session',
-        value: sessionToken,
-        domain: '127.0.0.1',
-        path: '/',
-      }]);
-    }
+    await applySessionCookie(page, sessionToken);
 
     await page.goto('/');
     await page.waitForLoadState('networkidle');
@@ -29,14 +20,7 @@ test.describe('app load smoke test', () => {
   });
 
   test('key DOM elements exist', async ({ page }) => {
-    if (sessionToken) {
-      await page.context().addCookies([{
-        name: 'tabura_session',
-        value: sessionToken,
-        domain: '127.0.0.1',
-        path: '/',
-      }]);
-    }
+    await applySessionCookie(page, sessionToken);
 
     await page.goto('/');
     await page.waitForLoadState('networkidle');

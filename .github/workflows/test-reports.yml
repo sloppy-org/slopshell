@@ -26,11 +26,19 @@ jobs:
       - name: Install Node deps
         run: npm ci
 
+      - name: Install Playwright browser deps
+        run: npx playwright install --with-deps chromium
+
       - name: Verify generated surface files
         run: ./scripts/sync-surface.sh --check
 
       - name: Verify chat prompt contract
         run: ./scripts/check-chat-prompt-contract.sh
+
+      - name: Run CI-safe E2E
+        env:
+          PLAYWRIGHT_GREP_INVERT: "@local-only"
+        run: npm run test:e2e:ci
 
       - name: Generate coverage + E2E reports
         env:

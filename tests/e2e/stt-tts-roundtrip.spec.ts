@@ -1,7 +1,7 @@
 import { expect, test } from './live';
 import { WS_URL, authenticate, getChatSessionId, openRawWS } from './helpers';
 
-test.describe('STT+TTS round-trip', () => {
+test.describe('STT+TTS round-trip @local-only', () => {
   let sessionToken: string;
   let chatSessionId: string;
 

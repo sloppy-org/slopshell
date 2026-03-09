@@ -1,5 +1,6 @@
 import base, { expect, type Page, type TestInfo } from '@playwright/test';
 import { mkdir, writeFile } from 'fs/promises';
+import { SERVER_URL } from './helpers';
 
 type PlaytestMeta = {
   tested?: string;
@@ -130,8 +131,7 @@ export async function applySessionCookie(page: Page, sessionToken: string) {
   await page.context().addCookies([{
     name: 'tabura_session',
     value: sessionToken,
-    domain: '127.0.0.1',
-    path: '/',
+    url: SERVER_URL,
   }]);
 }
 

@@ -11,7 +11,7 @@ import {
   postSTTTranscribeAPI,
 } from './helpers';
 
-test.describe('STT/TTS system tests', () => {
+test.describe('STT/TTS system tests @local-only', () => {
   let sessionToken: string;
   let chatSessionId: string;
 

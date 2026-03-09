@@ -541,7 +541,7 @@ func securityHeaders(next http.Handler) http.Handler {
 				"img-src 'self' data:; "+
 				"connect-src 'self' ws: wss: https://cdn.jsdelivr.net; "+
 				"frame-ancestors 'none'; "+
-				"base-uri 'none'; "+
+				"base-uri 'self'; "+
 				"form-action 'self'")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")

@@ -72,6 +72,10 @@ func TestServeIndexUsesForwardedPrefixBaseHref(t *testing.T) {
 	if body := rr.Body.String(); !strings.Contains(body, `<base href="/tabura/">`) {
 		t.Fatalf("GET / body missing forwarded-prefix base href, body=%q", body)
 	}
+	csp := rr.Header().Get("Content-Security-Policy")
+	if !strings.Contains(csp, "base-uri 'self'") {
+		t.Fatalf("GET / csp missing base-uri 'self': %q", csp)
+	}
 }
 
 func TestServeCanvasRedirectIsRelative(t *testing.T) {

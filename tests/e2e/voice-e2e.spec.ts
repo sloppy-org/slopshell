@@ -1,7 +1,7 @@
-import { expect, test } from './live';
+import { applySessionCookie, expect, test } from './live';
 import { authenticate } from './helpers';
 
-test.describe('full browser voice flow', () => {
+test.describe('full browser voice flow @local-only', () => {
   let sessionToken: string;
 
   test.beforeAll(async () => {
@@ -9,14 +9,7 @@ test.describe('full browser voice flow', () => {
   });
 
   test('mic click -> real VAD -> real STT -> transcript in chat', async ({ page }) => {
-    if (sessionToken) {
-      await page.context().addCookies([{
-        name: 'tabura_session',
-        value: sessionToken,
-        domain: '127.0.0.1',
-        path: '/',
-      }]);
-    }
+    await applySessionCookie(page, sessionToken);
 
     await page.goto('/');
     await page.waitForLoadState('networkidle');

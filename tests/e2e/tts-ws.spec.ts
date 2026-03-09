@@ -1,7 +1,7 @@
 import { expect, test } from './live';
 import { WS_URL, authenticate, getChatSessionId, openRawWS } from './helpers';
 
-test.describe('TTS over WebSocket', () => {
+test.describe('TTS over WebSocket @local-only', () => {
   let sessionToken: string;
   let chatSessionId: string;
 

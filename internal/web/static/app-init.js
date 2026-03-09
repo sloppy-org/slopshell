@@ -913,7 +913,8 @@ export async function authGate() {
           loginError.textContent = msg || `Error ${r.status}`;
           return;
         }
-        resolve();
+        loginPassword.value = '';
+        window.location.replace(window.location.href);
       } catch (err) {
         loginError.textContent = String(err?.message || err);
       } finally {

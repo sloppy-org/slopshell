@@ -102,3 +102,20 @@ func TestHandleLoginFormRedirectsAndSetsCookie(t *testing.T) {
 		t.Fatal("auth session was not stored for form login")
 	}
 }
+
+func TestServeIndexLoginFormIncludesPasswordFieldName(t *testing.T) {
+	app := newPasswordTestApp(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rr := httptest.NewRecorder()
+
+	app.Router().ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("GET / status = %d, want 200", rr.Code)
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, `id="login-password" name="password"`) {
+		t.Fatalf("GET / body did not include named login password field: %q", body)
+	}
+}

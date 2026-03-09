@@ -4,6 +4,7 @@
   "scripts": {
     "test:e2e": "./scripts/playwright.sh",
     "test:e2e:headed": "./scripts/playwright.sh --headed",
+    "test:e2e:ci": "npx playwright test --config=playwright.e2e.ci.config.ts",
     "test:e2e:local": "./scripts/e2e-local.sh",
     "test:playtest": "./scripts/playtest.sh",
     "test:reports": "./scripts/test-reports.sh"

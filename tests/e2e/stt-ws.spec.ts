@@ -9,7 +9,7 @@ import {
   synthesizePiperWav,
 } from './helpers';
 
-test.describe('STT over WebSocket', () => {
+test.describe('STT over WebSocket @local-only', () => {
   let sessionToken: string;
   let chatSessionId: string;
 
