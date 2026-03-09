@@ -43,6 +43,7 @@ type Item struct {
 	Key          string    `json:"key"`
 	ItemType     string    `json:"item_type"`
 	Title        string    `json:"title,omitempty"`
+	Journal      string    `json:"journal,omitempty"`
 	DOI          string    `json:"doi,omitempty"`
 	ISBN         string    `json:"isbn,omitempty"`
 	Abstract     string    `json:"abstract,omitempty"`

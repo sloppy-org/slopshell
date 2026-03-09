@@ -18,6 +18,8 @@ const (
 	ArtifactKindGitHubPR     ArtifactKind = "github_pr"
 	ArtifactKindExternalTask ArtifactKind = "external_task"
 	ArtifactKindExternalNote ArtifactKind = "external_note"
+	ArtifactKindReference    ArtifactKind = "reference"
+	ArtifactKindAnnotation   ArtifactKind = "annotation"
 	ArtifactKindTranscript   ArtifactKind = "transcript"
 	ArtifactKindPlanNote     ArtifactKind = "plan_note"
 	ArtifactKindIdeaNote     ArtifactKind = "idea_note"

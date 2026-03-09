@@ -81,6 +81,9 @@ func TestReaderListsLocalLibraryObjectsAndCitationKeys(t *testing.T) {
 	if items[0].Key != "ITEM-1" || items[0].CitationKey != "lovelace2026" {
 		t.Fatalf("items[0] = %#v", items[0])
 	}
+	if items[0].Journal != "Journal of Tests" {
+		t.Fatalf("items[0].Journal = %q, want Journal of Tests", items[0].Journal)
+	}
 	if len(items[0].Creators) != 1 || items[0].Creators[0].LastName != "Lovelace" {
 		t.Fatalf("items[0].Creators = %#v", items[0].Creators)
 	}
@@ -97,6 +100,9 @@ func TestReaderListsLocalLibraryObjectsAndCitationKeys(t *testing.T) {
 	}
 	if len(attachments) != 1 || attachments[0].Key != "ATT-1" || attachments[0].ParentKey != "ITEM-1" {
 		t.Fatalf("attachments = %#v", attachments)
+	}
+	if got := reader.AttachmentFileURL(attachments[0]); got != "file://"+filepath.ToSlash(filepath.Join(root, "storage", "ATT-1", "paper.pdf")) {
+		t.Fatalf("AttachmentFileURL() = %q", got)
 	}
 
 	annotations, err := reader.ListAnnotations(ctx, "ATT-1")
@@ -157,6 +163,34 @@ func TestResolveCitationKeysFromBib(t *testing.T) {
 	}
 }
 
+func TestResolveCitationTextSupportsLaTeXAndPandoc(t *testing.T) {
+	root := t.TempDir()
+	dbPath := filepath.Join(root, "zotero.sqlite")
+	buildTestLibrary(t, dbPath)
+	exportPath := filepath.Join(root, "library.json")
+	exportJSON := `{"items":[{"itemKey":"ITEM-1","citationKey":"lovelace2026","DOI":"10.1000/example","title":"Pragmatic Testing"}]}`
+	if err := os.WriteFile(exportPath, []byte(exportJSON), 0o644); err != nil {
+		t.Fatalf("WriteFile(library.json): %v", err)
+	}
+
+	reader, err := OpenReader(dbPath)
+	if err != nil {
+		t.Fatalf("OpenReader() error: %v", err)
+	}
+	t.Cleanup(func() { _ = reader.Close() })
+
+	items, err := reader.ResolveCitationText(context.Background(), `See \cite{lovelace2026} and [@lovelace2026].`)
+	if err != nil {
+		t.Fatalf("ResolveCitationText() error: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("ResolveCitationText() len = %d, want 1", len(items))
+	}
+	if items[0].Key != "ITEM-1" || items[0].CitationKey != "lovelace2026" {
+		t.Fatalf("ResolveCitationText() item = %#v", items[0])
+	}
+}
+
 func buildTestLibrary(t *testing.T, dbPath string) {
 	t.Helper()
 	db, err := sql.Open("sqlite", "file:"+filepath.ToSlash(dbPath))
@@ -184,9 +218,9 @@ func buildTestLibrary(t *testing.T, dbPath string) {
 		`CREATE TABLE itemAnnotations (itemID INTEGER PRIMARY KEY, parentItemID INTEGER, type TEXT NOT NULL DEFAULT '', authorName TEXT NOT NULL DEFAULT '', text TEXT NOT NULL DEFAULT '', comment TEXT NOT NULL DEFAULT '', color TEXT NOT NULL DEFAULT '', pageLabel TEXT NOT NULL DEFAULT '', sortIndex TEXT NOT NULL DEFAULT '', position TEXT NOT NULL DEFAULT '');`,
 		`INSERT INTO itemTypes (itemTypeID, typeName) VALUES (1, 'journalArticle'), (2, 'attachment'), (3, 'annotation');`,
 		`INSERT INTO items (itemID, itemTypeID, key, dateAdded, dateModified) VALUES (1, 1, 'ITEM-1', '2026-03-08', '2026-03-09'), (2, 2, 'ATT-1', '2026-03-08', '2026-03-09'), (3, 3, 'ANN-1', '2026-03-08', '2026-03-09');`,
-		`INSERT INTO fields (fieldID, fieldName) VALUES (1, 'title'), (2, 'DOI'), (3, 'abstractNote'), (4, 'date');`,
-		`INSERT INTO itemDataValues (valueID, value) VALUES (1, 'Pragmatic Testing'), (2, '10.1000/example'), (3, 'Short abstract.'), (4, '2026'), (5, 'Paper PDF');`,
-		`INSERT INTO itemData (itemID, fieldID, valueID) VALUES (1, 1, 1), (1, 2, 2), (1, 3, 3), (1, 4, 4), (2, 1, 5);`,
+		`INSERT INTO fields (fieldID, fieldName) VALUES (1, 'title'), (2, 'DOI'), (3, 'abstractNote'), (4, 'date'), (5, 'publicationTitle');`,
+		`INSERT INTO itemDataValues (valueID, value) VALUES (1, 'Pragmatic Testing'), (2, '10.1000/example'), (3, 'Short abstract.'), (4, '2026'), (5, 'Paper PDF'), (6, 'Journal of Tests');`,
+		`INSERT INTO itemData (itemID, fieldID, valueID) VALUES (1, 1, 1), (1, 2, 2), (1, 3, 3), (1, 4, 4), (1, 5, 6), (2, 1, 5);`,
 		`INSERT INTO creatorTypes (creatorTypeID, creatorType) VALUES (1, 'author');`,
 		`INSERT INTO creatorData (creatorDataID, firstName, lastName, name) VALUES (1, 'Ada', 'Lovelace', '');`,
 		`INSERT INTO creators (creatorID, creatorDataID) VALUES (1, 1);`,
@@ -202,5 +236,12 @@ func buildTestLibrary(t *testing.T, dbPath string) {
 		if _, err := db.Exec(stmt); err != nil {
 			t.Fatalf("db.Exec(%q): %v", stmt, err)
 		}
+	}
+	storagePath := filepath.Join(filepath.Dir(dbPath), "storage", "ATT-1")
+	if err := os.MkdirAll(storagePath, 0o755); err != nil {
+		t.Fatalf("MkdirAll(storage): %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(storagePath, "paper.pdf"), []byte("%PDF-1.7"), 0o644); err != nil {
+		t.Fatalf("WriteFile(paper.pdf): %v", err)
 	}
 }

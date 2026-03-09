@@ -10,6 +10,8 @@ func normalizeExternalContainerType(raw string) string {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "project":
 		return "project"
+	case "collection":
+		return "collection"
 	case "notebook":
 		return "notebook"
 	case "tag":

@@ -324,6 +324,8 @@ func (a *App) executeSystemAction(sessionID string, session store.ChatSession, a
 		return a.executeEvernoteAction(session, action)
 	case "sync_bear", "promote_bear_checklist":
 		return a.executeBearAction(session, action)
+	case "sync_zotero":
+		return a.executeZoteroAction(action)
 	case "create_github_issue", "create_github_issue_split":
 		return a.createGitHubIssueFromConversation(sessionID, session, action)
 	case "shell":

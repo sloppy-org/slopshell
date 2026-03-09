@@ -31,7 +31,7 @@ const (
 )
 
 const intentLLMSystemPrompt = `You are Tabura's local router. Output JSON only.
-Allowed actions: switch_project, switch_workspace, list_workspace_items, list_workspaces, create_workspace, create_workspace_from_git, rename_workspace, delete_workspace, show_workspace_details, link_workspace_artifact, list_linked_artifacts, switch_model, toggle_silent, toggle_live_dialogue, cancel_work, show_status, shell, open_file_canvas, make_item, delegate_item, snooze_item, split_items, reassign_workspace, reassign_project, clear_workspace, clear_project, capture_idea, refine_idea_note, promote_idea, apply_idea_promotion, create_github_issue, create_github_issue_split, print_item, review_someday, triage_someday, promote_someday, toggle_someday_review_nudge, show_filtered_items, map_todoist_project, sync_todoist, create_todoist_task, sync_evernote, sync_bear, promote_bear_checklist, chat.
+Allowed actions: switch_project, switch_workspace, list_workspace_items, list_workspaces, create_workspace, create_workspace_from_git, rename_workspace, delete_workspace, show_workspace_details, link_workspace_artifact, list_linked_artifacts, switch_model, toggle_silent, toggle_live_dialogue, cancel_work, show_status, shell, open_file_canvas, make_item, delegate_item, snooze_item, split_items, reassign_workspace, reassign_project, clear_workspace, clear_project, capture_idea, refine_idea_note, promote_idea, apply_idea_promotion, create_github_issue, create_github_issue_split, print_item, review_someday, triage_someday, promote_someday, toggle_someday_review_nudge, show_filtered_items, map_todoist_project, sync_todoist, create_todoist_task, sync_evernote, sync_bear, promote_bear_checklist, sync_zotero, chat.
 Use {"action":"chat"} unless user clearly requests a system action.
 For current-information requests (weather, web search, news, prices, schedules, latest/current updates), use {"action":"chat"} and MUST NOT use shell.
 For shell-like requests use {"action":"shell","command":"..."}.
@@ -318,7 +318,7 @@ func normalizeSystemActionName(raw string) string {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "toggle_conversation":
 		return "toggle_live_dialogue"
-	case "switch_project", "switch_workspace", "list_workspace_items", "list_workspaces", "create_workspace", "create_workspace_from_git", "rename_workspace", "delete_workspace", "show_workspace_details", "link_workspace_artifact", "list_linked_artifacts", "switch_model", "toggle_silent", "toggle_live_dialogue", "cancel_work", "show_status", "shell", "open_file_canvas", "make_item", "delegate_item", "snooze_item", "split_items", "reassign_workspace", "reassign_project", "clear_workspace", "clear_project", "capture_idea", "refine_idea_note", "promote_idea", "apply_idea_promotion", "create_github_issue", "create_github_issue_split", "print_item", "review_someday", "triage_someday", "promote_someday", "toggle_someday_review_nudge", "show_filtered_items", "map_todoist_project", "sync_todoist", "create_todoist_task", "sync_evernote", "sync_bear", "promote_bear_checklist":
+	case "switch_project", "switch_workspace", "list_workspace_items", "list_workspaces", "create_workspace", "create_workspace_from_git", "rename_workspace", "delete_workspace", "show_workspace_details", "link_workspace_artifact", "list_linked_artifacts", "switch_model", "toggle_silent", "toggle_live_dialogue", "cancel_work", "show_status", "shell", "open_file_canvas", "make_item", "delegate_item", "snooze_item", "split_items", "reassign_workspace", "reassign_project", "clear_workspace", "clear_project", "capture_idea", "refine_idea_note", "promote_idea", "apply_idea_promotion", "create_github_issue", "create_github_issue_split", "print_item", "review_someday", "triage_someday", "promote_someday", "toggle_someday_review_nudge", "show_filtered_items", "map_todoist_project", "sync_todoist", "create_todoist_task", "sync_evernote", "sync_bear", "promote_bear_checklist", "sync_zotero":
 		return strings.ToLower(strings.TrimSpace(raw))
 	default:
 		return ""
@@ -781,6 +781,17 @@ func (a *App) classifyAndExecuteSystemAction(ctx context.Context, sessionID stri
 		message, payloads, err := a.executeSystemActionPlan(sessionID, session, trimmedText, enforced)
 		if err != nil {
 			return bearActionFailurePrefix(inlineBearAction.Action) + err.Error(), nil, true
+		}
+		return message, payloads, true
+	}
+	if inlineZoteroAction := parseInlineZoteroIntent(trimmedText); inlineZoteroAction != nil {
+		enforced := enforceRoutingPolicy(trimmedText, []*SystemAction{inlineZoteroAction})
+		if len(enforced) == 0 {
+			return "", nil, false
+		}
+		message, payloads, err := a.executeSystemActionPlan(sessionID, session, trimmedText, enforced)
+		if err != nil {
+			return zoteroActionFailurePrefix(inlineZoteroAction.Action) + err.Error(), nil, true
 		}
 		return message, payloads, true
 	}
