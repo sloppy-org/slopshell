@@ -5,10 +5,74 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 fail() { printf 'FATAL: %s\n' "$1" >&2; exit 1; }
 
+wait_for_command() {
+  local description="$1"
+  local attempts="$2"
+  shift 2
+  local try
+  for ((try = 1; try <= attempts; try++)); do
+    if "$@" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  fail "$description"
+}
+
+latest_workspace_epoch() {
+  local -a paths=(
+    "$ROOT_DIR/cmd"
+    "$ROOT_DIR/internal"
+    "$ROOT_DIR/scripts"
+    "$ROOT_DIR/tests"
+    "$ROOT_DIR/go.mod"
+    "$ROOT_DIR/go.sum"
+    "$ROOT_DIR/package.json"
+    "$ROOT_DIR/package-lock.json"
+    "$ROOT_DIR/playwright.config.ts"
+    "$ROOT_DIR/playwright.playtest.config.ts"
+  )
+  local latest=0
+  local path
+  for path in "${paths[@]}"; do
+    [[ -e "$path" ]] || continue
+    while IFS= read -r mtime; do
+      [[ -n "$mtime" ]] || continue
+      if awk "BEGIN { exit !($mtime > $latest) }"; then
+        latest="$mtime"
+      fi
+    done < <(find "$path" -type f -printf '%T@\n' 2>/dev/null)
+  done
+  printf '%s\n' "${latest%%.*}"
+}
+
+maybe_sync_live_runtime() {
+  if ! systemctl --user is-active --quiet tabura-web.service; then
+    return
+  fi
+  local started_at started_epoch latest_epoch
+  started_at="$(systemctl --user show tabura-web.service --property=ExecMainStartTimestamp --value)"
+  started_epoch="$(date -d "$started_at" +%s 2>/dev/null || printf '0')"
+  latest_epoch="$(latest_workspace_epoch)"
+  if (( latest_epoch <= started_epoch )); then
+    return
+  fi
+  printf 'Syncing live runtime to current workspace...\n'
+  "$ROOT_DIR/scripts/tabura-dev-restart.sh"
+  wait_for_command \
+    'Tabura web server did not come back on :8420 after restart' \
+    30 \
+    curl -fsS --max-time 3 http://127.0.0.1:8420/api/setup
+}
+
+maybe_sync_live_runtime
+
 printf 'Checking live services...\n'
 
-curl -fsS --max-time 3 http://127.0.0.1:8420/api/setup >/dev/null \
-  || fail 'Tabura web server not running on :8420'
+wait_for_command \
+  'Tabura web server not running on :8420' \
+  5 \
+  curl -fsS --max-time 3 http://127.0.0.1:8420/api/setup
 
 curl -fsS --max-time 3 -o /dev/null -w '' \
   -X POST http://127.0.0.1:8424/v1/audio/speech \
