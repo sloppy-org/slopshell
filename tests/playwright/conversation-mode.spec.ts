@@ -263,7 +263,7 @@ test('conversation listen timeout hides listening indicator', async ({ page }) =
   }), { timeout: 4_000 }).toBe(false);
 });
 
-test('tap during conversation listen cancels listen and starts recording', async ({ page }) => {
+test('tap during conversation listen pins a cursor instead of starting recording', async ({ page }) => {
   await setConversationListenWindowMs(page, 3_000);
   await setConversationMode(page, true);
   await page.evaluate(() => {
@@ -279,17 +279,19 @@ test('tap during conversation listen cancels listen and starts recording', async
   })).toBe(true);
 
   await page.mouse.click(420, 360);
+  await page.waitForTimeout(150);
 
-  await expect.poll(async () => {
-    const log = await getLog(page);
-    return log.some((entry) => entry.type === 'recorder' && entry.action === 'start');
-  }, { timeout: 3_000 }).toBe(true);
-
-  const stillListening = await page.evaluate(() => {
-    const indicator = document.getElementById('indicator');
-    return Boolean(indicator?.classList.contains('is-listening'));
+  const startedRecording = await page.evaluate(() => {
+    return Array.isArray((window as any).__harnessLog)
+      && (window as any).__harnessLog.some((entry: any) => entry.type === 'recorder' && entry.action === 'start');
   });
-  expect(stillListening).toBe(false);
+  expect(startedRecording).toBe(false);
+
+  const cursorPinned = await page.evaluate(() => {
+    const indicator = document.getElementById('indicator');
+    return Boolean(indicator?.classList.contains('is-cursor'));
+  });
+  expect(cursorPinned).toBe(true);
 });
 
 test('PTT during dialogue listen cancels listen and starts push-to-talk', async ({ page }) => {

@@ -17,7 +17,7 @@ export {
   showTextInput, hideTextInput,
   showOverlay, hideOverlay, updateOverlay,
   isOverlayVisible, isTextInputVisible, isRecording, setRecording,
-  getInputAnchor, setInputAnchor, getAnchorFromPoint,
+  getInputAnchor, setInputAnchor, pinCursorAnchor, clearCursorAnchor, getCursorAnchor, getAnchorFromPoint,
   buildContextPrefix, getLastInputPosition, setLastInputPosition,
 } from './ui.js';
 export {

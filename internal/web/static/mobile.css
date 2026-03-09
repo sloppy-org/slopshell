@@ -28,7 +28,8 @@
   .indicator.is-recording,
   .indicator.is-working,
   .indicator.is-listening,
-  .indicator.is-paused {
+  .indicator.is-paused,
+  .indicator.is-cursor {
     --cue-frame-color: #111111;
   }
 
@@ -41,6 +42,10 @@
 
   .indicator.is-paused .pause-bars::before,
   .indicator.is-paused .pause-bars::after {
+    background: #111111;
+  }
+
+  .indicator.is-cursor .record-dot {
     background: #111111;
   }
 

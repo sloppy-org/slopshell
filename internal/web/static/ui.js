@@ -14,6 +14,8 @@ const uiState = {
   overlayVisible: false,
   overlayTurnId: null,
   inputAnchor: null,
+  cursorAnchor: null,
+  cursorPinned: false,
   inputVisible: false,
   indicatorVisible: false,
   indicatorMode: '',
@@ -129,15 +131,18 @@ export function showIndicatorMode(mode, x, y) {
   if (normalizedMode === 'recording') nextMode = 'recording';
   else if (normalizedMode === 'listening') nextMode = 'listening';
   else if (normalizedMode === 'paused') nextMode = 'paused';
+  else if (normalizedMode === 'cursor') nextMode = 'cursor';
   else nextMode = 'play';
   const body = document.body;
-  el.classList.remove('is-recording', 'is-working', 'is-listening', 'is-paused');
+  el.classList.remove('is-recording', 'is-working', 'is-listening', 'is-paused', 'is-cursor');
   if (nextMode === 'recording') {
     el.classList.add('is-recording');
   } else if (nextMode === 'listening') {
     el.classList.add('is-listening');
   } else if (nextMode === 'paused') {
     el.classList.add('is-paused');
+  } else if (nextMode === 'cursor') {
+    el.classList.add('is-cursor');
   } else {
     el.classList.add('is-working');
   }
@@ -157,7 +162,7 @@ export function showIndicatorMode(mode, x, y) {
   // Recording dot appears at tap point; stop square stays in top-right (CSS default).
   const dot = el.querySelector('.record-dot');
   if (dot) {
-    if (nextMode === 'recording' && Number.isFinite(x) && Number.isFinite(y)) {
+    if ((nextMode === 'recording' || nextMode === 'cursor') && Number.isFinite(x) && Number.isFinite(y)) {
       dot.style.top = `${Math.round(y)}px`;
       dot.style.right = '';
       dot.style.left = `${Math.round(x)}px`;
@@ -170,7 +175,11 @@ export function showIndicatorMode(mode, x, y) {
     }
   }
   if (body) {
-    const isCueVisible = nextMode === 'recording' || nextMode === 'play' || nextMode === 'listening' || nextMode === 'paused';
+    const isCueVisible = nextMode === 'recording'
+      || nextMode === 'play'
+      || nextMode === 'listening'
+      || nextMode === 'paused'
+      || nextMode === 'cursor';
     body.classList.toggle('cue-active', isCueVisible);
   }
   uiState.indicatorVisible = true;
@@ -180,7 +189,7 @@ export function showIndicatorMode(mode, x, y) {
 export function hideIndicator() {
   const el = indicatorEl();
   if (!el) return;
-  el.classList.remove('is-recording', 'is-working', 'is-listening', 'is-paused');
+  el.classList.remove('is-recording', 'is-working', 'is-listening', 'is-paused', 'is-cursor');
   el.style.display = 'none';
   const body = document.body;
   if (body) {
@@ -278,6 +287,22 @@ export function setInputAnchor(anchor) {
   uiState.inputAnchor = anchor || null;
 }
 
+export function pinCursorAnchor(x, y, anchor) {
+  uiState.cursorPinned = true;
+  uiState.cursorAnchor = anchor || null;
+  uiState.inputAnchor = anchor || null;
+  setLastInputPosition(x, y);
+}
+
+export function clearCursorAnchor() {
+  uiState.cursorPinned = false;
+  uiState.cursorAnchor = null;
+}
+
+export function getCursorAnchor() {
+  return uiState.cursorAnchor;
+}
+
 export function getAnchorFromPoint(clientX, clientY) {
   const loc = getLocationFromPoint(clientX, clientY);
   if (!loc) return null;
@@ -296,9 +321,20 @@ export function buildContextPrefix(anchor) {
   const line = Number.parseInt(String(anchor.line || ''), 10);
   const hasPage = Number.isFinite(page) && page > 0;
   const hasLine = Number.isFinite(line) && line > 0;
+  const normalizedX = Number(anchor.relativeX);
+  const normalizedY = Number(anchor.relativeY);
+  const hasPoint = Number.isFinite(normalizedX)
+    && Number.isFinite(normalizedY)
+    && normalizedX >= 0
+    && normalizedX <= 1
+    && normalizedY >= 0
+    && normalizedY <= 1;
   const title = String(anchor.title || '').trim();
   const quotedTitle = title || 'artifact';
   const selectionSuffix = anchor.selectedText ? `: "${anchor.selectedText}"` : '';
+  const pointLabel = hasPoint
+    ? `${Math.round(normalizedX * 100)}%, ${Math.round(normalizedY * 100)}%`
+    : '';
 
   if (hasPage && hasLine) {
     return `[Page ${page}, line ${line} of "${quotedTitle}"${selectionSuffix}]`;
@@ -308,6 +344,9 @@ export function buildContextPrefix(anchor) {
   }
   if (hasLine) {
     return `[Line ${line} of "${quotedTitle}"${selectionSuffix}]`;
+  }
+  if (hasPoint) {
+    return `[Point ${pointLabel} of "${quotedTitle}"${selectionSuffix}]`;
   }
   return '';
 }

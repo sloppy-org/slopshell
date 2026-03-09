@@ -1173,6 +1173,16 @@ export function getLocationFromPoint(clientX, clientY) {
       }
     }
   }
+  if (e.image && e.image.classList.contains('is-active') && e.img instanceof HTMLImageElement) {
+    const rect = e.img.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0 && clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom) {
+      return {
+        title: getActiveArtifactTitle(),
+        relativeX: (clientX - rect.left) / rect.width,
+        relativeY: (clientY - rect.top) / rect.height,
+      };
+    }
+  }
   return getPdfAnchorFromPoint(clientX, clientY);
 }
 

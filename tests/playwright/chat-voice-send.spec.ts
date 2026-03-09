@@ -838,16 +838,16 @@ test('stt empty reason is surfaced as visible voice capture error', async ({ pag
   expect(log.some((entry) => entry.type === 'message_sent')).toBe(false);
 });
 
-test('conversation tap-to-talk empty transcript surfaces error instead of silent drop', async ({ page }) => {
+test('conversation PTT empty transcript surfaces error instead of silent drop', async ({ page }) => {
   await clearLog(page);
   await setConversationMode(page, true);
   await setHarnessSTTTranscribeResponse(page, { text: '', reason: 'no_speech_detected' }, 200);
 
-  await page.mouse.click(400, 400);
-  await page.waitForTimeout(500);
+  await page.keyboard.down('Control');
+  await page.waitForTimeout(300);
   await waitForLogEntry(page, 'recorder', 'start');
 
-  await page.mouse.click(400, 400);
+  await page.keyboard.up('Control');
   await waitForSTTAction(page, 'stop');
 
   await expect(page.locator('#chat-history .chat-message.chat-system .chat-bubble').last())

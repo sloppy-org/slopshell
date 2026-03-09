@@ -130,7 +130,8 @@ body.bug-report-open {
 .indicator.is-recording,
 .indicator.is-working,
 .indicator.is-listening,
-.indicator.is-paused {
+.indicator.is-paused,
+.indicator.is-cursor {
   --cue-chip-size: 14px;
   --cue-frame-color: #000000;
   display: block;
@@ -157,7 +158,8 @@ body.bug-report-open {
 body.keyboard-open .indicator.is-recording,
 body.keyboard-open .indicator.is-working,
 body.keyboard-open .indicator.is-listening,
-body.keyboard-open .indicator.is-paused {
+body.keyboard-open .indicator.is-paused,
+body.keyboard-open .indicator.is-cursor {
   width: 100lvw;
   height: 100lvh;
 }
@@ -166,6 +168,7 @@ body.keyboard-open .indicator.is-paused {
 .indicator.is-working  { --cue-frame-color: #16a34a; }
 .indicator.is-listening { --cue-frame-color: #2563eb; }
 .indicator.is-paused   { --cue-frame-color: #111111; }
+.indicator.is-cursor   { --cue-frame-color: transparent; }
 
 .indicator.is-recording::before,
 .indicator.is-working::before,
@@ -179,6 +182,10 @@ body.keyboard-open .indicator.is-paused {
   border: 5px solid var(--cue-frame-color);
   border-radius: var(--cue-corner-radius);
   background: transparent;
+}
+
+.indicator.is-cursor::before {
+  content: none;
 }
 
 .indicator .record-dot,
@@ -217,6 +224,12 @@ body.keyboard-open .indicator.is-paused {
   background: #2563eb;
   box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.65);
   animation: listen-pulse 1s ease-out infinite;
+}
+
+.indicator.is-cursor .record-dot {
+  display: inline-flex;
+  border-radius: 50%;
+  background: #d92d20;
 }
 
 .indicator.is-working .stop-square {

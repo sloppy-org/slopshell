@@ -208,8 +208,10 @@ export function beginConversationVoiceCapture() {
 
 export function currentIndicatorMode() {
   if (shouldShowCompanionIdleSurface()) return '';
+  const uiState = getUiState();
   const mode = state.voiceLifecycle;
   if (mode === VOICE_LIFECYCLE.RECORDING) return 'recording';
+  if (state.liveSessionActive && uiState.cursorPinned) return 'cursor';
   if (mode === VOICE_LIFECYCLE.LISTENING) return 'listening';
   if (isStopCapableLifecycle(mode)) return 'play';
   if (state.liveSessionActive && state.hotwordActive) return 'paused';
