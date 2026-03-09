@@ -25,6 +25,7 @@ func (a *App) runAssistantTurn(sessionID string, outputMode string, localOnly bo
 		return
 	}
 	cursorCtx := a.chatCursorContexts.consume(sessionID)
+	positionCtx := a.chatCanvasPositions.consume(sessionID)
 	userText := latestUserMessage(messages)
 	if project, projectErr := a.store.GetProjectByProjectKey(session.ProjectKey); projectErr == nil && isHubProject(project) {
 		a.runHubTurn(sessionID, session, messages, outputMode, localOnly)
@@ -67,6 +68,7 @@ func (a *App) runAssistantTurn(sessionID string, outputMode string, localOnly bo
 		_ = a.store.UpdateChatSessionThread(sessionID, appSess.ThreadID())
 	}
 	prompt = appendChatCursorPrompt(prompt, cursorCtx)
+	prompt = appendCanvasPositionPrompt(prompt, positionCtx)
 	if strings.TrimSpace(prompt) == "" {
 		a.broadcastChatEvent(sessionID, map[string]interface{}{"type": "error", "error": "empty prompt"})
 		return
@@ -335,6 +337,7 @@ func (a *App) runAssistantTurnLegacy(sessionID string, session store.ChatSession
 	canvasCtx := a.resolveCanvasContext(session.ProjectKey)
 	prompt := buildPromptFromHistoryForSession(session.Mode, sessionID, messages, canvasCtx, outputMode, profile.Alias)
 	prompt = appendChatCursorPrompt(prompt, cursorCtx)
+	prompt = appendCanvasPositionPrompt(prompt, a.chatCanvasPositions.consume(sessionID))
 	if strings.TrimSpace(prompt) == "" {
 		a.broadcastChatEvent(sessionID, map[string]interface{}{"type": "error", "error": "empty prompt"})
 		return
@@ -562,6 +565,7 @@ func (a *App) finalizeAssistantResponse(
 		return ""
 	}
 	text = postResult.Text
+	text, positionPrompt := stripAssistantPositionRequest(text)
 
 	outputMode = normalizeTurnOutputMode(outputMode)
 	canvasSessionID := a.resolveCanvasSessionID(projectKey)
@@ -639,6 +643,14 @@ func (a *App) finalizeAssistantResponse(
 	}
 	a.finishCompanionPendingTurn(sessionID, "assistant_turn_completed")
 	a.broadcastChatEvent(sessionID, payload)
+	if strings.TrimSpace(positionPrompt) != "" {
+		a.broadcastChatEvent(sessionID, map[string]interface{}{
+			"type":        "request_position",
+			"turn_id":     tid,
+			"output_mode": outputMode,
+			"prompt":      positionPrompt,
+		})
+	}
 	if isVoiceOutputMode(outputMode) && strings.TrimSpace(chatPlain) != "" {
 		a.broadcastCompanionRuntimeState(projectKey, companionRuntimeSnapshot{
 			State:      companionRuntimeStateTalking,
@@ -675,12 +687,32 @@ type assistantRenderDecision struct {
 }
 
 var assistantParagraphSplitRe = regexp.MustCompile(`\n\s*\n+`)
+var assistantRequestPositionRe = regexp.MustCompile(`(?s)\[\[request_position:(.*?)\]\]`)
+
+func stripAssistantPositionRequest(text string) (string, string) {
+	matches := assistantRequestPositionRe.FindAllStringSubmatch(text, -1)
+	if len(matches) == 0 {
+		return text, ""
+	}
+	prompt := ""
+	for _, match := range matches {
+		if len(match) < 2 {
+			continue
+		}
+		if candidate := strings.TrimSpace(match[1]); candidate != "" {
+			prompt = candidate
+		}
+	}
+	cleaned := strings.TrimSpace(assistantRequestPositionRe.ReplaceAllString(text, ""))
+	return cleaned, prompt
+}
 
 func assistantCompanionText(text string) string {
 	candidate := strings.TrimSpace(text)
 	if candidate == "" {
 		return ""
 	}
+	candidate, _ = stripAssistantPositionRequest(candidate)
 	if _, cleaned := parseFileBlocks(candidate); cleaned != "" {
 		candidate = cleaned
 	}
@@ -724,6 +756,7 @@ func assistantSnapshotContent(text string, renderOnCanvas bool, _ bool) (string,
 	if candidate == "" {
 		return "", "", "markdown"
 	}
+	candidate, _ = stripAssistantPositionRequest(candidate)
 	chat := assistantCompanionText(candidate)
 	if chat == "" {
 		if renderOnCanvas {

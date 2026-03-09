@@ -1,7 +1,7 @@
 import * as env from './app-env.js';
 import * as context from './app-context.js';
 
-const { marked, apiURL, wsURL, renderCanvas, clearCanvas, getLocationFromSelection, clearLineHighlight, escapeHtml, sanitizeHtml, getActiveArtifactTitle, getActiveTextEventId, getPreviousArtifactText, getUiState, setUiMode, showIndicatorMode, hideIndicator, showTextInput, hideTextInput, showOverlay, hideOverlay, updateOverlay, isOverlayVisible, isTextInputVisible, isRecording, setRecording, getInputAnchor, setInputAnchor, pinCursorAnchor, getAnchorFromPoint, buildContextPrefix, getLastInputPosition, setLastInputPosition, configureLiveSession, getLiveSessionSnapshot, handleLiveSessionMessage, isLiveSessionListenActive, LIVE_SESSION_HOTWORD_DEFAULT, LIVE_SESSION_MODE_DIALOGUE, LIVE_SESSION_MODE_MEETING, onLiveSessionTTSPlaybackComplete, cancelLiveSessionListen, startLiveSession, stopLiveSession, initHotword, startHotwordMonitor, stopHotwordMonitor, isHotwordActive, onHotwordDetected, setHotwordThreshold, setHotwordAudioContext, getPreRollAudio, getHotwordMicStream, initVAD, float32ToWav } = env;
+const { marked, wsURL, renderCanvas, clearCanvas, getLocationFromSelection, clearLineHighlight, escapeHtml, sanitizeHtml, getActiveArtifactTitle, getActiveTextEventId, getPreviousArtifactText, getUiState, setUiMode, showIndicatorMode, hideIndicator, showTextInput, hideTextInput, showOverlay, hideOverlay, updateOverlay, isOverlayVisible, isTextInputVisible, isRecording, setRecording, getInputAnchor, setInputAnchor, pinCursorAnchor, getAnchorFromPoint, buildContextPrefix, getLastInputPosition, setLastInputPosition, configureLiveSession, getLiveSessionSnapshot, handleLiveSessionMessage, isLiveSessionListenActive, LIVE_SESSION_HOTWORD_DEFAULT, LIVE_SESSION_MODE_DIALOGUE, LIVE_SESSION_MODE_MEETING, onLiveSessionTTSPlaybackComplete, cancelLiveSessionListen, startLiveSession, stopLiveSession, initHotword, startHotwordMonitor, stopHotwordMonitor, isHotwordActive, onHotwordDetected, setHotwordThreshold, setHotwordAudioContext, getPreRollAudio, getHotwordMicStream, initVAD, float32ToWav } = env;
 const { refs, state, getState, isVoiceTurn, COMPANION_VIEW_PATH_PREFIX, COMPANION_TRANSCRIPT_VIEW_PATH, COMPANION_SUMMARY_VIEW_PATH, COMPANION_REFERENCES_VIEW_PATH, MEETING_TRANSCRIPT_LABEL, MEETING_SUMMARY_LABEL, MEETING_REFERENCES_LABEL, MEETING_SUMMARY_ITEMS_PANEL_ID, CHAT_CTRL_LONG_PRESS_MS, ARTIFACT_EDIT_LONG_TAP_MS, ITEM_SIDEBAR_VIEWS, ITEM_SIDEBAR_GESTURE_CANCEL_PX, ITEM_SIDEBAR_GESTURE_COMMIT_PX, ITEM_SIDEBAR_GESTURE_LONG_PX, ITEM_SIDEBAR_DEFAULT_LATER_HOUR_UTC, ITEM_SIDEBAR_MENU_ID, DEV_UI_RELOAD_POLL_MS, ASSISTANT_ACTIVITY_POLL_MS, CHAT_WS_STALE_THRESHOLD_MS, ACTIVE_TURN_NO_ID_CLEAR_GRACE_MS, ACTIVE_TURN_ACTIVITY_CLEAR_GRACE_MS, PROJECT_CHAT_MODEL_ALIASES, PROJECT_CHAT_MODEL_REASONING_EFFORTS, TTS_SILENT_STORAGE_KEY, YOLO_MODE_STORAGE_KEY, SOMEDAY_REVIEW_NUDGE_ENABLED_STORAGE_KEY, SOMEDAY_REVIEW_NUDGE_LAST_SHOWN_STORAGE_KEY, SOMEDAY_REVIEW_NUDGE_INTERVAL_MS, ACTIVE_PROJECT_STORAGE_KEY, LAST_VIEW_STORAGE_KEY, RUNTIME_RELOAD_CONTEXT_STORAGE_KEY, SIDEBAR_IMAGE_EXTENSIONS, PANEL_MOTION_WATCH_QUERIES, VOICE_LIFECYCLE, COMPANION_IDLE_SURFACES, COMPANION_RUNTIME_STATES, TOOL_PALETTE_MODES } = context;
 
 const showStatus = (...args) => refs.showStatus(...args);
@@ -69,37 +69,6 @@ const hideItemSidebarMenu = (...args) => refs.hideItemSidebarMenu(...args);
 const stepPrReviewFile = (...args) => refs.stepPrReviewFile(...args);
 const maybeApplySelectionHighlight = (...args) => refs.maybeApplySelectionHighlight(...args);
 
-let bootstrapStarted = false;
-let bootstrapErrorShown = false;
-
-export function showBootstrapError(message) {
-  const text = String(message || 'Unknown error');
-  if (bootstrapErrorShown) return;
-  bootstrapErrorShown = true;
-  const loginErr = document.getElementById('login-error');
-  if (loginErr) loginErr.textContent = `Initialization failed: ${text}`;
-  const loginView = document.getElementById('view-login');
-  if (loginView) loginView.style.display = '';
-  const mainView = document.getElementById('view-main');
-  if (mainView) mainView.style.display = 'none';
-}
-
-function installBootstrapErrorHandlers() {
-  window.addEventListener('error', (event) => {
-    const msg = String(event?.error?.message || event?.message || '').trim();
-    if (!msg) return;
-    if (msg.includes('ResizeObserver loop limit exceeded')) return;
-    showBootstrapError(msg);
-  });
-
-  window.addEventListener('unhandledrejection', (event) => {
-    const reason = event?.reason;
-    const msg = String(reason?.message || reason || '').trim();
-    if (!msg) return;
-    showBootstrapError(msg);
-  });
-}
-
 export function bindUi() {
   const canvasText = document.getElementById('canvas-text');
   const canvasViewport = document.getElementById('canvas-viewport');
@@ -154,6 +123,58 @@ export function bindUi() {
       anchor = getAnchorFromPoint(x, y);
     }
     return beginVoiceCapture(x, y, anchor);
+  };
+  const buildCanvasPositionPayload = (anchor, options = {}) => {
+    if (!anchor || typeof anchor !== 'object') return null;
+    const payload = {
+      type: 'canvas_position',
+      gesture: String(options?.gesture || 'tap').trim().toLowerCase() || 'tap',
+      output_mode: state.ttsSilent ? 'silent' : 'voice',
+      cursor: {},
+    };
+    const cursor = payload.cursor;
+    const setTextField = (key, value) => {
+      const text = String(value || '').trim();
+      if (text) cursor[key] = text;
+    };
+    const setIntField = (key, value) => {
+      const num = Number.parseInt(String(value || ''), 10);
+      if (Number.isFinite(num) && num > 0) cursor[key] = num;
+    };
+    const setFloatField = (key, value) => {
+      const num = Number(value);
+      if (Number.isFinite(num)) cursor[key] = num;
+    };
+    setTextField('view', anchor.view);
+    setTextField('element', anchor.element);
+    setTextField('title', anchor.title);
+    setIntField('page', anchor.page);
+    setIntField('line', anchor.line);
+    setFloatField('relative_x', anchor.relativeX);
+    setFloatField('relative_y', anchor.relativeY);
+    setTextField('selected_text', anchor.selectedText);
+    setTextField('surrounding_text', anchor.surroundingText);
+    setIntField('item_id', anchor.itemID || anchor.item_id);
+    setTextField('item_title', anchor.itemTitle || anchor.item_title);
+    setTextField('item_state', anchor.itemState || anchor.item_state);
+    setIntField('workspace_id', anchor.workspaceID || anchor.workspace_id);
+    setTextField('workspace_name', anchor.workspaceName || anchor.workspace_name);
+    setTextField('path', anchor.path);
+    if (anchor.isDir === true || anchor.is_dir === true) {
+      cursor.is_dir = true;
+    }
+    if (options?.requestResponse) {
+      payload.request_response = true;
+    }
+    if (Object.keys(cursor).length === 0) return null;
+    return payload;
+  };
+  const sendCanvasPosition = (anchor, options = {}) => {
+    const payload = buildCanvasPositionPayload(anchor, options);
+    const ws = state.chatWs;
+    if (!payload || !ws || ws.readyState !== WebSocket.OPEN) return false;
+    ws.send(JSON.stringify(payload));
+    return true;
   };
 
   document.addEventListener('mousemove', (ev) => {
@@ -319,6 +340,20 @@ export function bindUi() {
     };
 
     const handleWorkspaceTap = (target, x, y) => {
+      const requestedPositionPrompt = String(state.requestedPositionPrompt || '').trim();
+      if (requestedPositionPrompt) {
+        if (isVoiceInteractionTarget(target, x, y)) return;
+        const sel = window.getSelection();
+        if (sel && !sel.isCollapsed) return;
+        rememberMousePosition(x, y);
+        const anchor = state.hasArtifact && canvasText ? getAnchorFromPoint(x, y) : null;
+        pinCursorAnchor(x, y, anchor);
+        state.requestedPositionPrompt = '';
+        sendCanvasPosition(anchor, { gesture: 'tap', requestResponse: true });
+        showStatus('position shared');
+        updateAssistantActivityIndicator();
+        return;
+      }
       const liveSessionPointerMode = state.liveSessionActive
         && (state.liveSessionMode === LIVE_SESSION_MODE_DIALOGUE || state.liveSessionMode === LIVE_SESSION_MODE_MEETING);
       if (liveSessionPointerMode) {
@@ -328,6 +363,7 @@ export function bindUi() {
         rememberMousePosition(x, y);
         const anchor = state.hasArtifact && canvasText ? getAnchorFromPoint(x, y) : null;
         pinCursorAnchor(x, y, anchor);
+        sendCanvasPosition(anchor, { gesture: 'tap' });
         updateAssistantActivityIndicator();
         return;
       }
@@ -804,139 +840,4 @@ export function bindUi() {
   document.addEventListener('touchend', applySelectionHighlightSoon, true);
 
   initEdgePanels();
-}
-
-export function showSplash() {
-  const project = activeProject();
-  const name = project?.name || '';
-  if (!name) return;
-  const splash = document.createElement('div');
-  splash.className = 'splash';
-  splash.textContent = name;
-  document.getElementById('view-main')?.appendChild(splash);
-  window.setTimeout(() => splash.classList.add('fade-out'), 100);
-  window.setTimeout(() => splash.remove(), 1700);
-}
-
-export async function init() {
-  state.pendingRuntimeReloadContext = consumeRuntimeReloadContext();
-  setSomedayReviewNudgeEnabled(readSomedayReviewNudgePreference(), { persist: false });
-  applyIPhoneFrameCorners();
-  window.addEventListener('resize', () => {
-    if (document.body.classList.contains('keyboard-open')) return;
-    applyIPhoneFrameCorners();
-    syncInkLayerSize();
-    renderInkControls();
-  });
-  bindUi();
-  syncInkLayerSize();
-  renderInkControls();
-  syncInteractionBodyState();
-  updateAssistantActivityIndicator();
-  startRuntimeReloadWatcher();
-  startAssistantActivityWatcher();
-  clearCanvas();
-  hideCanvasColumn();
-  showStatus('starting...');
-
-  // Check TTS availability from runtime
-  try {
-    const runtime = await fetchRuntimeMeta();
-    applyRuntimePreferences(runtime);
-    renderInkControls();
-    state.ttsEnabled = Boolean(runtime?.tts_enabled);
-    applyRuntimeReasoningEffortOptions(runtime?.available_reasoning_efforts);
-  } catch (_) {
-    state.ttsEnabled = false;
-    setYoloModeLocal(readYoloModePreference(), { persist: false, render: false });
-  }
-  await showDisclaimerModal().catch(() => {});
-  setTTSSilentMode(state.ttsSilent, { persist: false, pinPanel: false });
-  await initHotwordLifecycle();
-
-  await fetchProjects();
-  const initialProjectID = resolveInitialProjectID();
-  if (!initialProjectID) throw new Error('no projects available');
-  await switchProject(initialProjectID);
-  // Pin chat panel now that all startup state is settled.
-  if (isMobileSilent()) {
-    const edgeRight = document.getElementById('edge-right');
-    if (edgeRight) edgeRight.classList.add('edge-pinned');
-  }
-  restoreRuntimeReloadContext();
-  showSplash();
-  // Enable panel slide transitions only after startup is fully painted.
-  requestAnimationFrame(() => requestAnimationFrame(initPanelMotionMode));
-}
-
-export async function authGate() {
-  const loginView = document.getElementById('view-login');
-  const mainView = document.getElementById('view-main');
-  const resp = await fetch(apiURL('setup'));
-  const data = await resp.json();
-  if (data.authenticated) {
-    if (loginView) loginView.style.display = 'none';
-    return;
-  }
-  const loginForm = document.getElementById('login-form');
-  const loginPassword = document.getElementById('login-password');
-  const loginError = document.getElementById('login-error');
-  const loginPrompt = document.getElementById('login-prompt');
-  const loginBtn = document.getElementById('btn-login');
-
-  if (!data.has_password) {
-    loginPassword.style.display = 'none';
-    loginView.style.display = '';
-    mainView.style.display = 'none';
-    return new Promise(() => {});
-  }
-
-  loginView.style.display = '';
-  mainView.style.display = 'none';
-
-  await new Promise((resolve) => {
-    loginForm.addEventListener('submit', async (ev) => {
-      ev.preventDefault();
-      loginError.textContent = '';
-      const pw = loginPassword.value;
-      if (!pw) return;
-      if (loginBtn) loginBtn.disabled = true;
-      try {
-        const r = await fetch(apiURL('login'), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'same-origin',
-          body: JSON.stringify({ password: pw }),
-        });
-        if (!r.ok) {
-          const msg = (await r.text()).trim();
-          loginError.textContent = msg || `Error ${r.status}`;
-          return;
-        }
-        loginPassword.value = '';
-        window.location.replace(window.location.href);
-      } catch (err) {
-        loginError.textContent = String(err?.message || err);
-      } finally {
-        if (loginBtn) loginBtn.disabled = false;
-      }
-    });
-  });
-
-  loginView.style.display = 'none';
-  mainView.style.display = '';
-}
-
-export function bootstrapApp() {
-  if (bootstrapStarted) return;
-  bootstrapStarted = true;
-  installBootstrapErrorHandlers();
-  authGate()
-    .then(() => {
-      document.getElementById('view-main').style.display = '';
-      return init();
-    })
-    .catch((err) => {
-      showBootstrapError(String(err?.message || err));
-    });
 }

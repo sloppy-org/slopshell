@@ -172,6 +172,10 @@ test('dialogue tap pins a cursor dot and scopes the next voice message without s
 
   const log = await getLog(page);
   expect(log.some((entry) => entry.type === 'recorder' && entry.action === 'start')).toBe(false);
+  const streamedPosition = log.find((entry) => entry.type === 'canvas_position');
+  expect(streamedPosition?.gesture).toBe('tap');
+  expect(streamedPosition?.request_response).toBe(false);
+  expect((streamedPosition?.cursor as Record<string, unknown> | null)?.title).toBe('test.txt');
 
   await page.evaluate(async ({ x: anchorX, y: anchorY }) => {
     const ui = await import('../../internal/web/static/ui.js');
@@ -212,10 +216,31 @@ test('meeting taps move the pinned cursor without starting a new recording', asy
 
   const log = await getLog(page);
   expect(log.some((entry) => entry.type === 'recorder' && entry.action === 'start')).toBe(false);
+  expect(log.filter((entry) => entry.type === 'canvas_position')).toHaveLength(2);
   expect(firstDot?.indicatorClass).toContain('is-cursor');
   expect(secondDot?.indicatorClass).toContain('is-cursor');
   expect(firstDot?.left).toBe(`${firstX}px`);
   expect(firstDot?.top).toBe(`${firstY}px`);
   expect(secondDot?.left).toBe(`${secondX}px`);
   expect(secondDot?.top).toBe(`${secondY}px`);
+});
+
+test('request_position turns the next tap into a requested canvas position reply', async ({ page }) => {
+  await renderTestArtifact(page);
+  await clearLog(page);
+  await injectChatEvent(page, {
+    type: 'request_position',
+    prompt: 'Tap where the comment should go.',
+  });
+
+  await page.mouse.click(420, 360);
+  await page.waitForTimeout(150);
+
+  const log = await getLog(page);
+  expect(log.some((entry) => entry.type === 'recorder' && entry.action === 'start')).toBe(false);
+  const streamedPosition = log.find((entry) => entry.type === 'canvas_position');
+  expect(streamedPosition?.gesture).toBe('tap');
+  expect(streamedPosition?.request_response).toBe(true);
+  expect((streamedPosition?.cursor as Record<string, unknown> | null)?.title).toBe('test.txt');
+  expect(await page.evaluate(() => (window as any)._taburaApp.getState().requestedPositionPrompt)).toBe('');
 });

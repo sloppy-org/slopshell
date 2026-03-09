@@ -119,12 +119,16 @@ func handleSTTCancel(conn *chatWSConn) {
 
 func handleChatWSTextMessage(a *App, conn *chatWSConn, sessionID string, data []byte) {
 	var msg struct {
-		Type      string `json:"type"`
-		MimeType  string `json:"mime_type"`
-		Text      string `json:"text"`
-		Lang      string `json:"lang"`
-		RequestID string `json:"request_id"`
-		Decision  string `json:"decision"`
+		Type            string             `json:"type"`
+		MimeType        string             `json:"mime_type"`
+		Text            string             `json:"text"`
+		Lang            string             `json:"lang"`
+		RequestID       string             `json:"request_id"`
+		Decision        string             `json:"decision"`
+		OutputMode      string             `json:"output_mode"`
+		Gesture         string             `json:"gesture"`
+		RequestResponse bool               `json:"request_response"`
+		Cursor          *chatCursorContext `json:"cursor"`
 	}
 	if err := json.Unmarshal(data, &msg); err != nil {
 		return
@@ -152,6 +156,17 @@ func handleChatWSTextMessage(a *App, conn *chatWSConn, sessionID string, data []
 				"request_id": strings.TrimSpace(msg.RequestID),
 				"error":      "approval request not found",
 			})
+		}
+	case "canvas_position":
+		if !a.chatCanvasPositions.enqueue(sessionID, &chatCanvasPositionEvent{
+			Cursor:    msg.Cursor,
+			Gesture:   msg.Gesture,
+			Requested: msg.RequestResponse,
+		}) {
+			return
+		}
+		if msg.RequestResponse {
+			a.enqueueAssistantTurn(sessionID, normalizeTurnOutputMode(msg.OutputMode))
 		}
 	}
 }

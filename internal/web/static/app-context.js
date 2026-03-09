@@ -148,6 +148,7 @@ export const state = {
   liveSessionHotword: LIVE_SESSION_HOTWORD_DEFAULT,
   liveSessionDialogueListenActive: false,
   liveSessionDialogueListenTimer: null,
+  requestedPositionPrompt: '',
   hotwordEnabled: false,
   hotwordActive: false,
   voiceTranscriptSubmitInFlight: false,

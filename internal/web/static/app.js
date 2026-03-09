@@ -18,6 +18,7 @@ import * as edgePanelsModule from './app-edge-panels.js';
 import * as bugReportModule from './app-bug-report.js';
 import * as annotationsModule from './app-annotations.js';
 import * as initModule from './app-init.js';
+import * as startupModule from './app-startup.js';
 
 setAppRefs({
   ...ttsModule,
@@ -39,6 +40,7 @@ setAppRefs({
   ...bugReportModule,
   ...annotationsModule,
   ...initModule,
+  ...startupModule,
 });
 
 runtimeUiModule.initRuntimeUi();
@@ -56,4 +58,4 @@ window._taburaApp = {
   syncCompanionIdleSurface: runtimeUiModule.syncCompanionIdleSurface,
 };
 
-initModule.bootstrapApp();
+startupModule.bootstrapApp();

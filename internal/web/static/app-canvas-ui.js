@@ -235,6 +235,7 @@ export function currentIndicatorMode() {
   const uiState = getUiState();
   const mode = state.voiceLifecycle;
   if (mode === VOICE_LIFECYCLE.RECORDING) return 'recording';
+  if (state.requestedPositionPrompt) return 'cursor';
   if (state.liveSessionActive && uiState.cursorPinned) return 'cursor';
   if (mode === VOICE_LIFECYCLE.LISTENING) return 'listening';
   if (isStopCapableLifecycle(mode)) return 'play';

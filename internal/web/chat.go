@@ -53,6 +53,8 @@ When user asks to show/open an existing file, do NOT paste that file body into c
 
 Line references: when the user mentions [Line N of "file"], apply changes at that location.
 
+When you need the user to tap or click a location, emit exactly [[request_position:Tap where you want it]] on its own line.
+
 ## PR review fast path:
 When asked to review a PR, open PR view via gh CLI, read the diff, and respond with analysis.
 Publish exactly one file block at path .tabura/artifacts/pr/pr-<number>.diff with the patch content.
@@ -65,6 +67,8 @@ const defaultVoiceTurnPrompt = `Voice mode is chat-only:
 - Do not render chat output on canvas.
 
 When user asks to show/open an existing file, do NOT paste file body into chat; use canvas_artifact_show and keep chat text brief.
+
+When you need the user to tap or click a location, emit exactly [[request_position:Tap where you want it]] on its own line.
 
 `
 

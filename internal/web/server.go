@@ -105,6 +105,7 @@ type App struct {
 	companionRuntime     *companionRuntimeTracker
 	chatCaptureModes     *chatCaptureModeTracker
 	chatCursorContexts   *chatCursorContextTracker
+	chatCanvasPositions  *chatCanvasPositionTracker
 	projectAttention     *projectAttentionTracker
 	tunnels              *tunnelRegistry
 	chatAppSessions      map[string]*appserver.Session
@@ -291,6 +292,7 @@ func New(dataDir, localProjectDir, localMCPURL, appServerURL, model, ttsURL, spa
 		companionRuntime:     newCompanionRuntimeTracker(),
 		chatCaptureModes:     newChatCaptureModeTracker(),
 		chatCursorContexts:   newChatCursorContextTracker(),
+		chatCanvasPositions:  newChatCanvasPositionTracker(),
 		projectAttention:     newProjectAttentionTracker(),
 		tunnels:              newTunnelRegistry(),
 		chatAppSessions:      map[string]*appserver.Session{},

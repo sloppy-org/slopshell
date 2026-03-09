@@ -105,6 +105,21 @@ export function sendChatWsJSON(payload) {
   return true;
 }
 
+export function sendCanvasPositionEvent(anchor, options = {}) {
+  const cursor = buildCursorPayload(anchor);
+  if (!cursor) return false;
+  const payload = {
+    type: 'canvas_position',
+    cursor,
+    gesture: String(options?.gesture || 'tap').trim().toLowerCase() || 'tap',
+    output_mode: state.ttsSilent ? 'silent' : 'voice',
+  };
+  if (options?.requestResponse) {
+    payload.request_response = true;
+  }
+  return sendChatWsJSON(payload);
+}
+
 export function openChatWs() {
   if (!state.chatSessionId) return;
   const turnToken = state.chatWsToken + 1;
@@ -410,6 +425,14 @@ export function handleChatEvent(payload) {
       updateOverlay('_Thinking..._');
       getUiState().overlayTurnId = payload.turn_id || null;
     }
+    return;
+  }
+
+  if (type === 'request_position') {
+    const prompt = String(payload?.prompt || '').trim();
+    state.requestedPositionPrompt = prompt || 'Tap where you want it.';
+    showStatus(state.requestedPositionPrompt);
+    updateAssistantActivityIndicator();
     return;
   }
 

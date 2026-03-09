@@ -1785,6 +1785,14 @@
                 ws.onmessage({ data: wavHeader.buffer });
               }
             }, 5);
+          } else if (msg.type === 'canvas_position') {
+            window.__harnessLog.push({
+              type: 'canvas_position',
+              gesture: msg.gesture,
+              request_response: Boolean(msg.request_response),
+              output_mode: msg.output_mode,
+              cursor: msg.cursor || null,
+            });
           }
         } catch (_) {}
       }
