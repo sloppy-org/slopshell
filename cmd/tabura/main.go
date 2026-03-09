@@ -129,6 +129,7 @@ func cmdBootstrap(args []string) int {
 func cmdMCPServer(args []string) int {
 	fs := flag.NewFlagSet("mcp-server", flag.ContinueOnError)
 	projectDir := fs.String("project-dir", ".", "project dir")
+	dataDir := fs.String("data-dir", filepath.Join(os.Getenv("HOME"), ".tabura-web"), "data dir")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -138,7 +139,13 @@ func cmdMCPServer(args []string) int {
 		return 1
 	}
 	adapter := canvas.NewAdapter(res.Paths.ProjectDir, nil)
-	return mcp.RunStdio(adapter)
+	st, err := store.New(filepath.Join(*dataDir, "tabura.db"))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	defer st.Close()
+	return mcp.RunStdioWithStore(adapter, st)
 }
 
 func cmdServer(args []string) int {
@@ -239,7 +246,7 @@ func runServer(cfg *serverConfig) int {
 }
 
 func startMCPListener(cfg *serverConfig, projectDir string) (*serve.App, chan error, string) {
-	mcpApp := serve.NewApp(projectDir)
+	mcpApp := serve.NewApp(projectDir, cfg.dataDir)
 	mcpErrCh := make(chan error, 1)
 	go func() {
 		mcpErrCh <- mcpApp.Start(cfg.mcpHost, cfg.mcpPort)

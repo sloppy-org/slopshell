@@ -3,6 +3,7 @@ package serve
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -18,6 +19,7 @@ import (
 	"github.com/krystophny/tabura/internal/appserver"
 	"github.com/krystophny/tabura/internal/canvas"
 	"github.com/krystophny/tabura/internal/mcp"
+	"github.com/krystophny/tabura/internal/store"
 )
 
 const (
@@ -30,6 +32,7 @@ type App struct {
 	ProjectDir string
 	Adapter    *canvas.Adapter
 	Server     *mcp.Server
+	Store      *store.Store
 
 	mu           sync.Mutex
 	pending      []canvas.Event
@@ -39,7 +42,7 @@ type App struct {
 	shutdownDone chan struct{}
 }
 
-func NewApp(projectDir string) *App {
+func NewApp(projectDir, dataDir string) *App {
 	a := &App{
 		ProjectDir:   projectDir,
 		wsClients:    map[*websocket.Conn]struct{}{},
@@ -47,7 +50,15 @@ func NewApp(projectDir string) *App {
 		shutdownDone: make(chan struct{}),
 	}
 	a.Adapter = canvas.NewAdapter(projectDir, a.queueEvent)
-	a.Server = mcp.NewServer(a.Adapter, mcpAppServerClient())
+	if strings.TrimSpace(dataDir) != "" {
+		dbPath := filepath.Join(dataDir, "tabura.db")
+		if st, err := store.New(dbPath); err == nil {
+			a.Store = st
+		} else {
+			fmt.Printf("domain MCP tools disabled: store unavailable (%v)\n", err)
+		}
+	}
+	a.Server = mcp.NewServerWithStore(a.Adapter, a.Store, mcpAppServerClient())
 	return a
 }
 
@@ -237,10 +248,15 @@ func (a *App) Start(host string, port int) error {
 }
 
 func (a *App) Stop(ctx context.Context) error {
-	if a.httpServer == nil {
-		return nil
+	var shutdownErr error
+	if a.httpServer != nil {
+		shutdownErr = a.httpServer.Shutdown(ctx)
 	}
-	return a.httpServer.Shutdown(ctx)
+	if a.Store != nil {
+		shutdownErr = errors.Join(shutdownErr, a.Store.Close())
+		a.Store = nil
+	}
+	return shutdownErr
 }
 
 func writeJSON(w http.ResponseWriter, payload interface{}) {

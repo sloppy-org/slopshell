@@ -179,7 +179,7 @@ func (a *App) startProjectServe(sessionID, projectDir string) error {
 	if err != nil {
 		return err
 	}
-	projectApp := serve.NewApp(projectDir)
+	projectApp := serve.NewApp(projectDir, "")
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
 		_ = projectApp.Start("127.0.0.1", port)

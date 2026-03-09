@@ -16,6 +16,7 @@ import (
 
 	"github.com/krystophny/tabura/internal/appserver"
 	"github.com/krystophny/tabura/internal/canvas"
+	"github.com/krystophny/tabura/internal/store"
 )
 
 const (
@@ -51,6 +52,7 @@ type RPCError struct {
 type Server struct {
 	adapter         *canvas.Adapter
 	appServerClient *appserver.Client
+	store           *store.Store
 
 	delegateMu   sync.Mutex
 	delegateJobs map[string]*delegateJob
@@ -93,6 +95,10 @@ type delegateProgressEvent struct {
 }
 
 func NewServer(adapter *canvas.Adapter, appServerClient ...*appserver.Client) *Server {
+	return NewServerWithStore(adapter, nil, appServerClient...)
+}
+
+func NewServerWithStore(adapter *canvas.Adapter, st *store.Store, appServerClient ...*appserver.Client) *Server {
 	var client *appserver.Client
 	if len(appServerClient) > 0 {
 		client = appServerClient[0]
@@ -100,6 +106,7 @@ func NewServer(adapter *canvas.Adapter, appServerClient ...*appserver.Client) *S
 	return &Server{
 		adapter:         adapter,
 		appServerClient: client,
+		store:           st,
 		delegateJobs:    make(map[string]*delegateJob),
 	}
 }
@@ -231,6 +238,32 @@ func (s *Server) callTool(name string, args map[string]interface{}) (map[string]
 		return s.tempFileCreate(args)
 	case "temp_file_remove":
 		return s.tempFileRemove(args)
+	case "workspace_list":
+		return s.workspaceList(args)
+	case "workspace_activate":
+		return s.workspaceActivate(args)
+	case "workspace_get":
+		return s.workspaceGet(args)
+	case "item_list":
+		return s.itemList(args)
+	case "item_get":
+		return s.itemGet(args)
+	case "item_create":
+		return s.itemCreate(args)
+	case "item_triage":
+		return s.itemTriage(args)
+	case "item_assign":
+		return s.itemAssign(args)
+	case "item_update":
+		return s.itemUpdate(args)
+	case "artifact_get":
+		return s.artifactGet(args)
+	case "artifact_list":
+		return s.artifactList(args)
+	case "actor_list":
+		return s.actorList(args)
+	case "actor_create":
+		return s.actorCreate(args)
 	case "delegate_to_model":
 		return s.delegateToModel(args)
 	case "delegate_to_model_status":
@@ -247,7 +280,11 @@ func (s *Server) callTool(name string, args map[string]interface{}) (map[string]
 }
 
 func RunStdio(adapter *canvas.Adapter) int {
-	s := NewServer(adapter)
+	return RunStdioWithStore(adapter, nil)
+}
+
+func RunStdioWithStore(adapter *canvas.Adapter, st *store.Store) int {
+	s := NewServerWithStore(adapter, st)
 	reader := bufio.NewReader(os.Stdin)
 	for {
 		msg, framed, err := readMessage(reader)

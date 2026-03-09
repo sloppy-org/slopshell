@@ -316,7 +316,7 @@ func (a *App) startLocalServe() error {
 		return nil
 	}
 
-	app := serve.NewApp(a.localProjectDir)
+	app := serve.NewApp(a.localProjectDir, "")
 	ctx, cancel := context.WithCancel(context.Background())
 	a.tunnels.setLocalServe(app, cancel)
 	go func() {

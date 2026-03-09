@@ -78,6 +78,273 @@ var MCPTools = []Tool{
 			},
 		},
 	},
+	{
+		Name:        "workspace_list",
+		Description: "List workspaces, optionally filtered by sphere.",
+		Properties: map[string]ToolProperty{
+			"sphere": {
+				Type:        "string",
+				Description: "Optional workspace sphere filter.",
+				Enum:        []string{"work", "private"},
+			},
+		},
+	},
+	{
+		Name:        "workspace_activate",
+		Description: "Set the active workspace.",
+		Required:    []string{"workspace_id"},
+		Properties: map[string]ToolProperty{
+			"workspace_id": {
+				Type:        "integer",
+				Description: "Workspace id to activate.",
+			},
+		},
+	},
+	{
+		Name:        "workspace_get",
+		Description: "Get workspace details and open item counts.",
+		Required:    []string{"workspace_id"},
+		Properties: map[string]ToolProperty{
+			"workspace_id": {
+				Type:        "integer",
+				Description: "Workspace id to inspect.",
+			},
+		},
+	},
+	{
+		Name:        "item_list",
+		Description: "List items, optionally filtered by state, workspace, sphere, or source.",
+		Properties: map[string]ToolProperty{
+			"state": {
+				Type:        "string",
+				Description: "Optional item state filter.",
+				Enum:        []string{"inbox", "waiting", "someday", "done"},
+			},
+			"workspace_id": {
+				Type:        "integer",
+				Description: "Optional workspace id filter. Use 0 for unassigned items.",
+			},
+			"sphere": {
+				Type:        "string",
+				Description: "Optional sphere filter.",
+				Enum:        []string{"work", "private"},
+			},
+			"source": {
+				Type:        "string",
+				Description: "Optional source filter.",
+			},
+			"limit": {
+				Type:        "integer",
+				Description: "Optional maximum number of items to return.",
+			},
+		},
+	},
+	{
+		Name:        "item_get",
+		Description: "Get an item with linked workspace, actor, and artifact details.",
+		Required:    []string{"item_id"},
+		Properties: map[string]ToolProperty{
+			"item_id": {
+				Type:        "integer",
+				Description: "Item id to inspect.",
+			},
+		},
+	},
+	{
+		Name:        "item_create",
+		Description: "Create a new item with optional workspace, artifact, actor, and timing links.",
+		Required:    []string{"title"},
+		Properties: map[string]ToolProperty{
+			"title": {
+				Type:        "string",
+				Description: "Item title.",
+			},
+			"state": {
+				Type:        "string",
+				Description: "Optional initial state. Defaults to inbox.",
+				Enum:        []string{"inbox", "waiting", "someday", "done"},
+			},
+			"workspace_id": {
+				Type:        "integer",
+				Description: "Optional workspace id.",
+			},
+			"artifact_id": {
+				Type:        "integer",
+				Description: "Optional primary artifact id.",
+			},
+			"actor_id": {
+				Type:        "integer",
+				Description: "Optional actor id.",
+			},
+			"sphere": {
+				Type:        "string",
+				Description: "Optional sphere override.",
+				Enum:        []string{"work", "private"},
+			},
+			"visible_after": {
+				Type:        "string",
+				Description: "Optional RFC3339 visibility timestamp.",
+			},
+			"follow_up_at": {
+				Type:        "string",
+				Description: "Optional RFC3339 follow-up timestamp.",
+			},
+			"source": {
+				Type:        "string",
+				Description: "Optional source provider name.",
+			},
+			"source_ref": {
+				Type:        "string",
+				Description: "Optional provider-specific source reference.",
+			},
+		},
+	},
+	{
+		Name:        "item_triage",
+		Description: "Triage an item to done, later, delegate, someday, or delete.",
+		Required:    []string{"item_id", "action"},
+		Properties: map[string]ToolProperty{
+			"item_id": {
+				Type:        "integer",
+				Description: "Item id to triage.",
+			},
+			"action": {
+				Type:        "string",
+				Description: "Triage action.",
+				Enum:        []string{"done", "later", "delegate", "someday", "delete"},
+			},
+			"actor_id": {
+				Type:        "integer",
+				Description: "Required when action=delegate.",
+			},
+			"visible_after": {
+				Type:        "string",
+				Description: "Required when action=later, in RFC3339 format.",
+			},
+		},
+	},
+	{
+		Name:        "item_assign",
+		Description: "Assign an item to an actor.",
+		Required:    []string{"item_id", "actor_id"},
+		Properties: map[string]ToolProperty{
+			"item_id": {
+				Type:        "integer",
+				Description: "Item id to assign.",
+			},
+			"actor_id": {
+				Type:        "integer",
+				Description: "Actor id to assign.",
+			},
+		},
+	},
+	{
+		Name:        "item_update",
+		Description: "Update an item's title, state, links, source, or timing fields.",
+		Required:    []string{"item_id"},
+		Properties: map[string]ToolProperty{
+			"item_id": {
+				Type:        "integer",
+				Description: "Item id to update.",
+			},
+			"title": {
+				Type:        "string",
+				Description: "Optional updated title.",
+			},
+			"state": {
+				Type:        "string",
+				Description: "Optional updated state.",
+				Enum:        []string{"inbox", "waiting", "someday", "done"},
+			},
+			"workspace_id": {
+				Type:        "integer",
+				Description: "Optional workspace id. Use 0 to clear.",
+			},
+			"artifact_id": {
+				Type:        "integer",
+				Description: "Optional primary artifact id. Use 0 to clear.",
+			},
+			"actor_id": {
+				Type:        "integer",
+				Description: "Optional actor id. Use 0 to clear.",
+			},
+			"sphere": {
+				Type:        "string",
+				Description: "Optional sphere override.",
+				Enum:        []string{"work", "private"},
+			},
+			"visible_after": {
+				Type:        "string",
+				Description: "Optional RFC3339 visibility timestamp.",
+			},
+			"follow_up_at": {
+				Type:        "string",
+				Description: "Optional RFC3339 follow-up timestamp.",
+			},
+			"source": {
+				Type:        "string",
+				Description: "Optional provider source name.",
+			},
+			"source_ref": {
+				Type:        "string",
+				Description: "Optional provider source reference.",
+			},
+		},
+	},
+	{
+		Name:        "artifact_get",
+		Description: "Get an artifact with linked items and readable local text content when available.",
+		Required:    []string{"artifact_id"},
+		Properties: map[string]ToolProperty{
+			"artifact_id": {
+				Type:        "integer",
+				Description: "Artifact id to inspect.",
+			},
+		},
+	},
+	{
+		Name:        "artifact_list",
+		Description: "List artifacts, optionally filtered by kind or workspace.",
+		Properties: map[string]ToolProperty{
+			"kind": {
+				Type:        "string",
+				Description: "Optional artifact kind filter.",
+				Enum:        []string{"email", "document", "pdf", "markdown", "image", "github_issue", "github_pr", "external_task", "transcript", "plan_note", "idea_note"},
+			},
+			"workspace_id": {
+				Type:        "integer",
+				Description: "Optional workspace id filter.",
+			},
+			"linked_only": {
+				Type:        "boolean",
+				Description: "Only include explicitly linked workspace artifacts.",
+			},
+			"limit": {
+				Type:        "integer",
+				Description: "Optional maximum number of artifacts to return.",
+			},
+		},
+	},
+	{
+		Name:        "actor_list",
+		Description: "List actors.",
+	},
+	{
+		Name:        "actor_create",
+		Description: "Create an actor.",
+		Required:    []string{"name", "kind"},
+		Properties: map[string]ToolProperty{
+			"name": {
+				Type:        "string",
+				Description: "Actor display name.",
+			},
+			"kind": {
+				Type:        "string",
+				Description: "Actor kind.",
+				Enum:        []string{"human", "agent"},
+			},
+		},
+	},
 }
 
 var MCPDaemonRoutes = []string{

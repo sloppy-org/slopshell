@@ -13,7 +13,7 @@ import (
 )
 
 func TestHandleMCPPostParseError(t *testing.T) {
-	app := NewApp(t.TempDir())
+	app := NewApp(t.TempDir(), "")
 	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewBufferString("{bad-json"))
 	rr := httptest.NewRecorder()
 
@@ -33,7 +33,7 @@ func TestHandleMCPPostParseError(t *testing.T) {
 }
 
 func TestHandleMCPPostInitializeSetsSessionHeader(t *testing.T) {
-	app := NewApp(t.TempDir())
+	app := NewApp(t.TempDir(), "")
 	body := map[string]interface{}{
 		"jsonrpc": "2.0",
 		"id":      1,
@@ -57,7 +57,7 @@ func TestHandleMCPPostInitializeSetsSessionHeader(t *testing.T) {
 }
 
 func TestHandleMCPPostNotificationReturnsAccepted(t *testing.T) {
-	app := NewApp(t.TempDir())
+	app := NewApp(t.TempDir(), "")
 	body := map[string]interface{}{
 		"jsonrpc": "2.0",
 		"method":  "ping",
@@ -75,7 +75,7 @@ func TestHandleMCPPostNotificationReturnsAccepted(t *testing.T) {
 
 func TestHandleHealthIncludesStatusAndProjectDir(t *testing.T) {
 	projectDir := t.TempDir()
-	app := NewApp(projectDir)
+	app := NewApp(projectDir, "")
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rr := httptest.NewRecorder()
 
@@ -117,14 +117,14 @@ func TestRandomSessionIDIsNumeric(t *testing.T) {
 }
 
 func TestStopNoServerIsNoop(t *testing.T) {
-	app := NewApp(t.TempDir())
+	app := NewApp(t.TempDir(), "")
 	if err := app.Stop(context.Background()); err != nil {
 		t.Fatalf("Stop(nil server) error: %v", err)
 	}
 }
 
 func TestHandleMCPGetReturnsEventStreamHeaders(t *testing.T) {
-	app := NewApp(t.TempDir())
+	app := NewApp(t.TempDir(), "")
 	ctx, cancel := context.WithCancel(context.Background())
 	req := httptest.NewRequest(http.MethodGet, "/mcp", nil).WithContext(ctx)
 	rr := httptest.NewRecorder()

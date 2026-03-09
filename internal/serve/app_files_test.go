@@ -20,7 +20,7 @@ func TestHandleFilesDecodesEncodedNestedPath(t *testing.T) {
 		t.Fatalf("write file: %v", err)
 	}
 
-	app := NewApp(tmp)
+	app := NewApp(tmp, "")
 	req := httptest.NewRequest(http.MethodGet, "/files/docs%2Ftest.pdf", nil)
 	rr := httptest.NewRecorder()
 	app.Router().ServeHTTP(rr, req)
@@ -31,7 +31,7 @@ func TestHandleFilesDecodesEncodedNestedPath(t *testing.T) {
 }
 
 func TestHandleFilesRejectsEncodedTraversal(t *testing.T) {
-	app := NewApp(t.TempDir())
+	app := NewApp(t.TempDir(), "")
 	req := httptest.NewRequest(http.MethodGet, "/files/%2e%2e%2Fsecret.pdf", nil)
 	rr := httptest.NewRecorder()
 	app.Router().ServeHTTP(rr, req)
@@ -52,7 +52,7 @@ func TestHandleFilesResolvesProjectAbsolutePathPrefix(t *testing.T) {
 		t.Fatalf("write file: %v", err)
 	}
 
-	app := NewApp(tmp)
+	app := NewApp(tmp, "")
 	absLike := strings.TrimPrefix(filepath.ToSlash(target), "/")
 	req := httptest.NewRequest(http.MethodGet, "/files/"+absLike, nil)
 	rr := httptest.NewRecorder()

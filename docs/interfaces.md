@@ -146,6 +146,19 @@ Defined in `internal/surface/definitions.go` and used by `internal/mcp/server.go
 - `canvas_import_handoff`
 - `temp_file_create`
 - `temp_file_remove`
+- `workspace_list`
+- `workspace_activate`
+- `workspace_get`
+- `item_list`
+- `item_get`
+- `item_create`
+- `item_triage`
+- `item_assign`
+- `item_update`
+- `artifact_get`
+- `artifact_list`
+- `actor_list`
+- `actor_create`
 
 ## Stability Statement
 
