@@ -37,6 +37,8 @@ func normalizeExternalAccountProvider(raw string) string {
 		return ExternalProviderEvernote
 	case ExternalProviderBear:
 		return ExternalProviderBear
+	case ExternalProviderZotero:
+		return ExternalProviderZotero
 	case ExternalProviderExchange:
 		return ExternalProviderExchange
 	default:
