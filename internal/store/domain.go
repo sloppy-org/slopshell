@@ -28,6 +28,7 @@ const (
 	ExternalProviderTodoist        = "todoist"
 	ExternalProviderEvernote       = "evernote"
 	ExternalProviderBear           = "bear"
+	ExternalProviderZotero         = "zotero"
 	ExternalProviderExchange       = "exchange"
 
 	ItemStateInbox   = "inbox"
