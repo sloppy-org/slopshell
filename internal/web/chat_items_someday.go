@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -15,7 +16,7 @@ func parseInlineSomedayIntent(text string) *SystemAction {
 		return &SystemAction{Action: "review_someday", Params: map[string]interface{}{}}
 	case "someday", "not now", "maybe later", "defer to someday", "defer this to someday", "defer it to someday", "irgendwann", "nicht jetzt", "vielleicht spaeter":
 		return &SystemAction{Action: "triage_someday", Params: map[string]interface{}{}}
-	case "bring this back", "make this active", "move this to inbox", "move it to inbox", "hol das zurueck", "mach das wieder aktiv", "verschiebe das in den posteingang":
+	case "bring this back", "make this active", "move this to inbox", "move it to inbox", "move this back to inbox", "move this back to the inbox", "move this mail back to the inbox", "hol das zurueck", "mach das wieder aktiv", "verschiebe das in den posteingang":
 		return &SystemAction{Action: "promote_someday", Params: map[string]interface{}{}}
 	case "turn off someday reminders", "disable someday reminders", "disable someday review reminders", "schalte irgendwann erinnerungen aus":
 		return &SystemAction{Action: "toggle_someday_review_nudge", Params: map[string]interface{}{"enabled": false}}
@@ -120,6 +121,9 @@ func (a *App) executeSomedayAction(session store.ChatSession, action *SystemActi
 	case "promote_someday":
 		item, err := a.resolveFocusedItemTarget(session, action)
 		if err != nil {
+			return "", nil, err
+		}
+		if err := a.syncRemoteEmailItemState(context.Background(), item, store.ItemStateInbox); err != nil {
 			return "", nil, err
 		}
 		if err := a.store.UpdateItemState(item.ID, store.ItemStateInbox); err != nil {

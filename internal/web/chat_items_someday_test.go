@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/krystophny/tabura/internal/email"
+	"github.com/krystophny/tabura/internal/providerdata"
 	"github.com/krystophny/tabura/internal/store"
 )
 
@@ -23,6 +25,7 @@ func TestParseInlineItemIntentSomedayCommands(t *testing.T) {
 		{text: "not now", wantAction: "triage_someday"},
 		{text: "nicht jetzt", wantAction: "triage_someday"},
 		{text: "bring this back", wantAction: "promote_someday"},
+		{text: "move this mail back to the inbox", wantAction: "promote_someday"},
 		{text: "hol das zurück", wantAction: "promote_someday"},
 		{text: "turn off someday reminders", wantAction: "toggle_someday_review_nudge", wantEnabled: false, checkBool: true},
 		{text: "schalte irgendwann erinnerungen aus", wantAction: "toggle_someday_review_nudge", wantEnabled: false, checkBool: true},
@@ -229,6 +232,114 @@ func TestClassifyAndExecuteSystemActionPromoteSomedayPreservesActor(t *testing.T
 	}
 	if updated.ActorID == nil || *updated.ActorID != actor.ID {
 		t.Fatalf("actor_id = %v, want %d", updated.ActorID, actor.ID)
+	}
+}
+
+func TestClassifyAndExecuteSystemActionPromoteDoneEmailRestoresRemoteInbox(t *testing.T) {
+	app := newAuthedTestApp(t)
+	app.intentLLMURL = ""
+	app.intentClassifierURL = ""
+
+	account, err := app.store.CreateExternalAccount(store.SpherePrivate, store.ExternalProviderGmail, "Private Gmail", nil)
+	if err != nil {
+		t.Fatalf("CreateExternalAccount() error: %v", err)
+	}
+	provider := &fakeEmailSyncProvider{
+		listFunc: func(opts email.SearchOptions) ([]string, error) {
+			switch {
+			case opts.Folder == "INBOX":
+				return []string{"gmail-promote"}, nil
+			case !opts.Since.IsZero():
+				return []string{"gmail-promote"}, nil
+			default:
+				return nil, nil
+			}
+		},
+		messages: map[string]*providerdata.EmailMessage{
+			"gmail-promote": {
+				ID:         "gmail-promote",
+				ThreadID:   "thread-promote",
+				Subject:    "Promote me",
+				Sender:     "Ada <ada@example.com>",
+				Recipients: []string{"chr.albert@gmail.com"},
+				Date:       time.Date(2026, time.March, 9, 22, 0, 0, 0, time.UTC),
+				Labels:     []string{"INBOX"},
+			},
+		},
+	}
+	app.newEmailSyncProvider = func(context.Context, store.ExternalAccount) (emailSyncProvider, error) {
+		return provider, nil
+	}
+
+	project, err := app.ensureDefaultProjectRecord()
+	if err != nil {
+		t.Fatalf("ensure default project: %v", err)
+	}
+	workspace, err := app.store.CreateWorkspace("Default", project.RootPath)
+	if err != nil {
+		t.Fatalf("CreateWorkspace() error: %v", err)
+	}
+	session, err := app.store.GetOrCreateChatSession(project.ProjectKey)
+	if err != nil {
+		t.Fatalf("chat session: %v", err)
+	}
+
+	readmePath := filepath.Join(project.RootPath, "README.md")
+	if err := os.WriteFile(readmePath, []byte("# notes\n"), 0o644); err != nil {
+		t.Fatalf("write README: %v", err)
+	}
+	title := "README"
+	artifact, err := app.store.CreateArtifact(store.ArtifactKindMarkdown, &readmePath, nil, &title, nil)
+	if err != nil {
+		t.Fatalf("CreateArtifact() error: %v", err)
+	}
+
+	if _, err := app.syncEmailAccount(context.Background(), account); err != nil {
+		t.Fatalf("syncEmailAccount() error: %v", err)
+	}
+	item, err := app.store.GetItemBySource(store.ExternalProviderGmail, "message:gmail-promote")
+	if err != nil {
+		t.Fatalf("GetItemBySource() error: %v", err)
+	}
+	if err := app.store.UpdateItem(item.ID, store.ItemUpdate{
+		WorkspaceID: &workspace.ID,
+		ArtifactID:  &artifact.ID,
+	}); err != nil {
+		t.Fatalf("UpdateItem() error: %v", err)
+	}
+	if err := app.store.TriageItemDone(item.ID); err != nil {
+		t.Fatalf("TriageItemDone() error: %v", err)
+	}
+
+	mock := &canvasMCPMock{
+		artifactTitle: "README.md",
+		artifactKind:  "text_artifact",
+		artifactText:  "# notes",
+	}
+	server := mock.setupServer(t)
+	defer server.Close()
+	port := serverPort(t, server.Listener.Addr())
+	app.tunnels.setPort(app.canvasSessionIDForProject(project), port)
+
+	message, payloads, handled := app.classifyAndExecuteSystemAction(context.Background(), session.ID, session, "move this mail back to the inbox")
+	if !handled {
+		t.Fatal("expected promote command to be handled")
+	}
+	if message != `Moved "Promote me" back to inbox.` {
+		t.Fatalf("message = %q", message)
+	}
+	if len(payloads) != 1 || strFromAny(payloads[0]["type"]) != "item_state_changed" {
+		t.Fatalf("payloads = %#v", payloads)
+	}
+	updated, err := app.store.GetItem(item.ID)
+	if err != nil {
+		t.Fatalf("GetItem() error: %v", err)
+	}
+	if updated.State != store.ItemStateInbox {
+		t.Fatalf("state = %q, want %q", updated.State, store.ItemStateInbox)
+	}
+	if len(provider.moveToInboxCalls) != 1 || len(provider.moveToInboxCalls[0]) != 1 || provider.moveToInboxCalls[0][0] != "gmail-promote" {
+		t.Fatalf("move to inbox calls = %#v, want gmail-promote", provider.moveToInboxCalls)
 	}
 }
 
