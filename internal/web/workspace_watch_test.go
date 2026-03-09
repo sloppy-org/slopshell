@@ -71,14 +71,19 @@ func TestWorkspaceWatchAPIProcessesItemsSequentially(t *testing.T) {
 	if rrStatus.Code != http.StatusOK {
 		t.Fatalf("watch status code = %d, want 200: %s", rrStatus.Code, rrStatus.Body.String())
 	}
-	statusData := decodeJSONDataResponse(t, rrStatus)
-	statusPayload, ok := statusData["status"].(map[string]any)
-	if !ok {
-		t.Fatalf("status payload = %#v", statusData)
-	}
-	if got := int(statusPayload["processed_count"].(float64)); got < 2 {
-		t.Fatalf("processed_count = %d, want at least 2", got)
-	}
+	waitForCondition(t, 2*time.Second, func() bool {
+		rrStatus = doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/workspaces/"+itoa(workspace.ID)+"/watch", nil)
+		if rrStatus.Code != http.StatusOK {
+			return false
+		}
+		statusData := decodeJSONDataResponse(t, rrStatus)
+		statusPayload, ok := statusData["status"].(map[string]any)
+		if !ok {
+			return false
+		}
+		got, ok := statusPayload["processed_count"].(float64)
+		return ok && int(got) >= 2
+	})
 
 	rrList := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/watches", nil)
 	if rrList.Code != http.StatusOK {
