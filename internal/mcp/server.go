@@ -244,6 +244,12 @@ func (s *Server) callTool(name string, args map[string]interface{}) (map[string]
 		return s.workspaceActivate(args)
 	case "workspace_get":
 		return s.workspaceGet(args)
+	case "workspace_watch_start":
+		return s.workspaceWatchStart(args)
+	case "workspace_watch_stop":
+		return s.workspaceWatchStop(args)
+	case "workspace_watch_status":
+		return s.workspaceWatchStatus(args)
 	case "item_list":
 		return s.itemList(args)
 	case "item_get":

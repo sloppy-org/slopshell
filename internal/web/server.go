@@ -95,24 +95,26 @@ type App struct {
 
 	upgrader websocket.Upgrader
 
-	mu                   sync.Mutex
-	confirmMu            sync.Mutex
-	approvalMu           sync.Mutex
-	workerWG             sync.WaitGroup
-	hub                  *wsHub
-	turns                *chatTurnTracker
-	companionTurns       *companionPendingTurnTracker
-	companionRuntime     *companionRuntimeTracker
-	chatCaptureModes     *chatCaptureModeTracker
-	chatCursorContexts   *chatCursorContextTracker
-	chatCanvasPositions  *chatCanvasPositionTracker
-	projectAttention     *projectAttentionTracker
-	tunnels              *tunnelRegistry
-	chatAppSessions      map[string]*appserver.Session
-	pendingDanger        map[string]*pendingDangerousAction
-	pendingApprovals     map[string]map[string]*pendingAppServerApproval
-	ghCommandRunner      ghCommandRunner
-	presentationRenderer presentationRenderFunc
+	mu                      sync.Mutex
+	confirmMu               sync.Mutex
+	approvalMu              sync.Mutex
+	workerWG                sync.WaitGroup
+	hub                     *wsHub
+	turns                   *chatTurnTracker
+	companionTurns          *companionPendingTurnTracker
+	companionRuntime        *companionRuntimeTracker
+	chatCaptureModes        *chatCaptureModeTracker
+	chatCursorContexts      *chatCursorContextTracker
+	chatCanvasPositions     *chatCanvasPositionTracker
+	workspaceWatches        *workspaceWatchTracker
+	projectAttention        *projectAttentionTracker
+	tunnels                 *tunnelRegistry
+	chatAppSessions         map[string]*appserver.Session
+	pendingDanger           map[string]*pendingDangerousAction
+	pendingApprovals        map[string]map[string]*pendingAppServerApproval
+	ghCommandRunner         ghCommandRunner
+	workspaceWatchProcessor workspaceWatchProcessorFunc
+	presentationRenderer    presentationRenderFunc
 
 	shutdownCtx    context.Context
 	shutdownCancel context.CancelFunc
@@ -285,25 +287,27 @@ func New(dataDir, localProjectDir, localMCPURL, appServerURL, model, ttsURL, spa
 		newICSCalendarReader: func() (icsCalendarReader, error) {
 			return ics.New()
 		},
-		upgrader:             websocket.Upgrader{CheckOrigin: checkWSOrigin},
-		hub:                  newWSHub(),
-		turns:                newChatTurnTracker(),
-		companionTurns:       newCompanionPendingTurnTracker(),
-		companionRuntime:     newCompanionRuntimeTracker(),
-		chatCaptureModes:     newChatCaptureModeTracker(),
-		chatCursorContexts:   newChatCursorContextTracker(),
-		chatCanvasPositions:  newChatCanvasPositionTracker(),
-		projectAttention:     newProjectAttentionTracker(),
-		tunnels:              newTunnelRegistry(),
-		chatAppSessions:      map[string]*appserver.Session{},
-		pendingDanger:        map[string]*pendingDangerousAction{},
-		pendingApprovals:     map[string]map[string]*pendingAppServerApproval{},
-		ghCommandRunner:      runGitHubCLI,
-		presentationRenderer: renderPresentationToPDF,
-		shutdownCtx:          shutdownCtx,
-		shutdownCancel:       shutdownCancel,
-		bootID:               strconv.FormatInt(time.Now().UnixNano(), 16),
-		startedAt:            time.Now().UTC().Format(time.RFC3339Nano),
+		upgrader:                websocket.Upgrader{CheckOrigin: checkWSOrigin},
+		hub:                     newWSHub(),
+		turns:                   newChatTurnTracker(),
+		companionTurns:          newCompanionPendingTurnTracker(),
+		companionRuntime:        newCompanionRuntimeTracker(),
+		chatCaptureModes:        newChatCaptureModeTracker(),
+		chatCursorContexts:      newChatCursorContextTracker(),
+		chatCanvasPositions:     newChatCanvasPositionTracker(),
+		workspaceWatches:        newWorkspaceWatchTracker(),
+		projectAttention:        newProjectAttentionTracker(),
+		tunnels:                 newTunnelRegistry(),
+		chatAppSessions:         map[string]*appserver.Session{},
+		pendingDanger:           map[string]*pendingDangerousAction{},
+		pendingApprovals:        map[string]map[string]*pendingAppServerApproval{},
+		ghCommandRunner:         runGitHubCLI,
+		workspaceWatchProcessor: nil,
+		presentationRenderer:    renderPresentationToPDF,
+		shutdownCtx:             shutdownCtx,
+		shutdownCancel:          shutdownCancel,
+		bootID:                  strconv.FormatInt(time.Now().UnixNano(), 16),
+		startedAt:               time.Now().UTC().Format(time.RFC3339Nano),
 	}
 	if _, err := app.ensureDefaultProjectRecord(); err != nil {
 		_ = s.Close()
@@ -318,8 +322,10 @@ func New(dataDir, localProjectDir, localMCPURL, appServerURL, model, ttsURL, spa
 		return nil, err
 	}
 	app.sourceSync = app.newSourceSyncRunner()
+	app.workspaceWatchProcessor = app.processWorkspaceWatchItem
 	app.startItemResurfacer()
 	app.startSourcePoller()
+	app.resumeWorkspaceWatches()
 	return app, nil
 }
 

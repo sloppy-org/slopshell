@@ -167,6 +167,62 @@ func (s *Server) workspaceGet(args map[string]interface{}) (map[string]interface
 	}, nil
 }
 
+func (s *Server) workspaceWatchStart(args map[string]interface{}) (map[string]interface{}, error) {
+	st, err := s.requireStore()
+	if err != nil {
+		return nil, err
+	}
+	workspaceID, err := int64Arg(args, "workspace_id")
+	if err != nil {
+		return nil, err
+	}
+	configJSON := strings.TrimSpace(strArg(args, "config_json"))
+	pollInterval := intArg(args, "poll_interval_seconds", 0)
+	watch, err := st.UpsertWorkspaceWatch(workspaceID, configJSON, pollInterval, true, nil)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]interface{}{
+		"watch": watch,
+	}, nil
+}
+
+func (s *Server) workspaceWatchStop(args map[string]interface{}) (map[string]interface{}, error) {
+	st, err := s.requireStore()
+	if err != nil {
+		return nil, err
+	}
+	workspaceID, err := int64Arg(args, "workspace_id")
+	if err != nil {
+		return nil, err
+	}
+	watch, err := st.SetWorkspaceWatchEnabled(workspaceID, false)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]interface{}{
+		"watch": watch,
+	}, nil
+}
+
+func (s *Server) workspaceWatchStatus(args map[string]interface{}) (map[string]interface{}, error) {
+	st, err := s.requireStore()
+	if err != nil {
+		return nil, err
+	}
+	workspaceID, err := int64Arg(args, "workspace_id")
+	if err != nil {
+		return nil, err
+	}
+	watch, err := st.GetWorkspaceWatch(workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]interface{}{
+		"watch": watch,
+	}, nil
+}
+
 func (s *Server) itemList(args map[string]interface{}) (map[string]interface{}, error) {
 	st, err := s.requireStore()
 	if err != nil {

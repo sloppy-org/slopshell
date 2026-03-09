@@ -69,10 +69,14 @@ Runtime and chat session management:
 
 Domain model API:
 - `GET /api/workspaces`
+- `GET /api/watches`
 - `POST /api/workspaces`
 - `GET /api/workspaces/{workspace_id}`
 - `PUT /api/workspaces/{workspace_id}`
 - `PUT /api/workspaces/{workspace_id}/project`
+- `GET /api/workspaces/{workspace_id}/watch`
+- `POST /api/workspaces/{workspace_id}/watch`
+- `DELETE /api/workspaces/{workspace_id}/watch`
 - `DELETE /api/workspaces/{workspace_id}`
 - `GET /api/time-entries`
 - `GET /api/time-entries/summary`
@@ -160,6 +164,9 @@ Defined in `internal/surface/definitions.go` and used by `internal/mcp/server.go
 - `workspace_list`
 - `workspace_activate`
 - `workspace_get`
+- `workspace_watch_start`
+- `workspace_watch_stop`
+- `workspace_watch_status`
 - `item_list`
 - `item_get`
 - `item_create`

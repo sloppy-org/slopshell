@@ -271,3 +271,13 @@ type BatchRunItemUpdate struct {
 	StartedAt  *string `json:"started_at,omitempty"`
 	FinishedAt *string `json:"finished_at,omitempty"`
 }
+
+type WorkspaceWatch struct {
+	WorkspaceID         int64  `json:"workspace_id"`
+	ConfigJSON          string `json:"config_json"`
+	PollIntervalSeconds int    `json:"poll_interval_seconds"`
+	Enabled             bool   `json:"enabled"`
+	CurrentBatchID      *int64 `json:"current_batch_id,omitempty"`
+	CreatedAt           string `json:"created_at"`
+	UpdatedAt           string `json:"updated_at"`
+}

@@ -112,6 +112,47 @@ var MCPTools = []Tool{
 		},
 	},
 	{
+		Name:        "workspace_watch_start",
+		Description: "Enable watch mode for a workspace.",
+		Required:    []string{"workspace_id"},
+		Properties: map[string]ToolProperty{
+			"workspace_id": {
+				Type:        "integer",
+				Description: "Workspace id to watch.",
+			},
+			"poll_interval_seconds": {
+				Type:        "integer",
+				Description: "Optional polling interval in seconds.",
+			},
+			"config_json": {
+				Type:        "string",
+				Description: "Optional JSON config for worker selection.",
+			},
+		},
+	},
+	{
+		Name:        "workspace_watch_stop",
+		Description: "Disable watch mode for a workspace.",
+		Required:    []string{"workspace_id"},
+		Properties: map[string]ToolProperty{
+			"workspace_id": {
+				Type:        "integer",
+				Description: "Workspace id to stop watching.",
+			},
+		},
+	},
+	{
+		Name:        "workspace_watch_status",
+		Description: "Get persisted watch status for a workspace.",
+		Required:    []string{"workspace_id"},
+		Properties: map[string]ToolProperty{
+			"workspace_id": {
+				Type:        "integer",
+				Description: "Workspace id to inspect.",
+			},
+		},
+	},
+	{
 		Name:        "item_list",
 		Description: "List items, optionally filtered by state, workspace, sphere, or source.",
 		Properties: map[string]ToolProperty{
@@ -419,10 +460,14 @@ var WebRouteSections = []RouteSection{
 		Title: "Domain model API",
 		Routes: []string{
 			"GET /api/workspaces",
+			"GET /api/watches",
 			"POST /api/workspaces",
 			"GET /api/workspaces/{workspace_id}",
 			"PUT /api/workspaces/{workspace_id}",
 			"PUT /api/workspaces/{workspace_id}/project",
+			"GET /api/workspaces/{workspace_id}/watch",
+			"POST /api/workspaces/{workspace_id}/watch",
+			"DELETE /api/workspaces/{workspace_id}/watch",
 			"DELETE /api/workspaces/{workspace_id}",
 			"GET /api/time-entries",
 			"GET /api/time-entries/summary",

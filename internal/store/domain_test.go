@@ -41,6 +41,7 @@ func TestStoreMigratesDomainTablesOnFreshDatabase(t *testing.T) {
 		"external_bindings":           {"id", "account_id", "provider", "object_type", "remote_id", "item_id", "artifact_id", "container_ref", "remote_updated_at", "last_synced_at"},
 		"batch_runs":                  {"id", "workspace_id", "started_at", "finished_at", "config_json", "status"},
 		"batch_run_items":             {"batch_id", "item_id", "status", "pr_number", "pr_url", "error_msg", "started_at", "finished_at"},
+		"workspace_watches":           {"workspace_id", "config_json", "poll_interval_seconds", "enabled", "current_batch_id", "created_at", "updated_at"},
 		"items":                       {"id", "title", "state", "workspace_id", "project_id", "sphere", "artifact_id", "actor_id", "visible_after", "follow_up_at", "source", "source_ref", "created_at", "updated_at"},
 		"time_entries":                {"id", "workspace_id", "project_id", "sphere", "started_at", "ended_at", "activity", "notes"},
 	} {

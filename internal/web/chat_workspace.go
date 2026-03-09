@@ -39,6 +39,12 @@ func parseInlineWorkspaceIntent(text string) *SystemAction {
 		return &SystemAction{Action: "list_workspaces", Params: map[string]interface{}{"all_spheres": true}}
 	case "show workspace details":
 		return &SystemAction{Action: "show_workspace_details", Params: map[string]interface{}{}}
+	case "watch this workspace", "watch workspace", "start watching", "watch here":
+		return &SystemAction{Action: "workspace_watch_start", Params: map[string]interface{}{}}
+	case "stop watching", "stop watching this workspace", "stop workspace watch":
+		return &SystemAction{Action: "workspace_watch_stop", Params: map[string]interface{}{}}
+	case "watch status", "workspace watch status", "show watch status":
+		return &SystemAction{Action: "workspace_watch_status", Params: map[string]interface{}{}}
 	}
 	if match := workspaceScratchCreatePattern.FindStringSubmatch(trimmed); len(match) == 2 {
 		params := map[string]interface{}{"scratch": true}
@@ -598,10 +604,24 @@ func (a *App) executeShowWorkspaceDetailsAction(session store.ChatSession, actio
 	if workspace.IsActive {
 		status = "active"
 	}
+	watchLabel := "off"
+	if watch, watchStatus, watchErr := a.workspaceWatchSnapshot(workspace.ID); watchErr == nil {
+		switch {
+		case watchStatus.Active && watchStatus.CurrentItemID != nil:
+			watchLabel = fmt.Sprintf("processing item %d", *watchStatus.CurrentItemID)
+		case watchStatus.Active:
+			watchLabel = "active"
+		case watch != nil && watch.Enabled:
+			watchLabel = "enabled"
+		case watch != nil:
+			watchLabel = "stopping"
+		}
+	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "Workspace %s\n", workspace.Name)
 	fmt.Fprintf(&b, "- Path: %s\n", workspace.DirPath)
 	fmt.Fprintf(&b, "- Status: %s\n", status)
+	fmt.Fprintf(&b, "- Watch: %s\n", watchLabel)
 	fmt.Fprintf(&b, "- Open items: %d\n", len(items))
 	if repo != "" {
 		fmt.Fprintf(&b, "- GitHub remote: %s\n", repo)
@@ -612,6 +632,7 @@ func (a *App) executeShowWorkspaceDetailsAction(session store.ChatSession, actio
 		"name":         workspace.Name,
 		"dir_path":     workspace.DirPath,
 		"is_active":    workspace.IsActive,
+		"watch_status": watchLabel,
 		"open_items":   len(items),
 		"github_repo":  repo,
 	}, nil

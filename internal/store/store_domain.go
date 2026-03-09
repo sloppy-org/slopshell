@@ -128,6 +128,15 @@ CREATE TABLE IF NOT EXISTS batch_run_items (
 );
 CREATE INDEX IF NOT EXISTS idx_batch_run_items_batch_status
   ON batch_run_items(batch_id, status, item_id);
+CREATE TABLE IF NOT EXISTS workspace_watches (
+  workspace_id INTEGER PRIMARY KEY REFERENCES workspaces(id) ON DELETE CASCADE,
+  config_json TEXT NOT NULL DEFAULT '{}',
+  poll_interval_seconds INTEGER NOT NULL DEFAULT 300,
+  enabled INTEGER NOT NULL DEFAULT 0,
+  current_batch_id INTEGER REFERENCES batch_runs(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 `
 	if _, err := s.db.Exec(schema); err != nil {
 		return err
@@ -322,6 +331,13 @@ func normalizeBatchConfigJSON(raw string) (string, error) {
 		return "", errors.New("config_json must be valid JSON")
 	}
 	return clean, nil
+}
+
+func normalizeWorkspaceWatchPollIntervalSeconds(raw int) int {
+	if raw <= 0 {
+		return 300
+	}
+	return raw
 }
 
 func normalizeItemListFilter(filter ItemListFilter) (ItemListFilter, error) {
@@ -733,6 +749,38 @@ func scanBatchRunItem(
 	out.ErrorMsg = nullStringPointer(errorMsg)
 	out.StartedAt = nullStringPointer(startedAt)
 	out.FinishedAt = nullStringPointer(finishedAt)
+	return out, nil
+}
+
+func scanWorkspaceWatch(
+	row interface {
+		Scan(dest ...any) error
+	},
+) (WorkspaceWatch, error) {
+	var (
+		out            WorkspaceWatch
+		enabled        int
+		currentBatchID sql.NullInt64
+	)
+	err := row.Scan(
+		&out.WorkspaceID,
+		&out.ConfigJSON,
+		&out.PollIntervalSeconds,
+		&enabled,
+		&currentBatchID,
+		&out.CreatedAt,
+		&out.UpdatedAt,
+	)
+	if err != nil {
+		return WorkspaceWatch{}, err
+	}
+	out.ConfigJSON = strings.TrimSpace(out.ConfigJSON)
+	if out.ConfigJSON == "" {
+		out.ConfigJSON = "{}"
+	}
+	out.PollIntervalSeconds = normalizeWorkspaceWatchPollIntervalSeconds(out.PollIntervalSeconds)
+	out.Enabled = enabled != 0
+	out.CurrentBatchID = nullInt64Pointer(currentBatchID)
 	return out, nil
 }
 

@@ -27,7 +27,7 @@ const (
 
 const hubSystemPrompt = `You are Tabura Hub, a fast coordinator.
 For system actions output JSON only: {"action":"<action>", ...params}.
-Allowed actions: switch_project, switch_workspace, list_workspace_items, create_workspace_from_git, assign_workspace_project, show_workspace_project, create_project, list_project_workspaces, link_workspace_artifact, list_linked_artifacts, switch_model, toggle_silent, toggle_live_dialogue, shell, open_file_canvas, show_calendar, show_briefing, cancel_work, show_status, review_someday, toggle_someday_review_nudge, sync_project, sync_sources, map_todoist_project, sync_todoist, create_todoist_task, sync_evernote, sync_bear, promote_bear_checklist, sync_zotero, chat.
+Allowed actions: switch_project, switch_workspace, list_workspace_items, create_workspace_from_git, workspace_watch_start, workspace_watch_stop, workspace_watch_status, assign_workspace_project, show_workspace_project, create_project, list_project_workspaces, link_workspace_artifact, list_linked_artifacts, switch_model, toggle_silent, toggle_live_dialogue, shell, open_file_canvas, show_calendar, show_briefing, cancel_work, show_status, review_someday, toggle_someday_review_nudge, sync_project, sync_sources, map_todoist_project, sync_todoist, create_todoist_task, sync_evernote, sync_bear, promote_bear_checklist, sync_zotero, chat.
 You may return multi-step actions via {"actions":[...]}.
 For current-information requests (weather, web search, news, prices, schedules, latest/current updates), MUST use chat and MUST NOT use shell.
 For uncertain open/show-file requests: shell search first, then open_file_canvas with path="$last_shell_path".

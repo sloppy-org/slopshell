@@ -259,3 +259,41 @@ func TestArtifactAndActorTools(t *testing.T) {
 		t.Fatalf("artifact_get items = %+v", gotItems)
 	}
 }
+
+func TestWorkspaceWatchTools(t *testing.T) {
+	s, st, projectDir := newDomainServerForTest(t)
+
+	workspace, err := st.CreateWorkspace("Alpha", projectDir, store.SphereWork)
+	if err != nil {
+		t.Fatalf("CreateWorkspace() error: %v", err)
+	}
+
+	started, err := s.callTool("workspace_watch_start", map[string]interface{}{
+		"workspace_id":          workspace.ID,
+		"poll_interval_seconds": 15,
+		"config_json":           `{"worker":"codex"}`,
+	})
+	if err != nil {
+		t.Fatalf("workspace_watch_start failed: %v", err)
+	}
+	watch, _ := started["watch"].(store.WorkspaceWatch)
+	if !watch.Enabled || watch.PollIntervalSeconds != 15 {
+		t.Fatalf("workspace_watch_start returned %+v", watch)
+	}
+
+	status, err := s.callTool("workspace_watch_status", map[string]interface{}{"workspace_id": workspace.ID})
+	if err != nil {
+		t.Fatalf("workspace_watch_status failed: %v", err)
+	}
+	if got, _ := status["watch"].(store.WorkspaceWatch); got.WorkspaceID != workspace.ID {
+		t.Fatalf("workspace_watch_status returned %+v", got)
+	}
+
+	stopped, err := s.callTool("workspace_watch_stop", map[string]interface{}{"workspace_id": workspace.ID})
+	if err != nil {
+		t.Fatalf("workspace_watch_stop failed: %v", err)
+	}
+	if got, _ := stopped["watch"].(store.WorkspaceWatch); got.Enabled {
+		t.Fatalf("workspace_watch_stop returned %+v", got)
+	}
+}
