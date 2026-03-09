@@ -11,6 +11,7 @@ import (
 
 var itemFilterSourceCommands = map[string]string{
 	"show todoist tasks":      store.ExternalProviderTodoist,
+	"show my todoist tasks":   store.ExternalProviderTodoist,
 	"show todoist items":      store.ExternalProviderTodoist,
 	"zeige todoist aufgaben":  store.ExternalProviderTodoist,
 	"zeige todoist items":     store.ExternalProviderTodoist,
