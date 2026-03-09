@@ -41,20 +41,10 @@ function isPointerInsideElement(element, clientX, clientY) {
     && clientY <= rect.bottom;
 }
 
-function topEdgeTriggerBlockedByFileSidebar(clientX, clientY, target = null) {
+function topEdgeTriggerBlockedByFileSidebar() {
   if (!state.prReviewDrawerOpen) return false;
   const pane = document.getElementById('pr-file-pane');
-  if (!(pane instanceof HTMLElement) || !pane.classList.contains('is-open')) {
-    return false;
-  }
-  if (target instanceof Element && target.closest('#pr-file-pane')) {
-    return true;
-  }
-  const rect = pane.getBoundingClientRect();
-  return clientX >= rect.left
-    && clientX <= rect.right
-    && clientY >= rect.top
-    && clientY <= rect.bottom;
+  return pane instanceof HTMLElement && pane.classList.contains('is-open');
 }
 
 function scheduleEdgePanelHide(element, timerName) {
@@ -169,11 +159,10 @@ export function initEdgePanels() {
   document.addEventListener('mousemove', (ev) => {
     const edgeTapSize = getEdgeTapSizePx();
     const topEdgeTapSize = getTopEdgeTapSizePx();
-    const hoverTarget = ev.target instanceof Element ? ev.target : null;
     // Top edge
     if (edgeTop && !edgeTop.classList.contains('edge-pinned')) {
       const inTopTrigger = ev.clientY < topEdgeTapSize
-        && !topEdgeTriggerBlockedByFileSidebar(ev.clientX, ev.clientY, hoverTarget);
+        && !topEdgeTriggerBlockedByFileSidebar();
       const insideTopPanel = isPointerInsideElement(edgeTop, ev.clientX, ev.clientY);
       if (inTopTrigger) {
         edgeTop.classList.add('edge-active');
