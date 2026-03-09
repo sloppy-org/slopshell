@@ -257,29 +257,14 @@ func emailFollowUpMessageIDs(ctx context.Context, provider emailSyncProvider, cf
 	maxResults := emailSyncMaxResults(cfg)
 	out := make(map[string]struct{})
 
-	unreadOpts := email.DefaultSearchOptions().
+	inboxOpts := email.DefaultSearchOptions().
 		WithFolder("INBOX").
-		WithIsRead(false).
 		WithMaxResults(maxResults)
-	unreadIDs, err := listEmailMessagesWithFallback(ctx, provider, unreadOpts)
+	inboxIDs, err := listEmailMessagesWithFallback(ctx, provider, inboxOpts)
 	if err != nil {
 		return nil, err
 	}
-	collectEmailMessageIDs(out, unreadIDs)
-
-	flaggedIDs, err := provider.ListMessages(ctx, email.DefaultSearchOptions().WithIsFlagged(true).WithMaxResults(maxResults))
-	if err != nil {
-		return nil, err
-	}
-	collectEmailMessageIDs(out, flaggedIDs)
-
-	for _, rule := range cfg.FollowUpRules {
-		ruleIDs, err := provider.ListMessages(ctx, followUpRuleSearchOptions(rule, maxResults))
-		if err != nil {
-			return nil, err
-		}
-		collectEmailMessageIDs(out, ruleIDs)
-	}
+	collectEmailMessageIDs(out, inboxIDs)
 	return out, nil
 }
 

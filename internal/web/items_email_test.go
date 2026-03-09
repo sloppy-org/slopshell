@@ -71,7 +71,7 @@ func TestSourceSyncRunnerPollsGmailAndIMAPAccounts(t *testing.T) {
 	gmailProvider := &fakeEmailSyncProvider{
 		listFunc: func(opts email.SearchOptions) ([]string, error) {
 			switch {
-			case opts.IsRead != nil && !*opts.IsRead:
+			case opts.Folder == "INBOX":
 				return []string{"gmail-1"}, nil
 			case opts.IsFlagged != nil && *opts.IsFlagged:
 				return nil, nil
@@ -103,7 +103,7 @@ func TestSourceSyncRunnerPollsGmailAndIMAPAccounts(t *testing.T) {
 	imapProvider := &fakeEmailSyncProvider{
 		listFunc: func(opts email.SearchOptions) ([]string, error) {
 			switch {
-			case opts.IsRead != nil && !*opts.IsRead:
+			case opts.Folder == "INBOX":
 				return []string{"INBOX:7"}, nil
 			case opts.IsFlagged != nil && *opts.IsFlagged:
 				return nil, nil
@@ -312,7 +312,7 @@ func exchangeEmailSyncProvider() *fakeEmailSyncProvider {
 	return &fakeEmailSyncProvider{
 		listFunc: func(opts email.SearchOptions) ([]string, error) {
 			switch {
-			case opts.IsRead != nil && !*opts.IsRead:
+			case opts.Folder == "INBOX":
 				return []string{"exchange-1"}, nil
 			case opts.IsFlagged != nil && *opts.IsFlagged:
 				return nil, nil
@@ -384,7 +384,7 @@ func assertExchangeEmailSyncArtifacts(t *testing.T, fixture exchangeEmailSyncFix
 	}
 }
 
-func TestSyncEmailAccountCreatesFollowUpItemsFromRules(t *testing.T) {
+func TestSyncEmailAccountDoesNotCreateInboxItemsFromRulesOutsideInbox(t *testing.T) {
 	app := newAuthedTestApp(t)
 
 	account, err := app.store.CreateExternalAccount(store.SphereWork, store.ExternalProviderGmail, "Legal Gmail", map[string]any{
@@ -401,7 +401,7 @@ func TestSyncEmailAccountCreatesFollowUpItemsFromRules(t *testing.T) {
 			switch {
 			case opts.Subject == "contract":
 				return []string{"gmail-contract"}, nil
-			case opts.IsRead != nil && !*opts.IsRead:
+			case opts.Folder == "INBOX":
 				return nil, nil
 			case opts.IsFlagged != nil && *opts.IsFlagged:
 				return nil, nil
@@ -432,12 +432,19 @@ func TestSyncEmailAccountCreatesFollowUpItemsFromRules(t *testing.T) {
 		t.Fatalf("syncEmailAccount() error: %v", err)
 	}
 
-	item, err := app.store.GetItemBySource(store.ExternalProviderGmail, "message:gmail-contract")
-	if err != nil {
-		t.Fatalf("GetItemBySource(rule) error: %v", err)
+	if _, err := app.store.GetItemBySource(store.ExternalProviderGmail, "message:gmail-contract"); err == nil {
+		t.Fatal("archived rule-matched message created inbox item, want no item")
 	}
-	if item.Title != "contract review needed" {
-		t.Fatalf("rule item title = %q, want subject", item.Title)
+
+	artifacts, err := app.store.ListArtifactsByKind(store.ArtifactKindEmail)
+	if err != nil {
+		t.Fatalf("ListArtifactsByKind(email) error: %v", err)
+	}
+	if len(artifacts) != 1 {
+		t.Fatalf("len(email artifacts) = %d, want 1", len(artifacts))
+	}
+	if got := strFromPointer(artifacts[0].Title); got != "contract review needed" {
+		t.Fatalf("email artifact title = %q, want contract review needed", got)
 	}
 }
 
@@ -463,7 +470,7 @@ func TestSyncEmailAccountUsesMappedNonPrimaryLabelForAssignment(t *testing.T) {
 	provider := &fakeEmailSyncProvider{
 		listFunc: func(opts email.SearchOptions) ([]string, error) {
 			switch {
-			case opts.IsRead != nil && !*opts.IsRead:
+			case opts.Folder == "INBOX":
 				return []string{"gmail-contracts"}, nil
 			case opts.IsFlagged != nil && *opts.IsFlagged:
 				return nil, nil
@@ -540,7 +547,7 @@ func TestSyncEmailAccountLeavesDoneItemsClosed(t *testing.T) {
 	provider := &fakeEmailSyncProvider{
 		listFunc: func(opts email.SearchOptions) ([]string, error) {
 			switch {
-			case opts.IsRead != nil && !*opts.IsRead:
+			case opts.Folder == "INBOX":
 				return []string{"gmail-done"}, nil
 			case opts.IsFlagged != nil && *opts.IsFlagged:
 				return nil, nil
@@ -602,7 +609,7 @@ func TestSyncEmailAccountCreatesThreadArtifactsAndLinksEmailItems(t *testing.T) 
 	provider := &fakeEmailSyncProvider{
 		listFunc: func(opts email.SearchOptions) ([]string, error) {
 			switch {
-			case opts.IsRead != nil && !*opts.IsRead:
+			case opts.Folder == "INBOX":
 				return []string{"gmail-1"}, nil
 			case opts.IsFlagged != nil && *opts.IsFlagged:
 				return nil, nil
@@ -714,7 +721,7 @@ func TestSyncEmailAccountExtractsThreadActionItems(t *testing.T) {
 	provider := &fakeEmailSyncProvider{
 		listFunc: func(opts email.SearchOptions) ([]string, error) {
 			switch {
-			case opts.IsRead != nil && !*opts.IsRead:
+			case opts.Folder == "INBOX":
 				return []string{"gmail-action"}, nil
 			case opts.IsFlagged != nil && *opts.IsFlagged:
 				return nil, nil
@@ -800,7 +807,7 @@ func TestSyncEmailAccountOnlyCreatesInboxItemsForFollowUpMessages(t *testing.T) 
 	provider := &fakeEmailSyncProvider{
 		listFunc: func(opts email.SearchOptions) ([]string, error) {
 			switch {
-			case opts.IsRead != nil && !*opts.IsRead:
+			case opts.Folder == "INBOX":
 				return nil, nil
 			case opts.IsFlagged != nil && *opts.IsFlagged:
 				return nil, nil
