@@ -448,6 +448,26 @@ func (a *App) executeSystemAction(sessionID string, session store.ChatSession, a
 				"rendered_path": renderedPath,
 			}, nil
 		}
+		if shouldRenderDocumentArtifact(cwd, absPath) {
+			renderedPath, err := a.renderDocumentArtifact(cwd, absPath)
+			if err != nil {
+				return "", nil, err
+			}
+			if _, err := a.mcpToolsCall(port, "canvas_artifact_show", map[string]interface{}{
+				"session_id": canvasSessionID,
+				"kind":       "pdf",
+				"title":      canvasTitle,
+				"path":       renderedPath,
+			}); err != nil {
+				return "", nil, err
+			}
+			return fmt.Sprintf("Opened %s on canvas as PDF.", canvasTitle), map[string]interface{}{
+				"type":          "open_file_canvas",
+				"path":          canvasTitle,
+				"project_id":    targetProject.ID,
+				"rendered_path": renderedPath,
+			}, nil
+		}
 		if isPDFFilePath(absPath) {
 			if _, err := a.mcpToolsCall(port, "canvas_artifact_show", map[string]interface{}{
 				"session_id": canvasSessionID,
