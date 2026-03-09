@@ -17,16 +17,26 @@ func TestWebRouteDefinitionsStayInSyncWithRouter(t *testing.T) {
 	if !ok {
 		t.Fatal("runtime.Caller() failed")
 	}
-	serverPath := filepath.Join(filepath.Dir(file), "..", "web", "server.go")
-	content, err := os.ReadFile(serverPath)
+	webDir := filepath.Join(filepath.Dir(file), "..", "web")
+	entries, err := os.ReadDir(webDir)
 	if err != nil {
-		t.Fatalf("ReadFile(%q) error: %v", serverPath, err)
+		t.Fatalf("ReadDir(%q) error: %v", webDir, err)
 	}
 
 	routerRoutes := map[string]struct{}{}
-	for _, match := range webRoutePattern.FindAllStringSubmatch(string(content), -1) {
-		route := strings.ToUpper(match[1]) + " " + match[2]
-		routerRoutes[route] = struct{}{}
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".go" {
+			continue
+		}
+		path := filepath.Join(webDir, entry.Name())
+		content, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("ReadFile(%q) error: %v", path, err)
+		}
+		for _, match := range webRoutePattern.FindAllStringSubmatch(string(content), -1) {
+			route := strings.ToUpper(match[1]) + " " + match[2]
+			routerRoutes[route] = struct{}{}
+		}
 	}
 
 	definedRoutes := map[string]struct{}{}
