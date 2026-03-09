@@ -48,6 +48,7 @@ type ItemUpdate struct {
 	State        *string `json:"state,omitempty"`
 	WorkspaceID  *int64  `json:"workspace_id,omitempty"`
 	ProjectID    *string `json:"project_id,omitempty"`
+	Sphere       *string `json:"sphere,omitempty"`
 	ArtifactID   *int64  `json:"artifact_id,omitempty"`
 	ActorID      *int64  `json:"actor_id,omitempty"`
 	VisibleAfter *string `json:"visible_after,omitempty"`
@@ -60,6 +61,7 @@ type ItemOptions struct {
 	State        string  `json:"state,omitempty"`
 	WorkspaceID  *int64  `json:"workspace_id,omitempty"`
 	ProjectID    *string `json:"project_id,omitempty"`
+	Sphere       *string `json:"sphere,omitempty"`
 	ArtifactID   *int64  `json:"artifact_id,omitempty"`
 	ActorID      *int64  `json:"actor_id,omitempty"`
 	VisibleAfter *string `json:"visible_after,omitempty"`
@@ -72,6 +74,7 @@ type Workspace struct {
 	ID        int64  `json:"id"`
 	Name      string `json:"name"`
 	DirPath   string `json:"dir_path"`
+	Sphere    string `json:"sphere"`
 	IsActive  bool   `json:"is_active"`
 	CreatedAt string `json:"created_at"`
 	UpdatedAt string `json:"updated_at"`
@@ -164,6 +167,7 @@ type Item struct {
 	State        string  `json:"state"`
 	WorkspaceID  *int64  `json:"workspace_id,omitempty"`
 	ProjectID    *string `json:"project_id,omitempty"`
+	Sphere       string  `json:"sphere"`
 	ArtifactID   *int64  `json:"artifact_id,omitempty"`
 	ActorID      *int64  `json:"actor_id,omitempty"`
 	VisibleAfter *string `json:"visible_after,omitempty"`

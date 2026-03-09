@@ -63,7 +63,7 @@ func (s *Store) syncPrimaryItemArtifact(id int64, artifactID *int64) error {
 
 func (s *Store) syncPrimaryItemArtifactTx(tx *sql.Tx, id int64, artifactID *int64) error {
 	if _, err := scanItem(tx.QueryRow(
-		`SELECT id, title, state, workspace_id, project_id, artifact_id, actor_id, visible_after, follow_up_at, source, source_ref, created_at, updated_at
+		`SELECT id, title, state, workspace_id, project_id, sphere, artifact_id, actor_id, visible_after, follow_up_at, source, source_ref, created_at, updated_at
 		 FROM items
 		 WHERE id = ?`,
 		id,
@@ -162,7 +162,7 @@ func (s *Store) LinkItemArtifact(itemID, artifactID int64, role string) error {
 	defer tx.Rollback()
 
 	item, err := scanItem(tx.QueryRow(
-		`SELECT id, title, state, workspace_id, project_id, artifact_id, actor_id, visible_after, follow_up_at, source, source_ref, created_at, updated_at
+		`SELECT id, title, state, workspace_id, project_id, sphere, artifact_id, actor_id, visible_after, follow_up_at, source, source_ref, created_at, updated_at
 		 FROM items
 		 WHERE id = ?`,
 		itemID,
@@ -214,7 +214,7 @@ func (s *Store) UnlinkItemArtifact(itemID, artifactID int64) error {
 	defer tx.Rollback()
 
 	item, err := scanItem(tx.QueryRow(
-		`SELECT id, title, state, workspace_id, project_id, artifact_id, actor_id, visible_after, follow_up_at, source, source_ref, created_at, updated_at
+		`SELECT id, title, state, workspace_id, project_id, sphere, artifact_id, actor_id, visible_after, follow_up_at, source, source_ref, created_at, updated_at
 		 FROM items
 		 WHERE id = ?`,
 		itemID,
@@ -360,6 +360,7 @@ func (s *Store) ListArtifactItems(artifactID int64) ([]Item, error) {
 		   i.state,
 		   i.workspace_id,
 		   i.project_id,
+		   i.sphere,
 		   i.artifact_id,
 		   i.actor_id,
 		   i.visible_after,

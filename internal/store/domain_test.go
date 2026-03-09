@@ -31,7 +31,7 @@ func TestStoreMigratesDomainTablesOnFreshDatabase(t *testing.T) {
 		t.Fatalf("TableColumns() error: %v", err)
 	}
 	for table, want := range map[string][]string{
-		"workspaces":                  {"id", "name", "dir_path", "is_active", "created_at", "updated_at"},
+		"workspaces":                  {"id", "name", "dir_path", "sphere", "is_active", "created_at", "updated_at"},
 		"actors":                      {"id", "name", "kind", "created_at"},
 		"artifacts":                   {"id", "kind", "ref_path", "ref_url", "title", "meta_json", "created_at", "updated_at"},
 		"external_accounts":           {"id", "sphere", "provider", "label", "config_json", "enabled", "created_at", "updated_at"},
@@ -39,7 +39,7 @@ func TestStoreMigratesDomainTablesOnFreshDatabase(t *testing.T) {
 		"item_artifacts":              {"item_id", "artifact_id", "role", "created_at"},
 		"workspace_artifact_links":    {"workspace_id", "artifact_id", "created_at"},
 		"external_bindings":           {"id", "account_id", "provider", "object_type", "remote_id", "item_id", "artifact_id", "container_ref", "remote_updated_at", "last_synced_at"},
-		"items":                       {"id", "title", "state", "workspace_id", "project_id", "artifact_id", "actor_id", "visible_after", "follow_up_at", "source", "source_ref", "created_at", "updated_at"},
+		"items":                       {"id", "title", "state", "workspace_id", "project_id", "sphere", "artifact_id", "actor_id", "visible_after", "follow_up_at", "source", "source_ref", "created_at", "updated_at"},
 	} {
 		got := make(map[string]bool, len(columns[table]))
 		for _, name := range columns[table] {
@@ -198,20 +198,24 @@ func TestItemSchemaAllowsNilOptionalFields(t *testing.T) {
 
 	var (
 		title                               string
+		sphere                              string
 		workspaceID, artifactID, actorID    sql.NullInt64
 		projectID, visibleAfter, followUpAt sql.NullString
 		source, sourceRef                   sql.NullString
 	)
 	err = s.db.QueryRow(`
-SELECT title, workspace_id, project_id, artifact_id, actor_id, visible_after, follow_up_at, source, source_ref
+SELECT title, workspace_id, project_id, sphere, artifact_id, actor_id, visible_after, follow_up_at, source, source_ref
 FROM items
 WHERE id = ?
-`, id).Scan(&title, &workspaceID, &projectID, &artifactID, &actorID, &visibleAfter, &followUpAt, &source, &sourceRef)
+`, id).Scan(&title, &workspaceID, &projectID, &sphere, &artifactID, &actorID, &visibleAfter, &followUpAt, &source, &sourceRef)
 	if err != nil {
 		t.Fatalf("query item: %v", err)
 	}
 	if title != "triage me" {
 		t.Fatalf("title = %q, want triage me", title)
+	}
+	if sphere != SpherePrivate {
+		t.Fatalf("sphere = %q, want %q", sphere, SpherePrivate)
 	}
 	if workspaceID.Valid || projectID.Valid || artifactID.Valid || actorID.Valid || visibleAfter.Valid || followUpAt.Valid || source.Valid || sourceRef.Valid {
 		t.Fatalf("expected optional fields to remain NULL, got workspace=%v project=%v artifact=%v actor=%v visible_after=%v follow_up_at=%v source=%v source_ref=%v",
@@ -275,6 +279,16 @@ func TestDomainCRUDRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateWorkspace(workspace-b) error: %v", err)
 	}
+	if workspaceA.Sphere != SpherePrivate || workspaceB.Sphere != SpherePrivate {
+		t.Fatalf("default workspace spheres = %q/%q, want private/private", workspaceA.Sphere, workspaceB.Sphere)
+	}
+	workWorkspace, err := s.CreateWorkspace("Workspace Work", filepath.Join(t.TempDir(), "workspace-work"), SphereWork)
+	if err != nil {
+		t.Fatalf("CreateWorkspace(workspace-work) error: %v", err)
+	}
+	if workWorkspace.Sphere != SphereWork {
+		t.Fatalf("CreateWorkspace(workspace-work).Sphere = %q, want %q", workWorkspace.Sphere, SphereWork)
+	}
 	gotByPath, err := s.GetWorkspaceByPath(workspaceBPath)
 	if err != nil {
 		t.Fatalf("GetWorkspaceByPath() error: %v", err)
@@ -292,8 +306,8 @@ func TestDomainCRUDRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListWorkspaces() error: %v", err)
 	}
-	if len(workspaces) != 2 {
-		t.Fatalf("ListWorkspaces() len = %d, want 2", len(workspaces))
+	if len(workspaces) != 3 {
+		t.Fatalf("ListWorkspaces() len = %d, want 3", len(workspaces))
 	}
 	if !workspaces[0].IsActive || workspaces[0].ID != workspaceB.ID {
 		t.Fatalf("ListWorkspaces() active workspace mismatch: %+v", workspaces)
@@ -409,10 +423,13 @@ func TestDomainCRUDRoundTrip(t *testing.T) {
 		t.Fatalf("CreateItem(artifact) error: %v", err)
 	}
 	workspaceItem, err := s.CreateItem("Workspace item", ItemOptions{
-		WorkspaceID: &workspaceA.ID,
+		WorkspaceID: &workWorkspace.ID,
 	})
 	if err != nil {
 		t.Fatalf("CreateItem(workspace) error: %v", err)
+	}
+	if workspaceItem.Sphere != SphereWork {
+		t.Fatalf("CreateItem(workspace).Sphere = %q, want %q", workspaceItem.Sphere, SphereWork)
 	}
 	assignedItem, err := s.CreateItem("Assigned item", ItemOptions{
 		State:        ItemStateWaiting,
@@ -433,6 +450,9 @@ func TestDomainCRUDRoundTrip(t *testing.T) {
 	}
 	if assignedItem.ActorID == nil || *assignedItem.ActorID != human.ID {
 		t.Fatalf("CreateItem(assigned).ActorID = %v, want %d", assignedItem.ActorID, human.ID)
+	}
+	if assignedItem.Sphere != SpherePrivate {
+		t.Fatalf("CreateItem(assigned).Sphere = %q, want %q", assignedItem.Sphere, SpherePrivate)
 	}
 	sourceCompleteRef := "issue-183"
 	sourceItem, err := s.CreateItem("Source completion item", ItemOptions{
@@ -601,7 +621,7 @@ func TestDomainCRUDRoundTrip(t *testing.T) {
 		t.Fatal("expected invalid ListItemsByState error")
 	}
 
-	if err := s.DeleteWorkspace(workspaceA.ID); err != nil {
+	if err := s.DeleteWorkspace(workWorkspace.ID); err != nil {
 		t.Fatalf("DeleteWorkspace() error: %v", err)
 	}
 	workspaceItem, err = s.GetItem(workspaceItem.ID)
@@ -610,6 +630,9 @@ func TestDomainCRUDRoundTrip(t *testing.T) {
 	}
 	if workspaceItem.WorkspaceID != nil {
 		t.Fatalf("workspace item WorkspaceID = %v, want nil", *workspaceItem.WorkspaceID)
+	}
+	if workspaceItem.Sphere != SphereWork {
+		t.Fatalf("workspace item sphere after workspace delete = %q, want %q", workspaceItem.Sphere, SphereWork)
 	}
 	if err := s.DeleteArtifact(artifact.ID); err != nil {
 		t.Fatalf("DeleteArtifact() error: %v", err)
@@ -637,6 +660,77 @@ func TestDomainCRUDRoundTrip(t *testing.T) {
 	}
 	if _, err := s.GetItem(assignedItem.ID); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("GetItem(deleted) error = %v, want sql.ErrNoRows", err)
+	}
+}
+
+func TestSphereInheritanceAndMutators(t *testing.T) {
+	s := newTestStore(t)
+
+	if got, err := s.ActiveSphere(); err != nil {
+		t.Fatalf("ActiveSphere() error: %v", err)
+	} else if got != SpherePrivate {
+		t.Fatalf("default ActiveSphere() = %q, want %q", got, SpherePrivate)
+	}
+	if err := s.SetActiveSphere(SphereWork); err != nil {
+		t.Fatalf("SetActiveSphere() error: %v", err)
+	}
+	workspace, err := s.CreateWorkspace("Work", filepath.Join(t.TempDir(), "work"), SphereWork)
+	if err != nil {
+		t.Fatalf("CreateWorkspace() error: %v", err)
+	}
+	if _, err := s.CreateWorkspace("Bad", filepath.Join(t.TempDir(), "bad"), "office"); err == nil {
+		t.Fatal("expected invalid workspace sphere error")
+	}
+
+	item, err := s.CreateItem("Capture", ItemOptions{})
+	if err != nil {
+		t.Fatalf("CreateItem() error: %v", err)
+	}
+	if item.Sphere != SphereWork {
+		t.Fatalf("CreateItem().Sphere = %q, want %q", item.Sphere, SphereWork)
+	}
+
+	workspaceItem, err := s.CreateItem("Workspace item", ItemOptions{WorkspaceID: &workspace.ID})
+	if err != nil {
+		t.Fatalf("CreateItem(workspace) error: %v", err)
+	}
+	if workspaceItem.Sphere != SphereWork {
+		t.Fatalf("CreateItem(workspace).Sphere = %q, want %q", workspaceItem.Sphere, SphereWork)
+	}
+
+	if err := s.SetItemSphere(item.ID, SpherePrivate); err != nil {
+		t.Fatalf("SetItemSphere() error: %v", err)
+	}
+	if updated, err := s.GetItem(item.ID); err != nil {
+		t.Fatalf("GetItem(updated) error: %v", err)
+	} else if updated.Sphere != SpherePrivate {
+		t.Fatalf("SetItemSphere().Sphere = %q, want %q", updated.Sphere, SpherePrivate)
+	}
+	if err := s.SetItemSphere(workspaceItem.ID, SpherePrivate); err == nil {
+		t.Fatal("expected workspace-backed item sphere error")
+	}
+
+	if _, err := s.SetWorkspaceSphere(workspace.ID, SpherePrivate); err != nil {
+		t.Fatalf("SetWorkspaceSphere() error: %v", err)
+	}
+	if refreshed, err := s.GetItem(workspaceItem.ID); err != nil {
+		t.Fatalf("GetItem(workspaceItem) error: %v", err)
+	} else if refreshed.Sphere != SpherePrivate {
+		t.Fatalf("workspace-backed item sphere = %q, want %q", refreshed.Sphere, SpherePrivate)
+	}
+
+	if _, err := s.AddSphereAccount(SphereWork, ExternalProviderGmail, "Work Gmail", map[string]any{"username": "alice@example.com"}); err != nil {
+		t.Fatalf("AddSphereAccount() error: %v", err)
+	}
+	accounts, err := s.ListSphereAccounts(SphereWork)
+	if err != nil {
+		t.Fatalf("ListSphereAccounts() error: %v", err)
+	}
+	if len(accounts) != 1 {
+		t.Fatalf("ListSphereAccounts() len = %d, want 1", len(accounts))
+	}
+	if err := s.RemoveSphereAccount(accounts[0].ID); err != nil {
+		t.Fatalf("RemoveSphereAccount() error: %v", err)
 	}
 }
 

@@ -15,6 +15,7 @@ type itemCreateRequest struct {
 	Title        string  `json:"title"`
 	State        string  `json:"state"`
 	WorkspaceID  *int64  `json:"workspace_id"`
+	Sphere       *string `json:"sphere"`
 	ArtifactID   *int64  `json:"artifact_id"`
 	ActorID      *int64  `json:"actor_id"`
 	VisibleAfter *string `json:"visible_after"`
@@ -27,6 +28,7 @@ type itemUpdateRequest struct {
 	Title        *string `json:"title"`
 	State        *string `json:"state"`
 	WorkspaceID  *int64  `json:"workspace_id"`
+	Sphere       *string `json:"sphere"`
 	ArtifactID   *int64  `json:"artifact_id"`
 	ActorID      *int64  `json:"actor_id"`
 	VisibleAfter *string `json:"visible_after"`
@@ -205,6 +207,7 @@ func (a *App) handleItemCreate(w http.ResponseWriter, r *http.Request) {
 	item, err := a.store.CreateItem(req.Title, store.ItemOptions{
 		State:        req.State,
 		WorkspaceID:  req.WorkspaceID,
+		Sphere:       req.Sphere,
 		ArtifactID:   req.ArtifactID,
 		ActorID:      req.ActorID,
 		VisibleAfter: req.VisibleAfter,
@@ -270,6 +273,7 @@ func (a *App) handleItemUpdate(w http.ResponseWriter, r *http.Request) {
 		Title:        req.Title,
 		State:        req.State,
 		WorkspaceID:  req.WorkspaceID,
+		Sphere:       req.Sphere,
 		ArtifactID:   req.ArtifactID,
 		ActorID:      req.ActorID,
 		VisibleAfter: req.VisibleAfter,

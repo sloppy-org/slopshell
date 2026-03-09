@@ -19,6 +19,7 @@ const itemsTableSchema = `CREATE TABLE IF NOT EXISTS items (
   state TEXT NOT NULL DEFAULT 'inbox' CHECK (state IN ('inbox', 'waiting', 'someday', 'done')),
   workspace_id INTEGER REFERENCES workspaces(id) ON DELETE SET NULL,
   project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
+  sphere TEXT NOT NULL DEFAULT 'private' CHECK (sphere IN ('work', 'private')),
   artifact_id INTEGER REFERENCES artifacts(id) ON DELETE SET NULL,
   actor_id INTEGER REFERENCES actors(id) ON DELETE SET NULL,
   visible_after TEXT,
@@ -35,6 +36,7 @@ CREATE TABLE IF NOT EXISTS workspaces (
   id INTEGER PRIMARY KEY,
   name TEXT NOT NULL,
   dir_path TEXT NOT NULL UNIQUE,
+  sphere TEXT NOT NULL DEFAULT 'private' CHECK (sphere IN ('work', 'private')),
   is_active INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -113,6 +115,12 @@ CREATE INDEX IF NOT EXISTS idx_external_bindings_stale
 	if err := s.migrateItemProjectColumnSupport(); err != nil {
 		return err
 	}
+	if err := s.migrateWorkspaceSphereSupport(); err != nil {
+		return err
+	}
+	if err := s.migrateItemSphereSupport(); err != nil {
+		return err
+	}
 	return s.migrateItemArtifactLinkSupport()
 }
 
@@ -147,6 +155,24 @@ func normalizeActorKind(kind string) string {
 	}
 }
 
+func normalizeSphere(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case SphereWork:
+		return SphereWork
+	case "", SpherePrivate:
+		return SpherePrivate
+	default:
+		return ""
+	}
+}
+
+func normalizeRequiredSphere(raw string) string {
+	if strings.TrimSpace(raw) == "" {
+		return ""
+	}
+	return normalizeSphere(raw)
+}
+
 func normalizeOptionalString(v *string) any {
 	if v == nil {
 		return nil
@@ -175,6 +201,29 @@ func normalizeItemState(state string) string {
 	default:
 		return ""
 	}
+}
+
+func (s *Store) ActiveSphere() (string, error) {
+	value, err := s.AppState("active_sphere")
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(value) == "" {
+		return SpherePrivate, nil
+	}
+	sphere := normalizeSphere(value)
+	if sphere == "" {
+		return "", errors.New("active sphere must be work or private")
+	}
+	return sphere, nil
+}
+
+func (s *Store) SetActiveSphere(sphere string) error {
+	cleanSphere := normalizeRequiredSphere(sphere)
+	if cleanSphere == "" {
+		return errors.New("active sphere must be work or private")
+	}
+	return s.SetAppState("active_sphere", cleanSphere)
 }
 
 func validateItemTransition(current, next string) error {
@@ -210,10 +259,10 @@ func (s *Store) migrateItemTableStateSupport() error {
 	}
 	if _, err := tx.Exec(`
 INSERT INTO items (
-	id, title, state, workspace_id, project_id, artifact_id, actor_id, visible_after, follow_up_at, source, source_ref, created_at, updated_at
+	id, title, state, workspace_id, project_id, sphere, artifact_id, actor_id, visible_after, follow_up_at, source, source_ref, created_at, updated_at
 )
 SELECT
-	id, title, state, workspace_id, NULL, artifact_id, actor_id, visible_after, follow_up_at, source, source_ref, created_at, updated_at
+	id, title, state, workspace_id, NULL, 'private', artifact_id, actor_id, visible_after, follow_up_at, source, source_ref, created_at, updated_at
 FROM items_legacy
 `); err != nil {
 		return err
@@ -236,6 +285,30 @@ func (s *Store) migrateItemProjectColumnSupport() error {
 	return err
 }
 
+func (s *Store) migrateWorkspaceSphereSupport() error {
+	tableColumns, err := s.tableColumnSet("workspaces")
+	if err != nil {
+		return err
+	}
+	if tableColumns["workspaces"]["sphere"] {
+		return nil
+	}
+	_, err = s.db.Exec(`ALTER TABLE workspaces ADD COLUMN sphere TEXT NOT NULL DEFAULT 'private' CHECK (sphere IN ('work', 'private'))`)
+	return err
+}
+
+func (s *Store) migrateItemSphereSupport() error {
+	tableColumns, err := s.tableColumnSet("items")
+	if err != nil {
+		return err
+	}
+	if tableColumns["items"]["sphere"] {
+		return nil
+	}
+	_, err = s.db.Exec(`ALTER TABLE items ADD COLUMN sphere TEXT NOT NULL DEFAULT 'private' CHECK (sphere IN ('work', 'private'))`)
+	return err
+}
+
 func scanWorkspace(
 	row interface {
 		Scan(dest ...any) error
@@ -243,12 +316,13 @@ func scanWorkspace(
 ) (Workspace, error) {
 	var out Workspace
 	var isActive int
-	err := row.Scan(&out.ID, &out.Name, &out.DirPath, &isActive, &out.CreatedAt, &out.UpdatedAt)
+	err := row.Scan(&out.ID, &out.Name, &out.DirPath, &out.Sphere, &isActive, &out.CreatedAt, &out.UpdatedAt)
 	if err != nil {
 		return Workspace{}, err
 	}
 	out.Name = normalizeWorkspaceName(out.Name)
 	out.DirPath = normalizeWorkspacePath(out.DirPath)
+	out.Sphere = normalizeSphere(out.Sphere)
 	out.IsActive = isActive != 0
 	return out, nil
 }
@@ -298,6 +372,7 @@ func scanItem(
 		out                                 Item
 		workspaceID, artifactID, actorID    sql.NullInt64
 		projectID, visibleAfter, followUpAt sql.NullString
+		sphere                              string
 		source, sourceRef                   sql.NullString
 	)
 	err := row.Scan(
@@ -306,6 +381,7 @@ func scanItem(
 		&out.State,
 		&workspaceID,
 		&projectID,
+		&sphere,
 		&artifactID,
 		&actorID,
 		&visibleAfter,
@@ -322,6 +398,7 @@ func scanItem(
 	out.State = normalizeItemState(out.State)
 	out.WorkspaceID = nullInt64Pointer(workspaceID)
 	out.ProjectID = nullStringPointer(projectID)
+	out.Sphere = normalizeSphere(sphere)
 	out.ArtifactID = nullInt64Pointer(artifactID)
 	out.ActorID = nullInt64Pointer(actorID)
 	out.VisibleAfter = nullStringPointer(visibleAfter)
@@ -340,6 +417,7 @@ func scanItemSummary(
 		out                                    ItemSummary
 		workspaceID, artifactID, actorID       sql.NullInt64
 		projectID, visibleAfter, followUpAt    sql.NullString
+		sphere                                 string
 		source, sourceRef                      sql.NullString
 		artifactTitle, artifactKind, actorName sql.NullString
 	)
@@ -349,6 +427,7 @@ func scanItemSummary(
 		&out.State,
 		&workspaceID,
 		&projectID,
+		&sphere,
 		&artifactID,
 		&actorID,
 		&visibleAfter,
@@ -368,6 +447,7 @@ func scanItemSummary(
 	out.State = normalizeItemState(out.State)
 	out.WorkspaceID = nullInt64Pointer(workspaceID)
 	out.ProjectID = nullStringPointer(projectID)
+	out.Sphere = normalizeSphere(sphere)
 	out.ArtifactID = nullInt64Pointer(artifactID)
 	out.ActorID = nullInt64Pointer(actorID)
 	out.VisibleAfter = nullStringPointer(visibleAfter)
@@ -399,16 +479,48 @@ func nullInt64Pointer(v sql.NullInt64) *int64 {
 	return &value
 }
 
-func (s *Store) CreateWorkspace(name, dirPath string) (Workspace, error) {
+func (s *Store) workspaceSphere(id int64) (string, error) {
+	workspace, err := s.GetWorkspace(id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", errors.New("foreign key constraint failed: workspace_id")
+		}
+		return "", err
+	}
+	return workspace.Sphere, nil
+}
+
+func (s *Store) resolveItemSphere(workspaceID *int64, requested *string) (string, error) {
+	if workspaceID != nil && *workspaceID > 0 {
+		return s.workspaceSphere(*workspaceID)
+	}
+	if requested != nil {
+		sphere := normalizeRequiredSphere(*requested)
+		if sphere == "" {
+			return "", errors.New("item sphere must be work or private")
+		}
+		return sphere, nil
+	}
+	return s.ActiveSphere()
+}
+
+func (s *Store) CreateWorkspace(name, dirPath string, sphere ...string) (Workspace, error) {
 	cleanName := normalizeWorkspaceName(name)
 	cleanPath := normalizeWorkspacePath(dirPath)
+	cleanSphere := SpherePrivate
+	if len(sphere) > 0 {
+		cleanSphere = normalizeRequiredSphere(sphere[0])
+	}
 	if cleanName == "" {
 		return Workspace{}, errors.New("workspace name is required")
 	}
 	if cleanPath == "" {
 		return Workspace{}, errors.New("workspace path is required")
 	}
-	res, err := s.db.Exec(`INSERT INTO workspaces (name, dir_path) VALUES (?, ?)`, cleanName, cleanPath)
+	if cleanSphere == "" {
+		return Workspace{}, errors.New("workspace sphere must be work or private")
+	}
+	res, err := s.db.Exec(`INSERT INTO workspaces (name, dir_path, sphere) VALUES (?, ?, ?)`, cleanName, cleanPath, cleanSphere)
 	if err != nil {
 		return Workspace{}, err
 	}
@@ -421,7 +533,7 @@ func (s *Store) CreateWorkspace(name, dirPath string) (Workspace, error) {
 
 func (s *Store) GetWorkspace(id int64) (Workspace, error) {
 	return scanWorkspace(s.db.QueryRow(
-		`SELECT id, name, dir_path, is_active, created_at, updated_at
+		`SELECT id, name, dir_path, sphere, is_active, created_at, updated_at
 		 FROM workspaces
 		 WHERE id = ?`,
 		id,
@@ -430,7 +542,7 @@ func (s *Store) GetWorkspace(id int64) (Workspace, error) {
 
 func (s *Store) GetWorkspaceByPath(dirPath string) (Workspace, error) {
 	return scanWorkspace(s.db.QueryRow(
-		`SELECT id, name, dir_path, is_active, created_at, updated_at
+		`SELECT id, name, dir_path, sphere, is_active, created_at, updated_at
 		 FROM workspaces
 		 WHERE dir_path = ?`,
 		normalizeWorkspacePath(dirPath),
@@ -439,7 +551,7 @@ func (s *Store) GetWorkspaceByPath(dirPath string) (Workspace, error) {
 
 func (s *Store) ListWorkspaces() ([]Workspace, error) {
 	rows, err := s.db.Query(
-		`SELECT id, name, dir_path, is_active, created_at, updated_at
+		`SELECT id, name, dir_path, sphere, is_active, created_at, updated_at
 		 FROM workspaces`,
 	)
 	if err != nil {
@@ -657,6 +769,43 @@ func (s *Store) UpdateWorkspaceName(id int64, name string) (Workspace, error) {
 	}
 	if affected == 0 {
 		return Workspace{}, sql.ErrNoRows
+	}
+	return s.GetWorkspace(id)
+}
+
+func (s *Store) SetWorkspaceSphere(id int64, sphere string) (Workspace, error) {
+	cleanSphere := normalizeRequiredSphere(sphere)
+	if cleanSphere == "" {
+		return Workspace{}, errors.New("workspace sphere must be work or private")
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return Workspace{}, err
+	}
+	defer tx.Rollback()
+
+	res, err := tx.Exec(`UPDATE workspaces SET sphere = ?, updated_at = datetime('now') WHERE id = ?`, cleanSphere, id)
+	if err != nil {
+		return Workspace{}, err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return Workspace{}, err
+	}
+	if affected == 0 {
+		return Workspace{}, sql.ErrNoRows
+	}
+	if _, err := tx.Exec(
+		`UPDATE items
+		 SET sphere = ?, updated_at = datetime('now')
+		 WHERE workspace_id = ?`,
+		cleanSphere,
+		id,
+	); err != nil {
+		return Workspace{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return Workspace{}, err
 	}
 	return s.GetWorkspace(id)
 }
@@ -1025,6 +1174,10 @@ func (s *Store) CreateItem(title string, opts ItemOptions) (Item, error) {
 		}
 		opts.WorkspaceID = inferredWorkspaceID
 	}
+	itemSphere, err := s.resolveItemSphere(opts.WorkspaceID, opts.Sphere)
+	if err != nil {
+		return Item{}, err
+	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return Item{}, err
@@ -1033,12 +1186,13 @@ func (s *Store) CreateItem(title string, opts ItemOptions) (Item, error) {
 
 	res, err := tx.Exec(
 		`INSERT INTO items (
-			title, state, workspace_id, project_id, artifact_id, actor_id, visible_after, follow_up_at, source, source_ref
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			title, state, workspace_id, project_id, sphere, artifact_id, actor_id, visible_after, follow_up_at, source, source_ref
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		cleanTitle,
 		cleanState,
 		opts.WorkspaceID,
 		normalizeOptionalProjectID(opts.ProjectID),
+		itemSphere,
 		opts.ArtifactID,
 		opts.ActorID,
 		normalizeOptionalString(opts.VisibleAfter),
@@ -1064,7 +1218,7 @@ func (s *Store) CreateItem(title string, opts ItemOptions) (Item, error) {
 
 func (s *Store) GetItem(id int64) (Item, error) {
 	return scanItem(s.db.QueryRow(
-		`SELECT id, title, state, workspace_id, project_id, artifact_id, actor_id, visible_after, follow_up_at, source, source_ref, created_at, updated_at
+		`SELECT id, title, state, workspace_id, project_id, sphere, artifact_id, actor_id, visible_after, follow_up_at, source, source_ref, created_at, updated_at
 		 FROM items
 		 WHERE id = ?`,
 		id,
@@ -1078,7 +1232,7 @@ func (s *Store) GetItemBySource(source, sourceRef string) (Item, error) {
 		return Item{}, errors.New("item source and source_ref are required")
 	}
 	return scanItem(s.db.QueryRow(
-		`SELECT id, title, state, workspace_id, project_id, artifact_id, actor_id, visible_after, follow_up_at, source, source_ref, created_at, updated_at
+		`SELECT id, title, state, workspace_id, project_id, sphere, artifact_id, actor_id, visible_after, follow_up_at, source, source_ref, created_at, updated_at
 		 FROM items
 		 WHERE source = ? AND source_ref = ?`,
 		cleanSource,
@@ -1100,13 +1254,18 @@ func (s *Store) UpsertItemFromSource(source, sourceRef, title string, workspaceI
 	existing, err := s.GetItemBySource(cleanSource, cleanSourceRef)
 	switch {
 	case err == nil:
+		itemSphere, err := s.resolveItemSphere(workspaceID, &existing.Sphere)
+		if err != nil {
+			return Item{}, err
+		}
 		res, err := s.db.Exec(
 			`UPDATE items
-			 SET title = ?, workspace_id = ?, project_id = ?, updated_at = datetime('now')
+			 SET title = ?, workspace_id = ?, project_id = ?, sphere = ?, updated_at = datetime('now')
 		 WHERE id = ?`,
 			cleanTitle,
 			workspaceID,
 			normalizeOptionalProjectID(existing.ProjectID),
+			itemSphere,
 			existing.ID,
 		)
 		if err != nil {
@@ -1179,6 +1338,7 @@ func (s *Store) UpdateItem(id int64, updates ItemUpdate) error {
 	args := []any{}
 	artifactUpdated := false
 	var artifactID *int64
+	targetWorkspaceID := item.WorkspaceID
 
 	if updates.Title != nil {
 		title := strings.TrimSpace(*updates.Title)
@@ -1199,10 +1359,27 @@ func (s *Store) UpdateItem(id int64, updates ItemUpdate) error {
 	if updates.WorkspaceID != nil {
 		parts = append(parts, "workspace_id = ?")
 		args = append(args, nullablePositiveID(*updates.WorkspaceID))
+		if *updates.WorkspaceID > 0 {
+			value := *updates.WorkspaceID
+			targetWorkspaceID = &value
+		} else {
+			targetWorkspaceID = nil
+		}
 	}
 	if updates.ProjectID != nil {
 		parts = append(parts, "project_id = ?")
 		args = append(args, normalizeOptionalProjectID(updates.ProjectID))
+	}
+	if updates.Sphere != nil {
+		if targetWorkspaceID != nil {
+			return errors.New("item sphere is derived from workspace")
+		}
+		nextSphere := normalizeRequiredSphere(*updates.Sphere)
+		if nextSphere == "" {
+			return errors.New("item sphere must be work or private")
+		}
+		parts = append(parts, "sphere = ?")
+		args = append(args, nextSphere)
 	}
 	if updates.ArtifactID != nil {
 		artifactUpdated = true
@@ -1248,6 +1425,14 @@ func (s *Store) UpdateItem(id int64, updates ItemUpdate) error {
 			args = append(args, nil, nil)
 		}
 	}
+	if targetWorkspaceID != nil {
+		workspaceSphere, err := s.workspaceSphere(*targetWorkspaceID)
+		if err != nil {
+			return err
+		}
+		parts = append(parts, "sphere = ?")
+		args = append(args, workspaceSphere)
+	}
 	if len(parts) == 0 && !artifactUpdated {
 		return nil
 	}
@@ -1272,6 +1457,44 @@ func (s *Store) UpdateItem(id int64, updates ItemUpdate) error {
 		}
 	}
 	return nil
+}
+
+func (s *Store) SetItemSphere(id int64, sphere string) error {
+	item, err := s.GetItem(id)
+	if err != nil {
+		return err
+	}
+	if item.WorkspaceID != nil {
+		return errors.New("item sphere is derived from workspace")
+	}
+	cleanSphere := normalizeRequiredSphere(sphere)
+	if cleanSphere == "" {
+		return errors.New("item sphere must be work or private")
+	}
+	res, err := s.db.Exec(`UPDATE items SET sphere = ?, updated_at = datetime('now') WHERE id = ?`, cleanSphere, id)
+	if err != nil {
+		return err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+func (s *Store) ListSphereAccounts(sphere string) ([]ExternalAccount, error) {
+	return s.ListExternalAccounts(sphere)
+}
+
+func (s *Store) AddSphereAccount(sphere, kind, label string, config map[string]any) (ExternalAccount, error) {
+	return s.CreateExternalAccount(sphere, kind, label, config)
+}
+
+func (s *Store) RemoveSphereAccount(id int64) error {
+	return s.DeleteExternalAccount(id)
 }
 
 func (s *Store) SyncItemStateBySource(source, sourceRef, state string) error {
@@ -1696,7 +1919,7 @@ func (s *Store) ListItemsByState(state string) ([]Item, error) {
 		return nil, errors.New("invalid item state")
 	}
 	rows, err := s.db.Query(
-		`SELECT id, title, state, workspace_id, project_id, artifact_id, actor_id, visible_after, follow_up_at, source, source_ref, created_at, updated_at
+		`SELECT id, title, state, workspace_id, project_id, sphere, artifact_id, actor_id, visible_after, follow_up_at, source, source_ref, created_at, updated_at
 		 FROM items
 		 WHERE state = ?`,
 		cleanState,
@@ -1731,6 +1954,7 @@ const itemSummarySelect = `SELECT
  i.state,
  i.workspace_id,
  i.project_id,
+ i.sphere,
  i.artifact_id,
  i.actor_id,
  i.visible_after,
@@ -1848,7 +2072,7 @@ FROM items
 
 func (s *Store) ListItems() ([]Item, error) {
 	rows, err := s.db.Query(
-		`SELECT id, title, state, workspace_id, project_id, artifact_id, actor_id, visible_after, follow_up_at, source, source_ref, created_at, updated_at
+		`SELECT id, title, state, workspace_id, project_id, sphere, artifact_id, actor_id, visible_after, follow_up_at, source, source_ref, created_at, updated_at
 		 FROM items`,
 	)
 	if err != nil {

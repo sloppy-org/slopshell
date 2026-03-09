@@ -1,15 +1,20 @@
 package web
 
-import "net/http"
+import (
+	"net/http"
+	"strings"
+)
 
 type workspaceCreateRequest struct {
 	Name     string `json:"name"`
 	DirPath  string `json:"dir_path"`
+	Sphere   string `json:"sphere"`
 	IsActive bool   `json:"is_active"`
 }
 
 type workspaceUpdateRequest struct {
 	Name     *string `json:"name"`
+	Sphere   *string `json:"sphere"`
 	IsActive *bool   `json:"is_active"`
 }
 
@@ -37,7 +42,11 @@ func (a *App) handleWorkspaceCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid JSON", http.StatusBadRequest)
 		return
 	}
-	workspace, err := a.store.CreateWorkspace(req.Name, req.DirPath)
+	if strings.TrimSpace(req.Sphere) == "" {
+		http.Error(w, "sphere is required", http.StatusBadRequest)
+		return
+	}
+	workspace, err := a.store.CreateWorkspace(req.Name, req.DirPath, req.Sphere)
 	if err != nil {
 		writeDomainStoreError(w, err)
 		return
@@ -73,7 +82,7 @@ func (a *App) handleWorkspaceUpdate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid JSON", http.StatusBadRequest)
 		return
 	}
-	if req.Name == nil && req.IsActive == nil {
+	if req.Name == nil && req.Sphere == nil && req.IsActive == nil {
 		http.Error(w, "at least one workspace update is required", http.StatusBadRequest)
 		return
 	}
@@ -84,6 +93,13 @@ func (a *App) handleWorkspaceUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Name != nil {
 		workspace, err = a.store.UpdateWorkspaceName(workspaceID, *req.Name)
+		if err != nil {
+			writeDomainStoreError(w, err)
+			return
+		}
+	}
+	if req.Sphere != nil {
+		workspace, err = a.store.SetWorkspaceSphere(workspaceID, *req.Sphere)
 		if err != nil {
 			writeDomainStoreError(w, err)
 			return

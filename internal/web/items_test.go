@@ -87,6 +87,9 @@ func TestItemCRUDAndStateAPI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateWorkspace() error: %v", err)
 	}
+	if _, err := app.store.SetWorkspaceSphere(workspace.ID, store.SphereWork); err != nil {
+		t.Fatalf("SetWorkspaceSphere() error: %v", err)
+	}
 	artifactTitle := "Plan"
 	artifact, err := app.store.CreateArtifact(store.ArtifactKindMarkdown, nil, nil, &artifactTitle, nil)
 	if err != nil {
@@ -113,6 +116,9 @@ func TestItemCRUDAndStateAPI(t *testing.T) {
 		t.Fatalf("create item payload = %#v", createPayload)
 	}
 	itemID := int64(itemPayload["id"].(float64))
+	if got := itemPayload["sphere"]; got != store.SphereWork {
+		t.Fatalf("create item sphere = %#v, want %q", got, store.SphereWork)
+	}
 
 	rrList := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/items?state=inbox", nil)
 	if rrList.Code != http.StatusOK {
@@ -163,6 +169,9 @@ func TestItemCRUDAndStateAPI(t *testing.T) {
 	if doneItem.State != store.ItemStateDone {
 		t.Fatalf("done state = %q, want %q", doneItem.State, store.ItemStateDone)
 	}
+	if doneItem.Sphere != store.SphereWork {
+		t.Fatalf("done item sphere = %q, want %q", doneItem.Sphere, store.SphereWork)
+	}
 
 	rrGet := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/items/"+itoa(itemID), nil)
 	if rrGet.Code != http.StatusOK {
@@ -177,6 +186,44 @@ func TestItemCRUDAndStateAPI(t *testing.T) {
 	rrMissing := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/items/"+itoa(itemID), nil)
 	if rrMissing.Code != http.StatusNotFound {
 		t.Fatalf("deleted item status = %d, want 404: %s", rrMissing.Code, rrMissing.Body.String())
+	}
+}
+
+func TestItemSphereAPI(t *testing.T) {
+	app := newAuthedTestApp(t)
+	if err := app.store.SetActiveSphere(store.SphereWork); err != nil {
+		t.Fatalf("SetActiveSphere() error: %v", err)
+	}
+
+	rrCreate := doAuthedJSONRequest(t, app.Router(), http.MethodPost, "/api/items", map[string]any{
+		"title": "Active sphere item",
+	})
+	if rrCreate.Code != http.StatusOK {
+		t.Fatalf("create item status = %d, want 200: %s", rrCreate.Code, rrCreate.Body.String())
+	}
+	createPayload := decodeJSONResponse(t, rrCreate)
+	itemPayload, ok := createPayload["item"].(map[string]any)
+	if !ok {
+		t.Fatalf("create payload = %#v", createPayload)
+	}
+	itemID := int64(itemPayload["id"].(float64))
+	if got := itemPayload["sphere"]; got != store.SphereWork {
+		t.Fatalf("created sphere = %#v, want %q", got, store.SphereWork)
+	}
+
+	privateSphere := store.SpherePrivate
+	rrUpdate := doAuthedJSONRequest(t, app.Router(), http.MethodPut, "/api/items/"+itoa(itemID), map[string]any{
+		"sphere": privateSphere,
+	})
+	if rrUpdate.Code != http.StatusOK {
+		t.Fatalf("update item sphere status = %d, want 200: %s", rrUpdate.Code, rrUpdate.Body.String())
+	}
+	updated, err := app.store.GetItem(itemID)
+	if err != nil {
+		t.Fatalf("GetItem(updated) error: %v", err)
+	}
+	if updated.Sphere != store.SpherePrivate {
+		t.Fatalf("updated sphere = %q, want %q", updated.Sphere, store.SpherePrivate)
 	}
 }
 
