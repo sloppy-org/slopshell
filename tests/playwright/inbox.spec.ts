@@ -156,4 +156,50 @@ test.describe('item inbox sidebar', () => {
     await expect(page.locator('#pr-file-list')).toContainText('Todoist follow-up');
     await expect(page.locator('#pr-file-list')).not.toContainText('Exchange triage');
   });
+
+  test('system actions can opt into all-spheres inbox views', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await waitReady(page);
+
+    await page.evaluate(() => {
+      (window as any).__setRuntimeState({ active_sphere: 'private' });
+      (window as any).__setItemSidebarData({
+        inbox: [
+          {
+            id: 401,
+            title: 'Private inbox item',
+            state: 'inbox',
+            sphere: 'private',
+            artifact_kind: 'plan_note',
+            updated_at: '2026-03-08 10:05:00',
+          },
+          {
+            id: 402,
+            title: 'Work inbox item',
+            state: 'inbox',
+            sphere: 'work',
+            artifact_kind: 'email',
+            updated_at: '2026-03-08 10:06:00',
+          },
+        ],
+      });
+    });
+
+    await injectChatEvent(page, {
+      type: 'system_action',
+      action: {
+        type: 'show_item_sidebar_view',
+        view: 'inbox',
+        clear_filters: true,
+        filters: { all_spheres: true },
+      },
+    });
+    await expect(page.locator('#pr-file-pane')).toHaveClass(/is-open/);
+    await expect(page.locator('#pr-file-list')).toContainText('Private inbox item');
+    await expect(page.locator('#pr-file-list')).toContainText('Work inbox item');
+
+    const log = await page.evaluate(() => (window as any).__harnessLog || []);
+    const itemListFetch = [...log].reverse().find((entry: any) => entry?.action === 'item_list');
+    expect(String(itemListFetch?.url || '')).not.toContain('sphere=private');
+  });
 });

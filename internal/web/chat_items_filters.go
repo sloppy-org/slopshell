@@ -28,6 +28,18 @@ var itemFilterSourceCommands = map[string]string{
 
 func parseInlineItemFilterIntent(text string) *SystemAction {
 	normalized := normalizeItemCommandText(text)
+	allSpheres := false
+	switch {
+	case strings.HasPrefix(normalized, "show all "):
+		normalized = "show " + strings.TrimSpace(strings.TrimPrefix(normalized, "show all "))
+		allSpheres = true
+	case strings.HasPrefix(normalized, "open all "):
+		normalized = "open " + strings.TrimSpace(strings.TrimPrefix(normalized, "open all "))
+		allSpheres = true
+	case strings.HasPrefix(normalized, "zeige alle "):
+		normalized = "zeige " + strings.TrimSpace(strings.TrimPrefix(normalized, "zeige alle "))
+		allSpheres = true
+	}
 	switch normalized {
 	case "show inbox", "open inbox", "show my inbox", "zeige posteingang", "oeffne posteingang", "zeige meinen posteingang":
 		return &SystemAction{
@@ -35,6 +47,7 @@ func parseInlineItemFilterIntent(text string) *SystemAction {
 			Params: map[string]interface{}{
 				"view":          store.ItemStateInbox,
 				"clear_filters": true,
+				"all_spheres":   allSpheres,
 			},
 		}
 	case "show unassigned items", "show unassigned inbox items", "show items without workspace", "zeige nicht zugeordnete items", "zeige items ohne workspace":
@@ -44,6 +57,7 @@ func parseInlineItemFilterIntent(text string) *SystemAction {
 				"view": store.ItemStateInbox,
 				"filters": map[string]interface{}{
 					"workspace_id": "null",
+					"all_spheres":  allSpheres,
 				},
 			},
 		}
@@ -54,7 +68,8 @@ func parseInlineItemFilterIntent(text string) *SystemAction {
 			Params: map[string]interface{}{
 				"view": store.ItemStateInbox,
 				"filters": map[string]interface{}{
-					"source": source,
+					"source":      source,
+					"all_spheres": allSpheres,
 				},
 			},
 		}
@@ -92,8 +107,12 @@ func itemFilterFromActionParams(params map[string]interface{}) (store.ItemListFi
 	if filterParams == nil {
 		filterParams = params
 	}
+	source := systemActionStringParam(filterParams, "source")
+	if source == "<nil>" {
+		source = ""
+	}
 	filter := store.ItemListFilter{
-		Source: systemActionStringParam(filterParams, "source"),
+		Source: source,
 	}
 	workspaceValue := strings.TrimSpace(fmt.Sprint(filterParams["workspace_id"]))
 	if workspaceValue != "" && workspaceValue != "<nil>" {
@@ -114,21 +133,35 @@ func itemFilterFromActionParams(params map[string]interface{}) (store.ItemListFi
 	return filter, nil
 }
 
-func filteredItemViewMessage(view string, filter store.ItemListFilter, count int) string {
+func systemActionAllSpheresParam(params map[string]interface{}) bool {
+	if params == nil {
+		return false
+	}
+	if systemActionTruthyParam(params, "all_spheres") {
+		return true
+	}
+	nested := systemActionNestedParams(params, "filters")
+	return systemActionTruthyParam(nested, "all_spheres")
+}
+
+func filteredItemViewMessage(view string, filter store.ItemListFilter, count int, allSpheres bool) string {
 	listName := "inbox"
 	if view == store.ItemStateWaiting || view == store.ItemStateSomeday || view == store.ItemStateDone {
 		listName = view
 	}
 	filterText := ""
+	if allSpheres {
+		filterText = " across all spheres"
+	}
 	switch {
 	case filter.Source != "":
-		filterText = fmt.Sprintf(" filtered to %s", filter.Source)
+		filterText += fmt.Sprintf(" filtered to %s", filter.Source)
 	case filter.WorkspaceUnassigned:
-		filterText = " filtered to unassigned items"
+		filterText += " filtered to unassigned items"
 	case filter.WorkspaceID != nil:
-		filterText = " filtered to one workspace"
+		filterText += " filtered to one workspace"
 	case filter.ProjectID != nil:
-		filterText = " filtered to one project"
+		filterText += " filtered to one project"
 	}
 	if count == 0 {
 		return fmt.Sprintf("Opened %s%s. There are no matching items right now.", listName, filterText)
@@ -136,7 +169,7 @@ func filteredItemViewMessage(view string, filter store.ItemListFilter, count int
 	return fmt.Sprintf("Opened %s%s with %d item(s).", listName, filterText, count)
 }
 
-func itemFilterPayload(filter store.ItemListFilter) map[string]interface{} {
+func itemFilterPayload(filter store.ItemListFilter, allSpheres bool) map[string]interface{} {
 	payload := map[string]interface{}{}
 	if filter.Source != "" {
 		payload["source"] = filter.Source
@@ -149,6 +182,9 @@ func itemFilterPayload(filter store.ItemListFilter) map[string]interface{} {
 	}
 	if filter.ProjectID != nil {
 		payload["project_id"] = *filter.ProjectID
+	}
+	if allSpheres {
+		payload["all_spheres"] = true
 	}
 	if len(payload) == 0 {
 		return nil
@@ -170,11 +206,14 @@ func (a *App) executeFilteredItemViewAction(action *SystemAction) (string, map[s
 	if err != nil {
 		return "", nil, err
 	}
-	activeSphere, err := a.store.ActiveSphere()
-	if err != nil {
-		return "", nil, err
+	allSpheres := systemActionAllSpheresParam(action.Params)
+	if !allSpheres {
+		activeSphere, err := a.store.ActiveSphere()
+		if err != nil {
+			return "", nil, err
+		}
+		filter.Sphere = activeSphere
 	}
-	filter.Sphere = activeSphere
 
 	var count int
 	switch view {
@@ -211,8 +250,13 @@ func (a *App) executeFilteredItemViewAction(action *SystemAction) (string, map[s
 	}
 	if systemActionTruthyParam(action.Params, "clear_filters") {
 		payload["clear_filters"] = true
-	} else if filters := itemFilterPayload(filter); filters != nil {
+		if allSpheres {
+			payload["filters"] = map[string]interface{}{"all_spheres": true}
+		}
+	} else if filters := itemFilterPayload(filter, allSpheres); filters != nil {
 		payload["filters"] = filters
+	} else if allSpheres {
+		payload["filters"] = map[string]interface{}{"all_spheres": true}
 	}
-	return filteredItemViewMessage(view, filter, count), payload, nil
+	return filteredItemViewMessage(view, filter, count, allSpheres), payload, nil
 }

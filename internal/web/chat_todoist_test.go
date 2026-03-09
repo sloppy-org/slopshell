@@ -170,6 +170,9 @@ func TestClassifyAndExecuteSystemActionSyncTodoist(t *testing.T) {
 	if item.WorkspaceID == nil || *item.WorkspaceID != workspace.ID {
 		t.Fatalf("item workspace_id = %#v, want %d", item.WorkspaceID, workspace.ID)
 	}
+	if item.Sphere != store.SpherePrivate {
+		t.Fatalf("item sphere = %q, want %q", item.Sphere, store.SpherePrivate)
+	}
 	if item.Title != "Review proposal" {
 		t.Fatalf("item title = %q, want Review proposal", item.Title)
 	}

@@ -20,6 +20,7 @@ func TestParseInlineWorkspaceIntent(t *testing.T) {
 		wantTarget    string
 		wantNewName   string
 		wantScratch   bool
+		wantAll       bool
 	}{
 		{text: "open workspace Alpha", wantAction: "switch_workspace", wantWorkspace: "Alpha"},
 		{text: "switch to workspace Beta", wantAction: "switch_workspace", wantWorkspace: "Beta"},
@@ -27,6 +28,7 @@ func TestParseInlineWorkspaceIntent(t *testing.T) {
 		{text: "show items here", wantAction: "list_workspace_items"},
 		{text: "what's open", wantAction: "list_workspace_items"},
 		{text: "list workspaces", wantAction: "list_workspaces"},
+		{text: "show all workspaces", wantAction: "list_workspaces", wantAll: true},
 		{text: "create workspace ./notes", wantAction: "create_workspace", wantWorkspace: "./notes"},
 		{text: "create scratch workspace", wantAction: "create_workspace", wantScratch: true},
 		{text: "rename workspace Alpha to Beta", wantAction: "rename_workspace", wantWorkspace: "Alpha", wantNewName: "Beta"},
@@ -60,6 +62,9 @@ func TestParseInlineWorkspaceIntent(t *testing.T) {
 			}
 			if got := systemActionBoolParam(action.Params, "scratch"); got != tc.wantScratch {
 				t.Fatalf("scratch = %v, want %v", got, tc.wantScratch)
+			}
+			if got := systemActionTruthyParam(action.Params, "all_spheres"); got != tc.wantAll {
+				t.Fatalf("all_spheres = %v, want %v", got, tc.wantAll)
 			}
 		})
 	}
@@ -248,6 +253,83 @@ func TestClassifyAndExecuteSystemActionCreateWorkspaceFromGit(t *testing.T) {
 	}
 }
 
+func TestClassifyAndExecuteSystemActionListWorkspacesUsesActiveSphereByDefault(t *testing.T) {
+	app := newAuthedTestApp(t)
+	app.intentLLMURL = ""
+	app.intentClassifierURL = ""
+
+	project, err := app.ensureDefaultProjectRecord()
+	if err != nil {
+		t.Fatalf("ensure default project: %v", err)
+	}
+	privateWorkspace, err := app.store.CreateWorkspace("Private", filepath.Join(t.TempDir(), "private"), store.SpherePrivate)
+	if err != nil {
+		t.Fatalf("CreateWorkspace(private) error: %v", err)
+	}
+	workWorkspace, err := app.store.CreateWorkspace("Work", filepath.Join(t.TempDir(), "work"), store.SphereWork)
+	if err != nil {
+		t.Fatalf("CreateWorkspace(work) error: %v", err)
+	}
+	if err := app.store.SetActiveSphere(store.SpherePrivate); err != nil {
+		t.Fatalf("SetActiveSphere() error: %v", err)
+	}
+	session, err := app.store.GetOrCreateChatSession(project.ProjectKey)
+	if err != nil {
+		t.Fatalf("chat session: %v", err)
+	}
+
+	message, payloads, handled := app.classifyAndExecuteSystemAction(context.Background(), session.ID, session, "list workspaces")
+	if !handled {
+		t.Fatal("expected list workspaces command to be handled")
+	}
+	if !strings.Contains(message, "Workspaces in private sphere:") {
+		t.Fatalf("message = %q", message)
+	}
+	if !strings.Contains(message, "Private —") || strings.Contains(message, "Work —") {
+		t.Fatalf("message should stay in active sphere: %q", message)
+	}
+	if len(payloads) != 1 || strFromAny(payloads[0]["type"]) != "list_workspaces" {
+		t.Fatalf("payloads = %#v", payloads)
+	}
+	if got := strFromAny(payloads[0]["sphere"]); got != store.SpherePrivate {
+		t.Fatalf("payload sphere = %q, want %q", got, store.SpherePrivate)
+	}
+	workspaces, ok := payloads[0]["workspaces"].([]map[string]interface{})
+	if !ok {
+		t.Fatalf("workspaces payload = %#v", payloads[0]["workspaces"])
+	}
+	if len(workspaces) != 1 || int64FromAny(workspaces[0]["workspace_id"]) != privateWorkspace.ID {
+		t.Fatalf("workspaces payload = %#v, want only private workspace", workspaces)
+	}
+	if int64FromAny(payloads[0]["workspace_count"]) != 1 {
+		t.Fatalf("workspace_count = %v, want 1", payloads[0]["workspace_count"])
+	}
+
+	message, payloads, handled = app.classifyAndExecuteSystemAction(context.Background(), session.ID, session, "show all workspaces")
+	if !handled {
+		t.Fatal("expected all-spheres workspace command to be handled")
+	}
+	if !strings.Contains(message, "Workspaces:") {
+		t.Fatalf("message = %q", message)
+	}
+	if !strings.Contains(message, "Private") || !strings.Contains(message, "Work") {
+		t.Fatalf("message should include both spheres: %q", message)
+	}
+	if len(payloads) != 1 || !boolFromAny(payloads[0]["all_spheres"]) {
+		t.Fatalf("payloads = %#v", payloads)
+	}
+	workspacesAny, ok := payloads[0]["workspaces"].([]map[string]interface{})
+	if !ok {
+		t.Fatalf("workspaces payload = %#v", payloads[0]["workspaces"])
+	}
+	if len(workspacesAny) != 2 {
+		t.Fatalf("workspaces payload len = %d, want 2", len(workspacesAny))
+	}
+	if int64FromAny(workspacesAny[1]["workspace_id"]) != workWorkspace.ID && int64FromAny(workspacesAny[0]["workspace_id"]) != workWorkspace.ID {
+		t.Fatalf("workspaces payload missing work workspace: %#v", workspacesAny)
+	}
+}
+
 func TestClassifyAndExecuteSystemActionWorkspaceManagement(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
@@ -374,6 +456,9 @@ func TestApplyWorkspacePromptContextIncludesActiveWorkspaceSummary(t *testing.T)
 	if err := app.store.SetActiveWorkspace(workspace.ID); err != nil {
 		t.Fatalf("SetActiveWorkspace() error: %v", err)
 	}
+	if err := app.store.SetActiveSphere(store.SphereWork); err != nil {
+		t.Fatalf("SetActiveSphere() error: %v", err)
+	}
 	if _, err := app.store.CreateItem("Visible item", store.ItemOptions{WorkspaceID: &workspace.ID}); err != nil {
 		t.Fatalf("CreateItem(visible) error: %v", err)
 	}
@@ -387,6 +472,9 @@ func TestApplyWorkspacePromptContextIncludesActiveWorkspaceSummary(t *testing.T)
 	prompt := app.applyWorkspacePromptContext(project.ProjectKey, "Conversation transcript:\nUSER:\nhello")
 	if !strings.Contains(prompt, "## Workspace Context") {
 		t.Fatalf("prompt missing workspace section: %q", prompt)
+	}
+	if !strings.Contains(prompt, "Active sphere: work") {
+		t.Fatalf("prompt missing active sphere line: %q", prompt)
 	}
 	if !strings.Contains(prompt, "Active workspace: Default ("+project.RootPath+")") {
 		t.Fatalf("prompt missing active workspace line: %q", prompt)

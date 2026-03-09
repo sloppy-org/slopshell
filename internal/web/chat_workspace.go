@@ -35,6 +35,8 @@ func parseInlineWorkspaceIntent(text string) *SystemAction {
 		return &SystemAction{Action: "list_workspace_items", Params: map[string]interface{}{}}
 	case "list workspaces", "show my workspaces", "show workspaces":
 		return &SystemAction{Action: "list_workspaces", Params: map[string]interface{}{}}
+	case "list all workspaces", "show all workspaces":
+		return &SystemAction{Action: "list_workspaces", Params: map[string]interface{}{"all_spheres": true}}
 	case "show workspace details":
 		return &SystemAction{Action: "show_workspace_details", Params: map[string]interface{}{}}
 	}
@@ -295,6 +297,7 @@ func summarizeWorkspaceItems(workspace store.Workspace, items []store.Item) stri
 }
 
 type workspacePromptContext struct {
+	ActiveSphere  string
 	Workspace     store.Workspace
 	OpenItemCount int
 }
@@ -304,11 +307,16 @@ func (a *App) loadWorkspacePromptContext(projectKey string) *workspacePromptCont
 	if err != nil || workspace == nil {
 		return nil
 	}
+	activeSphere, err := a.store.ActiveSphere()
+	if err != nil {
+		return nil
+	}
 	items, err := a.listOpenWorkspaceItems(workspace.ID)
 	if err != nil {
 		return nil
 	}
 	return &workspacePromptContext{
+		ActiveSphere:  activeSphere,
 		Workspace:     *workspace,
 		OpenItemCount: len(items),
 	}
@@ -320,6 +328,7 @@ func prependWorkspacePromptContext(prompt string, ctx *workspacePromptContext) s
 	}
 	var b strings.Builder
 	b.WriteString("## Workspace Context\n")
+	fmt.Fprintf(&b, "Active sphere: %s\n", ctx.ActiveSphere)
 	fmt.Fprintf(&b, "Active workspace: %s (%s)\n", ctx.Workspace.Name, ctx.Workspace.DirPath)
 	fmt.Fprintf(&b, "Open items in this workspace: %d\n\n", ctx.OpenItemCount)
 	b.WriteString(prompt)
@@ -398,12 +407,19 @@ func workspaceOpenItemCounts(items []store.Item) map[int64]int {
 	return counts
 }
 
-func summarizeWorkspaces(workspaces []store.Workspace, openCounts map[int64]int) string {
+func summarizeWorkspaces(workspaces []store.Workspace, openCounts map[int64]int, sphere string) string {
 	if len(workspaces) == 0 {
+		if strings.TrimSpace(sphere) != "" {
+			return fmt.Sprintf("No workspaces registered in %s sphere.", sphere)
+		}
 		return "No workspaces registered."
 	}
 	var b strings.Builder
-	b.WriteString("Workspaces:\n")
+	if strings.TrimSpace(sphere) != "" {
+		fmt.Fprintf(&b, "Workspaces in %s sphere:\n", sphere)
+	} else {
+		b.WriteString("Workspaces:\n")
+	}
 	for _, workspace := range workspaces {
 		active := " "
 		if workspace.IsActive {
@@ -458,7 +474,7 @@ func (a *App) createWorkspaceFromDialogIntent(projectKey string, action *SystemA
 	return workspace, scratch, nil
 }
 
-func (a *App) executeListWorkspacesAction(session store.ChatSession) (string, map[string]interface{}, error) {
+func (a *App) executeListWorkspacesAction(_ store.ChatSession, action *SystemAction) (string, map[string]interface{}, error) {
 	workspaces, err := a.store.ListWorkspaces()
 	if err != nil {
 		return "", nil, err
@@ -468,21 +484,47 @@ func (a *App) executeListWorkspacesAction(session store.ChatSession) (string, ma
 		return "", nil, err
 	}
 	openCounts := workspaceOpenItemCounts(items)
+	return a.executeListWorkspacesResponse(workspaces, openCounts, systemActionAllSpheresParam(action.Params))
+}
+
+func (a *App) executeListWorkspacesResponse(workspaces []store.Workspace, openCounts map[int64]int, allSpheres bool) (string, map[string]interface{}, error) {
+	activeSphere := ""
+	if !allSpheres {
+		var err error
+		activeSphere, err = a.store.ActiveSphere()
+		if err != nil {
+			return "", nil, err
+		}
+		filtered := make([]store.Workspace, 0, len(workspaces))
+		for _, workspace := range workspaces {
+			if strings.EqualFold(workspace.Sphere, activeSphere) {
+				filtered = append(filtered, workspace)
+			}
+		}
+		workspaces = filtered
+	}
 	payloadList := make([]map[string]interface{}, 0, len(workspaces))
 	for _, workspace := range workspaces {
 		payloadList = append(payloadList, map[string]interface{}{
 			"workspace_id": workspace.ID,
 			"name":         workspace.Name,
 			"dir_path":     workspace.DirPath,
+			"sphere":       workspace.Sphere,
 			"is_active":    workspace.IsActive,
 			"open_items":   openCounts[workspace.ID],
 		})
 	}
-	return summarizeWorkspaces(workspaces, openCounts), map[string]interface{}{
+	payload := map[string]interface{}{
 		"type":            "list_workspaces",
 		"workspace_count": len(workspaces),
 		"workspaces":      payloadList,
-	}, nil
+	}
+	if allSpheres {
+		payload["all_spheres"] = true
+	} else if activeSphere != "" {
+		payload["sphere"] = activeSphere
+	}
+	return summarizeWorkspaces(workspaces, openCounts, activeSphere), payload, nil
 }
 
 func (a *App) executeCreateWorkspaceAction(session store.ChatSession, action *SystemAction) (string, map[string]interface{}, error) {

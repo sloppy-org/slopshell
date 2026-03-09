@@ -13,7 +13,10 @@ const normalizeActiveSphere = (...args) => refs.normalizeActiveSphere(...args);
 const readSomedayReviewNudgeLastShownAt = (...args) => refs.readSomedayReviewNudgeLastShownAt(...args);
 const persistSomedayReviewNudgeLastShownAt = (...args) => refs.persistSomedayReviewNudgeLastShownAt(...args);
 
-function appendSphereQuery(path, sphere = state.activeSphere) {
+function appendSphereQuery(path, sphere = state.activeSphere, allSpheres = false) {
+  if (allSpheres) {
+    return String(path || '');
+  }
   const cleanSphere = normalizeActiveSphere(sphere);
   const separator = String(path || '').includes('?') ? '&' : '?';
   return `${path}${separator}sphere=${encodeURIComponent(cleanSphere)}`;
@@ -38,6 +41,7 @@ export function normalizeItemSidebarFilters(rawFilters = null) {
   const filters = rawFilters && typeof rawFilters === 'object' ? rawFilters : {};
   const source = String(filters.source || '').trim().toLowerCase();
   const projectID = String(filters.project_id || '').trim();
+  const allSpheres = filters.all_spheres === true;
   const workspaceRaw = filters.workspace_id;
   const workspaceUnassigned = String(workspaceRaw || '').trim().toLowerCase() === 'null'
     || filters.workspace_unassigned === true;
@@ -46,6 +50,7 @@ export function normalizeItemSidebarFilters(rawFilters = null) {
     workspaceID = Math.trunc(Number(workspaceRaw));
   }
   return {
+    all_spheres: allSpheres,
     source,
     workspace_id: workspaceID,
     project_id: projectID,
@@ -72,12 +77,14 @@ function appendItemSidebarFilterQuery(path, filters = state.itemSidebarFilters) 
 
 export function itemSidebarEndpoint(view, filters = state.itemSidebarFilters) {
   const normalized = normalizeItemSidebarView(view);
-  if (normalized === 'done') return appendItemSidebarFilterQuery(appendSphereQuery(`items/${normalized}?limit=50`), filters);
-  return appendItemSidebarFilterQuery(appendSphereQuery(`items/${normalized}`), filters);
+  const normalizedFilters = normalizeItemSidebarFilters(filters);
+  if (normalized === 'done') return appendItemSidebarFilterQuery(appendSphereQuery(`items/${normalized}?limit=50`, state.activeSphere, normalizedFilters.all_spheres), normalizedFilters);
+  return appendItemSidebarFilterQuery(appendSphereQuery(`items/${normalized}`, state.activeSphere, normalizedFilters.all_spheres), normalizedFilters);
 }
 
 export function itemSidebarCountsEndpoint(filters = state.itemSidebarFilters) {
-  return appendItemSidebarFilterQuery(appendSphereQuery('items/counts'), filters);
+  const normalizedFilters = normalizeItemSidebarFilters(filters);
+  return appendItemSidebarFilterQuery(appendSphereQuery('items/counts', state.activeSphere, normalizedFilters.all_spheres), normalizedFilters);
 }
 
 export function normalizeItemSidebarCounts(rawCounts) {

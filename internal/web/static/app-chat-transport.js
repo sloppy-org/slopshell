@@ -287,9 +287,10 @@ export function handleChatEvent(payload) {
       toggleTTSSilentMode();
     } else if (actionType === 'show_item_sidebar_view') {
       const view = normalizeItemSidebarView(action?.view || 'inbox');
+      const actionFilters = action?.filters && typeof action.filters === 'object' ? action.filters : {};
       const filters = action?.clear_filters
-        ? {}
-        : (action?.filters && typeof action.filters === 'object' ? action.filters : {});
+        ? (actionFilters.all_spheres === true ? { all_spheres: true } : {})
+        : actionFilters;
       void openItemSidebarView(view, filters);
     } else if (actionType === 'set_someday_review_nudge') {
       const enabled = parseOptionalBoolean(action?.enabled);

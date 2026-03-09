@@ -221,7 +221,7 @@ func (a *App) executeSystemAction(sessionID string, session store.ChatSession, a
 			"dir_path":     workspace.DirPath,
 		}, nil
 	case "list_workspaces":
-		return a.executeListWorkspacesAction(session)
+		return a.executeListWorkspacesAction(session, action)
 	case "create_workspace":
 		return a.executeCreateWorkspaceAction(session, action)
 	case "list_workspace_items":
