@@ -32,8 +32,7 @@ func (a *App) handleExternalAccountList(w http.ResponseWriter, r *http.Request) 
 		writeDomainStoreError(w, err)
 		return
 	}
-	writeJSON(w, map[string]any{
-		"ok":       true,
+	writeAPIData(w, http.StatusOK, map[string]any{
 		"accounts": accounts,
 	})
 }
@@ -44,7 +43,7 @@ func (a *App) handleExternalAccountCreate(w http.ResponseWriter, r *http.Request
 	}
 	var req externalAccountCreateRequest
 	if err := decodeJSON(r, &req); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 	account, err := a.store.CreateExternalAccount(req.Sphere, req.Provider, req.Label, req.Config)
@@ -63,8 +62,7 @@ func (a *App) handleExternalAccountCreate(w http.ResponseWriter, r *http.Request
 			return
 		}
 	}
-	writeJSON(w, map[string]any{
-		"ok":      true,
+	writeAPIData(w, http.StatusCreated, map[string]any{
 		"account": account,
 	})
 }
@@ -75,12 +73,12 @@ func (a *App) handleExternalAccountUpdate(w http.ResponseWriter, r *http.Request
 	}
 	accountID, err := parseURLInt64Param(r, "account_id")
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	var req externalAccountUpdateRequest
 	if err := decodeJSON(r, &req); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 	if err := a.store.UpdateExternalAccount(accountID, store.ExternalAccountUpdate{
@@ -98,8 +96,7 @@ func (a *App) handleExternalAccountUpdate(w http.ResponseWriter, r *http.Request
 		writeDomainStoreError(w, err)
 		return
 	}
-	writeJSON(w, map[string]any{
-		"ok":      true,
+	writeAPIData(w, http.StatusOK, map[string]any{
 		"account": account,
 	})
 }
@@ -110,16 +107,12 @@ func (a *App) handleExternalAccountDelete(w http.ResponseWriter, r *http.Request
 	}
 	accountID, err := parseURLInt64Param(r, "account_id")
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	if err := a.store.DeleteExternalAccount(accountID); err != nil {
 		writeDomainStoreError(w, err)
 		return
 	}
-	writeJSON(w, map[string]any{
-		"ok":         true,
-		"deleted":    true,
-		"account_id": accountID,
-	})
+	writeNoContent(w)
 }

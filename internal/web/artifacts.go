@@ -31,7 +31,7 @@ func (a *App) handleArtifactList(w http.ResponseWriter, r *http.Request) {
 	case workspaceIDText != "":
 		workspaceID, parseErr := strconv.ParseInt(workspaceIDText, 10, 64)
 		if parseErr != nil || workspaceID <= 0 {
-			http.Error(w, "workspace_id must be a positive integer", http.StatusBadRequest)
+			writeAPIError(w, http.StatusBadRequest, "workspace_id must be a positive integer")
 			return
 		}
 		if linkedOnly {
@@ -48,8 +48,7 @@ func (a *App) handleArtifactList(w http.ResponseWriter, r *http.Request) {
 		writeDomainStoreError(w, err)
 		return
 	}
-	writeJSON(w, map[string]any{
-		"ok":        true,
+	writeAPIData(w, http.StatusOK, map[string]any{
 		"artifacts": artifacts,
 	})
 }
@@ -60,7 +59,7 @@ func (a *App) handleArtifactCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	var req artifactCreateRequest
 	if err := decodeJSON(r, &req); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 	artifact, err := a.store.CreateArtifact(store.ArtifactKind(req.Kind), req.RefPath, req.RefURL, req.Title, req.MetaJSON)
@@ -68,8 +67,7 @@ func (a *App) handleArtifactCreate(w http.ResponseWriter, r *http.Request) {
 		writeDomainStoreError(w, err)
 		return
 	}
-	writeJSON(w, map[string]any{
-		"ok":       true,
+	writeAPIData(w, http.StatusCreated, map[string]any{
 		"artifact": artifact,
 	})
 }
@@ -80,7 +78,7 @@ func (a *App) handleArtifactGet(w http.ResponseWriter, r *http.Request) {
 	}
 	artifactID, err := parseURLInt64Param(r, "artifact_id")
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	artifact, err := a.store.GetArtifact(artifactID)
@@ -88,8 +86,7 @@ func (a *App) handleArtifactGet(w http.ResponseWriter, r *http.Request) {
 		writeDomainStoreError(w, err)
 		return
 	}
-	writeJSON(w, map[string]any{
-		"ok":       true,
+	writeAPIData(w, http.StatusOK, map[string]any{
 		"artifact": artifact,
 	})
 }
@@ -100,16 +97,12 @@ func (a *App) handleArtifactDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	artifactID, err := parseURLInt64Param(r, "artifact_id")
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	if err := a.store.DeleteArtifact(artifactID); err != nil {
 		writeDomainStoreError(w, err)
 		return
 	}
-	writeJSON(w, map[string]any{
-		"ok":          true,
-		"deleted":     true,
-		"artifact_id": artifactID,
-	})
+	writeNoContent(w)
 }

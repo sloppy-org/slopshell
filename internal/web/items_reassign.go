@@ -55,21 +55,21 @@ func (a *App) handleItemWorkspaceUpdate(w http.ResponseWriter, r *http.Request) 
 	}
 	itemID, err := parseItemIDParam(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	var req itemWorkspaceUpdateRequest
 	if err := decodeJSON(r, &req); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 	if req.WorkspaceID != nil {
 		if err := a.ensureWorkspaceExists(*req.WorkspaceID); err != nil {
 			if errors.Is(err, errItemWorkspaceNotFound) {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				writeAPIError(w, http.StatusBadRequest, err.Error())
 				return
 			}
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			writeAPIError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 	}
@@ -80,7 +80,7 @@ func (a *App) handleItemWorkspaceUpdate(w http.ResponseWriter, r *http.Request) 
 	}
 	warning, err := a.itemWorkspaceChangeWarning(item, req.WorkspaceID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if err := a.store.SetItemWorkspace(itemID, req.WorkspaceID); err != nil {
@@ -92,8 +92,7 @@ func (a *App) handleItemWorkspaceUpdate(w http.ResponseWriter, r *http.Request) 
 		writeItemStoreError(w, err)
 		return
 	}
-	writeJSON(w, map[string]any{
-		"ok":      true,
+	writeAPIData(w, http.StatusOK, map[string]any{
 		"item":    item,
 		"warning": warning,
 	})
@@ -105,21 +104,21 @@ func (a *App) handleItemProjectUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	itemID, err := parseItemIDParam(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	var req itemProjectUpdateRequest
 	if err := decodeJSON(r, &req); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 	if req.ProjectID != nil && strings.TrimSpace(*req.ProjectID) != "" {
 		if err := a.ensureProjectExists(*req.ProjectID); err != nil {
 			if errors.Is(err, errItemProjectNotFound) {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				writeAPIError(w, http.StatusBadRequest, err.Error())
 				return
 			}
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			writeAPIError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 	}
@@ -132,8 +131,7 @@ func (a *App) handleItemProjectUpdate(w http.ResponseWriter, r *http.Request) {
 		writeItemStoreError(w, err)
 		return
 	}
-	writeJSON(w, map[string]any{
-		"ok":   true,
+	writeAPIData(w, http.StatusOK, map[string]any{
 		"item": item,
 	})
 }

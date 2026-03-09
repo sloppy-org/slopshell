@@ -107,10 +107,10 @@ func TestItemCRUDAndStateAPI(t *testing.T) {
 		"source":       "github",
 		"source_ref":   "owner/repo#175",
 	})
-	if rrCreate.Code != http.StatusOK {
-		t.Fatalf("create item status = %d, want 200: %s", rrCreate.Code, rrCreate.Body.String())
+	if rrCreate.Code != http.StatusCreated {
+		t.Fatalf("create item status = %d, want 201: %s", rrCreate.Code, rrCreate.Body.String())
 	}
-	createPayload := decodeJSONResponse(t, rrCreate)
+	createPayload := decodeJSONDataResponse(t, rrCreate)
 	itemPayload, ok := createPayload["item"].(map[string]any)
 	if !ok {
 		t.Fatalf("create item payload = %#v", createPayload)
@@ -124,7 +124,7 @@ func TestItemCRUDAndStateAPI(t *testing.T) {
 	if rrList.Code != http.StatusOK {
 		t.Fatalf("list items status = %d, want 200: %s", rrList.Code, rrList.Body.String())
 	}
-	listPayload := decodeJSONResponse(t, rrList)
+	listPayload := decodeJSONDataResponse(t, rrList)
 	items, ok := listPayload["items"].([]any)
 	if !ok || len(items) != 1 {
 		t.Fatalf("list items payload = %#v", listPayload)
@@ -179,8 +179,11 @@ func TestItemCRUDAndStateAPI(t *testing.T) {
 	}
 
 	rrDelete := doAuthedJSONRequest(t, app.Router(), http.MethodDelete, "/api/items/"+itoa(itemID), nil)
-	if rrDelete.Code != http.StatusOK {
-		t.Fatalf("delete item status = %d, want 200: %s", rrDelete.Code, rrDelete.Body.String())
+	if rrDelete.Code != http.StatusNoContent {
+		t.Fatalf("delete item status = %d, want 204: %s", rrDelete.Code, rrDelete.Body.String())
+	}
+	if rrDelete.Body.Len() != 0 {
+		t.Fatalf("delete item body = %q, want empty", rrDelete.Body.String())
 	}
 
 	rrMissing := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/items/"+itoa(itemID), nil)
@@ -198,10 +201,10 @@ func TestItemSphereAPI(t *testing.T) {
 	rrCreate := doAuthedJSONRequest(t, app.Router(), http.MethodPost, "/api/items", map[string]any{
 		"title": "Active sphere item",
 	})
-	if rrCreate.Code != http.StatusOK {
-		t.Fatalf("create item status = %d, want 200: %s", rrCreate.Code, rrCreate.Body.String())
+	if rrCreate.Code != http.StatusCreated {
+		t.Fatalf("create item status = %d, want 201: %s", rrCreate.Code, rrCreate.Body.String())
 	}
-	createPayload := decodeJSONResponse(t, rrCreate)
+	createPayload := decodeJSONDataResponse(t, rrCreate)
 	itemPayload, ok := createPayload["item"].(map[string]any)
 	if !ok {
 		t.Fatalf("create payload = %#v", createPayload)

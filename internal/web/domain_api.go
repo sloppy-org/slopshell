@@ -43,5 +43,5 @@ func writeDomainStoreError(w http.ResponseWriter, err error) {
 	if err == nil {
 		return
 	}
-	http.Error(w, err.Error(), domainResponseErrorStatus(err))
+	writeAPIError(w, domainResponseErrorStatus(err), err.Error())
 }

@@ -25,10 +25,10 @@ func TestContainerMappingCRUDAPI(t *testing.T) {
 		"project_id":     project.ID,
 		"sphere":         "work",
 	})
-	if rrCreate.Code != http.StatusOK {
-		t.Fatalf("create container mapping status = %d, want 200: %s", rrCreate.Code, rrCreate.Body.String())
+	if rrCreate.Code != http.StatusCreated {
+		t.Fatalf("create container mapping status = %d, want 201: %s", rrCreate.Code, rrCreate.Body.String())
 	}
-	createPayload := decodeJSONResponse(t, rrCreate)
+	createPayload := decodeJSONDataResponse(t, rrCreate)
 	mappingPayload, ok := createPayload["mapping"].(map[string]any)
 	if !ok {
 		t.Fatalf("create payload = %#v", createPayload)
@@ -45,7 +45,7 @@ func TestContainerMappingCRUDAPI(t *testing.T) {
 	if rrList.Code != http.StatusOK {
 		t.Fatalf("list container mappings status = %d, want 200: %s", rrList.Code, rrList.Body.String())
 	}
-	listPayload := decodeJSONResponse(t, rrList)
+	listPayload := decodeJSONDataResponse(t, rrList)
 	mappings, ok := listPayload["mappings"].([]any)
 	if !ok || len(mappings) != 1 {
 		t.Fatalf("list payload = %#v", listPayload)
@@ -60,7 +60,7 @@ func TestContainerMappingCRUDAPI(t *testing.T) {
 	if rrUpdate.Code != http.StatusOK {
 		t.Fatalf("update container mapping status = %d, want 200: %s", rrUpdate.Code, rrUpdate.Body.String())
 	}
-	updated := decodeJSONResponse(t, rrUpdate)
+	updated := decodeJSONDataResponse(t, rrUpdate)
 	updatedMapping, ok := updated["mapping"].(map[string]any)
 	if !ok {
 		t.Fatalf("update payload = %#v", updated)
@@ -79,8 +79,11 @@ func TestContainerMappingCRUDAPI(t *testing.T) {
 	}
 
 	rrDelete := doAuthedJSONRequest(t, app.Router(), http.MethodDelete, "/api/container-mappings/"+itoa(mappingID), nil)
-	if rrDelete.Code != http.StatusOK {
-		t.Fatalf("delete container mapping status = %d, want 200: %s", rrDelete.Code, rrDelete.Body.String())
+	if rrDelete.Code != http.StatusNoContent {
+		t.Fatalf("delete container mapping status = %d, want 204: %s", rrDelete.Code, rrDelete.Body.String())
+	}
+	if rrDelete.Body.Len() != 0 {
+		t.Fatalf("delete container mapping body = %q, want empty", rrDelete.Body.String())
 	}
 	rrMissing := doAuthedJSONRequest(t, app.Router(), http.MethodDelete, "/api/container-mappings/"+itoa(mappingID), nil)
 	if rrMissing.Code != http.StatusNotFound {
@@ -99,6 +102,9 @@ func TestContainerMappingAPIRejectsInvalidInput(t *testing.T) {
 	})
 	if rrBadCreate.Code != http.StatusBadRequest {
 		t.Fatalf("bad create status = %d, want 400: %s", rrBadCreate.Code, rrBadCreate.Body.String())
+	}
+	if got := decodeJSONResponse(t, rrBadCreate)["error"]; got == nil {
+		t.Fatalf("bad create payload = %#v, want error", decodeJSONResponse(t, rrBadCreate))
 	}
 
 	rrBadList := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/container-mappings?provider=smtp", nil)

@@ -18,13 +18,13 @@ func TestWorkspaceCRUDAPI(t *testing.T) {
 		"sphere":    "work",
 		"is_active": true,
 	})
-	if rrCreate.Code != http.StatusOK {
-		t.Fatalf("create workspace status = %d, want 200: %s", rrCreate.Code, rrCreate.Body.String())
+	if rrCreate.Code != http.StatusCreated {
+		t.Fatalf("create workspace status = %d, want 201: %s", rrCreate.Code, rrCreate.Body.String())
 	}
-	createdPayload := decodeJSONResponse(t, rrCreate)
-	workspacePayload, ok := createdPayload["workspace"].(map[string]any)
+	createdData := decodeJSONDataResponse(t, rrCreate)
+	workspacePayload, ok := createdData["workspace"].(map[string]any)
 	if !ok {
-		t.Fatalf("create workspace payload = %#v", createdPayload)
+		t.Fatalf("create workspace payload = %#v", createdData)
 	}
 	workspaceID := int64(workspacePayload["id"].(float64))
 	if workspacePayload["name"] != "Workspace One" {
@@ -41,7 +41,7 @@ func TestWorkspaceCRUDAPI(t *testing.T) {
 	if rrList.Code != http.StatusOK {
 		t.Fatalf("list workspaces status = %d, want 200: %s", rrList.Code, rrList.Body.String())
 	}
-	listPayload := decodeJSONResponse(t, rrList)
+	listPayload := decodeJSONDataResponse(t, rrList)
 	workspaces, ok := listPayload["workspaces"].([]any)
 	if !ok || len(workspaces) != 1 {
 		t.Fatalf("list workspaces payload = %#v", listPayload)
@@ -60,7 +60,7 @@ func TestWorkspaceCRUDAPI(t *testing.T) {
 	if rrUpdate.Code != http.StatusOK {
 		t.Fatalf("update workspace status = %d, want 200: %s", rrUpdate.Code, rrUpdate.Body.String())
 	}
-	updatePayload := decodeJSONResponse(t, rrUpdate)
+	updatePayload := decodeJSONDataResponse(t, rrUpdate)
 	updatedWorkspace, ok := updatePayload["workspace"].(map[string]any)
 	if !ok {
 		t.Fatalf("update workspace payload = %#v", updatePayload)
@@ -91,10 +91,16 @@ func TestWorkspaceCRUDAPI(t *testing.T) {
 	if rrMissingSphere.Code != http.StatusBadRequest {
 		t.Fatalf("missing sphere status = %d, want 400: %s", rrMissingSphere.Code, rrMissingSphere.Body.String())
 	}
+	if got := decodeJSONResponse(t, rrMissingSphere)["error"]; got != "sphere is required" {
+		t.Fatalf("missing sphere error = %#v, want %q", got, "sphere is required")
+	}
 
 	rrDelete := doAuthedJSONRequest(t, app.Router(), http.MethodDelete, "/api/workspaces/"+itoa(workspaceID), nil)
-	if rrDelete.Code != http.StatusOK {
-		t.Fatalf("delete workspace status = %d, want 200: %s", rrDelete.Code, rrDelete.Body.String())
+	if rrDelete.Code != http.StatusNoContent {
+		t.Fatalf("delete workspace status = %d, want 204: %s", rrDelete.Code, rrDelete.Body.String())
+	}
+	if rrDelete.Body.Len() != 0 {
+		t.Fatalf("delete workspace body = %q, want empty", rrDelete.Body.String())
 	}
 
 	rrMissing := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/workspaces/"+itoa(workspaceID), nil)
@@ -119,7 +125,7 @@ func TestWorkspaceListFiltersBySphere(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("filter workspaces status = %d, want 200: %s", rr.Code, rr.Body.String())
 	}
-	payload := decodeJSONResponse(t, rr)
+	payload := decodeJSONDataResponse(t, rr)
 	workspaces, ok := payload["workspaces"].([]any)
 	if !ok || len(workspaces) != 1 {
 		t.Fatalf("filtered workspaces payload = %#v", payload)
@@ -138,6 +144,9 @@ func TestWorkspaceListFiltersBySphere(t *testing.T) {
 	rrBad := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/workspaces?sphere=office", nil)
 	if rrBad.Code != http.StatusBadRequest {
 		t.Fatalf("invalid sphere status = %d, want 400: %s", rrBad.Code, rrBad.Body.String())
+	}
+	if got := decodeJSONResponse(t, rrBad)["error"]; got == nil {
+		t.Fatalf("invalid sphere payload = %#v, want error field", decodeJSONResponse(t, rrBad))
 	}
 
 	if _, err := app.store.GetWorkspace(privateWorkspace.ID); err != nil {

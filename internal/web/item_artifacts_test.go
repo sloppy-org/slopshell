@@ -76,18 +76,18 @@ func TestItemArtifactsAPI(t *testing.T) {
 		"artifact_id": relatedArtifact.ID,
 		"role":        "related",
 	})
-	if rrLinkRelated.Code != http.StatusOK {
-		t.Fatalf("link related status = %d, want 200: %s", rrLinkRelated.Code, rrLinkRelated.Body.String())
+	if rrLinkRelated.Code != http.StatusCreated {
+		t.Fatalf("link related status = %d, want 201: %s", rrLinkRelated.Code, rrLinkRelated.Body.String())
 	}
 
 	rrLinkSource := doAuthedJSONRequest(t, app.Router(), http.MethodPost, "/api/items/"+itoa(item.ID)+"/artifacts", map[string]any{
 		"artifact_id": outputArtifact.ID,
 		"role":        "source",
 	})
-	if rrLinkSource.Code != http.StatusOK {
-		t.Fatalf("link source status = %d, want 200: %s", rrLinkSource.Code, rrLinkSource.Body.String())
+	if rrLinkSource.Code != http.StatusCreated {
+		t.Fatalf("link source status = %d, want 201: %s", rrLinkSource.Code, rrLinkSource.Body.String())
 	}
-	sourcePayload := decodeJSONResponse(t, rrLinkSource)
+	sourcePayload := decodeJSONDataResponse(t, rrLinkSource)
 	if got := mustArtifactIDFromItemArtifactsPayload(t, sourcePayload, 0); got != outputArtifact.ID {
 		t.Fatalf("linked primary artifact = %d, want %d", got, outputArtifact.ID)
 	}
@@ -117,7 +117,7 @@ func TestItemArtifactsAPI(t *testing.T) {
 	if rrUnlinkPrimary.Code != http.StatusOK {
 		t.Fatalf("unlink primary status = %d, want 200: %s", rrUnlinkPrimary.Code, rrUnlinkPrimary.Body.String())
 	}
-	unlinkPayload := decodeJSONResponse(t, rrUnlinkPrimary)
+	unlinkPayload := decodeJSONDataResponse(t, rrUnlinkPrimary)
 	if got := mustArtifactIDFromItemArtifactsPayload(t, unlinkPayload, 0); got != sourceArtifact.ID {
 		t.Fatalf("restored primary artifact = %d, want %d", got, sourceArtifact.ID)
 	}

@@ -343,7 +343,11 @@ func (a *App) hasAuth(r *http.Request) bool {
 
 func (a *App) requireAuth(w http.ResponseWriter, r *http.Request) bool {
 	if !a.hasAuth(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			writeAPIError(w, http.StatusUnauthorized, "unauthorized")
+		} else {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+		}
 		return false
 	}
 	return true
@@ -601,11 +605,6 @@ func (a *App) serveCapture(w http.ResponseWriter, r *http.Request) {
 func decodeJSON(r *http.Request, out interface{}) error {
 	defer r.Body.Close()
 	return json.NewDecoder(io.LimitReader(r.Body, 16*1024*1024)).Decode(out)
-}
-
-func writeJSON(w http.ResponseWriter, payload interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(payload)
 }
 
 func (a *App) handleSetupCheck(w http.ResponseWriter, r *http.Request) {

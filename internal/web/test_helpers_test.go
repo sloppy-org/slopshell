@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -49,4 +50,22 @@ func decodeJSONResponse(t *testing.T, rr *httptest.ResponseRecorder) map[string]
 		t.Fatalf("decode response body: %v\nbody=%s", err, rr.Body.String())
 	}
 	return payload
+}
+
+func assertJSONContentType(t *testing.T, rr *httptest.ResponseRecorder) {
+	t.Helper()
+	if got := rr.Header().Get("Content-Type"); !strings.Contains(got, "application/json") {
+		t.Fatalf("content type = %q, want application/json", got)
+	}
+}
+
+func decodeJSONDataResponse(t *testing.T, rr *httptest.ResponseRecorder) map[string]any {
+	t.Helper()
+	assertJSONContentType(t, rr)
+	payload := decodeJSONResponse(t, rr)
+	data, ok := payload["data"].(map[string]any)
+	if !ok {
+		t.Fatalf("response data payload = %#v", payload)
+	}
+	return data
 }

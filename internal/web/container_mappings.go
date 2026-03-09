@@ -1,6 +1,8 @@
 package web
 
 import (
+	"database/sql"
+	"errors"
 	"net/http"
 	"strings"
 )
@@ -23,8 +25,7 @@ func (a *App) handleContainerMappingList(w http.ResponseWriter, r *http.Request)
 		writeDomainStoreError(w, err)
 		return
 	}
-	writeJSON(w, map[string]any{
-		"ok":       true,
+	writeAPIData(w, http.StatusOK, map[string]any{
 		"mappings": mappings,
 	})
 }
@@ -35,7 +36,14 @@ func (a *App) handleContainerMappingCreate(w http.ResponseWriter, r *http.Reques
 	}
 	var req containerMappingCreateRequest
 	if err := decodeJSON(r, &req); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	status := http.StatusCreated
+	if _, err := a.store.GetContainerMapping(req.Provider, req.ContainerType, req.ContainerRef); err == nil {
+		status = http.StatusOK
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		writeDomainStoreError(w, err)
 		return
 	}
 	mapping, err := a.store.SetContainerMapping(
@@ -50,8 +58,7 @@ func (a *App) handleContainerMappingCreate(w http.ResponseWriter, r *http.Reques
 		writeDomainStoreError(w, err)
 		return
 	}
-	writeJSON(w, map[string]any{
-		"ok":      true,
+	writeAPIData(w, status, map[string]any{
 		"mapping": mapping,
 	})
 }
@@ -62,16 +69,12 @@ func (a *App) handleContainerMappingDelete(w http.ResponseWriter, r *http.Reques
 	}
 	mappingID, err := parseURLInt64Param(r, "mapping_id")
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	if err := a.store.DeleteContainerMapping(mappingID); err != nil {
 		writeDomainStoreError(w, err)
 		return
 	}
-	writeJSON(w, map[string]any{
-		"ok":         true,
-		"deleted":    true,
-		"mapping_id": mappingID,
-	})
+	writeNoContent(w)
 }

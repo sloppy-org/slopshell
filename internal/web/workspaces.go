@@ -27,8 +27,7 @@ func (a *App) handleWorkspaceList(w http.ResponseWriter, r *http.Request) {
 		writeDomainStoreError(w, err)
 		return
 	}
-	writeJSON(w, map[string]any{
-		"ok":         true,
+	writeAPIData(w, http.StatusOK, map[string]any{
 		"workspaces": workspaces,
 	})
 }
@@ -39,11 +38,11 @@ func (a *App) handleWorkspaceCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	var req workspaceCreateRequest
 	if err := decodeJSON(r, &req); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 	if strings.TrimSpace(req.Sphere) == "" {
-		http.Error(w, "sphere is required", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "sphere is required")
 		return
 	}
 	workspace, err := a.store.CreateWorkspace(req.Name, req.DirPath, req.Sphere)
@@ -62,8 +61,7 @@ func (a *App) handleWorkspaceCreate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	writeJSON(w, map[string]any{
-		"ok":        true,
+	writeAPIData(w, http.StatusCreated, map[string]any{
 		"workspace": workspace,
 	})
 }
@@ -74,16 +72,16 @@ func (a *App) handleWorkspaceUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	workspaceID, err := parseURLInt64Param(r, "workspace_id")
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	var req workspaceUpdateRequest
 	if err := decodeJSON(r, &req); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 	if req.Name == nil && req.Sphere == nil && req.IsActive == nil {
-		http.Error(w, "at least one workspace update is required", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "at least one workspace update is required")
 		return
 	}
 	workspace, err := a.store.GetWorkspace(workspaceID)
@@ -107,7 +105,7 @@ func (a *App) handleWorkspaceUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.IsActive != nil {
 		if !*req.IsActive {
-			http.Error(w, "is_active=false is not supported", http.StatusBadRequest)
+			writeAPIError(w, http.StatusBadRequest, "is_active=false is not supported")
 			return
 		}
 		if err := a.store.SetActiveWorkspace(workspaceID); err != nil {
@@ -120,8 +118,7 @@ func (a *App) handleWorkspaceUpdate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	writeJSON(w, map[string]any{
-		"ok":        true,
+	writeAPIData(w, http.StatusOK, map[string]any{
 		"workspace": workspace,
 	})
 }
@@ -132,7 +129,7 @@ func (a *App) handleWorkspaceGet(w http.ResponseWriter, r *http.Request) {
 	}
 	workspaceID, err := parseURLInt64Param(r, "workspace_id")
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	workspace, err := a.store.GetWorkspace(workspaceID)
@@ -140,8 +137,7 @@ func (a *App) handleWorkspaceGet(w http.ResponseWriter, r *http.Request) {
 		writeDomainStoreError(w, err)
 		return
 	}
-	writeJSON(w, map[string]any{
-		"ok":        true,
+	writeAPIData(w, http.StatusOK, map[string]any{
 		"workspace": workspace,
 	})
 }
@@ -152,16 +148,12 @@ func (a *App) handleWorkspaceDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	workspaceID, err := parseURLInt64Param(r, "workspace_id")
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	if err := a.store.DeleteWorkspace(workspaceID); err != nil {
 		writeDomainStoreError(w, err)
 		return
 	}
-	writeJSON(w, map[string]any{
-		"ok":           true,
-		"deleted":      true,
-		"workspace_id": workspaceID,
-	})
+	writeNoContent(w)
 }

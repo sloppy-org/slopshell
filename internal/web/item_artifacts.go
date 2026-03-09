@@ -18,8 +18,7 @@ func (a *App) writeItemArtifactsResponse(w http.ResponseWriter, itemID int64) {
 		writeDomainStoreError(w, err)
 		return
 	}
-	writeJSON(w, map[string]any{
-		"ok":        true,
+	writeAPIData(w, http.StatusOK, map[string]any{
 		"item":      item,
 		"artifacts": artifacts,
 	})
@@ -31,7 +30,7 @@ func (a *App) handleItemArtifactList(w http.ResponseWriter, r *http.Request) {
 	}
 	itemID, err := parseItemIDParam(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	a.writeItemArtifactsResponse(w, itemID)
@@ -43,23 +42,36 @@ func (a *App) handleItemArtifactLink(w http.ResponseWriter, r *http.Request) {
 	}
 	itemID, err := parseItemIDParam(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	var req itemArtifactLinkRequest
 	if err := decodeJSON(r, &req); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 	if req.ArtifactID <= 0 {
-		http.Error(w, "artifact_id is required", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "artifact_id is required")
 		return
 	}
 	if err := a.store.LinkItemArtifact(itemID, req.ArtifactID, req.Role); err != nil {
 		writeDomainStoreError(w, err)
 		return
 	}
-	a.writeItemArtifactsResponse(w, itemID)
+	item, err := a.store.GetItem(itemID)
+	if err != nil {
+		writeDomainStoreError(w, err)
+		return
+	}
+	artifacts, err := a.store.ListItemArtifacts(itemID)
+	if err != nil {
+		writeDomainStoreError(w, err)
+		return
+	}
+	writeAPIData(w, http.StatusCreated, map[string]any{
+		"item":      item,
+		"artifacts": artifacts,
+	})
 }
 
 func (a *App) handleItemArtifactUnlink(w http.ResponseWriter, r *http.Request) {
@@ -68,12 +80,12 @@ func (a *App) handleItemArtifactUnlink(w http.ResponseWriter, r *http.Request) {
 	}
 	itemID, err := parseItemIDParam(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	artifactID, err := parseURLInt64Param(r, "artifact_id")
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	if err := a.store.UnlinkItemArtifact(itemID, artifactID); err != nil {
@@ -89,7 +101,7 @@ func (a *App) handleArtifactItemList(w http.ResponseWriter, r *http.Request) {
 	}
 	artifactID, err := parseURLInt64Param(r, "artifact_id")
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	items, err := a.store.ListArtifactItems(artifactID)
@@ -97,8 +109,7 @@ func (a *App) handleArtifactItemList(w http.ResponseWriter, r *http.Request) {
 		writeDomainStoreError(w, err)
 		return
 	}
-	writeJSON(w, map[string]any{
-		"ok":    true,
+	writeAPIData(w, http.StatusOK, map[string]any{
 		"items": items,
 	})
 }

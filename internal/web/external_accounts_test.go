@@ -19,10 +19,10 @@ func TestExternalAccountCRUDAPI(t *testing.T) {
 		},
 		"enabled": disabled,
 	})
-	if rrCreate.Code != http.StatusOK {
-		t.Fatalf("create external account status = %d, want 200: %s", rrCreate.Code, rrCreate.Body.String())
+	if rrCreate.Code != http.StatusCreated {
+		t.Fatalf("create external account status = %d, want 201: %s", rrCreate.Code, rrCreate.Body.String())
 	}
-	createPayload := decodeJSONResponse(t, rrCreate)
+	createPayload := decodeJSONDataResponse(t, rrCreate)
 	accountPayload, ok := createPayload["account"].(map[string]any)
 	if !ok {
 		t.Fatalf("create payload = %#v", createPayload)
@@ -39,7 +39,7 @@ func TestExternalAccountCRUDAPI(t *testing.T) {
 	if rrList.Code != http.StatusOK {
 		t.Fatalf("list external accounts status = %d, want 200: %s", rrList.Code, rrList.Body.String())
 	}
-	listPayload := decodeJSONResponse(t, rrList)
+	listPayload := decodeJSONDataResponse(t, rrList)
 	accounts, ok := listPayload["accounts"].([]any)
 	if !ok || len(accounts) != 1 {
 		t.Fatalf("list payload = %#v", listPayload)
@@ -70,8 +70,11 @@ func TestExternalAccountCRUDAPI(t *testing.T) {
 	}
 
 	rrDelete := doAuthedJSONRequest(t, app.Router(), http.MethodDelete, "/api/external-accounts/"+itoa(accountID), nil)
-	if rrDelete.Code != http.StatusOK {
-		t.Fatalf("delete external account status = %d, want 200: %s", rrDelete.Code, rrDelete.Body.String())
+	if rrDelete.Code != http.StatusNoContent {
+		t.Fatalf("delete external account status = %d, want 204: %s", rrDelete.Code, rrDelete.Body.String())
+	}
+	if rrDelete.Body.Len() != 0 {
+		t.Fatalf("delete external account body = %q, want empty", rrDelete.Body.String())
 	}
 	rrMissing := doAuthedJSONRequest(t, app.Router(), http.MethodDelete, "/api/external-accounts/"+itoa(accountID), nil)
 	if rrMissing.Code != http.StatusNotFound {
@@ -92,6 +95,9 @@ func TestExternalAccountAPIRejectsInvalidInput(t *testing.T) {
 	})
 	if rrBadCreate.Code != http.StatusBadRequest {
 		t.Fatalf("bad create status = %d, want 400: %s", rrBadCreate.Code, rrBadCreate.Body.String())
+	}
+	if got := decodeJSONResponse(t, rrBadCreate)["error"]; got == nil {
+		t.Fatalf("bad create payload = %#v, want error", decodeJSONResponse(t, rrBadCreate))
 	}
 
 	rrBadList := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/external-accounts?sphere=office", nil)

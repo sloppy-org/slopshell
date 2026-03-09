@@ -76,7 +76,7 @@ func writeItemStoreError(w http.ResponseWriter, err error) {
 	if err == nil {
 		return
 	}
-	http.Error(w, err.Error(), itemResponseErrorStatus(err))
+	writeAPIError(w, itemResponseErrorStatus(err), err.Error())
 }
 
 func (a *App) ensureActorExists(actorID int64) error {
@@ -111,15 +111,13 @@ func (a *App) handleItemList(w http.ResponseWriter, r *http.Request) {
 		writeItemStoreError(w, err)
 		return
 	}
-	writeJSON(w, map[string]any{
-		"ok":    true,
+	writeAPIData(w, http.StatusOK, map[string]any{
 		"items": items,
 	})
 }
 
 func (a *App) writeItemSummaryList(w http.ResponseWriter, items []store.ItemSummary) {
-	writeJSON(w, map[string]any{
-		"ok":    true,
+	writeAPIData(w, http.StatusOK, map[string]any{
 		"items": items,
 	})
 }
@@ -168,7 +166,7 @@ func (a *App) handleItemDone(w http.ResponseWriter, r *http.Request) {
 	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
 		value, err := strconv.Atoi(raw)
 		if err != nil || value <= 0 {
-			http.Error(w, "limit must be a positive integer", http.StatusBadRequest)
+			writeAPIError(w, http.StatusBadRequest, "limit must be a positive integer")
 			return
 		}
 		limit = value
@@ -190,8 +188,7 @@ func (a *App) handleItemCounts(w http.ResponseWriter, r *http.Request) {
 		writeItemStoreError(w, err)
 		return
 	}
-	writeJSON(w, map[string]any{
-		"ok":     true,
+	writeAPIData(w, http.StatusOK, map[string]any{
 		"counts": counts,
 	})
 }
@@ -202,7 +199,7 @@ func (a *App) handleItemCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	var req itemCreateRequest
 	if err := decodeJSON(r, &req); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 	item, err := a.store.CreateItem(req.Title, store.ItemOptions{
@@ -220,8 +217,7 @@ func (a *App) handleItemCreate(w http.ResponseWriter, r *http.Request) {
 		writeItemStoreError(w, err)
 		return
 	}
-	writeJSON(w, map[string]any{
-		"ok":   true,
+	writeAPIData(w, http.StatusCreated, map[string]any{
 		"item": item,
 	})
 }
@@ -232,7 +228,7 @@ func (a *App) handleItemGet(w http.ResponseWriter, r *http.Request) {
 	}
 	itemID, err := parseItemIDParam(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	item, err := a.store.GetItem(itemID)
@@ -240,8 +236,7 @@ func (a *App) handleItemGet(w http.ResponseWriter, r *http.Request) {
 		writeItemStoreError(w, err)
 		return
 	}
-	writeJSON(w, map[string]any{
-		"ok":   true,
+	writeAPIData(w, http.StatusOK, map[string]any{
 		"item": item,
 	})
 }
@@ -252,21 +247,21 @@ func (a *App) handleItemUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	itemID, err := parseItemIDParam(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	var req itemUpdateRequest
 	if err := decodeJSON(r, &req); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 	if req.ActorID != nil && *req.ActorID > 0 {
 		if err := a.ensureActorExists(*req.ActorID); err != nil {
 			if errors.Is(err, errItemActorNotFound) || errors.Is(err, errItemActorRequired) {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				writeAPIError(w, http.StatusBadRequest, err.Error())
 				return
 			}
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			writeAPIError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 	}
@@ -290,8 +285,7 @@ func (a *App) handleItemUpdate(w http.ResponseWriter, r *http.Request) {
 		writeItemStoreError(w, err)
 		return
 	}
-	writeJSON(w, map[string]any{
-		"ok":   true,
+	writeAPIData(w, http.StatusOK, map[string]any{
 		"item": item,
 	})
 }
@@ -302,18 +296,14 @@ func (a *App) handleItemDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	itemID, err := parseItemIDParam(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	if err := a.store.DeleteItem(itemID); err != nil {
 		writeItemStoreError(w, err)
 		return
 	}
-	writeJSON(w, map[string]any{
-		"ok":      true,
-		"deleted": true,
-		"item_id": itemID,
-	})
+	writeNoContent(w)
 }
 
 func (a *App) handleItemStateUpdate(w http.ResponseWriter, r *http.Request) {
@@ -322,12 +312,12 @@ func (a *App) handleItemStateUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	itemID, err := parseItemIDParam(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	var req itemStateRequest
 	if err := decodeJSON(r, &req); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 	if err := a.store.UpdateItemState(itemID, req.State); err != nil {
@@ -339,8 +329,7 @@ func (a *App) handleItemStateUpdate(w http.ResponseWriter, r *http.Request) {
 		writeItemStoreError(w, err)
 		return
 	}
-	writeJSON(w, map[string]any{
-		"ok":   true,
+	writeAPIData(w, http.StatusOK, map[string]any{
 		"item": item,
 	})
 }
@@ -351,20 +340,20 @@ func (a *App) handleItemAssign(w http.ResponseWriter, r *http.Request) {
 	}
 	itemID, err := parseItemIDParam(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	var req itemAssignRequest
 	if err := decodeJSON(r, &req); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 	if err := a.ensureActorExists(req.ActorID); err != nil {
 		if errors.Is(err, errItemActorNotFound) || errors.Is(err, errItemActorRequired) {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			writeAPIError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if err := a.store.AssignItem(itemID, req.ActorID); err != nil {
@@ -376,8 +365,7 @@ func (a *App) handleItemAssign(w http.ResponseWriter, r *http.Request) {
 		writeItemStoreError(w, err)
 		return
 	}
-	writeJSON(w, map[string]interface{}{
-		"ok":   true,
+	writeAPIData(w, http.StatusOK, map[string]any{
 		"item": item,
 	})
 }
@@ -388,7 +376,7 @@ func (a *App) handleItemUnassign(w http.ResponseWriter, r *http.Request) {
 	}
 	itemID, err := parseItemIDParam(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	if err := a.store.UnassignItem(itemID); err != nil {
@@ -400,8 +388,7 @@ func (a *App) handleItemUnassign(w http.ResponseWriter, r *http.Request) {
 		writeItemStoreError(w, err)
 		return
 	}
-	writeJSON(w, map[string]interface{}{
-		"ok":   true,
+	writeAPIData(w, http.StatusOK, map[string]any{
 		"item": item,
 	})
 }
@@ -412,20 +399,20 @@ func (a *App) handleItemComplete(w http.ResponseWriter, r *http.Request) {
 	}
 	itemID, err := parseItemIDParam(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	var req itemCompleteRequest
 	if err := decodeJSON(r, &req); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 	if err := a.ensureActorExists(req.ActorID); err != nil {
 		if errors.Is(err, errItemActorNotFound) || errors.Is(err, errItemActorRequired) {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			writeAPIError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if err := a.store.CompleteItemByActor(itemID, req.ActorID); err != nil {
@@ -437,8 +424,7 @@ func (a *App) handleItemComplete(w http.ResponseWriter, r *http.Request) {
 		writeItemStoreError(w, err)
 		return
 	}
-	writeJSON(w, map[string]interface{}{
-		"ok":   true,
+	writeAPIData(w, http.StatusOK, map[string]any{
 		"item": item,
 	})
 }
@@ -449,12 +435,12 @@ func (a *App) handleItemTriage(w http.ResponseWriter, r *http.Request) {
 	}
 	itemID, err := parseItemIDParam(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	var req itemTriageRequest
 	if err := decodeJSON(r, &req); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 
@@ -463,17 +449,17 @@ func (a *App) handleItemTriage(w http.ResponseWriter, r *http.Request) {
 		err = a.store.TriageItemDone(itemID)
 	case "later":
 		if strings.TrimSpace(req.VisibleAfter) == "" {
-			http.Error(w, "visible_after is required", http.StatusBadRequest)
+			writeAPIError(w, http.StatusBadRequest, "visible_after is required")
 			return
 		}
 		err = a.store.TriageItemLater(itemID, req.VisibleAfter)
 	case "delegate":
 		if err := a.ensureActorExists(req.ActorID); err != nil {
 			if errors.Is(err, errItemActorNotFound) || errors.Is(err, errItemActorRequired) {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				writeAPIError(w, http.StatusBadRequest, err.Error())
 				return
 			}
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			writeAPIError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 		err = a.store.TriageItemDelegate(itemID, req.ActorID)
@@ -482,7 +468,7 @@ func (a *App) handleItemTriage(w http.ResponseWriter, r *http.Request) {
 	case "someday":
 		err = a.store.TriageItemSomeday(itemID)
 	default:
-		http.Error(w, "action must be one of done, later, delegate, delete, someday", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "action must be one of done, later, delegate, delete, someday")
 		return
 	}
 	if err != nil {
@@ -490,8 +476,7 @@ func (a *App) handleItemTriage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if strings.EqualFold(req.Action, "delete") {
-		writeJSON(w, map[string]interface{}{
-			"ok":      true,
+		writeAPIData(w, http.StatusOK, map[string]any{
 			"deleted": true,
 			"item_id": itemID,
 		})
@@ -502,8 +487,7 @@ func (a *App) handleItemTriage(w http.ResponseWriter, r *http.Request) {
 		writeItemStoreError(w, err)
 		return
 	}
-	writeJSON(w, map[string]interface{}{
-		"ok":   true,
+	writeAPIData(w, http.StatusOK, map[string]any{
 		"item": item,
 	})
 }

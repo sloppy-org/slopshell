@@ -16,8 +16,7 @@ func (a *App) handleActorList(w http.ResponseWriter, r *http.Request) {
 		writeDomainStoreError(w, err)
 		return
 	}
-	writeJSON(w, map[string]any{
-		"ok":     true,
+	writeAPIData(w, http.StatusOK, map[string]any{
 		"actors": actors,
 	})
 }
@@ -28,7 +27,7 @@ func (a *App) handleActorCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	var req actorCreateRequest
 	if err := decodeJSON(r, &req); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 	actor, err := a.store.CreateActor(req.Name, req.Kind)
@@ -36,8 +35,7 @@ func (a *App) handleActorCreate(w http.ResponseWriter, r *http.Request) {
 		writeDomainStoreError(w, err)
 		return
 	}
-	writeJSON(w, map[string]any{
-		"ok":    true,
+	writeAPIData(w, http.StatusCreated, map[string]any{
 		"actor": actor,
 	})
 }
@@ -48,7 +46,7 @@ func (a *App) handleActorGet(w http.ResponseWriter, r *http.Request) {
 	}
 	actorID, err := parseURLInt64Param(r, "actor_id")
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	actor, err := a.store.GetActor(actorID)
@@ -56,8 +54,7 @@ func (a *App) handleActorGet(w http.ResponseWriter, r *http.Request) {
 		writeDomainStoreError(w, err)
 		return
 	}
-	writeJSON(w, map[string]any{
-		"ok":    true,
+	writeAPIData(w, http.StatusOK, map[string]any{
 		"actor": actor,
 	})
 }
@@ -68,16 +65,12 @@ func (a *App) handleActorDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	actorID, err := parseURLInt64Param(r, "actor_id")
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	if err := a.store.DeleteActor(actorID); err != nil {
 		writeDomainStoreError(w, err)
 		return
 	}
-	writeJSON(w, map[string]any{
-		"ok":       true,
-		"deleted":  true,
-		"actor_id": actorID,
-	})
+	writeNoContent(w)
 }

@@ -25,24 +25,45 @@ Public pages:
 
 Auth and setup:
 - `GET /api/setup`
-- `POST /api/setup`
 - `POST /api/login`
 - `POST /api/logout`
 
 Runtime and chat session management:
 - `GET /api/runtime`
+- `PATCH /api/runtime/preferences`
 - `POST /api/runtime/yolo`
 - `POST /api/runtime/disclaimer-ack`
+- `GET /api/plugins`
+- `POST /api/plugins/meeting-partner/decide`
+- `GET /api/extensions`
+- `POST /api/extensions/commands/{command_id}`
 - `GET /api/projects`
+- `GET /api/projects/activity`
 - `POST /api/projects`
 - `POST /api/projects/{project_id}/activate`
+- `POST /api/projects/{project_id}/persist`
+- `POST /api/projects/{project_id}/discard`
+- `POST /api/projects/{project_id}/chat-model`
 - `GET /api/projects/{project_id}/context`
+- `GET /api/projects/{project_id}/files`
+- `GET /api/projects/{project_id}/welcome`
+- `GET /api/projects/{project_id}/companion/config`
+- `PUT /api/projects/{project_id}/companion/config`
+- `GET /api/projects/{project_id}/companion/state`
+- `GET /api/projects/{project_id}/transcript`
+- `GET /api/projects/{project_id}/summary`
+- `GET /api/projects/{project_id}/references`
+- `GET /api/projects/{project_id}/meeting-items`
+- `POST /api/projects/{project_id}/meeting-items`
 - `POST /api/chat/sessions`
 - `GET /api/chat/sessions/{session_id}/history`
 - `GET /api/chat/sessions/{session_id}/activity`
 - `POST /api/chat/sessions/{session_id}/messages`
 - `POST /api/chat/sessions/{session_id}/commands`
 - `POST /api/chat/sessions/{session_id}/cancel`
+- `POST /api/ink/submit`
+- `POST /api/review/submit`
+- `POST /api/bugs/report`
 
 Domain model API:
 - `GET /api/workspaces`
@@ -73,6 +94,8 @@ Domain model API:
 - `GET /api/items/someday`
 - `GET /api/items/done`
 - `GET /api/items/counts`
+- `POST /api/items/sync/github`
+- `POST /api/items/sync/github/reviews`
 - `GET /api/items/{item_id}`
 - `GET /api/items/{item_id}/artifacts`
 - `POST /api/items/{item_id}/artifacts`
@@ -81,8 +104,12 @@ Domain model API:
 - `DELETE /api/items/{item_id}`
 - `PUT /api/items/{item_id}/state`
 - `PUT /api/items/{item_id}/assign`
+- `PUT /api/items/{item_id}/unassign`
+- `PUT /api/items/{item_id}/complete`
 - `PUT /api/items/{item_id}/workspace`
 - `PUT /api/items/{item_id}/project`
+- `POST /api/items/{item_id}/triage`
+- `GET /api/items/{item_id}/print`
 
 Canvas/files:
 - `GET /api/canvas/{session_id}/snapshot`
@@ -91,6 +118,21 @@ Canvas/files:
 Websocket routes:
 - `GET /ws/chat/{session_id}`
 - `GET /ws/canvas/{session_id}`
+
+Participant and STT APIs:
+- `GET /api/participant/config`
+- `PUT /api/participant/config`
+- `GET /api/participant/status`
+- `GET /api/participant/sessions`
+- `GET /api/participant/sessions/{id}/transcript`
+- `GET /api/participant/sessions/{id}/search`
+- `GET /api/participant/sessions/{id}/export`
+- `POST /api/stt/transcribe`
+- `GET /api/stt/config`
+- `PUT /api/stt/config`
+- `GET /api/stt/replacements`
+- `PUT /api/stt/replacements`
+- `GET /api/hotword/status`
 
 ## MCP Tool Surface
 
