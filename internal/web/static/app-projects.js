@@ -710,6 +710,11 @@ export async function activateProject(projectID) {
   }
   const payload = await resp.json();
   const project = payload?.project || {};
+  const activeSphere = normalizeActiveSphere(payload?.active_sphere || state.activeSphere);
+  if (activeSphere) {
+    state.activeSphere = activeSphere;
+    persistActiveSpherePreference(activeSphere);
+  }
   state.chatSessionId = String(project.chat_session_id || '');
   state.sessionId = String(project.canvas_session_id || 'local');
   setChatMode(project.chat_mode || 'chat');

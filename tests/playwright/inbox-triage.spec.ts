@@ -326,6 +326,24 @@ test.describe('inbox triage interactions', () => {
     await expect(page.locator('#pr-file-list')).toContainText('Private inbox item');
   });
 
+  test('switching directly to a project in another sphere syncs the active sphere', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await waitReady(page);
+    await seedSphereScenario(page);
+
+    await page.evaluate(async () => {
+      const mod = await import('../../internal/web/static/app-chat-transport.js');
+      await mod.switchProject('work-tracker');
+    });
+
+    await expect.poll(async () => {
+      return page.evaluate(() => (window as any).__getRuntimeState?.().active_sphere || '');
+    }).toBe('work');
+    await expect.poll(async () => {
+      return page.evaluate(() => (window as any)._taburaApp?.getState?.().activeSphere || '');
+    }).toBe('work');
+  });
+
   test('tap opens the linked artifact on canvas', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await waitReady(page);

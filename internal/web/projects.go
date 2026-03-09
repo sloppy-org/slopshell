@@ -297,19 +297,46 @@ func (a *App) chooseActiveProject(projects []store.Project, defaultProject store
 	if len(projects) == 0 {
 		return store.Project{}, errors.New("no projects available")
 	}
+	activeSphere := a.runtimeActiveSphere()
 	activeID, err := a.store.ActiveProjectID()
 	if err != nil {
 		return store.Project{}, err
 	}
 	if activeID != "" {
 		for _, project := range projects {
-			if project.ID == activeID {
+			if project.ID != activeID {
+				continue
+			}
+			rank, err := a.projectSelectionRank(project, activeSphere)
+			if err != nil {
+				return store.Project{}, err
+			}
+			if rank < 4 {
 				return project, nil
 			}
 		}
 	}
+
+	bestIndex := -1
+	bestRank := 5
+	for i, project := range projects {
+		rank, err := a.projectSelectionRank(project, activeSphere)
+		if err != nil {
+			return store.Project{}, err
+		}
+		if rank >= 4 {
+			continue
+		}
+		if bestIndex == -1 || rank < bestRank {
+			bestIndex = i
+			bestRank = rank
+		}
+	}
+
 	fallback := defaultProject
-	if strings.TrimSpace(fallback.ID) == "" {
+	if bestIndex >= 0 {
+		fallback = projects[bestIndex]
+	} else if strings.TrimSpace(fallback.ID) == "" {
 		fallback = projects[0]
 	}
 	if err := a.store.SetActiveProjectID(fallback.ID); err != nil {

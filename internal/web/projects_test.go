@@ -230,6 +230,122 @@ func TestCreateActivateProjectAffectsChatSessionCreation(t *testing.T) {
 	}
 }
 
+func TestProjectsListRehomesActiveProjectIntoActiveSphere(t *testing.T) {
+	app := newAuthedTestApp(t)
+
+	privateRoot := filepath.Join(t.TempDir(), "private-root")
+	workRoot := filepath.Join(t.TempDir(), "work-root")
+	for _, dir := range []string{privateRoot, workRoot} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("MkdirAll(%q) error: %v", dir, err)
+		}
+	}
+	if _, err := app.store.CreateWorkspace("Private Root", privateRoot, store.SpherePrivate); err != nil {
+		t.Fatalf("CreateWorkspace(private) error: %v", err)
+	}
+	if _, err := app.store.CreateWorkspace("Work Root", workRoot, store.SphereWork); err != nil {
+		t.Fatalf("CreateWorkspace(work) error: %v", err)
+	}
+	privateProjectPath := filepath.Join(privateRoot, "notes")
+	workProjectPath := filepath.Join(workRoot, "tracker")
+	for _, dir := range []string{privateProjectPath, workProjectPath} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("MkdirAll(%q) error: %v", dir, err)
+		}
+	}
+	privateProject, err := app.store.CreateProject("Private Notes", "private-notes", privateProjectPath, "linked", "", "", false)
+	if err != nil {
+		t.Fatalf("CreateProject(private) error: %v", err)
+	}
+	workProject, err := app.store.CreateProject("Work Tracker", "work-tracker", workProjectPath, "linked", "", "", false)
+	if err != nil {
+		t.Fatalf("CreateProject(work) error: %v", err)
+	}
+	if err := app.store.SetActiveProjectID(workProject.ID); err != nil {
+		t.Fatalf("SetActiveProjectID(work) error: %v", err)
+	}
+	if err := app.store.SetActiveSphere(store.SpherePrivate); err != nil {
+		t.Fatalf("SetActiveSphere(private) error: %v", err)
+	}
+
+	rr := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/projects", map[string]any{})
+	if rr.Code != http.StatusOK {
+		t.Fatalf("list projects status = %d, want 200: %s", rr.Code, rr.Body.String())
+	}
+	var payload projectsListResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if payload.ActiveProjectID != privateProject.ID {
+		t.Fatalf("active_project_id = %q, want %q", payload.ActiveProjectID, privateProject.ID)
+	}
+	activeProjectID, err := app.store.ActiveProjectID()
+	if err != nil {
+		t.Fatalf("ActiveProjectID() error: %v", err)
+	}
+	if activeProjectID != privateProject.ID {
+		t.Fatalf("stored active project = %q, want %q", activeProjectID, privateProject.ID)
+	}
+}
+
+func TestProjectActivateUpdatesActiveSphere(t *testing.T) {
+	app := newAuthedTestApp(t)
+
+	workRoot := filepath.Join(t.TempDir(), "work-root")
+	if err := os.MkdirAll(workRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll(workRoot) error: %v", err)
+	}
+	if _, err := app.store.CreateWorkspace("Work Root", workRoot, store.SphereWork); err != nil {
+		t.Fatalf("CreateWorkspace(work) error: %v", err)
+	}
+	projectPath := filepath.Join(workRoot, "tracker")
+	if err := os.MkdirAll(projectPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll(projectPath) error: %v", err)
+	}
+	project, err := app.store.CreateProject("Work Tracker", "work-tracker", projectPath, "linked", "", "", false)
+	if err != nil {
+		t.Fatalf("CreateProject(work) error: %v", err)
+	}
+	if err := app.store.SetActiveSphere(store.SpherePrivate); err != nil {
+		t.Fatalf("SetActiveSphere(private) error: %v", err)
+	}
+
+	rr := doAuthedJSONRequest(
+		t,
+		app.Router(),
+		http.MethodPost,
+		"/api/projects/"+project.ID+"/activate",
+		map[string]any{},
+	)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("activate status = %d, want 200: %s", rr.Code, rr.Body.String())
+	}
+	var payload struct {
+		OK              bool   `json:"ok"`
+		ActiveProjectID string `json:"active_project_id"`
+		ActiveSphere    string `json:"active_sphere"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode activate response: %v", err)
+	}
+	if !payload.OK {
+		t.Fatal("expected ok=true")
+	}
+	if payload.ActiveProjectID != project.ID {
+		t.Fatalf("active_project_id = %q, want %q", payload.ActiveProjectID, project.ID)
+	}
+	if payload.ActiveSphere != store.SphereWork {
+		t.Fatalf("active_sphere = %q, want %q", payload.ActiveSphere, store.SphereWork)
+	}
+	activeSphere, err := app.store.ActiveSphere()
+	if err != nil {
+		t.Fatalf("ActiveSphere() error: %v", err)
+	}
+	if activeSphere != store.SphereWork {
+		t.Fatalf("stored active sphere = %q, want %q", activeSphere, store.SphereWork)
+	}
+}
+
 func TestProjectChatModelUpdate(t *testing.T) {
 	app := newAuthedTestApp(t)
 

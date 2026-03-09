@@ -75,6 +75,28 @@ func (a *App) projectSphere(project store.Project) (string, error) {
 	return workspace.Sphere, nil
 }
 
+func (a *App) projectSelectionRank(project store.Project, activeSphere string) (int, error) {
+	if isHubProject(project) {
+		return 3, nil
+	}
+	projectSphere, err := a.projectSphere(project)
+	if err != nil {
+		return 0, err
+	}
+	cleanProjectSphere := normalizeRuntimeActiveSphere(projectSphere)
+	cleanActiveSphere := normalizeRuntimeActiveSphere(activeSphere)
+	switch {
+	case cleanActiveSphere != "" && cleanProjectSphere == cleanActiveSphere:
+		return 0, nil
+	case cleanProjectSphere == "" && project.IsDefault:
+		return 1, nil
+	case cleanProjectSphere == "":
+		return 2, nil
+	default:
+		return 4, nil
+	}
+}
+
 func (a *App) buildProjectActivityItem(project store.Project) (projectActivityItem, error) {
 	session, err := a.store.GetOrCreateChatSession(project.ProjectKey)
 	if err != nil {
@@ -244,6 +266,15 @@ func (a *App) activateProject(projectID string) (store.Project, error) {
 	if err != nil {
 		return store.Project{}, err
 	}
+	projectSphere, err := a.projectSphere(project)
+	if err != nil {
+		return store.Project{}, err
+	}
+	if cleanSphere := normalizeRuntimeActiveSphere(projectSphere); cleanSphere != "" && cleanSphere != a.runtimeActiveSphere() {
+		if err := a.store.SetActiveSphere(cleanSphere); err != nil {
+			return store.Project{}, err
+		}
+	}
 	if err := a.ensureProjectCanvasReady(project); err != nil {
 		return store.Project{}, err
 	}
@@ -285,6 +316,7 @@ func (a *App) handleProjectActivate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]interface{}{
 		"ok":                true,
 		"active_project_id": project.ID,
+		"active_sphere":     a.runtimeActiveSphere(),
 		"project":           item,
 	})
 }

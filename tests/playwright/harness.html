@@ -995,6 +995,9 @@
           };
         }
         const project = cloneProject(activateId);
+        if (project.sphere === 'work' || project.sphere === 'private') {
+          runtimeState.active_sphere = project.sphere;
+        }
         window.__harnessLog.push({
           type: 'api_fetch',
           action: 'project_activate',
@@ -1003,6 +1006,9 @@
           payload: { project_id: project.id },
         });
         return new Response(JSON.stringify({
+          ok: true,
+          active_project_id: project.id,
+          active_sphere: runtimeState.active_sphere,
           project,
         }), { status: 200 });
       }
