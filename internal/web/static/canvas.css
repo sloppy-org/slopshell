@@ -210,6 +210,22 @@
   padding: 1rem;
 }
 
+.canvas-mail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0 0 1rem;
+  padding-bottom: 0.8rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.canvas-mail-actions-label {
+  color: var(--fg-muted);
+  font-size: 0.82rem;
+  margin-right: 0.2rem;
+}
+
 .mail-draft-editor {
   display: grid;
   gap: 0.85rem;

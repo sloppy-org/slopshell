@@ -1,7 +1,8 @@
 import { AnnotationLayer, GlobalWorkerOptions, TextLayer, getDocument } from './vendor/pdf.mjs';
 import { apiURL } from './paths.js';
+import { state } from './app-context.js';
 import { renderTextArtifact } from './canvas-content.js';
-import { renderMailDraftArtifact } from './app-mail-drafts.js';
+import { launchNewMailAuthoring, launchReplyAuthoring, renderMailDraftArtifact } from './app-mail-drafts.js';
 
 export { escapeHtml, sanitizeHtml } from './canvas-content.js';
 
@@ -46,6 +47,53 @@ function dispatchCanvasRendered(event) {
 
 function dispatchCanvasCleared() {
   document.dispatchEvent(new CustomEvent('tabura:canvas-cleared'));
+}
+
+function activeCanvasMailItem(event) {
+  const meta = event?.meta && typeof event.meta === 'object' ? event.meta : {};
+  const itemID = Number(meta?.item_id || 0);
+  if (itemID <= 0) return null;
+  const items = Array.isArray(state.itemSidebarItems) ? state.itemSidebarItems : [];
+  const item = items.find((entry) => Number(entry?.id || 0) === itemID) || null;
+  const artifactKind = String(item?.artifact_kind || meta?.artifact_kind || '').trim().toLowerCase();
+  if (artifactKind !== 'email' && artifactKind !== 'email_thread') return null;
+  return item;
+}
+
+function renderCanvasMailActions(root, event) {
+  if (!(root instanceof HTMLElement)) return;
+  const item = activeCanvasMailItem(event);
+  if (!item) return;
+
+  const actions = document.createElement('div');
+  actions.className = 'canvas-mail-actions';
+
+  const label = document.createElement('span');
+  label.className = 'canvas-mail-actions-label';
+  label.textContent = 'Mail actions';
+  actions.appendChild(label);
+
+  const newMailButton = document.createElement('button');
+  newMailButton.type = 'button';
+  newMailButton.className = 'edge-btn';
+  newMailButton.id = 'canvas-new-mail-trigger';
+  newMailButton.textContent = 'New Mail';
+  newMailButton.addEventListener('click', () => {
+    void launchNewMailAuthoring();
+  });
+  actions.appendChild(newMailButton);
+
+  const replyButton = document.createElement('button');
+  replyButton.type = 'button';
+  replyButton.className = 'edge-btn';
+  replyButton.id = 'canvas-reply-mail-trigger';
+  replyButton.textContent = 'Reply';
+  replyButton.addEventListener('click', () => {
+    void launchReplyAuthoring(item);
+  });
+  actions.appendChild(replyButton);
+
+  root.prepend(actions);
 }
 
 export function getEls() {
@@ -846,6 +894,7 @@ export function renderCanvas(event) {
     previousArtifactText = nextState.previousArtifactText;
     previousBlockTexts = nextState.previousBlockTexts;
     previousArtifactTitle = nextState.previousArtifactTitle;
+    renderCanvasMailActions(e.text, event);
     dispatchCanvasRendered(event);
   } else if (event.kind === 'email_draft') {
     hideAll();

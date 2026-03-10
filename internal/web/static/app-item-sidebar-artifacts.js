@@ -199,6 +199,18 @@ function buildEmailThreadArtifactMarkdown(title, artifactMeta) {
   return detail.join('\n');
 }
 
+function buildSidebarCanvasMeta(item, artifactKind) {
+  const normalizedKind = String(artifactKind || item?.artifact_kind || '').trim().toLowerCase();
+  if (normalizedKind !== 'email' && normalizedKind !== 'email_thread') {
+    return undefined;
+  }
+  return {
+    surface_default: 'annotate',
+    item_id: Number(item?.id || 0),
+    artifact_kind: normalizedKind,
+  };
+}
+
 export function buildSidebarItemFallbackText(item, artifact = null) {
   const artifactMeta = parseSidebarArtifactMeta(artifact?.meta_json || '');
   const title = String(artifact?.title || item?.artifact_title || item?.title || 'Item').trim() || 'Item';
@@ -239,7 +251,7 @@ export function buildSidebarItemFallbackText(item, artifact = null) {
 export async function openSidebarArtifactItem(item) {
   const artifactID = Number(item?.artifact_id || 0);
   const fallbackArtifactKind = String(item?.artifact_kind || '').trim().toLowerCase();
-  const fallbackSurfaceDefault = (fallbackArtifactKind === 'email' || fallbackArtifactKind === 'email_thread') ? 'annotate' : '';
+  const fallbackMeta = buildSidebarCanvasMeta(item, fallbackArtifactKind);
   if (artifactID > 0 && fallbackArtifactKind === 'email_draft') {
     return openMailDraftArtifact(artifactID);
   }
@@ -249,7 +261,7 @@ export async function openSidebarArtifactItem(item) {
       event_id: `sidebar-item-${Number(item?.id || 0)}-${Date.now()}`,
       title: String(item?.title || 'Item'),
       text: buildSidebarItemFallbackText(item),
-      meta: fallbackSurfaceDefault ? { surface_default: fallbackSurfaceDefault } : undefined,
+      meta: fallbackMeta,
     });
     return true;
   }
@@ -287,7 +299,7 @@ export async function openSidebarArtifactItem(item) {
     event_id: `sidebar-item-${artifactID}-${Date.now()}`,
     title: String(artifact?.title || item?.artifact_title || item?.title || 'Item'),
     text: buildSidebarItemFallbackText(item, artifact),
-    meta: (artifactKind === 'email' || artifactKind === 'email_thread') ? { surface_default: 'annotate' } : undefined,
+    meta: buildSidebarCanvasMeta(item, artifactKind),
   });
   return true;
 }

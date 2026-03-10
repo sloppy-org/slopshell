@@ -179,6 +179,63 @@ test.describe('mail drafts', () => {
     await expect(page.locator('[name="subject"]')).toHaveValue('Re: Client question');
   });
 
+  test('email canvas keeps mail actions available after the sidebar closes', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await waitReady(page);
+
+    await page.evaluate(() => {
+      (window as any).__setItemSidebarData({
+        inbox: [{
+          id: 812,
+          title: 'Reply to client',
+          state: 'inbox',
+          sphere: 'private',
+          artifact_id: 612,
+          source: 'exchange',
+          source_ref: 'msg-812',
+          artifact_title: 'Client question',
+          artifact_kind: 'email',
+          actor_name: 'Client',
+          created_at: '2026-03-10 10:00:00',
+          updated_at: '2026-03-10 10:05:00',
+        }],
+        waiting: [],
+        someday: [],
+        done: [],
+      });
+      (window as any).__setItemSidebarArtifacts({
+        612: {
+          id: 612,
+          kind: 'email',
+          title: 'Client question',
+          meta_json: JSON.stringify({
+            subject: 'Client question',
+            sender: 'Client <client@example.com>',
+            thread_id: 'thread-812',
+            body: 'Can you send the revised proposal?',
+          }),
+        },
+      });
+    });
+
+    await openInbox(page);
+    await page.locator('#pr-file-list .pr-file-item').first().click();
+    await expect(page.locator('#canvas-text')).toContainText('Can you send the revised proposal?');
+
+    await page.locator('#edge-left-tap').click();
+    await expect(page.locator('#pr-file-pane')).not.toHaveClass(/is-open/);
+    await expect(page.locator('#canvas-new-mail-trigger')).toBeVisible();
+    await expect(page.locator('#canvas-reply-mail-trigger')).toBeVisible();
+
+    await clearLog(page);
+    await page.locator('#canvas-reply-mail-trigger').click();
+    await waitForLogEntry(page, 'api_fetch', 'mail_draft_reply');
+
+    await expect(page.locator('#canvas-text')).toHaveClass(/mail-draft-canvas/);
+    await expect(page.locator('[name="to"]')).toHaveValue('client@example.com');
+    await expect(page.locator('[name="subject"]')).toHaveValue('Re: Client question');
+  });
+
   test('new mail starts dictation authoring when the prompt tool is active', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await waitReady(page);
