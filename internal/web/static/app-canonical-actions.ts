@@ -34,6 +34,10 @@ function currentCanvasItem() {
   return items.find((item) => Number(item?.id || 0) === itemID) || null;
 }
 
+type CanonicalActionMenuOptions = {
+  sourceElement?: HTMLElement | null;
+};
+
 export function currentCanonicalActionContext() {
   const item = currentCanvasItem() || activeSidebarItem();
   const artifactKind = normalizeArtifactKind(
@@ -64,7 +68,7 @@ export function currentCanonicalActions() {
   return artifactKindSpec(context.artifactKind).actions;
 }
 
-function menuPointFromOptions(options = {}) {
+function menuPointFromOptions(options: CanonicalActionMenuOptions = {}) {
   const source = options?.sourceElement;
   if (source instanceof HTMLElement) {
     const rect = source.getBoundingClientRect();
