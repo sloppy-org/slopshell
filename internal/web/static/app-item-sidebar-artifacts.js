@@ -199,14 +199,7 @@ function buildEmailThreadArtifactMarkdown(title, artifactMeta) {
   return detail.join('\n');
 }
 
-function threadEscapeHtml(text) {
-  return String(text)
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;');
-}
+const escapeHtml = (...args) => env.escapeHtml(...args);
 
 export function buildEmailThreadHTML(title, artifactMeta) {
   const subject = String(artifactMeta?.subject || title || 'Email thread').trim() || 'Email thread';
@@ -215,10 +208,10 @@ export function buildEmailThreadHTML(title, artifactMeta) {
     return null;
   }
   const parts = [];
-  parts.push(`<div class="thread-subject"><h1>${threadEscapeHtml(subject)}</h1></div>`);
+  parts.push(`<div class="thread-subject"><h1>${escapeHtml(subject)}</h1></div>`);
   const participants = sidebarJoinList(artifactMeta?.participants);
   if (participants) {
-    parts.push(`<div class="thread-participants">Participants: ${threadEscapeHtml(participants)}</div>`);
+    parts.push(`<div class="thread-participants">Participants: ${escapeHtml(participants)}</div>`);
   }
   messages.forEach((entry, index) => {
     const sender = String(entry?.sender || '').trim() || `Message ${index + 1}`;
@@ -229,20 +222,20 @@ export function buildEmailThreadHTML(title, artifactMeta) {
     const isLast = index === messages.length - 1;
     const openAttr = isLast ? ' open' : '';
     const sentClass = String(entry?.sent || '').trim() === 'true' ? ' thread-message-sent' : '';
-    parts.push(`<details class="thread-message${sentClass}" data-message-index="${index}"${openAttr}>`);
+    parts.push(`<details class="thread-message${sentClass}" data-message-index="${escapeHtml(String(index))}"${openAttr}>`);
     parts.push(`<summary class="thread-message-summary">`);
-    parts.push(`<strong>${threadEscapeHtml(sender)}</strong>`);
-    if (date) parts.push(` <span class="thread-date">${threadEscapeHtml(date)}</span>`);
-    if (snippet && !isLast) parts.push(` <span class="thread-snippet">${threadEscapeHtml(snippet)}</span>`);
+    parts.push(`<strong>${escapeHtml(sender)}</strong>`);
+    if (date) parts.push(` <span class="thread-date">${escapeHtml(date)}</span>`);
+    if (snippet && !isLast) parts.push(` <span class="thread-snippet">${escapeHtml(snippet)}</span>`);
     parts.push(`</summary>`);
     parts.push(`<div class="thread-message-body">`);
     parts.push(`<div class="thread-message-headers">`);
-    parts.push(`From: ${threadEscapeHtml(sender)}`);
-    if (recipients) parts.push(`<br>To: ${threadEscapeHtml(recipients)}`);
-    if (date) parts.push(`<br>Date: ${threadEscapeHtml(date)}`);
+    parts.push(`From: ${escapeHtml(sender)}`);
+    if (recipients) parts.push(`<br>To: ${escapeHtml(recipients)}`);
+    if (date) parts.push(`<br>Date: ${escapeHtml(date)}`);
     parts.push(`</div>`);
     if (body) {
-      parts.push(`<div class="thread-message-content">${threadEscapeHtml(body).replace(/\n/g, '<br>')}</div>`);
+      parts.push(`<div class="thread-message-content">${escapeHtml(body).replace(/\n/g, '<br>')}</div>`);
     }
     parts.push(`</div>`);
     parts.push(`</details>`);
@@ -252,13 +245,14 @@ export function buildEmailThreadHTML(title, artifactMeta) {
     const draftId = Number(draftInfo?.artifact_id || draftInfo || 0);
     if (draftId <= 0) return;
     const draftSubject = String(draftInfo?.subject || '').trim() || 'Draft';
-    parts.push(`<details class="thread-message thread-message-draft" data-draft-id="${draftId}">`);
+    const safeDraftId = escapeHtml(String(draftId));
+    parts.push(`<details class="thread-message thread-message-draft" data-draft-id="${safeDraftId}">`);
     parts.push(`<summary class="thread-message-summary">`);
-    parts.push(`<strong>${threadEscapeHtml(draftSubject)}</strong>`);
+    parts.push(`<strong>${escapeHtml(draftSubject)}</strong>`);
     parts.push(` <span class="thread-draft-badge">Draft</span>`);
     parts.push(`</summary>`);
     parts.push(`<div class="thread-message-body">`);
-    parts.push(`<p><a href="#" class="thread-draft-open" data-draft-id="${draftId}">Open draft</a></p>`);
+    parts.push(`<p><a href="#" class="thread-draft-open" data-draft-id="${safeDraftId}">Open draft</a></p>`);
     parts.push(`</div>`);
     parts.push(`</details>`);
   });

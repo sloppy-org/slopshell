@@ -79,7 +79,7 @@ func (f *fakeMailDraftProvider) SendDraft(_ context.Context, draftID string, _ e
 
 func TestMailDraftCreateUpdateSendAPI(t *testing.T) {
 	app := newAuthedTestApp(t)
-	project := mustCreateProject(t, app)
+	mustCreateProject(t, app)
 	account, err := app.store.CreateExternalAccount(store.SpherePrivate, store.ExternalProviderGmail, "Private Gmail", map[string]any{
 		"username": "alice@example.com",
 	})
@@ -155,8 +155,6 @@ func TestMailDraftCreateUpdateSendAPI(t *testing.T) {
 	if got := stringFromPointer(artifact.Title); got != "Quarterly update v2" {
 		t.Fatalf("artifact title = %q, want updated subject", got)
 	}
-
-	_ = project
 }
 
 func TestMailDraftReplyAPI(t *testing.T) {
@@ -294,7 +292,7 @@ func TestMailDraftReplyThreadAPI(t *testing.T) {
 
 func TestMailDraftSendRejectsMissingRecipients(t *testing.T) {
 	app := newAuthedTestApp(t)
-	_ = mustCreateProject(t, app)
+	mustCreateProject(t, app)
 	account, err := app.store.CreateExternalAccount(store.SpherePrivate, store.ExternalProviderGmail, "Private Gmail", map[string]any{
 		"username": "alice@example.com",
 	})
@@ -550,8 +548,6 @@ func TestMailDraftSendAppendsToThread(t *testing.T) {
 	if mc != 2 {
 		t.Fatalf("thread message_count = %v, want 2", mc)
 	}
-
-	_ = project
 }
 
 func mustCreateProject(t *testing.T, app *App) store.Project {
