@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/krystophny/tabura/internal/email"
 	"github.com/krystophny/tabura/internal/providerdata"
@@ -55,12 +56,20 @@ func (f *fakeMailDraftProvider) CreateDraft(_ context.Context, input email.Draft
 func (f *fakeMailDraftProvider) CreateReplyDraft(_ context.Context, messageID string, input email.DraftInput) (email.Draft, error) {
 	f.replyMessageID = append(f.replyMessageID, messageID)
 	f.replyInputs = append(f.replyInputs, input)
-	return email.Draft{ID: "draft-reply", ThreadID: "thread-reply"}, nil
+	threadID := input.ThreadID
+	if threadID == "" {
+		threadID = "thread-reply"
+	}
+	return email.Draft{ID: "draft-reply", ThreadID: threadID}, nil
 }
 
 func (f *fakeMailDraftProvider) UpdateDraft(_ context.Context, _ string, input email.DraftInput) (email.Draft, error) {
 	f.updatedInputs = append(f.updatedInputs, input)
-	return email.Draft{ID: "draft-updated", ThreadID: "thread-updated"}, nil
+	threadID := input.ThreadID
+	if threadID == "" {
+		threadID = "thread-updated"
+	}
+	return email.Draft{ID: "draft-updated", ThreadID: threadID}, nil
 }
 
 func (f *fakeMailDraftProvider) SendDraft(_ context.Context, draftID string, _ email.DraftInput) error {
@@ -313,6 +322,236 @@ func TestMailDraftSendRejectsMissingRecipients(t *testing.T) {
 	if len(provider.sentDraftIDs) != 0 {
 		t.Fatalf("SendDraft calls = %d, want 0", len(provider.sentDraftIDs))
 	}
+}
+
+func TestMailDraftForwardAPI(t *testing.T) {
+	app := newAuthedTestApp(t)
+	project := mustCreateProject(t, app)
+	account, err := app.store.CreateExternalAccount(store.SpherePrivate, store.ExternalProviderGmail, "Private Gmail", map[string]any{
+		"username": "alice@example.com",
+	})
+	if err != nil {
+		t.Fatalf("CreateExternalAccount() error: %v", err)
+	}
+	bodyText := "Original body text"
+	provider := &fakeMailDraftProvider{
+		message: &providerdata.EmailMessage{
+			ID:       "remote-fwd-1",
+			ThreadID: "thread-fwd-1",
+			Subject:  "Original subject",
+			Sender:   "someone@example.com",
+			BodyText: &bodyText,
+			Date:     time.Date(2026, 3, 10, 0, 0, 0, 0, time.UTC),
+		},
+	}
+	app.newEmailProvider = func(context.Context, store.ExternalAccount) (email.EmailProvider, error) {
+		return provider, nil
+	}
+
+	artifactTitle := "Original subject"
+	artifactMeta := `{"sender":"someone@example.com","subject":"Original subject","thread_id":"thread-fwd-1","body":"Original body text"}`
+	artifact, err := app.store.CreateArtifact(store.ArtifactKindEmail, nil, nil, &artifactTitle, &artifactMeta)
+	if err != nil {
+		t.Fatalf("CreateArtifact() error: %v", err)
+	}
+	projectID := project.ID
+	source := store.ExternalProviderGmail
+	sourceRef := "remote-fwd-1"
+	item, err := app.store.CreateItem("Forward test", store.ItemOptions{
+		ProjectID:  &projectID,
+		ArtifactID: &artifact.ID,
+		Source:     &source,
+		SourceRef:  &sourceRef,
+	})
+	if err != nil {
+		t.Fatalf("CreateItem() error: %v", err)
+	}
+	if _, err := app.store.UpsertExternalBinding(store.ExternalBinding{
+		AccountID:  account.ID,
+		Provider:   account.Provider,
+		ObjectType: emailBindingObjectType,
+		RemoteID:   "remote-fwd-1",
+		ItemID:     &item.ID,
+		ArtifactID: &artifact.ID,
+	}); err != nil {
+		t.Fatalf("UpsertExternalBinding() error: %v", err)
+	}
+
+	rr := doAuthedJSONRequest(t, app.Router(), http.MethodPost, "/api/mail/drafts/forward", map[string]any{
+		"item_id": item.ID,
+	})
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("forward draft status = %d, want 201: %s", rr.Code, rr.Body.String())
+	}
+	if len(provider.createdInputs) != 1 {
+		t.Fatalf("CreateDraft calls = %d, want 1", len(provider.createdInputs))
+	}
+	fwd := provider.createdInputs[0]
+	if fwd.Subject != "Fwd: Original subject" {
+		t.Fatalf("forward subject = %q, want Fwd: Original subject", fwd.Subject)
+	}
+	if len(fwd.To) != 0 {
+		t.Fatalf("forward To = %#v, want empty (user picks recipient)", fwd.To)
+	}
+	if !strings.Contains(fwd.Body, "Forwarded message") {
+		t.Fatalf("forward body should contain forwarded quote, got %q", fwd.Body)
+	}
+}
+
+func TestMailDraftForwardThreadAPI(t *testing.T) {
+	app := newAuthedTestApp(t)
+	project := mustCreateProject(t, app)
+	account, err := app.store.CreateExternalAccount(store.SpherePrivate, store.ExternalProviderGmail, "Work Gmail", map[string]any{
+		"username": "user@example.com",
+	})
+	if err != nil {
+		t.Fatalf("CreateExternalAccount() error: %v", err)
+	}
+	provider := &fakeMailDraftProvider{}
+	app.newEmailProvider = func(context.Context, store.ExternalAccount) (email.EmailProvider, error) {
+		return provider, nil
+	}
+
+	artifactTitle := "Thread forward"
+	artifactMeta := `{"subject":"Thread forward","thread_id":"thread-fwd-2","messages":[{"id":"msg-1","sender":"alice@example.com","date":"Mar 8","body":"First message"},{"id":"msg-2","sender":"bob@example.com","date":"Mar 9","body":"Second message"}]}`
+	artifact, err := app.store.CreateArtifact(store.ArtifactKindEmailThread, nil, nil, &artifactTitle, &artifactMeta)
+	if err != nil {
+		t.Fatalf("CreateArtifact() error: %v", err)
+	}
+	projectID := project.ID
+	source := store.ExternalProviderGmail
+	item, err := app.store.CreateItem("Forward thread", store.ItemOptions{
+		ProjectID:  &projectID,
+		ArtifactID: &artifact.ID,
+		Source:     &source,
+	})
+	if err != nil {
+		t.Fatalf("CreateItem() error: %v", err)
+	}
+	if _, err := app.store.UpsertExternalBinding(store.ExternalBinding{
+		AccountID:  account.ID,
+		Provider:   account.Provider,
+		ObjectType: emailThreadBindingObjectType,
+		RemoteID:   "thread-fwd-2",
+		ItemID:     &item.ID,
+		ArtifactID: &artifact.ID,
+	}); err != nil {
+		t.Fatalf("UpsertExternalBinding() error: %v", err)
+	}
+
+	rr := doAuthedJSONRequest(t, app.Router(), http.MethodPost, "/api/mail/drafts/forward", map[string]any{
+		"item_id": item.ID,
+	})
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("forward draft status = %d, want 201: %s", rr.Code, rr.Body.String())
+	}
+	if len(provider.createdInputs) != 1 {
+		t.Fatalf("CreateDraft calls = %d, want 1", len(provider.createdInputs))
+	}
+	fwd := provider.createdInputs[0]
+	if fwd.Subject != "Fwd: Thread forward" {
+		t.Fatalf("forward subject = %q, want Fwd: Thread forward", fwd.Subject)
+	}
+	if len(fwd.To) != 0 {
+		t.Fatalf("forward To = %#v, want empty", fwd.To)
+	}
+	if !strings.Contains(fwd.Body, "Forwarded message") {
+		t.Fatalf("forward body should contain forwarded quote, got %q", fwd.Body)
+	}
+	if !strings.Contains(fwd.Body, "bob@example.com") {
+		t.Fatalf("forward body should quote last message sender, got %q", fwd.Body)
+	}
+}
+
+func TestMailDraftSendAppendsToThread(t *testing.T) {
+	app := newAuthedTestApp(t)
+	project := mustCreateProject(t, app)
+	account, err := app.store.CreateExternalAccount(store.SpherePrivate, store.ExternalProviderGmail, "Private Gmail", map[string]any{
+		"username": "alice@example.com",
+	})
+	if err != nil {
+		t.Fatalf("CreateExternalAccount() error: %v", err)
+	}
+	provider := &fakeMailDraftProvider{}
+	app.newEmailProvider = func(context.Context, store.ExternalAccount) (email.EmailProvider, error) {
+		return provider, nil
+	}
+
+	threadTitle := "Discussion"
+	threadMeta := `{"subject":"Discussion","thread_id":"thread-send-1","message_count":1,"messages":[{"id":"msg-1","sender":"peer@example.com","date":"Mar 7","body":"Let us discuss"}]}`
+	threadArtifact, err := app.store.CreateArtifact(store.ArtifactKindEmailThread, nil, nil, &threadTitle, &threadMeta)
+	if err != nil {
+		t.Fatalf("CreateArtifact(thread) error: %v", err)
+	}
+	projectID := project.ID
+	source := store.ExternalProviderGmail
+	threadItem, err := app.store.CreateItem("Discussion thread", store.ItemOptions{
+		ProjectID:  &projectID,
+		ArtifactID: &threadArtifact.ID,
+		Source:     &source,
+	})
+	if err != nil {
+		t.Fatalf("CreateItem(thread) error: %v", err)
+	}
+	if _, err := app.store.UpsertExternalBinding(store.ExternalBinding{
+		AccountID:  account.ID,
+		Provider:   account.Provider,
+		ObjectType: emailThreadBindingObjectType,
+		RemoteID:   "thread-send-1",
+		ItemID:     &threadItem.ID,
+		ArtifactID: &threadArtifact.ID,
+	}); err != nil {
+		t.Fatalf("UpsertExternalBinding(thread) error: %v", err)
+	}
+
+	rrReply := doAuthedJSONRequest(t, app.Router(), http.MethodPost, "/api/mail/drafts/reply", map[string]any{
+		"item_id": threadItem.ID,
+	})
+	if rrReply.Code != http.StatusCreated {
+		t.Fatalf("reply draft status = %d, want 201: %s", rrReply.Code, rrReply.Body.String())
+	}
+	replyPayload := decodeJSONDataResponse(t, rrReply)["draft"].(map[string]any)
+	draftArtifactID := int64(replyPayload["artifact_id"].(float64))
+
+	rrUpdate := doAuthedJSONRequest(t, app.Router(), http.MethodPut, "/api/mail/drafts/"+itoa(draftArtifactID), map[string]any{
+		"to":      []string{"peer@example.com"},
+		"subject": "Re: Discussion",
+		"body":    "Here is my reply",
+	})
+	if rrUpdate.Code != http.StatusOK {
+		t.Fatalf("update draft status = %d, want 200: %s", rrUpdate.Code, rrUpdate.Body.String())
+	}
+
+	rrSend := doAuthedJSONRequest(t, app.Router(), http.MethodPost, "/api/mail/drafts/"+itoa(draftArtifactID)+"/send", nil)
+	if rrSend.Code != http.StatusOK {
+		t.Fatalf("send draft status = %d, want 200: %s", rrSend.Code, rrSend.Body.String())
+	}
+
+	updatedThread, err := app.store.GetArtifact(threadArtifact.ID)
+	if err != nil {
+		t.Fatalf("GetArtifact(thread) error: %v", err)
+	}
+	var threadMetaParsed map[string]any
+	if err := json.Unmarshal([]byte(stringFromPointer(updatedThread.MetaJSON)), &threadMetaParsed); err != nil {
+		t.Fatalf("unmarshal thread meta: %v", err)
+	}
+	msgs, _ := threadMetaParsed["messages"].([]any)
+	if len(msgs) != 2 {
+		t.Fatalf("thread messages = %d, want 2", len(msgs))
+	}
+	lastMsg, _ := msgs[1].(map[string]any)
+	if sent := stringAny(lastMsg["sent"]); sent != "true" {
+		t.Fatalf("last message sent = %q, want true", sent)
+	}
+	if body := stringAny(lastMsg["body"]); body != "Here is my reply" {
+		t.Fatalf("last message body = %q, want 'Here is my reply'", body)
+	}
+	mc, _ := threadMetaParsed["message_count"].(float64)
+	if mc != 2 {
+		t.Fatalf("thread message_count = %v, want 2", mc)
+	}
+
+	_ = project
 }
 
 func mustCreateProject(t *testing.T, app *App) store.Project {

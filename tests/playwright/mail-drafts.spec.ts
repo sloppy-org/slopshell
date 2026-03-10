@@ -430,4 +430,206 @@ test.describe('mail drafts', () => {
     await expect(page.locator('#canvas-text')).toHaveClass(/mail-draft-canvas/);
     await expect(page.locator('.mail-draft-title')).toContainText('Draft email');
   });
+
+  test('forward button visible for email items and triggers forward API', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await waitReady(page);
+
+    await page.evaluate(() => {
+      (window as any).__setItemSidebarData({
+        inbox: [{
+          id: 812,
+          title: 'Forward test',
+          state: 'inbox',
+          sphere: 'private',
+          artifact_id: 612,
+          source: 'exchange',
+          source_ref: 'msg-812',
+          artifact_title: 'Client question',
+          artifact_kind: 'email',
+          actor_name: 'Client',
+          created_at: '2026-03-10 10:00:00',
+          updated_at: '2026-03-10 10:05:00',
+        }],
+        waiting: [],
+        someday: [],
+        done: [],
+      });
+      (window as any).__setItemSidebarArtifacts({
+        612: {
+          id: 612,
+          kind: 'email',
+          title: 'Client question',
+          meta_json: JSON.stringify({
+            subject: 'Client question',
+            sender: 'Client <client@example.com>',
+            thread_id: 'thread-812',
+            body: 'Can you send the revised proposal?',
+          }),
+        },
+      });
+    });
+
+    await openInbox(page);
+    await page.locator('#pr-file-list .pr-file-item').first().click();
+    await expect(page.locator('#forward-mail-trigger')).toBeVisible();
+
+    await clearLog(page);
+    await page.locator('#forward-mail-trigger').click();
+    await waitForLogEntry(page, 'api_fetch', 'mail_draft_forward');
+
+    await expect(page.locator('#canvas-text')).toHaveClass(/mail-draft-canvas/);
+  });
+
+  test('forward hotkey f works from sidebar', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await waitReady(page);
+
+    await page.evaluate(() => {
+      (window as any).__setItemSidebarData({
+        inbox: [{
+          id: 812,
+          title: 'Forward hotkey test',
+          state: 'inbox',
+          sphere: 'private',
+          artifact_id: 612,
+          source: 'exchange',
+          source_ref: 'msg-812',
+          artifact_title: 'Client question',
+          artifact_kind: 'email',
+          actor_name: 'Client',
+          created_at: '2026-03-10 10:00:00',
+          updated_at: '2026-03-10 10:05:00',
+        }],
+        waiting: [],
+        someday: [],
+        done: [],
+      });
+      (window as any).__setItemSidebarArtifacts({
+        612: {
+          id: 612,
+          kind: 'email',
+          title: 'Client question',
+          meta_json: JSON.stringify({
+            subject: 'Client question',
+            sender: 'Client <client@example.com>',
+            thread_id: 'thread-812',
+            body: 'Can you send the revised proposal?',
+          }),
+        },
+      });
+    });
+
+    await openInbox(page);
+    await page.locator('#pr-file-list .pr-file-item').first().click();
+
+    await clearLog(page);
+    await page.keyboard.press('f');
+    await waitForLogEntry(page, 'api_fetch', 'mail_draft_forward');
+    await expect(page.locator('#canvas-text')).toHaveClass(/mail-draft-canvas/);
+  });
+
+  test('canvas forward button works after sidebar closes', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await waitReady(page);
+
+    await page.evaluate(() => {
+      (window as any).__setItemSidebarData({
+        inbox: [{
+          id: 812,
+          title: 'Canvas forward',
+          state: 'inbox',
+          sphere: 'private',
+          artifact_id: 612,
+          source: 'exchange',
+          source_ref: 'msg-812',
+          artifact_title: 'Client question',
+          artifact_kind: 'email',
+          actor_name: 'Client',
+          created_at: '2026-03-10 10:00:00',
+          updated_at: '2026-03-10 10:05:00',
+        }],
+        waiting: [],
+        someday: [],
+        done: [],
+      });
+      (window as any).__setItemSidebarArtifacts({
+        612: {
+          id: 612,
+          kind: 'email',
+          title: 'Client question',
+          meta_json: JSON.stringify({
+            subject: 'Client question',
+            sender: 'Client <client@example.com>',
+            thread_id: 'thread-812',
+            body: 'Can you send the revised proposal?',
+          }),
+        },
+      });
+    });
+
+    await openInbox(page);
+    await page.locator('#pr-file-list .pr-file-item').first().click();
+    await page.locator('#edge-left-tap').click();
+    await expect(page.locator('#pr-file-pane')).not.toHaveClass(/is-open/);
+
+    await expect(page.locator('#canvas-forward-mail-trigger')).toBeVisible();
+
+    await clearLog(page);
+    await page.locator('#canvas-forward-mail-trigger').click();
+    await waitForLogEntry(page, 'api_fetch', 'mail_draft_forward');
+    await expect(page.locator('#canvas-text')).toHaveClass(/mail-draft-canvas/);
+  });
+
+  test('thread view shows foldable messages with last expanded', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await waitReady(page);
+
+    await page.evaluate(() => {
+      (window as any).__setItemSidebarData({
+        inbox: [{
+          id: 900,
+          title: 'Thread test',
+          state: 'inbox',
+          sphere: 'private',
+          artifact_id: 700,
+          source: 'gmail',
+          artifact_title: 'Project discussion',
+          artifact_kind: 'email_thread',
+          created_at: '2026-03-10 10:00:00',
+          updated_at: '2026-03-10 10:05:00',
+        }],
+        waiting: [],
+        someday: [],
+        done: [],
+      });
+      (window as any).__setItemSidebarArtifacts({
+        700: {
+          id: 700,
+          kind: 'email_thread',
+          title: 'Project discussion',
+          meta_json: JSON.stringify({
+            subject: 'Project discussion',
+            thread_id: 'thread-900',
+            message_count: 3,
+            participants: ['alice@example.com', 'bob@example.com'],
+            messages: [
+              { id: 'msg-1', sender: 'alice@example.com', date: 'Mar 8', body: 'Let us start the project', recipients: ['bob@example.com'] },
+              { id: 'msg-2', sender: 'bob@example.com', date: 'Mar 9', body: 'Sounds good, I will prepare the docs', recipients: ['alice@example.com'] },
+              { id: 'msg-3', sender: 'alice@example.com', date: 'Mar 10', body: 'Great, please share by end of day', recipients: ['bob@example.com'] },
+            ],
+          }),
+        },
+      });
+    });
+
+    await openInbox(page);
+    await page.locator('#pr-file-list .pr-file-item').first().click();
+
+    await expect(page.locator('#canvas-text')).toContainText('Project discussion');
+    await expect(page.locator('#canvas-text')).toContainText('alice@example.com');
+    await expect(page.locator('#canvas-text')).toContainText('bob@example.com');
+    await expect(page.locator('#canvas-text')).toContainText('Great, please share by end of day');
+  });
+
 });

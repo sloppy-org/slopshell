@@ -283,6 +283,7 @@ func (a *App) handleMailDraftSend(w http.ResponseWriter, r *http.Request) {
 		writeDomainStoreError(w, err)
 		return
 	}
+	a.appendSentMessageToThread(ctx)
 	if ctx.item != nil {
 		_ = a.store.TriageItemDone(ctx.item.ID)
 	}
@@ -857,4 +858,58 @@ func formatForwardQuote(sender, subject, date, body string) string {
 	parts = append(parts, "")
 	parts = append(parts, strings.TrimSpace(body))
 	return strings.Join(parts, "\n")
+}
+
+func (a *App) appendSentMessageToThread(ctx mailDraftContext) {
+	threadID := strings.TrimSpace(ctx.meta.ThreadID)
+	if threadID == "" {
+		return
+	}
+	threadArtifact := a.findThreadArtifactByBinding(ctx.account.ID, ctx.account.Provider, threadID)
+	if threadArtifact == nil {
+		return
+	}
+	meta := parseSidebarArtifactMeta(stringFromPointer(threadArtifact.MetaJSON))
+	messages, _ := meta["messages"].([]any)
+	sentMessage := map[string]any{
+		"sender":     firstNonEmpty(ctx.config.FromAddress, ctx.config.SMTPUsername, ctx.config.Username),
+		"recipients": ctx.meta.To,
+		"subject":    ctx.meta.Subject,
+		"body":       ctx.body,
+		"date":       time.Now().Format("2006-01-02 15:04"),
+		"sent":       "true",
+	}
+	messages = append(messages, sentMessage)
+	meta["messages"] = messages
+	if mc, ok := meta["message_count"].(float64); ok {
+		meta["message_count"] = mc + 1
+	} else {
+		meta["message_count"] = float64(len(messages))
+	}
+	metaJSON, err := json.Marshal(meta)
+	if err != nil {
+		return
+	}
+	metaStr := string(metaJSON)
+	_ = a.store.UpdateArtifact(threadArtifact.ID, store.ArtifactUpdate{
+		MetaJSON: &metaStr,
+	})
+}
+
+func (a *App) findThreadArtifactByBinding(accountID int64, provider, threadID string) *store.Artifact {
+	if strings.TrimSpace(threadID) == "" {
+		return nil
+	}
+	binding, err := a.store.GetBindingByRemote(accountID, provider, emailThreadBindingObjectType, strings.TrimSpace(threadID))
+	if err != nil {
+		return nil
+	}
+	if binding.ArtifactID == nil || *binding.ArtifactID <= 0 {
+		return nil
+	}
+	artifact, err := a.store.GetArtifact(*binding.ArtifactID)
+	if err != nil {
+		return nil
+	}
+	return &artifact
 }
