@@ -230,6 +230,8 @@ func (a *App) executeSystemAction(sessionID string, session store.ChatSession, a
 		return a.executeCreateWorkspaceAction(session, action)
 	case "workspace_watch_start", "workspace_watch_stop", "workspace_watch_status":
 		return a.executeWorkspaceWatchAction(session, action)
+	case "batch_work", "batch_configure", "batch_limit", "batch_status":
+		return a.executeBatchAction(session, action)
 	case "assign_workspace_project", "show_workspace_project", "create_project", "list_project_workspaces", "sync_project":
 		return a.executeProjectAction(session, action)
 	case "list_workspace_items":

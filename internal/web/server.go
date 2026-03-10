@@ -322,7 +322,6 @@ func New(dataDir, localProjectDir, localMCPURL, appServerURL, model, ttsURL, spa
 		return nil, err
 	}
 	app.sourceSync = app.newSourceSyncRunner()
-	app.workspaceWatchProcessor = app.processWorkspaceWatchItem
 	app.startItemResurfacer()
 	app.startSourcePoller()
 	app.resumeWorkspaceWatches()

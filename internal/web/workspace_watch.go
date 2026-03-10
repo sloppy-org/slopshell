@@ -250,6 +250,11 @@ func (a *App) runWorkspaceWatchLoop(workspaceID int64) {
 			a.setWorkspaceWatchError(workspaceID, err)
 			return
 		}
+		cfg, err := decodeBatchWorkConfig(watch.ConfigJSON)
+		if err != nil {
+			a.setWorkspaceWatchError(workspaceID, err)
+			return
+		}
 		watch, err = a.ensureWorkspaceWatchBatch(workspace, watch)
 		if err != nil {
 			a.setWorkspaceWatchError(workspaceID, err)
@@ -258,10 +263,24 @@ func (a *App) runWorkspaceWatchLoop(workspaceID int64) {
 			}
 			continue
 		}
+		if batchConfigMode(cfg) == batchModeRun {
+			reached, limitErr := a.workspaceWatchLimitReached(watch.CurrentBatchID, cfg)
+			if limitErr != nil {
+				a.setWorkspaceWatchError(workspaceID, limitErr)
+				a.finishWorkspaceWatchBatch(watch.CurrentBatchID)
+				_, _ = a.store.SetWorkspaceWatchEnabled(workspaceID, false)
+				return
+			}
+			if reached {
+				a.finishWorkspaceWatchBatch(watch.CurrentBatchID)
+				_, _ = a.store.SetWorkspaceWatchEnabled(workspaceID, false)
+				return
+			}
+		}
 		if err := a.workspaceWatchSyncSources(); err != nil {
 			a.setWorkspaceWatchError(workspaceID, err)
 		}
-		item, ok, err := a.nextWorkspaceWatchItem(workspace.ID)
+		item, ok, err := a.nextWorkspaceWatchItem(workspace.ID, cfg)
 		if err != nil {
 			a.setWorkspaceWatchError(workspaceID, err)
 			if !a.waitWorkspaceWatch(workspaceID, watch.PollIntervalSeconds) {
@@ -270,6 +289,11 @@ func (a *App) runWorkspaceWatchLoop(workspaceID int64) {
 			continue
 		}
 		if !ok {
+			if batchConfigMode(cfg) == batchModeRun {
+				a.finishWorkspaceWatchBatch(watch.CurrentBatchID)
+				_, _ = a.store.SetWorkspaceWatchEnabled(workspaceID, false)
+				return
+			}
 			if a.workspaceWatches.stopRequested(workspaceID) || !watch.Enabled {
 				a.finishWorkspaceWatchBatch(watch.CurrentBatchID)
 				return
@@ -288,7 +312,7 @@ func (a *App) runWorkspaceWatchLoop(workspaceID int64) {
 		})
 		a.broadcastWorkspaceWatchStatus(workspaceID)
 
-		err = a.processWorkspaceWatchIteration(workspace, watch, item)
+		err = a.processWorkspaceWatchIteration(workspace, watch, cfg, item)
 		a.workspaceWatches.update(workspaceID, func(status *workspaceWatchStatus) {
 			status.CurrentItemID = nil
 			status.CurrentBatchID = copyInt64Pointer(watch.CurrentBatchID)
@@ -366,35 +390,64 @@ func normalizeWorkspaceWatchPollIntervalSeconds(raw int) int {
 	return raw
 }
 
-func (a *App) nextWorkspaceWatchItem(workspaceID int64) (store.ItemSummary, bool, error) {
-	filter := store.ItemListFilter{WorkspaceID: &workspaceID}
-	items, err := a.store.ListInboxItemsFiltered(time.Now().UTC(), filter)
+func (a *App) workspaceWatchLimitReached(batchID *int64, cfg batchWorkConfig) (bool, error) {
+	if batchID == nil || *batchID <= 0 || cfg.Limit <= 0 {
+		return false, nil
+	}
+	items, err := a.store.ListBatchRunItems(*batchID)
+	if err != nil {
+		return false, err
+	}
+	counts := batchStatusCounts(items)
+	return counts.Completed+counts.Failed >= cfg.Limit, nil
+}
+
+func (a *App) nextWorkspaceWatchItem(workspaceID int64, cfg batchWorkConfig) (store.ItemSummary, bool, error) {
+	items, err := a.listBatchCandidateItems(workspaceID, cfg)
 	if err != nil {
 		return store.ItemSummary{}, false, err
 	}
 	if len(items) == 0 {
 		return store.ItemSummary{}, false, nil
 	}
-	sort.Slice(items, func(i, j int) bool {
-		if items[i].CreatedAt == items[j].CreatedAt {
-			return items[i].ID < items[j].ID
-		}
-		return items[i].CreatedAt < items[j].CreatedAt
-	})
 	return items[0], true, nil
 }
 
-func (a *App) processWorkspaceWatchIteration(workspace store.Workspace, watch store.WorkspaceWatch, item store.ItemSummary) error {
+func (a *App) processWorkspaceWatchIteration(workspace store.Workspace, watch store.WorkspaceWatch, cfg batchWorkConfig, item store.ItemSummary) error {
 	if watch.CurrentBatchID != nil {
 		_, _ = a.recordBatchRunItemUpdate(*watch.CurrentBatchID, item.ID, store.BatchRunItemUpdate{Status: "running"})
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), workspaceWatchProcessTimeout)
 	defer cancel()
 	processor := a.workspaceWatchProcessor
-	if processor == nil {
-		processor = a.processWorkspaceWatchItem
+	if processor != nil {
+		err := processor(ctx, workspace, item)
+		if err != nil {
+			if watch.CurrentBatchID != nil {
+				msg := err.Error()
+				_, _ = a.recordBatchRunItemUpdate(*watch.CurrentBatchID, item.ID, store.BatchRunItemUpdate{
+					Status:   "failed",
+					ErrorMsg: &msg,
+				})
+			}
+			retryAt := time.Now().UTC().Add(time.Duration(watch.PollIntervalSeconds) * time.Second).Format(time.RFC3339)
+			if retryAt == "" {
+				retryAt = time.Now().UTC().Add(5 * time.Minute).Format(time.RFC3339)
+			}
+			if triageErr := a.store.TriageItemLater(item.ID, retryAt); triageErr != nil {
+				return fmt.Errorf("%w (triage failed: %v)", err, triageErr)
+			}
+			return err
+		}
+		if err := a.store.TriageItemDone(item.ID); err != nil {
+			return err
+		}
+		if watch.CurrentBatchID != nil {
+			_, _ = a.recordBatchRunItemUpdate(*watch.CurrentBatchID, item.ID, store.BatchRunItemUpdate{Status: "completed"})
+		}
+		return nil
 	}
-	err := processor(ctx, workspace, item)
+	err := a.processWorkspaceWatchItem(ctx, workspace, cfg, item)
 	if err != nil {
 		if watch.CurrentBatchID != nil {
 			msg := err.Error()
@@ -421,20 +474,25 @@ func (a *App) processWorkspaceWatchIteration(workspace store.Workspace, watch st
 	return nil
 }
 
-func (a *App) processWorkspaceWatchItem(ctx context.Context, workspace store.Workspace, item store.ItemSummary) error {
+func (a *App) processWorkspaceWatchItem(ctx context.Context, workspace store.Workspace, cfg batchWorkConfig, item store.ItemSummary) error {
 	if a == nil || a.appServerClient == nil {
 		return errors.New("workspace watch requires app-server")
 	}
-	prompt := strings.TrimSpace(fmt.Sprintf(
-		"You are Tabura workspace watch mode. Process this workspace item end-to-end in the current working directory and stop when the item is handled.\n\nWorkspace: %s\nDirectory: %s\nItem #%d: %s\n",
-		workspace.Name,
-		workspace.DirPath,
-		item.ID,
-		item.Title,
-	))
+	var prompt strings.Builder
+	prompt.WriteString("You are Tabura workspace watch mode. Process this workspace item end-to-end in the current working directory and stop when the item is handled.\n\n")
+	fmt.Fprintf(&prompt, "Workspace: %s\n", workspace.Name)
+	fmt.Fprintf(&prompt, "Directory: %s\n", workspace.DirPath)
+	fmt.Fprintf(&prompt, "Mode: %s\n", batchConfigMode(cfg))
+	if cfg.Worker != "" {
+		fmt.Fprintf(&prompt, "Preferred worker: %s\n", cfg.Worker)
+	}
+	if cfg.Reviewer != "" {
+		fmt.Fprintf(&prompt, "Preferred reviewer: %s\n", cfg.Reviewer)
+	}
+	fmt.Fprintf(&prompt, "Item #%d: %s\n", item.ID, item.Title)
 	resp, err := a.appServerClient.SendPrompt(ctx, appserver.PromptRequest{
 		CWD:     workspace.DirPath,
-		Prompt:  prompt,
+		Prompt:  strings.TrimSpace(prompt.String()),
 		Timeout: workspaceWatchProcessTimeout,
 	})
 	if err != nil {
