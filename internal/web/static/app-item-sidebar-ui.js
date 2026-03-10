@@ -294,6 +294,40 @@ export function buildItemSidebarBadges(item) {
   return badges.filter((badge, index, all) => badge && all.indexOf(badge) === index);
 }
 
+function bindSidebarTabActivation(button, onActivate) {
+  let lastTouchAt = 0;
+  let touchStart = null;
+  button.addEventListener('touchstart', (ev) => {
+    const touch = ev.touches && ev.touches[0];
+    if (!touch) return;
+    touchStart = { x: touch.clientX, y: touch.clientY };
+  }, { passive: true });
+  button.addEventListener('touchcancel', () => {
+    touchStart = null;
+  });
+  button.addEventListener('touchend', (ev) => {
+    const touch = ev.changedTouches && ev.changedTouches[0];
+    const start = touchStart;
+    touchStart = null;
+    if (!touch || !start) return;
+    if (Math.abs(touch.clientX - start.x) > 10 || Math.abs(touch.clientY - start.y) > 10) {
+      return;
+    }
+    ev.preventDefault();
+    ev.stopPropagation();
+    lastTouchAt = Date.now();
+    suppressSyntheticClick();
+    onActivate();
+  }, { passive: false });
+  button.addEventListener('click', (ev) => {
+    if (Date.now() - lastTouchAt < 700) {
+      ev.preventDefault();
+      return;
+    }
+    onActivate();
+  });
+}
+
 export function renderSidebarTabs(list) {
   const tabs = document.createElement('div');
   tabs.className = 'sidebar-tabs';
@@ -312,7 +346,7 @@ export function renderSidebarTabs(list) {
       badge.textContent = String(count);
       button.appendChild(badge);
     }
-    button.addEventListener('click', () => {
+    bindSidebarTabActivation(button, () => {
       void openItemSidebarView(view);
     });
     tabs.appendChild(button);
@@ -324,7 +358,7 @@ export function renderSidebarTabs(list) {
     filesButton.classList.add('is-active');
   }
   filesButton.textContent = 'Files';
-  filesButton.addEventListener('click', () => {
+  bindSidebarTabActivation(filesButton, () => {
     state.fileSidebarMode = 'workspace';
     renderPrReviewFileList();
     if (!state.workspaceBrowserLoading && state.workspaceBrowserEntries.length === 0 && !state.workspaceBrowserError) {

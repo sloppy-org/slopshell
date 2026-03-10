@@ -72,6 +72,8 @@
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .sidebar-tab:last-child {

@@ -148,6 +148,34 @@ test.describe('item inbox sidebar', () => {
     await expect(page.locator('#pr-file-list .pr-file-item .pr-file-name', { hasText: 'docs' })).toHaveCount(1);
   });
 
+  test('touch taps switch sidebar categories on mobile', async ({ browser }) => {
+    const context = await browser.newContext({
+      hasTouch: true,
+      viewport: { width: 390, height: 844 },
+    });
+    const page = await context.newPage();
+    await waitReady(page);
+
+    try {
+      await page.locator('#edge-left-tap').tap();
+      await expect(page.locator('#pr-file-pane')).toHaveClass(/is-open/);
+
+      await page.locator('.sidebar-tab', { hasText: 'Waiting' }).tap();
+      await expect(page.locator('.sidebar-tab.is-active')).toContainText('Waiting');
+      await expect(page.locator('#pr-file-list .pr-file-item')).toContainText('Await review feedback');
+
+      await page.locator('.sidebar-tab', { hasText: 'Someday' }).tap();
+      await expect(page.locator('.sidebar-tab.is-active')).toContainText('Someday');
+      await expect(page.locator('#pr-file-list .pr-file-item')).toContainText('Sketch mobile inbox gestures');
+
+      await page.locator('.sidebar-tab', { hasText: 'Done' }).tap();
+      await expect(page.locator('.sidebar-tab.is-active')).toContainText('Done');
+      await expect(page.locator('#pr-file-list .pr-file-item')).toContainText('Ship capture flow');
+    } finally {
+      await context.close();
+    }
+  });
+
   test('opening a PR review item enters PR review mode', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await waitReady(page);
