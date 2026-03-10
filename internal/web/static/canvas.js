@@ -1,8 +1,9 @@
 import { AnnotationLayer, GlobalWorkerOptions, TextLayer, getDocument } from './vendor/pdf.mjs';
 import { apiURL } from './paths.js';
 import { state } from './app-context.js';
-import { renderTextArtifact } from './canvas-content.js';
-import { launchNewMailAuthoring, launchReplyAuthoring, renderMailDraftArtifact } from './app-mail-drafts.js';
+import { renderTextArtifact, sanitizeHtml } from './canvas-content.js';
+import { launchNewMailAuthoring, launchReplyAuthoring, launchForwardAuthoring, openMailDraftArtifact, renderMailDraftArtifact } from './app-mail-drafts.js';
+import { buildEmailThreadHTML } from './app-item-sidebar-artifacts.js';
 
 export { escapeHtml, sanitizeHtml } from './canvas-content.js';
 
@@ -93,7 +94,17 @@ function renderCanvasMailActions(root, event) {
   });
   actions.appendChild(replyButton);
 
-  root.prepend(actions);
+  const forwardButton = document.createElement('button');
+  forwardButton.type = 'button';
+  forwardButton.className = 'edge-btn';
+  forwardButton.id = 'canvas-forward-mail-trigger';
+  forwardButton.textContent = 'Forward';
+  forwardButton.addEventListener('click', () => {
+    void launchForwardAuthoring(item);
+  });
+  actions.appendChild(forwardButton);
+
+  root.append(actions);
 }
 
 export function getEls() {
@@ -886,14 +897,31 @@ export function renderCanvas(event) {
     clearTextInteractionHandlers();
     activeTextEventId = event.event_id;
     activePdfEvent = null;
-    const nextState = renderTextArtifact(e.text, event, {
-      previousArtifactTitle,
-      previousBlockTexts,
-    });
-    activeArtifactTitle = nextState.activeArtifactTitle;
-    previousArtifactText = nextState.previousArtifactText;
-    previousBlockTexts = nextState.previousBlockTexts;
-    previousArtifactTitle = nextState.previousArtifactTitle;
+    const threadMeta = event.threadMeta && typeof event.threadMeta === 'object' ? event.threadMeta : null;
+    const threadHtml = threadMeta ? buildEmailThreadHTML(event.title, threadMeta) : null;
+    if (threadHtml) {
+      e.text.innerHTML = sanitizeHtml(threadHtml);
+      e.text.querySelectorAll('.thread-draft-open').forEach((link) => {
+        link.addEventListener('click', (ev) => {
+          ev.preventDefault();
+          const draftId = Number(link.dataset.draftId || 0);
+          if (draftId > 0) void openMailDraftArtifact(draftId);
+        });
+      });
+      activeArtifactTitle = String(event.title || '');
+      previousArtifactText = event.text || '';
+      previousBlockTexts = [];
+      previousArtifactTitle = activeArtifactTitle;
+    } else {
+      const nextState = renderTextArtifact(e.text, event, {
+        previousArtifactTitle,
+        previousBlockTexts,
+      });
+      activeArtifactTitle = nextState.activeArtifactTitle;
+      previousArtifactText = nextState.previousArtifactText;
+      previousBlockTexts = nextState.previousBlockTexts;
+      previousArtifactTitle = nextState.previousArtifactTitle;
+    }
     renderCanvasMailActions(e.text, event);
     dispatchCanvasRendered(event);
   } else if (event.kind === 'email_draft') {

@@ -3,6 +3,7 @@ import { refs, state } from './app-context.js';
 const openItemSidebarView = (...args) => refs.openItemSidebarView(...args);
 const launchNewMailAuthoring = (...args) => refs.launchNewMailAuthoring(...args);
 const launchReplyAuthoring = (...args) => refs.launchReplyAuthoring(...args);
+const launchForwardAuthoring = (...args) => refs.launchForwardAuthoring(...args);
 const selectInteractionTool = (...args) => refs.selectInteractionTool(...args);
 
 const COMMAND_CENTER_ID = 'command-center';
@@ -170,6 +171,18 @@ function availableCommandCenterCommands() {
     keywords: 'reply email spark selected draft',
     disabled: !replyItem,
     run: () => (replyItem ? launchReplyAuthoring(replyItem) : false),
+  });
+  const forwardItem = activeReplySidebarItem();
+  commands.splice(6, 0, {
+    id: 'forward-mail',
+    title: 'Forward Selected Email',
+    detail: forwardItem
+      ? `Forward ${String(forwardItem?.title || forwardItem?.artifact_title || 'selected email').trim() || 'selected email'}.`
+      : 'Select an email item in the sidebar to forward.',
+    shortcut: 'F',
+    keywords: 'forward email spark selected draft',
+    disabled: !forwardItem,
+    run: () => (forwardItem ? launchForwardAuthoring(forwardItem) : false),
   });
   return commands;
 }

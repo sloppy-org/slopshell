@@ -33,6 +33,7 @@ const openWorkspaceSidebarFile = (...args) => refs.openWorkspaceSidebarFile(...a
 const openScanImportPicker = (...args) => refs.openScanImportPicker(...args);
 const launchNewMailAuthoring = (...args) => refs.launchNewMailAuthoring(...args);
 const launchReplyAuthoring = (...args) => refs.launchReplyAuthoring(...args);
+const launchForwardAuthoring = (...args) => refs.launchForwardAuthoring(...args);
 
 export async function openItemSidebarView(view = state.itemSidebarView, filters = null) {
   state.fileSidebarMode = 'items';
@@ -565,6 +566,17 @@ export function renderItemSidebarList(list) {
       void launchReplyAuthoring(activeItem);
     });
     actions.appendChild(replyButton);
+  }
+  if (activeItem && ['email', 'email_thread'].includes(String(activeItem?.artifact_kind || '').trim().toLowerCase())) {
+    const forwardButton = document.createElement('button');
+    forwardButton.type = 'button';
+    forwardButton.className = 'edge-btn';
+    forwardButton.id = 'forward-mail-trigger';
+    forwardButton.textContent = 'Forward';
+    forwardButton.addEventListener('click', () => {
+      void launchForwardAuthoring(activeItem);
+    });
+    actions.appendChild(forwardButton);
   }
   const scanButton = document.createElement('button');
   scanButton.id = 'scan-upload-trigger';

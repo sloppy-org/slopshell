@@ -166,6 +166,34 @@ export async function launchReplyAuthoring(item) {
   });
 }
 
+export async function forwardSidebarItem(item) {
+  const itemID = Number(item?.id || 0);
+  if (itemID <= 0) return false;
+  try {
+    await presentMailDraft('mail/drafts/forward', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ item_id: itemID }),
+    }, 'forward draft ready');
+    return true;
+  } catch (err) {
+    showStatus(`forward draft failed: ${String(err?.message || err || 'unknown error')}`);
+    return false;
+  }
+}
+
+export async function launchForwardAuthoring(item) {
+  if (!mailAuthoringUsesDictation()) {
+    return forwardSidebarItem(item);
+  }
+  return startDictationMode({
+    prompt: 'forward this message',
+    targetKind: 'email_forward',
+    artifactTitle: mailReplyArtifactTitle(item),
+    successText: 'email forward dictation ready',
+  });
+}
+
 export async function openMailDraftArtifact(artifactID) {
   const id = Number(artifactID || 0);
   if (id <= 0) return false;

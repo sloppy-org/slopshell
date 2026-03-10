@@ -691,3 +691,170 @@ func replySeedFromArtifactMeta(meta map[string]any) (string, string) {
 	}
 	return "", ""
 }
+
+type mailDraftForwardRequest struct {
+	ItemID int64 `json:"item_id"`
+}
+
+func (a *App) handleMailDraftForward(w http.ResponseWriter, r *http.Request) {
+	if !a.requireAuth(w, r) {
+		return
+	}
+	var req mailDraftForwardRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	item, err := a.store.GetItem(req.ItemID)
+	if err != nil {
+		writeDomainStoreError(w, err)
+		return
+	}
+	project, err := a.projectForItem(item)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	account, cfg, seed, err := a.forwardDraftSeed(r.Context(), item)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	provider, draftProvider, err := a.mailDraftProviderForAccount(r.Context(), account, cfg)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	defer provider.Close()
+	remote, err := draftProvider.CreateDraft(r.Context(), seed)
+	if err != nil {
+		writeAPIError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	payload, err := a.persistMailDraft(project, account, remote, seed, "")
+	if err != nil {
+		writeDomainStoreError(w, err)
+		return
+	}
+	writeAPIData(w, http.StatusCreated, map[string]any{"draft": payload})
+}
+
+func (a *App) forwardDraftSeed(ctx context.Context, item store.Item) (store.ExternalAccount, emailSyncAccountConfig, email.DraftInput, error) {
+	var artifact *store.Artifact
+	if item.ArtifactID != nil && *item.ArtifactID > 0 {
+		loadedArtifact, artifactErr := a.store.GetArtifact(*item.ArtifactID)
+		if artifactErr == nil {
+			artifact = &loadedArtifact
+		}
+	}
+	bindings, err := a.store.GetBindingsByItem(item.ID)
+	if err != nil {
+		return store.ExternalAccount{}, emailSyncAccountConfig{}, email.DraftInput{}, err
+	}
+	if artifact != nil {
+		artifactBindings, artifactErr := a.store.GetBindingsByArtifact(artifact.ID)
+		if artifactErr == nil {
+			bindings = append(bindings, artifactBindings...)
+		}
+	}
+	binding := mailReplyBindingForItem(bindings, item)
+	if binding == nil {
+		return store.ExternalAccount{}, emailSyncAccountConfig{}, email.DraftInput{}, errors.New("item is not linked to a remote mail message or thread")
+	}
+	account, err := a.store.GetExternalAccount(binding.AccountID)
+	if err != nil {
+		return store.ExternalAccount{}, emailSyncAccountConfig{}, email.DraftInput{}, err
+	}
+	cfg, err := decodeEmailSyncAccountConfig(account)
+	if err != nil {
+		return store.ExternalAccount{}, emailSyncAccountConfig{}, email.DraftInput{}, err
+	}
+	input := email.DraftInput{
+		From: firstNonEmpty(cfg.FromAddress, cfg.SMTPUsername, cfg.Username),
+	}
+	if artifact != nil {
+		meta := parseSidebarArtifactMeta(stringFromPointer(artifact.MetaJSON))
+		if subject := strings.TrimSpace(stringAny(meta["subject"])); subject != "" {
+			input.Subject = mailForwardSubject(subject)
+		}
+		if threadID := strings.TrimSpace(stringAny(meta["thread_id"])); threadID != "" {
+			input.ThreadID = threadID
+		}
+		input.Body = forwardBodyFromArtifactMeta(meta)
+	}
+	remoteMessageID := strings.TrimSpace(binding.RemoteID)
+	if strings.TrimSpace(input.Subject) == "" || strings.TrimSpace(input.Body) == "" {
+		provider, provErr := a.emailProviderForAccount(ctx, account, cfg)
+		if provErr == nil {
+			defer provider.Close()
+			if message, getErr := provider.GetMessage(ctx, remoteMessageID, "full"); getErr == nil && message != nil {
+				if strings.TrimSpace(input.Subject) == "" {
+					input.Subject = mailForwardSubject(message.Subject)
+				}
+				if strings.TrimSpace(input.Body) == "" {
+					messageBody := strings.TrimSpace(stringFromPointer(message.BodyText))
+					if messageBody == "" {
+						messageBody = strings.TrimSpace(message.Snippet)
+					}
+					input.Body = formatForwardQuote(message.Sender, message.Subject, message.Date.Format("Mon, 2 Jan 2006 15:04:05"), messageBody)
+				}
+				if strings.TrimSpace(input.ThreadID) == "" {
+					input.ThreadID = strings.TrimSpace(message.ThreadID)
+				}
+			}
+		}
+	}
+	return account, cfg, input, nil
+}
+
+func mailForwardSubject(subject string) string {
+	clean := strings.TrimSpace(subject)
+	if clean == "" {
+		return "Fwd:"
+	}
+	lower := strings.ToLower(clean)
+	if strings.HasPrefix(lower, "fwd:") || strings.HasPrefix(lower, "fw:") {
+		return clean
+	}
+	return "Fwd: " + clean
+}
+
+func forwardBodyFromArtifactMeta(meta map[string]any) string {
+	messages, _ := meta["messages"].([]any)
+	if len(messages) > 0 {
+		last, _ := messages[len(messages)-1].(map[string]any)
+		sender := strings.TrimSpace(stringAny(last["sender"]))
+		date := strings.TrimSpace(stringAny(last["date"]))
+		subject := strings.TrimSpace(stringAny(meta["subject"]))
+		body := strings.TrimSpace(stringAny(last["body"]))
+		if body == "" {
+			body = strings.TrimSpace(stringAny(last["snippet"]))
+		}
+		return formatForwardQuote(sender, subject, date, body)
+	}
+	sender := strings.TrimSpace(stringAny(meta["sender"]))
+	date := strings.TrimSpace(stringAny(meta["date"]))
+	subject := strings.TrimSpace(stringAny(meta["subject"]))
+	body := strings.TrimSpace(stringAny(meta["body"]))
+	if body == "" {
+		body = strings.TrimSpace(stringAny(meta["snippet"]))
+	}
+	return formatForwardQuote(sender, subject, date, body)
+}
+
+func formatForwardQuote(sender, subject, date, body string) string {
+	var parts []string
+	parts = append(parts, "---------- Forwarded message ----------")
+	if sender != "" {
+		parts = append(parts, "From: "+sender)
+	}
+	if date != "" {
+		parts = append(parts, "Date: "+date)
+	}
+	if subject != "" {
+		parts = append(parts, "Subject: "+subject)
+	}
+	parts = append(parts, "")
+	parts = append(parts, strings.TrimSpace(body))
+	return strings.Join(parts, "\n")
+}

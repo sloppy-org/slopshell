@@ -81,6 +81,7 @@ const stepPrReviewFile = (...args) => refs.stepPrReviewFile(...args);
 const maybeApplySelectionHighlight = (...args) => refs.maybeApplySelectionHighlight(...args);
 const launchNewMailAuthoring = (...args) => refs.launchNewMailAuthoring(...args);
 const launchReplyAuthoring = (...args) => refs.launchReplyAuthoring(...args);
+const launchForwardAuthoring = (...args) => refs.launchForwardAuthoring(...args);
 
 function handleMailShortcut(ev) {
   if (ev.metaKey || ev.ctrlKey || ev.altKey) return false;
@@ -91,12 +92,21 @@ function handleMailShortcut(ev) {
     void launchNewMailAuthoring();
     return true;
   }
-  if (String(ev.key || '') !== 'r' && String(ev.key || '') !== 'R') return false;
-  const replyItem = activeReplySidebarItem();
-  if (!replyItem) return false;
-  ev.preventDefault();
-  void launchReplyAuthoring(replyItem);
-  return true;
+  if (String(ev.key || '') === 'r' || String(ev.key || '') === 'R') {
+    const replyItem = activeReplySidebarItem();
+    if (!replyItem) return false;
+    ev.preventDefault();
+    void launchReplyAuthoring(replyItem);
+    return true;
+  }
+  if (String(ev.key || '') === 'f' || String(ev.key || '') === 'F') {
+    const forwardItem = activeReplySidebarItem();
+    if (!forwardItem) return false;
+    ev.preventDefault();
+    void launchForwardAuthoring(forwardItem);
+    return true;
+  }
+  return false;
 }
 
 export function bindUi() {
