@@ -391,10 +391,10 @@ async function performItemSidebarProjectUpdate(item, projectID = "", projectName
     }
     state.itemSidebarActiveItemID = itemID;
     await loadItemSidebarView(state.itemSidebarView);
-    showStatus(projectID ? `label set to ${String(projectName || "").trim() || "selected label"}` : "label cleared");
+    showStatus(projectID ? `context set to ${String(projectName || "").trim() || "selected context"}` : "context cleared");
     return true;
   } catch (err) {
-    showStatus(`label picker failed: ${String(err?.message || err || "unknown error")}`);
+    showStatus(`context picker failed: ${String(err?.message || err || "unknown error")}`);
     return false;
   }
 }
@@ -522,14 +522,14 @@ async function showItemSidebarProjectMenu(item, x, y) {
   try {
     const projects = await fetchItemSidebarProjects();
     if (projects.length === 0) {
-      showStatus("no labels available");
+      showStatus("no contexts available");
       return false;
     }
     const currentProjectID = String(item?.project_id || "").trim();
     const entries = [];
     if (currentProjectID) {
       entries.push({
-        label: "Clear label",
+        label: "Clear context",
         action: "clear_project",
         onClick: () => performItemSidebarProjectUpdate(item, "", "")
       });
@@ -544,7 +544,7 @@ async function showItemSidebarProjectMenu(item, x, y) {
     showItemSidebarMenu(entries, x, y);
     return true;
   } catch (err) {
-    showStatus(`label picker failed: ${String(err?.message || err || "unknown error")}`);
+    showStatus(`context picker failed: ${String(err?.message || err || "unknown error")}`);
     return false;
   }
 }
@@ -599,7 +599,7 @@ function showItemSidebarActionMenu(item, x, y) {
       onClick: () => showItemSidebarWorkspaceMenu(item, x, y)
     },
     {
-      label: "Label...",
+      label: "Context...",
       action: "project",
       onClick: () => showItemSidebarProjectMenu(item, x, y)
     },
@@ -623,7 +623,7 @@ function showItemSidebarActionMenu(item, x, y) {
       onClick: () => showItemSidebarWorkspaceMenu(item, x, y)
     },
     {
-      label: "Label...",
+      label: "Context...",
       action: "project",
       onClick: () => showItemSidebarProjectMenu(item, x, y)
     },
@@ -647,7 +647,7 @@ function showItemSidebarActionMenu(item, x, y) {
       onClick: () => showItemSidebarWorkspaceMenu(item, x, y)
     },
     {
-      label: "Label...",
+      label: "Context...",
       action: "project",
       onClick: () => showItemSidebarProjectMenu(item, x, y)
     },
@@ -675,7 +675,7 @@ function showItemSidebarActionMenu(item, x, y) {
       onClick: () => showItemSidebarWorkspaceMenu(item, x, y)
     },
     {
-      label: "Label...",
+      label: "Context...",
       action: "project",
       onClick: () => showItemSidebarProjectMenu(item, x, y)
     },

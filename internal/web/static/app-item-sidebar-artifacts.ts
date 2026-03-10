@@ -169,7 +169,7 @@ function buildEmailArtifactMarkdown(title, artifactMeta) {
   const date = String(artifactMeta?.date || '').trim();
   if (date) detail.push(`Date: ${date}`);
   const labels = sidebarJoinList(artifactMeta?.labels);
-  if (labels) detail.push(`Labels: ${labels}`);
+  if (labels) detail.push(`Contexts: ${labels}`);
   const body = sidebarEmailBody(artifactMeta);
   if (body) {
     detail.push('', body);

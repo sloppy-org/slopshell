@@ -521,7 +521,7 @@ test.describe('inbox triage interactions', () => {
     expect(triageCalls.map((entry: any) => entry?.payload?.action)).toEqual(['done', 'delete', 'delegate', 'later']);
   });
 
-  test('desktop context menu workspace and label pickers reassign the active item', async ({ page }) => {
+  test('desktop context menu workspace and context pickers reassign the active item', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await waitReady(page);
     await page.evaluate(() => {
@@ -552,8 +552,8 @@ test.describe('inbox triage interactions', () => {
     }).toBe(true);
 
     await row.click({ button: 'right' });
-    await expect(page.locator('#item-sidebar-menu')).toContainText('Label...');
-    await page.locator('#item-sidebar-menu .item-sidebar-menu-item', { hasText: 'Label...' }).click();
+    await expect(page.locator('#item-sidebar-menu')).toContainText('Context...');
+    await page.locator('#item-sidebar-menu .item-sidebar-menu-item', { hasText: 'Context...' }).click();
     await expect(page.locator('#item-sidebar-menu')).toContainText('Test');
     await page.locator('#item-sidebar-menu .item-sidebar-menu-item', { hasText: 'Test' }).click();
     await expect.poll(async () => {
