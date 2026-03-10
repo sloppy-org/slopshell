@@ -79,6 +79,14 @@ func writeItemStoreError(w http.ResponseWriter, err error) {
 	writeAPIError(w, itemResponseErrorStatus(err), err.Error())
 }
 
+func (a *App) resurfaceDueItemsForRead(w http.ResponseWriter) bool {
+	if _, err := a.resurfaceDueItems(time.Now().UTC()); err != nil {
+		writeItemStoreError(w, err)
+		return false
+	}
+	return true
+}
+
 func parseItemListFilterQuery(r *http.Request) (store.ItemListFilter, error) {
 	filter := store.ItemListFilter{
 		Sphere: strings.TrimSpace(r.URL.Query().Get("sphere")),
@@ -121,6 +129,9 @@ func (a *App) handleItemList(w http.ResponseWriter, r *http.Request) {
 	if !a.requireAuth(w, r) {
 		return
 	}
+	if !a.resurfaceDueItemsForRead(w) {
+		return
+	}
 	state := strings.TrimSpace(r.URL.Query().Get("state"))
 	filter, err := parseItemListFilterQuery(r)
 	if err != nil {
@@ -154,6 +165,9 @@ func (a *App) handleItemInbox(w http.ResponseWriter, r *http.Request) {
 	if !a.requireAuth(w, r) {
 		return
 	}
+	if !a.resurfaceDueItemsForRead(w) {
+		return
+	}
 	filter, err := parseItemListFilterQuery(r)
 	if err != nil {
 		writeAPIError(w, http.StatusBadRequest, err.Error())
@@ -169,6 +183,9 @@ func (a *App) handleItemInbox(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) handleItemWaiting(w http.ResponseWriter, r *http.Request) {
 	if !a.requireAuth(w, r) {
+		return
+	}
+	if !a.resurfaceDueItemsForRead(w) {
 		return
 	}
 	filter, err := parseItemListFilterQuery(r)
@@ -188,6 +205,9 @@ func (a *App) handleItemSomeday(w http.ResponseWriter, r *http.Request) {
 	if !a.requireAuth(w, r) {
 		return
 	}
+	if !a.resurfaceDueItemsForRead(w) {
+		return
+	}
 	filter, err := parseItemListFilterQuery(r)
 	if err != nil {
 		writeAPIError(w, http.StatusBadRequest, err.Error())
@@ -203,6 +223,9 @@ func (a *App) handleItemSomeday(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) handleItemDone(w http.ResponseWriter, r *http.Request) {
 	if !a.requireAuth(w, r) {
+		return
+	}
+	if !a.resurfaceDueItemsForRead(w) {
 		return
 	}
 	filter, err := parseItemListFilterQuery(r)
@@ -229,6 +252,9 @@ func (a *App) handleItemDone(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) handleItemCounts(w http.ResponseWriter, r *http.Request) {
 	if !a.requireAuth(w, r) {
+		return
+	}
+	if !a.resurfaceDueItemsForRead(w) {
 		return
 	}
 	filter, err := parseItemListFilterQuery(r)
@@ -285,6 +311,9 @@ func (a *App) handleItemCreate(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) handleItemGet(w http.ResponseWriter, r *http.Request) {
 	if !a.requireAuth(w, r) {
+		return
+	}
+	if !a.resurfaceDueItemsForRead(w) {
 		return
 	}
 	itemID, err := parseItemIDParam(r)

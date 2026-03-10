@@ -377,6 +377,111 @@ func TestItemStateViewAPI(t *testing.T) {
 	}
 }
 
+func TestItemStateViewAPIResurfacesDueWaitingItemsImmediately(t *testing.T) {
+	app := newAuthedTestApp(t)
+
+	past := time.Now().UTC().Add(-time.Minute).Format(time.RFC3339)
+	future := time.Now().UTC().Add(time.Minute).Format(time.RFC3339)
+
+	dueVisible, err := app.store.CreateItem("Due visible_after", store.ItemOptions{
+		State:        store.ItemStateWaiting,
+		VisibleAfter: &past,
+	})
+	if err != nil {
+		t.Fatalf("CreateItem(due visible_after) error: %v", err)
+	}
+	dueFollowUp, err := app.store.CreateItem("Due follow_up_at", store.ItemOptions{
+		State:      store.ItemStateWaiting,
+		FollowUpAt: &past,
+	})
+	if err != nil {
+		t.Fatalf("CreateItem(due follow_up_at) error: %v", err)
+	}
+	futureWaiting, err := app.store.CreateItem("Future waiting", store.ItemOptions{
+		State:        store.ItemStateWaiting,
+		VisibleAfter: &future,
+	})
+	if err != nil {
+		t.Fatalf("CreateItem(future waiting) error: %v", err)
+	}
+
+	rrInbox := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/items/inbox", nil)
+	if rrInbox.Code != http.StatusOK {
+		t.Fatalf("inbox status = %d, want 200: %s", rrInbox.Code, rrInbox.Body.String())
+	}
+	inboxItems, ok := decodeJSONResponse(t, rrInbox)["items"].([]any)
+	if !ok || len(inboxItems) != 2 {
+		t.Fatalf("inbox payload = %#v", decodeJSONResponse(t, rrInbox))
+	}
+
+	inboxIDs := map[int64]bool{}
+	for _, raw := range inboxItems {
+		row, ok := raw.(map[string]any)
+		if !ok {
+			t.Fatalf("inbox row = %#v", raw)
+		}
+		inboxIDs[int64(row["id"].(float64))] = true
+	}
+	if !inboxIDs[dueVisible.ID] || !inboxIDs[dueFollowUp.ID] {
+		t.Fatalf("inbox ids = %#v, want %d and %d", inboxIDs, dueVisible.ID, dueFollowUp.ID)
+	}
+
+	rrList := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/items?state=inbox", nil)
+	if rrList.Code != http.StatusOK {
+		t.Fatalf("list inbox status = %d, want 200: %s", rrList.Code, rrList.Body.String())
+	}
+	listItems, ok := decodeJSONDataResponse(t, rrList)["items"].([]any)
+	if !ok || len(listItems) != 2 {
+		t.Fatalf("list inbox payload = %#v", decodeJSONDataResponse(t, rrList))
+	}
+
+	rrWaiting := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/items/waiting", nil)
+	if rrWaiting.Code != http.StatusOK {
+		t.Fatalf("waiting status = %d, want 200: %s", rrWaiting.Code, rrWaiting.Body.String())
+	}
+	waitingItems, ok := decodeJSONResponse(t, rrWaiting)["items"].([]any)
+	if !ok || len(waitingItems) != 1 {
+		t.Fatalf("waiting payload = %#v", decodeJSONResponse(t, rrWaiting))
+	}
+	waitingRow, ok := waitingItems[0].(map[string]any)
+	if !ok || int64(waitingRow["id"].(float64)) != futureWaiting.ID {
+		t.Fatalf("waiting row = %#v, want id %d", waitingRow, futureWaiting.ID)
+	}
+
+	rrCounts := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/items/counts", nil)
+	if rrCounts.Code != http.StatusOK {
+		t.Fatalf("counts status = %d, want 200: %s", rrCounts.Code, rrCounts.Body.String())
+	}
+	counts, ok := decodeJSONResponse(t, rrCounts)["counts"].(map[string]any)
+	if !ok {
+		t.Fatalf("counts payload = %#v", decodeJSONResponse(t, rrCounts))
+	}
+	if got := int(counts[store.ItemStateInbox].(float64)); got != 2 {
+		t.Fatalf("counts[inbox] = %d, want 2", got)
+	}
+	if got := int(counts[store.ItemStateWaiting].(float64)); got != 1 {
+		t.Fatalf("counts[waiting] = %d, want 1", got)
+	}
+
+	for _, tc := range []struct {
+		name string
+		id   int64
+		want string
+	}{
+		{name: "due visible_after", id: dueVisible.ID, want: store.ItemStateInbox},
+		{name: "due follow_up_at", id: dueFollowUp.ID, want: store.ItemStateInbox},
+		{name: "future waiting", id: futureWaiting.ID, want: store.ItemStateWaiting},
+	} {
+		item, err := app.store.GetItem(tc.id)
+		if err != nil {
+			t.Fatalf("GetItem(%s) error: %v", tc.name, err)
+		}
+		if item.State != tc.want {
+			t.Fatalf("%s state = %q, want %q", tc.name, item.State, tc.want)
+		}
+	}
+}
+
 func TestItemStateViewAPIFiltersBySphere(t *testing.T) {
 	app := newAuthedTestApp(t)
 
