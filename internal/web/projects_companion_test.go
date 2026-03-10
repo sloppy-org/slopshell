@@ -209,14 +209,14 @@ func TestProjectCompanionStateExposesDirectedSpeechGateMetadata(t *testing.T) {
 		SessionID:   sess.ID,
 		StartTS:     100,
 		EndTS:       101,
-		Text:        "Tabura, open the companion transcript.",
+		Text:        "Tabura, open the meeting transcript.",
 		CommittedAt: 102,
 		Status:      "final",
 	})
 	if err != nil {
 		t.Fatalf("AddParticipantSegment: %v", err)
 	}
-	if err := app.store.AddParticipantEvent(sess.ID, seg.ID, "segment_committed", `{"text":"Tabura, open the companion transcript."}`); err != nil {
+	if err := app.store.AddParticipantEvent(sess.ID, seg.ID, "segment_committed", `{"text":"Tabura, open the meeting transcript."}`); err != nil {
 		t.Fatalf("AddParticipantEvent segment_committed: %v", err)
 	}
 
@@ -243,7 +243,7 @@ func TestProjectCompanionStateExposesDirectedSpeechGateMetadata(t *testing.T) {
 	if state.DirectedSpeechGate.LastEventType != "segment_committed" {
 		t.Fatalf("directed_speech_gate.last_event_type = %q, want segment_committed", state.DirectedSpeechGate.LastEventType)
 	}
-	if state.DirectedSpeechGate.EvaluatedText != "Tabura, open the companion transcript." {
+	if state.DirectedSpeechGate.EvaluatedText != "Tabura, open the meeting transcript." {
 		t.Fatalf("directed_speech_gate.evaluated_text = %q", state.DirectedSpeechGate.EvaluatedText)
 	}
 	if state.InteractionPolicy.Decision != companionInteractionDecisionRespond {

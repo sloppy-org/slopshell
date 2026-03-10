@@ -1,47 +1,47 @@
-# Companion Mode Whitepaper
+# Live Runtime Whitepaper
 
 > **Legal notice:** Tabura is provided "as is" and "as available" without warranties, and to the maximum extent permitted by applicable law the authors/contributors accept no liability for damages, data loss, or misuse. You are solely responsible for backups, verification, and safe operation. See [`DISCLAIMER.md`](/DISCLAIMER.md).
 
 ## Summary
 
-Tabura's active direction is a single assistant surface: **Companion Mode**.
+Tabura exposes one live runtime with exactly two user-facing types:
+**Dialogue** and **Meeting**.
 
-Companion Mode replaces the split between conversation mode, participant mode,
-and meeting-specific assistant planning. It is intended for:
-
-- live in-person meetings
-- one-on-one conversations
-- solo workday assistant presence
-- online calls as one additional context source
+- **Dialogue** is direct back-and-forth with Tabura, including the post-TTS
+  follow-up listen window.
+- **Meeting** is ambient capture for in-room or online meetings, including
+  transcript, summary, references, and follow-up item generation.
 
 ## Core Principles
 
-- **Botless**: no assistant attendee joins Zoom/Meet/Teams
-- **Local-first**: Tabura owns capture, buffering, state, and UI locally
-- **Whisper-backed**: default STT path remains the `voxtype` Whisper sidecar
-- **Always-transcribing for context**: transcript context is continuous while the mode is active
-- **Manual control**: users explicitly enter and leave Companion Mode
-- **Project-scoped**: context and work belong to projects, not to a global floating agent
+- **One live runtime**: hotword, capture, and state transitions belong to one
+  shared live-session owner.
+- **Two visible modes only**: the UI exposes `Dialogue` and `Meeting`, not
+  overlapping assistant sub-products.
+- **Botless**: no assistant attendee joins Zoom/Meet/Teams.
+- **Local-first**: Tabura owns capture, buffering, state, and UI locally.
+- **Whisper-backed**: default STT path remains the `voxtype` Whisper sidecar.
+- **Manual control**: users explicitly enter and leave live mode.
 
 ## Product Shape
 
-Companion Mode should feel like one humanoid assistant, not multiple separate
-features:
+The live runtime should feel like one coherent system rather than several
+stacked features:
 
-- meetings are project sessions
-- long-running tasks are project runs
-- Hub remains for ad hoc requests and run monitoring
-- each project keeps one active run in its main thread
-- meetings and long-running jobs default to temporary projects
+- `Dialogue` is the assistant turn-taking path.
+- `Meeting` is the ambient room/call capture path.
+- Hotword remains a subsystem inside that same runtime.
+- Hub remains for ad hoc requests and run monitoring.
 
-If no document is displayed, the idle surface is a full-screen minimal humanoid
-face. A black-screen idle mode is the alternate surface.
+If no artifact is displayed while Meeting is enabled, the idle surface is a
+full-screen minimal face. A black-screen idle mode remains the alternate
+surface.
 
 ## Persistence Model
 
 - audio remains RAM-only
 - text artifacts are persisted
-- meetings and long tasks can be persisted or discarded explicitly
+- meeting outputs can be persisted or discarded explicitly
 - persisted artifacts include transcript text, summaries, references, and run outputs
 
 ## Architectural Consequences
@@ -49,6 +49,7 @@ face. A black-screen idle mode is the alternate surface.
 - no private repo is required
 - no extension/plugin product architecture is required
 - new product behavior belongs in the public `krystophny/tabura` repo
+- live voice behavior is governed by one shared live-session runtime
 - product modularity should come from normal `internal/` package boundaries
 
 ## Research Basis
@@ -62,9 +63,8 @@ The planned direction is informed by current commercial and open systems:
 - Tolan: voice-first assistant presence with a clear persona and simple visual state
 
 Tabura should borrow the best parts of those systems without copying their
-cloud-recorder assumptions. The target is one public, project-scoped,
-Whisper-backed companion surface for live meetings, online calls, and ambient
-workday help.
+cloud-recorder assumptions. The target is one public, Whisper-backed live
+runtime for direct dialogue, meetings, online calls, and ambient workday help.
 
 ## Research References
 

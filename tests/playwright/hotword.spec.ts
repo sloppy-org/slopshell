@@ -54,7 +54,7 @@ async function triggerVoiceAssistantTTS(page: Page, turnID: string, text = 'Hell
   await injectChatEvent(page, { type: 'assistant_output', role: 'assistant', turn_id: turnID, message: text });
 }
 
-async function setConversationListenWindowMs(page: Page, ms: number) {
+async function setDialogueListenWindowMs(page: Page, ms: number) {
   await page.evaluate((value) => {
     (window as any).__taburaConversationListenMs = value;
   }, ms);
@@ -85,7 +85,7 @@ async function switchToTestProject(page: Page) {
   })).toBe('ready');
 }
 
-async function setConversationMode(page: Page, enabled: boolean) {
+async function setDialogueMode(page: Page, enabled: boolean) {
   if (enabled) {
     await switchToTestProject(page);
     await waitForEdgeButtons(page);
@@ -128,8 +128,8 @@ async function waitForHotwordStart(page: Page) {
 
 test('hotword detection starts recording directly', async ({ page }) => {
   await waitReady(page);
-  await setConversationListenWindowMs(page, 1_200);
-  await setConversationMode(page, true);
+  await setDialogueListenWindowMs(page, 1_200);
+  await setDialogueMode(page, true);
   await waitForHotwordStart(page);
   await clearLog(page);
 
@@ -160,7 +160,7 @@ test('hotword runtime pins explicit ONNX wasm asset URLs', async ({ page }) => {
 
 test('hotword plus speech starts recording', async ({ page }) => {
   await waitReady(page);
-  await setConversationListenWindowMs(page, 2_500);
+  await setDialogueListenWindowMs(page, 2_500);
   await page.evaluate(() => {
     (window as any).__setVadDbFrames([
       ...Array.from({ length: 8 }, () => -80),
@@ -168,7 +168,7 @@ test('hotword plus speech starts recording', async ({ page }) => {
       ...Array.from({ length: 8 }, () => -80),
     ]);
   });
-  await setConversationMode(page, true);
+  await setDialogueMode(page, true);
   await waitForHotwordStart(page);
   await clearLog(page);
 
@@ -182,7 +182,7 @@ test('hotword plus speech starts recording', async ({ page }) => {
 
 test('hotword capture tolerates initial pause before user speech', async ({ page }) => {
   await waitReady(page);
-  await setConversationListenWindowMs(page, 2_500);
+  await setDialogueListenWindowMs(page, 2_500);
   await page.evaluate(() => {
     (window as any).__setVadDbFrames([
       ...Array.from({ length: 36 }, () => -80), // ~1.44s initial pause
@@ -190,7 +190,7 @@ test('hotword capture tolerates initial pause before user speech', async ({ page
       ...Array.from({ length: 40 }, () => -80),
     ]);
   });
-  await setConversationMode(page, true);
+  await setDialogueMode(page, true);
   await waitForHotwordStart(page);
   await clearLog(page);
 
@@ -206,10 +206,10 @@ test('hotword capture tolerates initial pause before user speech', async ({ page
   expect(log.some((entry) => entry.type === 'recorder' && entry.action === 'stop')).toBe(false);
 });
 
-test('hotword empty transcript re-opens conversation listen window', async ({ page }) => {
+test('hotword empty transcript re-opens dialogue listen window', async ({ page }) => {
   await waitReady(page);
-  await setConversationListenWindowMs(page, 2_500);
-  await setConversationMode(page, true);
+  await setDialogueListenWindowMs(page, 2_500);
+  await setDialogueMode(page, true);
   await waitForHotwordStart(page);
   await page.evaluate(() => {
     (window as any).__setSTTTranscribeResponse({ text: '', reason: 'no_speech_detected' }, 200);
@@ -240,7 +240,7 @@ test('hotword empty transcript re-opens conversation listen window', async ({ pa
 
 test('hotword is paused during recording', async ({ page }) => {
   await waitReady(page);
-  await setConversationListenWindowMs(page, 3_000);
+  await setDialogueListenWindowMs(page, 3_000);
   await page.evaluate(() => {
     (window as any).__setVadDbFrames([
       ...Array.from({ length: 8 }, () => -80),
@@ -248,7 +248,7 @@ test('hotword is paused during recording', async ({ page }) => {
       ...Array.from({ length: 20 }, () => -12),
     ]);
   });
-  await setConversationMode(page, true);
+  await setDialogueMode(page, true);
   await waitForHotwordStart(page);
   await clearLog(page);
 
@@ -266,8 +266,8 @@ test('hotword is paused during recording', async ({ page }) => {
 
 test('hotword is paused while TTS playback is active', async ({ page }) => {
   await waitReady(page);
-  await setConversationListenWindowMs(page, 2_500);
-  await setConversationMode(page, true);
+  await setDialogueListenWindowMs(page, 2_500);
+  await setDialogueMode(page, true);
   await waitForHotwordStart(page);
   await page.evaluate(() => {
     (window as any).__setTTSPlaybackDelayMs(500);
@@ -288,8 +288,8 @@ test('hotword is paused while TTS playback is active', async ({ page }) => {
 
 test('Dialogue off keeps hotword disabled', async ({ page }) => {
   await waitReady(page);
-  await setConversationListenWindowMs(page, 1_200);
-  await setConversationMode(page, false);
+  await setDialogueListenWindowMs(page, 1_200);
+  await setDialogueMode(page, false);
   await clearLog(page);
 
   await triggerHotword(page);
@@ -306,8 +306,8 @@ test('Dialogue off keeps hotword disabled', async ({ page }) => {
 
 test('hotword init failure degrades gracefully with no crash', async ({ page }) => {
   await waitReady(page, '?hotword=fail');
-  await setConversationListenWindowMs(page, 1_200);
-  await setConversationMode(page, true);
+  await setDialogueListenWindowMs(page, 1_200);
+  await setDialogueMode(page, true);
   await clearLog(page);
 
   await triggerHotword(page);
@@ -326,7 +326,7 @@ test('hotword init failure degrades gracefully with no crash', async ({ page }) 
 
 test('Dialogue with hotword active shows pause indicator', async ({ page }) => {
   await waitReady(page);
-  await setConversationMode(page, true);
+  await setDialogueMode(page, true);
   await waitForHotwordStart(page);
 
   await expect.poll(async () => page.evaluate(() => {
@@ -360,8 +360,8 @@ test('meeting mode hotword still starts direct recording', async ({ page }) => {
 
 test('follow-up timeout returns to pause indicator', async ({ page }) => {
   await waitReady(page);
-  await setConversationListenWindowMs(page, 500);
-  await setConversationMode(page, true);
+  await setDialogueListenWindowMs(page, 500);
+  await setDialogueMode(page, true);
   await waitForHotwordStart(page);
   await page.evaluate(() => {
     (window as any).__setVadDbFrames(Array.from({ length: 120 }, () => -80));
@@ -383,8 +383,8 @@ test('follow-up timeout returns to pause indicator', async ({ page }) => {
 
 test('hotword re-arms after follow-up timeout and starts a second turn', async ({ page }) => {
   await waitReady(page);
-  await setConversationListenWindowMs(page, 500);
-  await setConversationMode(page, true);
+  await setDialogueListenWindowMs(page, 500);
+  await setDialogueMode(page, true);
   await waitForHotwordStart(page);
   await clearLog(page);
 

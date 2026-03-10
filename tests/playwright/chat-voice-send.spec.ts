@@ -236,7 +236,7 @@ async function switchToTestProject(page: Page) {
   })).toBe('ready');
 }
 
-async function setConversationMode(page: Page, enabled: boolean) {
+async function setDialogueMode(page: Page, enabled: boolean) {
   if (enabled) {
     await switchToTestProject(page);
     await waitForEdgeButtons(page);
@@ -838,9 +838,9 @@ test('stt empty reason is surfaced as visible voice capture error', async ({ pag
   expect(log.some((entry) => entry.type === 'message_sent')).toBe(false);
 });
 
-test('conversation PTT empty transcript surfaces error instead of silent drop', async ({ page }) => {
+test('dialogue PTT empty transcript surfaces error instead of silent drop', async ({ page }) => {
   await clearLog(page);
-  await setConversationMode(page, true);
+  await setDialogueMode(page, true);
   await setHarnessSTTTranscribeResponse(page, { text: '', reason: 'no_speech_detected' }, 200);
 
   await page.keyboard.down('Control');

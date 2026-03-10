@@ -21,7 +21,7 @@ Read in this order:
 3. `approval-execution-policy.md`
 4. `interfaces.md`
 5. `architecture.md`
-6. `companion-mode-whitepaper.md`
+6. `live-runtime-whitepaper.md`
 7. `meeting-notes-privacy.md`
 8. `codex-app-server-pivot.md`
 

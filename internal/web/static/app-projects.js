@@ -186,7 +186,7 @@ export async function refreshCompanionState(projectID = state.activeProjectId) {
   const resp = await fetch(apiURL(`projects/${encodeURIComponent(project.id)}/companion/state`), { cache: 'no-store' });
   if (!resp.ok) {
     resetCompanionState();
-    throw new Error(`companion state failed: HTTP ${resp.status}`);
+    throw new Error(`meeting state failed: HTTP ${resp.status}`);
   }
   const payload = await resp.json();
   applyCompanionState(payload);

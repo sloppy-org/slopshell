@@ -28,7 +28,7 @@ async function injectChatEvent(page: Page, payload: Record<string, unknown>) {
   }, payload);
 }
 
-async function setHarnessCompanionState(
+async function setHarnessMeetingState(
   page: Page,
   {
     enabled = true,
@@ -115,7 +115,7 @@ async function setHarnessCompanionState(
   }, { enabled, idleSurface, runtimeState, reason });
 }
 
-async function waitForCompanionSurface(page: Page, state: string, surface: string) {
+async function waitForMeetingSurface(page: Page, state: string, surface: string) {
   await expect.poll(async () => page.evaluate(() => {
     const node = document.getElementById('companion-idle-surface');
     if (!(node instanceof HTMLElement)) return null;
@@ -172,7 +172,7 @@ async function switchSidebarToFiles(page: Page) {
   await expect(page.locator('.sidebar-tab.is-active')).toContainText('Files');
 }
 
-test('workspace sidebar exposes companion transcript, summary, and references viewer entries', async ({ page }) => {
+test('workspace sidebar exposes meeting transcript, summary, and references viewer entries', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await waitReady(page);
 
@@ -184,10 +184,10 @@ test('workspace sidebar exposes companion transcript, summary, and references vi
   await expect(page.locator('#pr-file-list')).toContainText('Meeting References');
 
   await page.getByRole('button', { name: 'Meeting Transcript' }).click();
-  await expect(page.locator('#canvas-text')).toContainText('Harness companion transcript');
+  await expect(page.locator('#canvas-text')).toContainText('Harness meeting transcript');
 
   await page.getByRole('button', { name: 'Meeting Summary' }).click();
-  await expect(page.locator('#canvas-text')).toContainText('Harness companion summary');
+  await expect(page.locator('#canvas-text')).toContainText('Harness meeting summary');
 
   await page.getByRole('button', { name: 'Meeting References' }).click();
   await expect(page.locator('#canvas-text')).toContainText('Acme');
@@ -245,40 +245,40 @@ test('meeting summary proposes selectable inbox items and creates the chosen one
     && Number(entry.payload.selected[0]) === 0)).toBe(true);
 });
 
-test('companion idle surface tracks runtime state and hides behind open artifacts', async ({ page }) => {
+test('meeting idle surface tracks runtime state and hides behind open artifacts', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await waitReady(page);
   await switchToProject(page, 'test');
-  await setHarnessCompanionState(page, { enabled: true, idleSurface: 'robot', runtimeState: 'idle' });
+  await setHarnessMeetingState(page, { enabled: true, idleSurface: 'robot', runtimeState: 'idle' });
   await clearCanvas(page);
   await page.evaluate(() => {
     (window as any)._taburaApp?.syncCompanionIdleSurface?.();
   });
 
-  await waitForCompanionSurface(page, 'idle', 'robot');
+  await waitForMeetingSurface(page, 'idle', 'robot');
 
   for (const nextState of ['listening', 'thinking', 'talking', 'error'] as const) {
-    await setHarnessCompanionState(page, {
+    await setHarnessMeetingState(page, {
       enabled: true,
       idleSurface: 'robot',
       runtimeState: nextState,
       reason: nextState,
     });
-    await waitForCompanionSurface(page, nextState, 'robot');
+    await waitForMeetingSurface(page, nextState, 'robot');
   }
 
   await page.locator('#edge-left-tap').click();
   await switchSidebarToFiles(page);
   await page.getByRole('button', { name: 'Meeting Transcript' }).click();
-  await expect(page.locator('#canvas-text')).toContainText('Harness companion transcript');
+  await expect(page.locator('#canvas-text')).toContainText('Harness meeting transcript');
   await expect(page.locator('#companion-idle-surface')).toBeHidden();
 });
 
-test('black mode toggle updates the companion idle surface preference', async ({ page }) => {
+test('black mode toggle updates the meeting idle surface preference', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await waitReady(page);
   await switchToProject(page, 'test');
-  await setHarnessCompanionState(page, { enabled: true, idleSurface: 'robot', runtimeState: 'idle' });
+  await setHarnessMeetingState(page, { enabled: true, idleSurface: 'robot', runtimeState: 'idle' });
   await clearCanvas(page);
   await page.evaluate(() => {
     (window as any)._taburaApp?.syncCompanionIdleSurface?.();
@@ -294,6 +294,6 @@ test('black mode toggle updates the companion idle surface preference', async ({
     button.click();
   });
 
-  await waitForCompanionSurface(page, 'idle', 'black');
+  await waitForMeetingSurface(page, 'idle', 'black');
   await expect(blackButton).toHaveAttribute('aria-pressed', 'true');
 });

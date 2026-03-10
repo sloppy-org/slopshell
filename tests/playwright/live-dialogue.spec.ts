@@ -42,7 +42,7 @@ async function injectChatEvent(page: Page, payload: Record<string, unknown>) {
   }, payload);
 }
 
-async function setConversationListenWindowMs(page: Page, ms: number) {
+async function setDialogueListenWindowMs(page: Page, ms: number) {
   await page.evaluate((value) => {
     (window as any).__taburaConversationListenMs = value;
   }, ms);
@@ -73,7 +73,7 @@ async function switchToTestProject(page: Page) {
   })).toBe('ready');
 }
 
-async function setConversationMode(page: Page, enabled: boolean) {
+async function setDialogueMode(page: Page, enabled: boolean) {
   if (enabled) {
     await switchToTestProject(page);
     await waitForEdgeButtons(page);
@@ -143,13 +143,15 @@ test('Live panel swaps Dialogue/Meeting choices for active status and Stop', asy
   await expect(page.locator('#edge-top-models .edge-live-dialogue-btn')).toBeVisible();
   await expect(page.locator('#edge-top-models .edge-live-meeting-btn')).toBeVisible();
 
-  await setConversationMode(page, true);
+  await setDialogueMode(page, true);
 
   await expect(page.locator('#edge-top-models .edge-live-status')).toContainText('Dialogue');
   await expect(page.locator('#edge-top-models .edge-live-stop-btn')).toBeVisible();
   await expect(page.locator('#edge-top-models .edge-live-dialogue-btn')).toHaveCount(0);
+  await expect(page.locator('#edge-top-models')).not.toContainText('Companion');
+  await expect(page.locator('#edge-top-models')).not.toContainText('Conversation');
 
-  await setConversationMode(page, false);
+  await setDialogueMode(page, false);
   await expect(page.locator('#edge-top-models .edge-live-dialogue-btn')).toBeVisible();
   await expect(page.locator('#edge-top-models .edge-live-meeting-btn')).toBeVisible();
 });
@@ -180,8 +182,8 @@ test('Meeting entry shows active status and returns to choices on Stop', async (
 });
 
 test('Dialogue shows listening indicator after TTS playback completes', async ({ page }) => {
-  await setConversationListenWindowMs(page, 1_200);
-  await setConversationMode(page, true);
+  await setDialogueListenWindowMs(page, 1_200);
+  await setDialogueMode(page, true);
   await clearLog(page);
 
   await triggerVoiceAssistantTTS(page, 'conv-listening-1');
@@ -198,8 +200,8 @@ test('Dialogue shows listening indicator after TTS playback completes', async ({
 });
 
 test('Dialogue off does not open listening indicator after TTS', async ({ page }) => {
-  await setConversationListenWindowMs(page, 1_200);
-  await setConversationMode(page, false);
+  await setDialogueListenWindowMs(page, 1_200);
+  await setDialogueMode(page, false);
   await clearLog(page);
 
   await triggerVoiceAssistantTTS(page, 'conv-disabled-1');
@@ -217,9 +219,9 @@ test('Dialogue off does not open listening indicator after TTS', async ({ page }
   expect(isListening).toBe(false);
 });
 
-test('speech onset during conversation listen starts recording', async ({ page }) => {
-  await setConversationListenWindowMs(page, 3_000);
-  await setConversationMode(page, true);
+test('speech onset during dialogue listen starts recording', async ({ page }) => {
+  await setDialogueListenWindowMs(page, 3_000);
+  await setDialogueMode(page, true);
   await page.evaluate(() => {
     (window as any).__setVadDbFrames([
       ...Array.from({ length: 8 }, () => -80),
@@ -242,9 +244,9 @@ test('speech onset during conversation listen starts recording', async ({ page }
   })).toBe(true);
 });
 
-test('conversation listen timeout hides listening indicator', async ({ page }) => {
-  await setConversationListenWindowMs(page, 500);
-  await setConversationMode(page, true);
+test('dialogue listen timeout hides listening indicator', async ({ page }) => {
+  await setDialogueListenWindowMs(page, 500);
+  await setDialogueMode(page, true);
   await page.evaluate(() => {
     (window as any).__setVadDbFrames(Array.from({ length: 120 }, () => -80));
   });
@@ -263,9 +265,9 @@ test('conversation listen timeout hides listening indicator', async ({ page }) =
   }), { timeout: 4_000 }).toBe(false);
 });
 
-test('tap during conversation listen cancels listen and starts recording', async ({ page }) => {
-  await setConversationListenWindowMs(page, 3_000);
-  await setConversationMode(page, true);
+test('tap during dialogue listen cancels listen and starts recording', async ({ page }) => {
+  await setDialogueListenWindowMs(page, 3_000);
+  await setDialogueMode(page, true);
   await page.evaluate(() => {
     (window as any).__setVadDbFrames(Array.from({ length: 200 }, () => -80));
   });
@@ -292,8 +294,8 @@ test('tap during conversation listen cancels listen and starts recording', async
 });
 
 test('PTT during dialogue listen cancels listen and starts push-to-talk', async ({ page }) => {
-  await setConversationListenWindowMs(page, 3_000);
-  await setConversationMode(page, true);
+  await setDialogueListenWindowMs(page, 3_000);
+  await setDialogueMode(page, true);
   await page.evaluate(() => {
     (window as any).__setVadDbFrames(Array.from({ length: 200 }, () => -80));
   });
@@ -320,8 +322,8 @@ test('PTT during dialogue listen cancels listen and starts push-to-talk', async 
 });
 
 test('silent mode with dialogue enabled does not open follow-up listen', async ({ page }) => {
-  await setConversationListenWindowMs(page, 1_200);
-  await setConversationMode(page, true);
+  await setDialogueListenWindowMs(page, 1_200);
+  await setDialogueMode(page, true);
   await page.evaluate(() => {
     const app = (window as any)._taburaApp;
     const state = app?.getState?.();
@@ -346,9 +348,9 @@ test('silent mode with dialogue enabled does not open follow-up listen', async (
   expect(isListening).toBe(false);
 });
 
-test('conversation listen timeout returns to pause indicator when hotword is active', async ({ page }) => {
-  await setConversationListenWindowMs(page, 500);
-  await setConversationMode(page, true);
+test('dialogue listen timeout returns to pause indicator when hotword is active', async ({ page }) => {
+  await setDialogueListenWindowMs(page, 500);
+  await setDialogueMode(page, true);
   await page.evaluate(() => {
     (window as any).__setVadDbFrames(Array.from({ length: 120 }, () => -80));
   });

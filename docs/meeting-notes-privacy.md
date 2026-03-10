@@ -16,7 +16,7 @@ This document formalizes the audio privacy guarantees for Tabura's speech-to-tex
 
 ## Meeting Consent Boundary
 
-- Meeting capture is explicit opt-in. Capture must not start until `companion_enabled=true` on the current project config API.
+- Meeting capture is explicit opt-in. Capture must not start until meeting live mode is enabled. The current config API expresses that as `companion_enabled=true`.
 - Disabling Meeting live mode is an exit action: any active participant capture session must stop immediately.
 - Meeting capture defaults to microphone-only input. Alternate capture sources are not accepted through the config surface.
 

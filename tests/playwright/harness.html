@@ -1574,7 +1574,7 @@
       if (u.includes('/api/projects/') && u.includes('/transcript')) {
         const format = new URL(u, window.location.href).searchParams.get('format') || 'json';
         if (format === 'md') {
-          return new Response('# Meeting Transcript\n\n- **Speaker** (10:00:00): Harness companion transcript\n', {
+          return new Response('# Meeting Transcript\n\n- **Speaker** (10:00:00): Harness meeting transcript\n', {
             status: 200,
             headers: { 'Content-Type': 'text/markdown; charset=utf-8' },
           });
@@ -1585,13 +1585,13 @@
           project_key: '/tmp/test',
           sessions: [{ id: 'psess-harness-001', project_key: '/tmp/test', started_at: 100, ended_at: 0, config_json: '{}' }],
           session: { id: 'psess-harness-001', project_key: '/tmp/test', started_at: 100, ended_at: 0, config_json: '{}' },
-          segments: [{ id: 1, session_id: 'psess-harness-001', start_ts: 100, end_ts: 100, speaker: 'Speaker', text: 'Harness companion transcript', model: 'whisper-1', latency_ms: 10, committed_at: 100, status: 'final' }],
+          segments: [{ id: 1, session_id: 'psess-harness-001', start_ts: 100, end_ts: 100, speaker: 'Speaker', text: 'Harness meeting transcript', model: 'whisper-1', latency_ms: 10, committed_at: 100, status: 'final' }],
         }), { status: 200 });
       }
       if (u.includes('/api/projects/') && u.includes('/summary')) {
         const format = new URL(u, window.location.href).searchParams.get('format') || 'json';
         if (format === 'md') {
-          return new Response('# Meeting Summary\n\nHarness companion summary\n', {
+          return new Response('# Meeting Summary\n\nHarness meeting summary\n', {
             status: 200,
             headers: { 'Content-Type': 'text/markdown; charset=utf-8' },
           });
@@ -1602,7 +1602,7 @@
           project_key: '/tmp/test',
           sessions: [{ id: 'psess-harness-001', project_key: '/tmp/test', started_at: 100, ended_at: 0, config_json: '{}' }],
           session: { id: 'psess-harness-001', project_key: '/tmp/test', started_at: 100, ended_at: 0, config_json: '{}' },
-          summary_text: 'Harness companion summary',
+          summary_text: 'Harness meeting summary',
           updated_at: 101,
         }), { status: 200 });
       }
@@ -1636,7 +1636,7 @@
             id: 701,
             kind: 'markdown',
             title: 'Meeting Summary',
-            meta_json: JSON.stringify({ summary: 'Harness companion summary' }),
+            meta_json: JSON.stringify({ summary: 'Harness meeting summary' }),
           },
         };
         window.__harnessLog.push({
@@ -1663,7 +1663,7 @@
           project_key: '/tmp/test',
           sessions: [{ id: 'psess-harness-001', project_key: '/tmp/test', started_at: 100, ended_at: 0, config_json: '{}' }],
           session: { id: 'psess-harness-001', project_key: '/tmp/test', started_at: 100, ended_at: 0, config_json: '{}' },
-          summary_text: 'Harness companion summary',
+          summary_text: 'Harness meeting summary',
           proposed_items: proposals,
         }), { status: 200 });
       }
