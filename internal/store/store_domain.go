@@ -40,8 +40,36 @@ CREATE TABLE IF NOT EXISTS workspaces (
   project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
   sphere TEXT NOT NULL DEFAULT 'private' CHECK (sphere IN ('work', 'private')),
   is_active INTEGER NOT NULL DEFAULT 0,
+  mcp_url TEXT NOT NULL DEFAULT '',
+  canvas_session_id TEXT NOT NULL DEFAULT '',
+  chat_model TEXT NOT NULL DEFAULT '',
+  chat_model_reasoning_effort TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS contexts (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  color TEXT NOT NULL DEFAULT '',
+  parent_id INTEGER REFERENCES contexts(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_contexts_name_lower
+  ON contexts(lower(name));
+CREATE TABLE IF NOT EXISTS context_items (
+  context_id INTEGER NOT NULL REFERENCES contexts(id) ON DELETE CASCADE,
+  item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+  PRIMARY KEY (context_id, item_id)
+);
+CREATE TABLE IF NOT EXISTS context_artifacts (
+  context_id INTEGER NOT NULL REFERENCES contexts(id) ON DELETE CASCADE,
+  artifact_id INTEGER NOT NULL REFERENCES artifacts(id) ON DELETE CASCADE,
+  PRIMARY KEY (context_id, artifact_id)
+);
+CREATE TABLE IF NOT EXISTS context_workspaces (
+  context_id INTEGER NOT NULL REFERENCES contexts(id) ON DELETE CASCADE,
+  workspace_id INTEGER NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  PRIMARY KEY (context_id, workspace_id)
 );
 CREATE TABLE IF NOT EXISTS actors (
   id INTEGER PRIMARY KEY,
@@ -157,6 +185,9 @@ CREATE TABLE IF NOT EXISTS workspace_watches (
 		return err
 	}
 	if err := s.migrateWorkspaceProjectSupport(); err != nil {
+		return err
+	}
+	if err := s.migrateWorkspaceConfigSupport(); err != nil {
 		return err
 	}
 	if err := s.migrateWorkspaceSphereSupport(); err != nil {
@@ -542,30 +573,6 @@ func (s *Store) migrateItemProjectColumnSupport() error {
 	return err
 }
 
-func (s *Store) migrateWorkspaceSphereSupport() error {
-	tableColumns, err := s.tableColumnSet("workspaces")
-	if err != nil {
-		return err
-	}
-	if tableColumns["workspaces"]["sphere"] {
-		return nil
-	}
-	_, err = s.db.Exec(`ALTER TABLE workspaces ADD COLUMN sphere TEXT NOT NULL DEFAULT 'private' CHECK (sphere IN ('work', 'private'))`)
-	return err
-}
-
-func (s *Store) migrateWorkspaceProjectSupport() error {
-	tableColumns, err := s.tableColumnSet("workspaces")
-	if err != nil {
-		return err
-	}
-	if tableColumns["workspaces"]["project_id"] {
-		return nil
-	}
-	_, err = s.db.Exec(`ALTER TABLE workspaces ADD COLUMN project_id TEXT REFERENCES projects(id) ON DELETE SET NULL`)
-	return err
-}
-
 func (s *Store) migrateItemSphereSupport() error {
 	tableColumns, err := s.tableColumnSet("items")
 	if err != nil {
@@ -586,7 +593,20 @@ func scanWorkspace(
 	var out Workspace
 	var isActive int
 	var projectID sql.NullString
-	err := row.Scan(&out.ID, &out.Name, &out.DirPath, &projectID, &out.Sphere, &isActive, &out.CreatedAt, &out.UpdatedAt)
+	err := row.Scan(
+		&out.ID,
+		&out.Name,
+		&out.DirPath,
+		&projectID,
+		&out.Sphere,
+		&isActive,
+		&out.MCPURL,
+		&out.CanvasSessionID,
+		&out.ChatModel,
+		&out.ChatModelReasoningEffort,
+		&out.CreatedAt,
+		&out.UpdatedAt,
+	)
 	if err != nil {
 		return Workspace{}, err
 	}
@@ -594,6 +614,10 @@ func scanWorkspace(
 	out.DirPath = normalizeWorkspacePath(out.DirPath)
 	out.ProjectID = nullStringPointer(projectID)
 	out.Sphere = normalizeSphere(out.Sphere)
+	out.MCPURL = strings.TrimSpace(out.MCPURL)
+	out.CanvasSessionID = strings.TrimSpace(out.CanvasSessionID)
+	out.ChatModel = normalizeProjectChatModel(out.ChatModel)
+	out.ChatModelReasoningEffort = normalizeProjectChatModelReasoningEffort(out.ChatModelReasoningEffort)
 	out.IsActive = isActive != 0
 	return out, nil
 }

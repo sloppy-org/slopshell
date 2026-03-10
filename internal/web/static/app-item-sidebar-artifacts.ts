@@ -316,23 +316,11 @@ export function buildSidebarItemFallbackText(item, artifact = null) {
 export async function openSidebarArtifactItem(item) {
   const artifactID = Number(item?.artifact_id || 0);
   const fallbackArtifactKind = String(item?.artifact_kind || '').trim().toLowerCase();
-  const fallbackMeta = buildSidebarCanvasMeta(item, fallbackArtifactKind);
   if (artifactID > 0 && fallbackArtifactKind === 'email_draft') {
     return openMailDraftArtifact(artifactID);
   }
   if (artifactID <= 0) {
-    const noArtifactEvent: Record<string, any> = {
-      kind: 'text_artifact',
-      event_id: `sidebar-item-${Number(item?.id || 0)}-${Date.now()}`,
-      title: String(item?.title || 'Item'),
-      text: buildSidebarItemFallbackText(item),
-      meta: fallbackMeta,
-    };
-    if (artifactUsesThreadHTML(fallbackArtifactKind)) {
-      noArtifactEvent.threadMeta = parseSidebarArtifactMeta(item?.artifact_meta_json || '');
-    }
-    applyCanvasArtifactEvent(noArtifactEvent);
-    return true;
+    return false;
   }
   const resp = await fetch(apiURL(`artifacts/${encodeURIComponent(String(artifactID))}`), { cache: 'no-store' });
   if (!resp.ok) {

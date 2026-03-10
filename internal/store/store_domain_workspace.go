@@ -28,7 +28,14 @@ func (s *Store) CreateWorkspace(name, dirPath string, sphere ...string) (Workspa
 	if err != nil {
 		return Workspace{}, err
 	}
-	res, err := s.db.Exec(`INSERT INTO workspaces (name, dir_path, project_id, sphere) VALUES (?, ?, ?, ?)`, cleanName, cleanPath, normalizeOptionalProjectID(projectID), cleanSphere)
+	res, err := s.db.Exec(
+		`INSERT INTO workspaces (name, dir_path, project_id, sphere)
+		 VALUES (?, ?, ?, ?)`,
+		cleanName,
+		cleanPath,
+		normalizeOptionalProjectID(projectID),
+		cleanSphere,
+	)
 	if err != nil {
 		return Workspace{}, err
 	}
@@ -41,7 +48,7 @@ func (s *Store) CreateWorkspace(name, dirPath string, sphere ...string) (Workspa
 
 func (s *Store) GetWorkspace(id int64) (Workspace, error) {
 	return scanWorkspace(s.db.QueryRow(
-		`SELECT id, name, dir_path, project_id, sphere, is_active, created_at, updated_at
+		`SELECT id, name, dir_path, project_id, sphere, is_active, mcp_url, canvas_session_id, chat_model, chat_model_reasoning_effort, created_at, updated_at
 		 FROM workspaces
 		 WHERE id = ?`,
 		id,
@@ -50,7 +57,7 @@ func (s *Store) GetWorkspace(id int64) (Workspace, error) {
 
 func (s *Store) GetWorkspaceByPath(dirPath string) (Workspace, error) {
 	return scanWorkspace(s.db.QueryRow(
-		`SELECT id, name, dir_path, project_id, sphere, is_active, created_at, updated_at
+		`SELECT id, name, dir_path, project_id, sphere, is_active, mcp_url, canvas_session_id, chat_model, chat_model_reasoning_effort, created_at, updated_at
 		 FROM workspaces
 		 WHERE dir_path = ?`,
 		normalizeWorkspacePath(dirPath),
@@ -66,7 +73,7 @@ func (s *Store) ListWorkspacesForSphere(sphere string) ([]Workspace, error) {
 	if err != nil {
 		return nil, err
 	}
-	query := `SELECT id, name, dir_path, project_id, sphere, is_active, created_at, updated_at
+	query := `SELECT id, name, dir_path, project_id, sphere, is_active, mcp_url, canvas_session_id, chat_model, chat_model_reasoning_effort, created_at, updated_at
 		 FROM workspaces`
 	args := []any{}
 	if cleanSphere != "" {
@@ -107,7 +114,7 @@ func (s *Store) ListWorkspacesForProject(projectID string) ([]Workspace, error) 
 		return nil, errors.New("project id is required")
 	}
 	rows, err := s.db.Query(
-		`SELECT id, name, dir_path, project_id, sphere, is_active, created_at, updated_at
+		`SELECT id, name, dir_path, project_id, sphere, is_active, mcp_url, canvas_session_id, chat_model, chat_model_reasoning_effort, created_at, updated_at
 		 FROM workspaces
 		 WHERE project_id = ?
 		 ORDER BY is_active DESC, lower(name) ASC, id ASC`,

@@ -280,7 +280,7 @@ CREATE TABLE IF NOT EXISTS participant_room_state (
 	if err := s.migrateDomainTables(); err != nil {
 		return err
 	}
-	return s.migrateProjectWorkspaces()
+	return s.migrateLegacyProjectData()
 }
 
 func (s *Store) migrateProjectColumns() error {

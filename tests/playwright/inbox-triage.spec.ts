@@ -404,6 +404,32 @@ test.describe('inbox triage interactions', () => {
     await expect(page.locator('#canvas-text')).toContainText('Break parser cleanup into a small refactor');
   });
 
+  test('bare items stay in the sidebar without synthetic canvas output', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await waitReady(page);
+    await openInbox(page);
+    await setInboxItems(page, [{
+      id: 201,
+      title: 'Bare sidebar task',
+      state: 'inbox',
+      sphere: 'private',
+      artifact_id: null,
+      artifact_title: '',
+      artifact_kind: '',
+      actor_name: 'Alice',
+      created_at: '2026-03-08 10:00:00',
+      updated_at: '2026-03-08 10:05:00',
+    }]);
+
+    await page.locator('#pr-file-list .pr-file-item[data-item-id="201"]').click();
+
+    await expect(page.locator('#pr-file-list .pr-file-item.is-active[data-item-id="201"]')).toHaveCount(1);
+    await expect(page.locator('#canvas-viewport .canvas-pane.is-active')).toHaveCount(0);
+    await expect.poll(async () => {
+      return page.evaluate(() => (window as any)._taburaApp?.getState?.().itemSidebarActiveItemID || 0);
+    }).toBe(201);
+  });
+
   test('idea items open as structured idea notes on canvas', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await waitReady(page);

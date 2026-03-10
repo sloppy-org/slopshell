@@ -475,6 +475,13 @@ func TestStoreSchemaAndHelperNormalizers(t *testing.T) {
 	if !strings.Contains(projectCols, "canvas_session_id") {
 		t.Fatalf("projects missing canvas_session_id column: %q", projectCols)
 	}
+	workspaceCols := strings.Join(columns["workspaces"], ",")
+	if !strings.Contains(workspaceCols, "canvas_session_id") {
+		t.Fatalf("workspaces missing canvas_session_id column: %q", workspaceCols)
+	}
+	if !strings.Contains(workspaceCols, "chat_model_reasoning_effort") {
+		t.Fatalf("workspaces missing chat_model_reasoning_effort column: %q", workspaceCols)
+	}
 
 	if got := normalizeProjectKind(" LINKED "); got != "linked" {
 		t.Fatalf("normalizeProjectKind(linked) = %q, want linked", got)
