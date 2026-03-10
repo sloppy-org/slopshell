@@ -101,6 +101,9 @@ func TestArtifactTaxonomyAPI(t *testing.T) {
 	if got := strFromAny(emailThread["canvas_surface"]); got != "text_artifact" {
 		t.Fatalf("email_thread canvas_surface = %q, want text_artifact", got)
 	}
+	if got := strFromAny(emailThread["preferred_tool"]); got != "text_note" {
+		t.Fatalf("email_thread preferred_tool = %q, want text_note", got)
+	}
 	if got := boolFromAny(emailThread["mail_actions"]); !got {
 		t.Fatalf("email_thread mail_actions = %#v, want true", emailThread["mail_actions"])
 	}

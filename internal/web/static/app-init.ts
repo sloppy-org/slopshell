@@ -74,6 +74,7 @@ const getTopEdgeTapSizePx = (...args) => refs.getTopEdgeTapSizePx(...args);
 const prefersTextComposer = (...args) => refs.prefersTextComposer(...args);
 const createPdfStickyNoteAt = (...args) => refs.createPdfStickyNoteAt(...args);
 const selectInteractionTool = (...args) => refs.selectInteractionTool(...args);
+const setInteractionToolLocal = (...args) => refs.setInteractionToolLocal(...args);
 const submitInkDraft = (...args) => refs.submitInkDraft(...args);
 const shouldStopInUiClick = (...args) => refs.shouldStopInUiClick(...args);
 const hideItemSidebarMenu = (...args) => refs.hideItemSidebarMenu(...args);
@@ -338,10 +339,11 @@ export function bindUi() {
       horizontalWheelLastAt = now;
     }, { passive: false });
     canvasViewport.addEventListener('pointerdown', (ev) => {
-      if (!isInkTool()) return;
+      if (!state.hasArtifact || state.interaction.surface !== 'annotate') return;
       if (ev.pointerType !== 'pen') return;
       if (isEditableTarget(ev.target)) return;
       if (ev.target instanceof Element && ev.target.closest('.edge-panel,#pr-file-pane,#pr-file-drawer-backdrop')) return;
+      setInteractionToolLocal('ink');
       if (beginInkStroke(ev)) {
         try { window.getSelection()?.removeAllRanges(); } catch (_) {}
         setPenInkingState(true);

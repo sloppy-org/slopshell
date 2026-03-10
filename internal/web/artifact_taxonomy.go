@@ -17,6 +17,7 @@ type artifactKindSpec struct {
 	CanvasSurface    string   `json:"canvas_surface"`
 	InteractionModel string   `json:"interaction_model"`
 	Actions          []string `json:"actions"`
+	PreferredTool    string   `json:"preferred_tool"`
 	MailActions      bool     `json:"mail_actions"`
 }
 
@@ -79,18 +80,21 @@ var artifactTaxonomy = artifactTaxonomyPayload{
 			CanvasSurface:    "text_artifact",
 			InteractionModel: "canonical_canvas",
 			Actions:          []string{"open_show", "annotate_capture", "bundle_review", "dispatch_execute", "track_item"},
+			PreferredTool:    "pointer",
 		},
 		"document": {
 			Family:           "reference",
 			CanvasSurface:    "text_artifact",
 			InteractionModel: "canonical_canvas",
 			Actions:          []string{"open_show", "annotate_capture", "bundle_review", "track_item"},
+			PreferredTool:    "pointer",
 		},
 		"email": {
 			Family:           "message",
 			CanvasSurface:    "text_artifact",
 			InteractionModel: "canonical_canvas",
 			Actions:          []string{"open_show", "annotate_capture", "compose", "dispatch_execute", "track_item"},
+			PreferredTool:    "text_note",
 			MailActions:      true,
 		},
 		"email_thread": {
@@ -98,6 +102,7 @@ var artifactTaxonomy = artifactTaxonomyPayload{
 			CanvasSurface:    "text_artifact",
 			InteractionModel: "canonical_canvas",
 			Actions:          []string{"open_show", "annotate_capture", "compose", "bundle_review", "dispatch_execute", "track_item"},
+			PreferredTool:    "text_note",
 			MailActions:      true,
 		},
 		"external_note": {
@@ -105,66 +110,77 @@ var artifactTaxonomy = artifactTaxonomyPayload{
 			CanvasSurface:    "text_artifact",
 			InteractionModel: "canonical_canvas",
 			Actions:          []string{"open_show", "annotate_capture", "compose", "track_item"},
+			PreferredTool:    "pointer",
 		},
 		"external_task": {
 			Family:           "action_card",
 			CanvasSurface:    "text_artifact",
 			InteractionModel: "canonical_canvas",
 			Actions:          []string{"open_show", "compose", "dispatch_execute", "track_item", "delegate_actor"},
+			PreferredTool:    "pointer",
 		},
 		"github_issue": {
 			Family:           "proposal",
 			CanvasSurface:    "text_artifact",
 			InteractionModel: "canonical_canvas",
 			Actions:          []string{"open_show", "annotate_capture", "compose", "bundle_review", "dispatch_execute", "track_item"},
+			PreferredTool:    "pointer",
 		},
 		"github_pr": {
 			Family:           "proposal",
 			CanvasSurface:    "text_artifact",
 			InteractionModel: "canonical_canvas",
 			Actions:          []string{"open_show", "annotate_capture", "bundle_review", "dispatch_execute", "track_item", "delegate_actor"},
+			PreferredTool:    "pointer",
 		},
 		"idea_note": {
 			Family:           "planning_note",
 			CanvasSurface:    "text_artifact",
 			InteractionModel: "canonical_canvas",
 			Actions:          []string{"open_show", "annotate_capture", "compose", "bundle_review", "track_item"},
+			PreferredTool:    "pointer",
 		},
 		"image": {
 			Family:           "reference",
 			CanvasSurface:    "image_artifact",
 			InteractionModel: "canonical_canvas",
 			Actions:          []string{"open_show", "annotate_capture", "bundle_review", "track_item"},
+			PreferredTool:    "highlight",
 		},
 		"markdown": {
 			Family:           "reference",
 			CanvasSurface:    "text_artifact",
 			InteractionModel: "canonical_canvas",
 			Actions:          []string{"open_show", "annotate_capture", "bundle_review", "track_item"},
+			PreferredTool:    "pointer",
 		},
 		"pdf": {
 			Family:           "reference",
 			CanvasSurface:    "pdf_artifact",
 			InteractionModel: "canonical_canvas",
 			Actions:          []string{"open_show", "annotate_capture", "bundle_review", "track_item"},
+			PreferredTool:    "highlight",
 		},
 		"plan_note": {
 			Family:           "planning_note",
 			CanvasSurface:    "text_artifact",
 			InteractionModel: "canonical_canvas",
 			Actions:          []string{"open_show", "annotate_capture", "compose", "bundle_review", "track_item"},
+			PreferredTool:    "pointer",
 		},
 		"reference": {
 			Family:           "reference",
 			CanvasSurface:    "text_artifact",
 			InteractionModel: "canonical_canvas",
 			Actions:          []string{"open_show", "annotate_capture", "bundle_review", "track_item"},
+			PreferredTool:    "pointer",
 		},
 		"transcript": {
 			Family:           "transcript",
 			CanvasSurface:    "text_artifact",
 			InteractionModel: "canonical_canvas",
 			Actions:          []string{"open_show", "annotate_capture", "bundle_review", "track_item"},
+			PreferredTool:    "highlight",
 		},
 	},
 }
@@ -174,6 +190,7 @@ var defaultArtifactKindSpec = artifactKindSpec{
 	CanvasSurface:    "text_artifact",
 	InteractionModel: "canonical_canvas",
 	Actions:          []string{"open_show", "annotate_capture", "compose", "bundle_review", "track_item"},
+	PreferredTool:    "pointer",
 }
 
 func normalizedArtifactKind(kind string) string {

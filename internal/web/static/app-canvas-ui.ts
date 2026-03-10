@@ -60,13 +60,9 @@ export function showCanvasColumn(paneId) {
   const currentArtifact: Record<string, any> = state.currentCanvasArtifact || {};
   state.currentCanvasArtifact = {
     kind: artifactKind,
-    artifactKind: currentArtifact.kind === artifactKind && currentArtifact.title === artifactTitle
-      ? String(currentArtifact.artifactKind || '')
-      : '',
+    artifactKind: String(currentArtifact.artifactKind || ''),
     title: artifactTitle,
-    surfaceDefault: currentArtifact.kind === artifactKind && currentArtifact.title === artifactTitle
-      ? String(currentArtifact.surfaceDefault || '')
-      : '',
+    surfaceDefault: String(currentArtifact.surfaceDefault || ''),
   };
   applyInteractionDefaultsForPane(paneId);
   setUiMode('artifact');

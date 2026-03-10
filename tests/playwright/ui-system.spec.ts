@@ -446,6 +446,66 @@ test.describe('floating tool palette', () => {
     expect(second.stored).toBe(first.stored);
   });
 
+  test('artifact kind picks the default tool for the common case', async ({ page }) => {
+    await injectCanvasEvent(page, {
+      kind: 'text_artifact',
+      event_id: 'art-transcript-default',
+      title: 'meeting.txt',
+      text: 'Transcript line one\nTranscript line two',
+      meta: { artifact_kind: 'transcript' },
+    });
+    await expect(page.locator('#tool-palette .tool-palette-btn[data-mode="highlight"]')).toHaveAttribute('aria-pressed', 'true');
+
+    await injectCanvasEvent(page, {
+      kind: 'text_artifact',
+      event_id: 'art-email-default',
+      title: 'thread.eml',
+      text: 'From: Ada\n\nHello',
+      meta: { artifact_kind: 'email_thread' },
+    });
+    await expect(page.locator('#tool-palette .tool-palette-btn[data-mode="text_note"]')).toHaveAttribute('aria-pressed', 'true');
+
+    await injectCanvasEvent(page, {
+      kind: 'text_artifact',
+      event_id: 'art-doc-default',
+      title: 'notes.md',
+      text: 'Alpha beta gamma',
+      meta: { artifact_kind: 'markdown' },
+    });
+    const interaction = await page.evaluate(() => {
+      const state = (window as any)._taburaApp?.getState?.();
+      return {
+        tool: state?.interaction?.tool,
+        surface: state?.interaction?.surface,
+      };
+    });
+    expect(interaction).toEqual({ tool: 'pointer', surface: 'editor' });
+  });
+
+  test('pen input switches into ink without a palette click', async ({ page }) => {
+    await injectCanvasEvent(page, {
+      kind: 'text_artifact',
+      event_id: 'art-pen-default',
+      title: 'transcript.txt',
+      text: 'Alpha beta gamma delta',
+      meta: { artifact_kind: 'transcript' },
+    });
+    await clearLog(page);
+
+    const canvasBox = await page.locator('#canvas-text').boundingBox();
+    if (!canvasBox) throw new Error('text canvas unavailable for pen test');
+    await dispatchPenStroke(page, [
+      { x: canvasBox.x + 80, y: canvasBox.y + 90, pressure: 0.7 },
+      { x: canvasBox.x + 120, y: canvasBox.y + 130, pressure: 0.7 },
+      { x: canvasBox.x + 160, y: canvasBox.y + 170, pressure: 0.7 },
+    ]);
+
+    await expect(page.locator('#tool-palette .tool-palette-btn[data-mode="ink"]')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('#ink-controls')).toBeVisible();
+    const runtimeUpdates = (await getLog(page)).filter((entry) => entry.type === 'api_fetch' && entry.action === 'runtime_preferences');
+    expect(runtimeUpdates).toHaveLength(0);
+  });
+
   test('highlight tool marks selected text without entering editor mode', async ({ page }) => {
     await injectCanvasEvent(page, {
       kind: 'text_artifact',

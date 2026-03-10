@@ -33,6 +33,7 @@ const DEFAULT_SPEC = Object.freeze({
     'bundle_review',
     'track_item',
   ]),
+  preferred_tool: 'pointer',
   mail_actions: false,
 });
 
@@ -105,6 +106,14 @@ export function artifactKindSpec(kind) {
 
 export function artifactKindActionLabels(kind) {
   return artifactKindSpec(kind).actions.map((action) => canonicalActionLabel(action) || action);
+}
+
+export function artifactKindPreferredTool(kind) {
+  const normalized = String(artifactKindSpec(kind).preferred_tool || '').trim().toLowerCase();
+  if (normalized === 'highlight' || normalized === 'ink' || normalized === 'text_note' || normalized === 'prompt') {
+    return normalized;
+  }
+  return 'pointer';
 }
 
 function imageExtensionFromPath(refPath) {
