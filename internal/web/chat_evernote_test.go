@@ -143,6 +143,13 @@ func TestClassifyAndExecuteSystemActionSyncEvernote(t *testing.T) {
 	if got := strFromAny(meta["notebook"]); got != "Research" {
 		t.Fatalf("artifact notebook = %q, want Research", got)
 	}
+	linked, err := app.store.ListLinkedArtifacts(workspace.ID)
+	if err != nil {
+		t.Fatalf("ListLinkedArtifacts() error: %v", err)
+	}
+	if len(linked) != 1 || linked[0].ID != artifact.ID {
+		t.Fatalf("linked artifacts = %#v, want artifact %d", linked, artifact.ID)
+	}
 	binding, err := app.store.GetBindingByRemote(account.ID, store.ExternalProviderEvernote, "note", "note-1")
 	if err != nil {
 		t.Fatalf("GetBindingByRemote(note) error: %v", err)
@@ -156,6 +163,96 @@ func TestClassifyAndExecuteSystemActionSyncEvernote(t *testing.T) {
 	}
 	if taskBinding.ItemID == nil || *taskBinding.ItemID != firstItem.ID {
 		t.Fatalf("task binding item_id = %v, want %d", taskBinding.ItemID, firstItem.ID)
+	}
+}
+
+func TestClassifyAndExecuteSystemActionSyncEvernoteLinksNoteArtifactsWithoutTasks(t *testing.T) {
+	app := newAuthedTestApp(t)
+	app.intentLLMURL = ""
+	app.intentClassifierURL = ""
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/notebooks":
+			writeEvernoteJSON(t, w, map[string]any{
+				"notebooks": []map[string]any{{
+					"id":   "nb-1",
+					"name": "Research",
+				}},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/notes":
+			writeEvernoteJSON(t, w, map[string]any{
+				"notes": []map[string]any{{
+					"id":          "note-1",
+					"notebook_id": "nb-1",
+					"title":       "Reading queue",
+				}},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/notes/note-1":
+			writeEvernoteJSON(t, w, map[string]any{
+				"note": map[string]any{
+					"id":               "note-1",
+					"notebook_id":      "nb-1",
+					"title":            "Reading queue",
+					"updated_at":       "2026-03-09T09:30:00Z",
+					"content_text":     "Reference notes only",
+					"content_markdown": "Reference notes only",
+				},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	account := createEvernoteTestAccount(t, app, "Research Notes", server.URL)
+	workspace, err := app.store.CreateWorkspace("Research", filepath.Join(t.TempDir(), "research"))
+	if err != nil {
+		t.Fatalf("CreateWorkspace() error: %v", err)
+	}
+	if _, err := app.store.SetContainerMapping(store.ExternalProviderEvernote, "notebook", "Research", &workspace.ID, nil, nil); err != nil {
+		t.Fatalf("SetContainerMapping() error: %v", err)
+	}
+	project, err := app.ensureDefaultProjectRecord()
+	if err != nil {
+		t.Fatalf("ensure default project: %v", err)
+	}
+	session, err := app.store.GetOrCreateChatSession(project.ProjectKey)
+	if err != nil {
+		t.Fatalf("chat session: %v", err)
+	}
+
+	message, payloads, handled := app.classifyAndExecuteSystemAction(context.Background(), session.ID, session, "sync evernote")
+	if !handled {
+		t.Fatal("expected sync command to be handled")
+	}
+	if message != "Synced 1 Evernote note(s) and 0 task item(s)." {
+		t.Fatalf("message = %q", message)
+	}
+	if len(payloads) != 1 || strFromAny(payloads[0]["type"]) != "sync_evernote" {
+		t.Fatalf("payloads = %#v", payloads)
+	}
+
+	binding, err := app.store.GetBindingByRemote(account.ID, store.ExternalProviderEvernote, "note", "note-1")
+	if err != nil {
+		t.Fatalf("GetBindingByRemote(note) error: %v", err)
+	}
+	if binding.ArtifactID == nil {
+		t.Fatal("expected note artifact binding")
+	}
+	linked, err := app.store.ListLinkedArtifacts(workspace.ID)
+	if err != nil {
+		t.Fatalf("ListLinkedArtifacts() error: %v", err)
+	}
+	if len(linked) != 1 || linked[0].ID != *binding.ArtifactID {
+		t.Fatalf("linked artifacts = %#v, want artifact %d", linked, *binding.ArtifactID)
+	}
+	items, err := app.store.ListItems()
+	if err != nil {
+		t.Fatalf("ListItems() error: %v", err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("sync evernote without tasks should not create items, got %d", len(items))
 	}
 }
 

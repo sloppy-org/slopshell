@@ -189,6 +189,13 @@ func evernoteTaskState(task evernote.Task) string {
 	return store.ItemStateInbox
 }
 
+func (a *App) linkEvernoteArtifactWorkspace(artifactID int64, mapping *store.ExternalContainerMapping) {
+	if mapping == nil || mapping.WorkspaceID == nil {
+		return
+	}
+	_ = a.store.LinkArtifactToWorkspace(*mapping.WorkspaceID, artifactID)
+}
+
 func (a *App) upsertEvernoteArtifact(account store.ExternalAccount, note evernote.Note, notebookName string) (store.Artifact, error) {
 	metaJSON, err := evernoteNoteArtifactMeta(note, notebookName)
 	if err != nil {
@@ -374,14 +381,15 @@ func (a *App) persistEvernoteTask(account store.ExternalAccount, artifact store.
 }
 
 func (a *App) persistEvernoteNote(account store.ExternalAccount, note evernote.Note, notebookName string, mappings []store.ExternalContainerMapping) (evernoteSyncResult, error) {
-	artifact, err := a.upsertEvernoteArtifact(account, note, notebookName)
-	if err != nil {
-		return evernoteSyncResult{}, err
-	}
 	mapping, err := a.evernoteNotebookMappingForAccount(account, mappings, notebookName)
 	if err != nil {
 		return evernoteSyncResult{}, err
 	}
+	artifact, err := a.upsertEvernoteArtifact(account, note, notebookName)
+	if err != nil {
+		return evernoteSyncResult{}, err
+	}
+	a.linkEvernoteArtifactWorkspace(artifact.ID, mapping)
 	inferredProjectID := a.evernoteProjectHintFromTags(note.TagNames)
 
 	result := evernoteSyncResult{NoteCount: 1}
