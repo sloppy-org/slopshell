@@ -16,6 +16,9 @@ Short version:
 - prefer radical cleanup over preserving weak legacy shapes
 - optimize for UX, code quality, and maintainability
 
+Canonical product interaction reference:
+- `docs/interaction-grammar.md`
+
 ## Fast Path Rule
 
 For direct runtime requests, run the obvious command first, then verify.

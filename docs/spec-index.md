@@ -16,15 +16,16 @@ Current runtime baseline:
 
 Read in this order:
 
-1. `object-scoped-intent-ui.md`
-2. `gesture-truth-table.md`
-3. `approval-execution-policy.md`
-4. `interfaces.md`
-5. `auxiliary-surfaces.md`
-6. `architecture.md`
-7. `live-runtime-whitepaper.md`
-8. `meeting-notes-privacy.md`
-9. `codex-app-server-pivot.md`
+1. `interaction-grammar.md`
+2. `object-scoped-intent-ui.md`
+3. `gesture-truth-table.md`
+4. `approval-execution-policy.md`
+5. `interfaces.md`
+6. `auxiliary-surfaces.md`
+7. `architecture.md`
+8. `live-runtime-whitepaper.md`
+9. `meeting-notes-privacy.md`
+10. `codex-app-server-pivot.md`
 
 Integrated protocol reference:
 
