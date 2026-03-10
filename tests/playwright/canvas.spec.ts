@@ -92,6 +92,7 @@ async function setInteractionTool(page: Page, tool: 'pointer' | 'highlight' | 'i
     if (app?.getState) {
       const interaction = app.getState().interaction;
       interaction.tool = mode;
+      interaction.toolPinned = true;
       interaction.conversation = mode === 'pointer' || mode === 'prompt' ? 'push_to_talk' : 'idle';
     }
   }, tool);

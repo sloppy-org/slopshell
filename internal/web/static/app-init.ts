@@ -339,7 +339,7 @@ export function bindUi() {
       horizontalWheelLastAt = now;
     }, { passive: false });
     canvasViewport.addEventListener('pointerdown', (ev) => {
-      if (!state.hasArtifact || state.interaction.surface !== 'annotate') return;
+      if (state.interaction.surface !== 'annotate') return;
       if (ev.pointerType !== 'pen') return;
       if (isEditableTarget(ev.target)) return;
       if (ev.target instanceof Element && ev.target.closest('.edge-panel,#pr-file-pane,#pr-file-drawer-backdrop')) return;

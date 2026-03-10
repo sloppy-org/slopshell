@@ -124,6 +124,7 @@ export const state = {
     conversation: 'push_to_talk',
     surface: 'annotate',
     tool: 'pointer',
+    toolPinned: false,
   },
   startupBehavior: 'hub_first',
   ttsEnabled: false,

@@ -143,7 +143,11 @@ async function setInteractionTool(page: Page, tool: 'pointer' | 'highlight' | 'i
   await page.evaluate((mode) => {
     (window as any).__setRuntimeState?.({ tool: mode });
     const app = (window as any)._taburaApp;
-    if (app?.getState) app.getState().interaction.tool = mode;
+    if (app?.getState) {
+      const interaction = app.getState().interaction;
+      interaction.tool = mode;
+      interaction.toolPinned = true;
+    }
   }, tool);
 }
 

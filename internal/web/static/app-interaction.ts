@@ -222,8 +222,11 @@ export function interactionSurfaceDefaultForPane(paneId) {
 
 export function applyInteractionDefaultsForPane(paneId) {
   const nextSurface = interactionSurfaceDefaultForPane(paneId);
+  const defaultTool = interactionToolDefaultForCurrentArtifact(paneId);
   state.interaction.surface = nextSurface;
-  state.interaction.tool = interactionToolDefaultForCurrentArtifact(paneId);
+  if (!state.interaction.toolPinned) {
+    state.interaction.tool = defaultTool;
+  }
   state.interaction.conversation = interactionConversationMode({
     surface: nextSurface,
     tool: state.interaction.tool,
@@ -284,9 +287,11 @@ export function setInteractionToolLocal(tool) {
     surface: state.interaction.surface,
     tool: nextTool,
   })) {
+    state.interaction.toolPinned = true;
     return;
   }
   state.interaction.tool = nextTool;
+  state.interaction.toolPinned = true;
   state.interaction.conversation = interactionConversationMode({
     surface: state.interaction.surface,
     tool: nextTool,

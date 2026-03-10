@@ -482,6 +482,7 @@ export function applyRuntimePreferences(runtime) {
   const runtimeSilent = parseOptionalBoolean(runtime?.silent_mode);
   state.ttsSilent = runtimeSilent === true;
   state.interaction.tool = normalizeInteractionTool(runtime?.tool || 'pointer');
+  state.interaction.toolPinned = false;
   state.interaction.conversation = interactionConversationMode();
   state.activeSphere = normalizeActiveSphere(runtime?.active_sphere || state.activeSphere || readPersistedActiveSphere());
   persistActiveSpherePreference(state.activeSphere);
@@ -510,6 +511,9 @@ export async function updateRuntimePreferences(patch) {
     state.ttsSilent = silent;
   }
   state.interaction.tool = normalizeInteractionTool(payload?.tool || state.interaction.tool || 'pointer');
+  if (Object.prototype.hasOwnProperty.call(patch || {}, 'tool')) {
+    state.interaction.toolPinned = true;
+  }
   state.interaction.conversation = interactionConversationMode();
   state.activeSphere = normalizeActiveSphere(payload?.active_sphere || state.activeSphere || readPersistedActiveSphere());
   persistActiveSpherePreference(state.activeSphere);
