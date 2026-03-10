@@ -51,7 +51,7 @@ func TestClassifyAndExecuteSystemActionAssignWorkspaceProject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ensureHubProject() error: %v", err)
 	}
-	session, err := app.store.GetOrCreateChatSession(hub.ProjectKey)
+	session, err := app.chatSessionForProject(hub)
 	if err != nil {
 		t.Fatalf("GetOrCreateChatSession() error: %v", err)
 	}
@@ -95,7 +95,7 @@ func TestClassifyAndExecuteSystemActionShowProjectItemsByName(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ensureHubProject() error: %v", err)
 	}
-	session, err := app.store.GetOrCreateChatSession(hub.ProjectKey)
+	session, err := app.chatSessionForProject(hub)
 	if err != nil {
 		t.Fatalf("GetOrCreateChatSession() error: %v", err)
 	}
@@ -145,7 +145,7 @@ func TestClassifyAndExecuteSystemActionSyncProjectSkipsNonGitWorkspace(t *testin
 	if err != nil {
 		t.Fatalf("ensureHubProject() error: %v", err)
 	}
-	session, err := app.store.GetOrCreateChatSession(hub.ProjectKey)
+	session, err := app.chatSessionForProject(hub)
 	if err != nil {
 		t.Fatalf("GetOrCreateChatSession() error: %v", err)
 	}
@@ -190,7 +190,7 @@ func TestClassifyAndExecuteSystemActionSyncProjectPullsGitWorkspace(t *testing.T
 	if err != nil {
 		t.Fatalf("ensureHubProject() error: %v", err)
 	}
-	session, err := app.store.GetOrCreateChatSession(hub.ProjectKey)
+	session, err := app.chatSessionForProject(hub)
 	if err != nil {
 		t.Fatalf("GetOrCreateChatSession() error: %v", err)
 	}

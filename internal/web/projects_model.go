@@ -32,7 +32,7 @@ func (a *App) canvasSessionIDForProject(project store.Project) string {
 }
 
 func (a *App) buildProjectAPIModel(project store.Project) (projectAPIModel, error) {
-	session, err := a.store.GetOrCreateChatSession(project.ProjectKey)
+	session, err := a.chatSessionForProject(project)
 	if err != nil {
 		return projectAPIModel{}, err
 	}
@@ -98,7 +98,7 @@ func (a *App) projectSelectionRank(project store.Project, activeSphere string) (
 }
 
 func (a *App) buildProjectActivityItem(project store.Project) (projectActivityItem, error) {
-	session, err := a.store.GetOrCreateChatSession(project.ProjectKey)
+	session, err := a.chatSessionForProject(project)
 	if err != nil {
 		return projectActivityItem{}, err
 	}

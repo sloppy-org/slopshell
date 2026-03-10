@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -371,7 +372,11 @@ func TestHandleChatSessionCancelStopsActiveTurn(t *testing.T) {
 		_ = app.Shutdown(context.Background())
 	})
 
-	session, err := app.store.GetOrCreateChatSession("cancel-test-project")
+	project, err := app.ensureDefaultProjectRecord()
+	if err != nil {
+		t.Fatalf("ensure default project: %v", err)
+	}
+	session, err := app.store.GetOrCreateChatSession(project.ProjectKey)
 	if err != nil {
 		t.Fatalf("create chat session: %v", err)
 	}
@@ -419,7 +424,11 @@ func TestHandleChatSessionActivityReportsActiveTurns(t *testing.T) {
 		_ = app.Shutdown(context.Background())
 	})
 
-	session, err := app.store.GetOrCreateChatSession("activity-test-project")
+	project, err := app.ensureDefaultProjectRecord()
+	if err != nil {
+		t.Fatalf("ensure default project: %v", err)
+	}
+	session, err := app.store.GetOrCreateChatSession(project.ProjectKey)
 	if err != nil {
 		t.Fatalf("create chat session: %v", err)
 	}
@@ -477,7 +486,11 @@ func TestHandleChatSessionCancelClearsQueuedTurns(t *testing.T) {
 		_ = app.Shutdown(context.Background())
 	})
 
-	session, err := app.store.GetOrCreateChatSession("cancel-queued-project")
+	project, err := app.ensureDefaultProjectRecord()
+	if err != nil {
+		t.Fatalf("ensure default project: %v", err)
+	}
+	session, err := app.store.GetOrCreateChatSession(project.ProjectKey)
 	if err != nil {
 		t.Fatalf("create chat session: %v", err)
 	}
@@ -510,11 +523,20 @@ func TestExecuteChatCommandClearAllResetsChatContext(t *testing.T) {
 		_ = app.Shutdown(context.Background())
 	})
 
-	s1, err := app.store.GetOrCreateChatSession("clear-all-project-1")
+	projectOne, err := app.ensureDefaultProjectRecord()
+	if err != nil {
+		t.Fatalf("ensure default project: %v", err)
+	}
+	s1, err := app.store.GetOrCreateChatSession(projectOne.ProjectKey)
 	if err != nil {
 		t.Fatalf("create chat session 1: %v", err)
 	}
-	s2, err := app.store.GetOrCreateChatSession("clear-all-project-2")
+	projectTwoRoot := filepath.Join(t.TempDir(), "clear-all-project-2")
+	projectTwo, err := app.store.CreateProject("Clear All Two", "clear-all-project-2", projectTwoRoot, "managed", "", "", false)
+	if err != nil {
+		t.Fatalf("CreateProject(project 2) error: %v", err)
+	}
+	s2, err := app.store.GetOrCreateChatSession(projectTwo.ProjectKey)
 	if err != nil {
 		t.Fatalf("create chat session 2: %v", err)
 	}

@@ -22,6 +22,15 @@ func newTestStore(t *testing.T) *Store {
 	return s
 }
 
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if strings.EqualFold(strings.TrimSpace(value), strings.TrimSpace(target)) {
+			return true
+		}
+	}
+	return false
+}
+
 func TestStoreAdminPasswordAndAuthLifecycle(t *testing.T) {
 	s := newTestStore(t)
 
@@ -323,15 +332,26 @@ func TestStoreProjectCompanionConfigPersistsAcrossReopen(t *testing.T) {
 
 func TestStoreChatSessionMessageAndThreading(t *testing.T) {
 	s := newTestStore(t)
+	root := filepath.Join(t.TempDir(), "workspace-default")
+	project, err := s.CreateProject("Default", root, root, "managed", "", "", true)
+	if err != nil {
+		t.Fatalf("CreateProject() error: %v", err)
+	}
+	if err := s.SetActiveProjectID(project.ID); err != nil {
+		t.Fatalf("SetActiveProjectID() error: %v", err)
+	}
 
 	session, err := s.GetOrCreateChatSession("  ")
 	if err != nil {
-		t.Fatalf("GetOrCreateChatSession(default) error: %v", err)
+		t.Fatalf("GetOrCreateChatSession(active project) error: %v", err)
 	}
-	if session.ProjectKey != "default" {
-		t.Fatalf("default project key = %q, want default", session.ProjectKey)
+	if session.ProjectKey != project.ProjectKey {
+		t.Fatalf("project key = %q, want %q", session.ProjectKey, project.ProjectKey)
 	}
-	same, err := s.GetOrCreateChatSession("default")
+	if session.WorkspaceID <= 0 {
+		t.Fatalf("workspace_id = %d, want positive id", session.WorkspaceID)
+	}
+	same, err := s.GetOrCreateChatSession(project.ProjectKey)
 	if err != nil {
 		t.Fatalf("GetOrCreateChatSession(existing) error: %v", err)
 	}
@@ -454,6 +474,50 @@ func TestStoreChatSessionMessageAndThreading(t *testing.T) {
 	}
 	if err := s.ClearAllChatEvents(); err != nil {
 		t.Fatalf("ClearAllChatEvents() error: %v", err)
+	}
+}
+
+func TestStoreChatSessionsKeyToWorkspace(t *testing.T) {
+	s := newTestStore(t)
+	root := filepath.Join(t.TempDir(), "workspace-alpha")
+	project, err := s.CreateProject("Alpha", "alpha-key", root, "managed", "", "", false)
+	if err != nil {
+		t.Fatalf("CreateProject() error: %v", err)
+	}
+
+	session, err := s.GetOrCreateChatSession(project.ProjectKey)
+	if err != nil {
+		t.Fatalf("GetOrCreateChatSession() error: %v", err)
+	}
+	if session.WorkspaceID <= 0 {
+		t.Fatalf("workspace_id = %d, want positive id", session.WorkspaceID)
+	}
+
+	columns, err := s.tableColumnNames("chat_sessions")
+	if err != nil {
+		t.Fatalf("tableColumnNames(chat_sessions) error: %v", err)
+	}
+	if containsString(columns, "project_key") {
+		t.Fatalf("chat_sessions columns still include project_key: %v", columns)
+	}
+	if !containsString(columns, "workspace_id") {
+		t.Fatalf("chat_sessions columns missing workspace_id: %v", columns)
+	}
+
+	byWorkspace, err := s.GetChatSessionByWorkspaceID(session.WorkspaceID)
+	if err != nil {
+		t.Fatalf("GetChatSessionByWorkspaceID() error: %v", err)
+	}
+	if byWorkspace.ID != session.ID {
+		t.Fatalf("GetChatSessionByWorkspaceID() = %q, want %q", byWorkspace.ID, session.ID)
+	}
+
+	var sessionCount int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM chat_sessions WHERE workspace_id = ?`, session.WorkspaceID).Scan(&sessionCount); err != nil {
+		t.Fatalf("count chat_sessions by workspace_id: %v", err)
+	}
+	if sessionCount != 1 {
+		t.Fatalf("chat session count for workspace %d = %d, want 1", session.WorkspaceID, sessionCount)
 	}
 }
 

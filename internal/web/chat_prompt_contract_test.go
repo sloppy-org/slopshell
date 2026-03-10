@@ -14,7 +14,11 @@ func TestEnsurePromptContractFresh_FirstWriteDoesNotClearMessages(t *testing.T) 
 		_ = app.Shutdown(context.Background())
 	})
 
-	session, err := app.store.GetOrCreateChatSession("prompt-fresh-first-write")
+	project, err := app.ensureDefaultProjectRecord()
+	if err != nil {
+		t.Fatalf("ensure default project: %v", err)
+	}
+	session, err := app.store.GetOrCreateChatSession(project.ProjectKey)
 	if err != nil {
 		t.Fatalf("create chat session: %v", err)
 	}
@@ -54,7 +58,11 @@ func TestEnsurePromptContractFresh_ChangedDigestClearsMessages(t *testing.T) {
 		_ = app.Shutdown(context.Background())
 	})
 
-	session, err := app.store.GetOrCreateChatSession("prompt-fresh-clear")
+	project, err := app.ensureDefaultProjectRecord()
+	if err != nil {
+		t.Fatalf("ensure default project: %v", err)
+	}
+	session, err := app.store.GetOrCreateChatSession(project.ProjectKey)
 	if err != nil {
 		t.Fatalf("create chat session: %v", err)
 	}

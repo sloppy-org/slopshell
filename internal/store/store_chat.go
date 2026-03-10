@@ -1,6 +1,7 @@
 package store
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -40,19 +41,108 @@ func normalizeRenderFormat(format string) string {
 	}
 }
 
-func (s *Store) GetOrCreateChatSession(projectKey string) (ChatSession, error) {
-	key := strings.TrimSpace(projectKey)
-	if key == "" {
-		key = "default"
+const chatSessionSelect = `
+SELECT cs.id,
+       cs.workspace_id,
+       COALESCE(NULLIF(trim(p.project_key), ''), w.dir_path, '') AS project_key,
+       cs.app_thread_id,
+       cs.mode,
+       cs.created_at,
+       cs.updated_at
+  FROM chat_sessions cs
+  JOIN workspaces w ON w.id = cs.workspace_id
+  LEFT JOIN projects p ON p.id = w.project_id
+`
+
+func (s *Store) resolveChatSessionWorkspace(ref string) (Workspace, error) {
+	cleanRef := strings.TrimSpace(ref)
+	if cleanRef != "" {
+		if project, err := s.GetProjectByProjectKey(cleanRef); err == nil {
+			if strings.EqualFold(strings.TrimSpace(project.Kind), "hub") {
+				if workspace, activeErr := s.ActiveWorkspace(); activeErr == nil {
+					return workspace, nil
+				}
+				return Workspace{}, sql.ErrNoRows
+			}
+			if workspaceID, findErr := s.FindWorkspaceContainingPath(project.RootPath); findErr != nil {
+				return Workspace{}, findErr
+			} else if workspaceID != nil {
+				return s.GetWorkspace(*workspaceID)
+			}
+			return s.ensureWorkspaceForLegacyProject(project)
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			return Workspace{}, err
+		}
+		if workspace, err := s.GetWorkspaceByPath(cleanRef); err == nil {
+			return workspace, nil
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			return Workspace{}, err
+		}
+		if workspaceID, err := s.FindWorkspaceContainingPath(cleanRef); err != nil {
+			return Workspace{}, err
+		} else if workspaceID != nil {
+			return s.GetWorkspace(*workspaceID)
+		}
 	}
-	if existing, err := s.GetChatSessionByProjectKey(key); err == nil {
+	if workspace, err := s.ActiveWorkspace(); err == nil {
+		return workspace, nil
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return Workspace{}, err
+	}
+	if activeProjectID, err := s.ActiveProjectID(); err != nil {
+		return Workspace{}, err
+	} else if strings.TrimSpace(activeProjectID) != "" {
+		project, err := s.GetProject(activeProjectID)
+		if err != nil {
+			return Workspace{}, err
+		}
+		if strings.EqualFold(strings.TrimSpace(project.Kind), "hub") {
+			return Workspace{}, sql.ErrNoRows
+		}
+		return s.ensureWorkspaceForLegacyProject(project)
+	}
+	return Workspace{}, sql.ErrNoRows
+}
+
+func scanChatSession(scanner interface{ Scan(...any) error }) (ChatSession, error) {
+	var out ChatSession
+	err := scanner.Scan(
+		&out.ID,
+		&out.WorkspaceID,
+		&out.ProjectKey,
+		&out.AppThreadID,
+		&out.Mode,
+		&out.CreatedAt,
+		&out.UpdatedAt,
+	)
+	if err != nil {
+		return ChatSession{}, err
+	}
+	out.ProjectKey = strings.TrimSpace(out.ProjectKey)
+	out.Mode = normalizeChatMode(out.Mode)
+	return out, nil
+}
+
+func (s *Store) GetOrCreateChatSession(ref string) (ChatSession, error) {
+	workspace, err := s.resolveChatSessionWorkspace(ref)
+	if err != nil {
+		return ChatSession{}, err
+	}
+	return s.GetOrCreateChatSessionForWorkspace(workspace.ID)
+}
+
+func (s *Store) GetOrCreateChatSessionForWorkspace(workspaceID int64) (ChatSession, error) {
+	if workspaceID <= 0 {
+		return ChatSession{}, errors.New("workspace id is required")
+	}
+	if existing, err := s.GetChatSessionByWorkspaceID(workspaceID); err == nil {
 		return existing, nil
 	}
 	now := time.Now().Unix()
 	id := fmt.Sprintf("chat-%s", randomHex(8))
 	_, err := s.db.Exec(
-		`INSERT INTO chat_sessions (id, project_key, app_thread_id, mode, created_at, updated_at) VALUES (?,?,?,?,?,?)`,
-		id, key, "", "chat", now, now,
+		`INSERT INTO chat_sessions (id, workspace_id, app_thread_id, mode, created_at, updated_at) VALUES (?,?,?,?,?,?)`,
+		id, workspaceID, "", "chat", now, now,
 	)
 	if err != nil {
 		return ChatSession{}, err
@@ -60,40 +150,34 @@ func (s *Store) GetOrCreateChatSession(projectKey string) (ChatSession, error) {
 	return s.GetChatSession(id)
 }
 
-func (s *Store) GetChatSessionByProjectKey(projectKey string) (ChatSession, error) {
-	key := strings.TrimSpace(projectKey)
-	if key == "" {
-		key = "default"
-	}
-	var out ChatSession
-	err := s.db.QueryRow(
-		`SELECT id, project_key, app_thread_id, mode, created_at, updated_at FROM chat_sessions WHERE project_key = ?`,
-		key,
-	).Scan(&out.ID, &out.ProjectKey, &out.AppThreadID, &out.Mode, &out.CreatedAt, &out.UpdatedAt)
+func (s *Store) GetChatSessionByProjectKey(ref string) (ChatSession, error) {
+	workspace, err := s.resolveChatSessionWorkspace(ref)
 	if err != nil {
 		return ChatSession{}, err
 	}
-	out.Mode = normalizeChatMode(out.Mode)
-	return out, nil
+	return s.GetChatSessionByWorkspaceID(workspace.ID)
+}
+
+func (s *Store) GetChatSessionByWorkspaceID(workspaceID int64) (ChatSession, error) {
+	if workspaceID <= 0 {
+		return ChatSession{}, errors.New("workspace id is required")
+	}
+	return scanChatSession(s.db.QueryRow(
+		chatSessionSelect+` WHERE cs.workspace_id = ?`,
+		workspaceID,
+	))
 }
 
 func (s *Store) GetChatSession(id string) (ChatSession, error) {
-	var out ChatSession
-	err := s.db.QueryRow(
-		`SELECT id, project_key, app_thread_id, mode, created_at, updated_at FROM chat_sessions WHERE id = ?`,
+	return scanChatSession(s.db.QueryRow(
+		chatSessionSelect+` WHERE cs.id = ?`,
 		strings.TrimSpace(id),
-	).Scan(&out.ID, &out.ProjectKey, &out.AppThreadID, &out.Mode, &out.CreatedAt, &out.UpdatedAt)
-	if err != nil {
-		return ChatSession{}, err
-	}
-	out.Mode = normalizeChatMode(out.Mode)
-	return out, nil
+	))
 }
 
 func (s *Store) ListChatSessions() ([]ChatSession, error) {
 	rows, err := s.db.Query(
-		`SELECT id, project_key, app_thread_id, mode, created_at, updated_at
-		 FROM chat_sessions ORDER BY created_at ASC`,
+		chatSessionSelect + ` ORDER BY cs.created_at ASC`,
 	)
 	if err != nil {
 		return nil, err
@@ -101,18 +185,10 @@ func (s *Store) ListChatSessions() ([]ChatSession, error) {
 	defer rows.Close()
 	out := make([]ChatSession, 0, 32)
 	for rows.Next() {
-		var item ChatSession
-		if err := rows.Scan(
-			&item.ID,
-			&item.ProjectKey,
-			&item.AppThreadID,
-			&item.Mode,
-			&item.CreatedAt,
-			&item.UpdatedAt,
-		); err != nil {
+		item, err := scanChatSession(rows)
+		if err != nil {
 			return nil, err
 		}
-		item.Mode = normalizeChatMode(item.Mode)
 		out = append(out, item)
 	}
 	return out, nil
@@ -137,6 +213,143 @@ func (s *Store) UpdateChatSessionThread(id, appThreadID string) error {
 		strings.TrimSpace(appThreadID), time.Now().Unix(), strings.TrimSpace(id),
 	)
 	return err
+}
+
+func (s *Store) migrateChatSessionWorkspaceKey() error {
+	tableColumns, err := s.tableColumnSet("chat_sessions")
+	if err != nil {
+		return err
+	}
+	columns := tableColumns["chat_sessions"]
+	if columns["workspace_id"] && !columns["project_key"] {
+		return nil
+	}
+
+	type legacySession struct {
+		ID          string
+		WorkspaceID int64
+		AppThreadID string
+		Mode        string
+		CreatedAt   int64
+		UpdatedAt   int64
+	}
+
+	legacy := make([]legacySession, 0, 16)
+	switch {
+	case columns["workspace_id"] && columns["project_key"]:
+		rows, err := s.db.Query(`SELECT id, workspace_id, project_key, app_thread_id, mode, created_at, updated_at FROM chat_sessions ORDER BY created_at ASC, id ASC`)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var item legacySession
+			var projectKey string
+			if err := rows.Scan(&item.ID, &item.WorkspaceID, &projectKey, &item.AppThreadID, &item.Mode, &item.CreatedAt, &item.UpdatedAt); err != nil {
+				return err
+			}
+			projectKey = strings.TrimSpace(projectKey)
+			if projectKey != "" {
+				if project, err := s.GetProjectByProjectKey(projectKey); err == nil && strings.EqualFold(strings.TrimSpace(project.Kind), "hub") {
+					continue
+				} else if err != nil && !errors.Is(err, sql.ErrNoRows) {
+					return err
+				}
+			}
+			if item.WorkspaceID <= 0 {
+				workspace, err := s.resolveChatSessionWorkspace(projectKey)
+				if err != nil {
+					return fmt.Errorf("resolve chat session workspace for %q: %w", item.ID, err)
+				}
+				item.WorkspaceID = workspace.ID
+			}
+			legacy = append(legacy, item)
+		}
+		if err := rows.Err(); err != nil {
+			return err
+		}
+	default:
+		rows, err := s.db.Query(`SELECT id, project_key, app_thread_id, mode, created_at, updated_at FROM chat_sessions ORDER BY created_at ASC, id ASC`)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var item legacySession
+			var projectKey string
+			if err := rows.Scan(&item.ID, &projectKey, &item.AppThreadID, &item.Mode, &item.CreatedAt, &item.UpdatedAt); err != nil {
+				return err
+			}
+			projectKey = strings.TrimSpace(projectKey)
+			if projectKey != "" {
+				if project, err := s.GetProjectByProjectKey(projectKey); err == nil && strings.EqualFold(strings.TrimSpace(project.Kind), "hub") {
+					continue
+				} else if err != nil && !errors.Is(err, sql.ErrNoRows) {
+					return err
+				}
+			}
+			workspace, err := s.resolveChatSessionWorkspace(projectKey)
+			if err != nil {
+				return fmt.Errorf("resolve chat session workspace for %q: %w", item.ID, err)
+			}
+			item.WorkspaceID = workspace.ID
+			legacy = append(legacy, item)
+		}
+		if err := rows.Err(); err != nil {
+			return err
+		}
+	}
+
+	seenWorkspace := map[int64]struct{}{}
+	deduped := make([]legacySession, 0, len(legacy))
+	for _, item := range legacy {
+		if item.WorkspaceID <= 0 {
+			continue
+		}
+		if _, exists := seenWorkspace[item.WorkspaceID]; exists {
+			continue
+		}
+		seenWorkspace[item.WorkspaceID] = struct{}{}
+		deduped = append(deduped, item)
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(`
+CREATE TABLE chat_sessions_new (
+  id TEXT PRIMARY KEY,
+  workspace_id INTEGER NOT NULL UNIQUE REFERENCES workspaces(id) ON DELETE CASCADE,
+  app_thread_id TEXT NOT NULL DEFAULT '',
+  mode TEXT NOT NULL DEFAULT 'chat',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+)`); err != nil {
+		return err
+	}
+	for _, item := range deduped {
+		if _, err := tx.Exec(
+			`INSERT INTO chat_sessions_new (id, workspace_id, app_thread_id, mode, created_at, updated_at) VALUES (?,?,?,?,?,?)`,
+			item.ID,
+			item.WorkspaceID,
+			strings.TrimSpace(item.AppThreadID),
+			normalizeChatMode(item.Mode),
+			item.CreatedAt,
+			item.UpdatedAt,
+		); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.Exec(`DROP TABLE chat_sessions`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`ALTER TABLE chat_sessions_new RENAME TO chat_sessions`); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *Store) AddChatMessage(sessionID, role, contentMarkdown, contentPlain, renderFormat string, opts ...ChatMessageOption) (ChatMessage, error) {

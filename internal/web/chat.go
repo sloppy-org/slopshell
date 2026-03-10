@@ -15,7 +15,6 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/krystophny/tabura/internal/appserver"
 	"github.com/krystophny/tabura/internal/plugins"
-	"github.com/krystophny/tabura/internal/store"
 )
 
 const (
@@ -126,8 +125,9 @@ func (a *App) handleChatSessionCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		ProjectKey string `json:"project_key"`
-		ProjectID  string `json:"project_id"`
+		WorkspaceID *int64 `json:"workspace_id"`
+		ProjectKey  string `json:"project_key"`
+		ProjectID   string `json:"project_id"`
 	}
 	if r.ContentLength > 0 {
 		if err := decodeJSON(r, &req); err != nil {
@@ -135,45 +135,27 @@ func (a *App) handleChatSessionCreate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	projectKey, err := a.resolveProjectKey(req.ProjectID, req.ProjectKey)
+	workspace, resolvedProject, err := a.resolveChatSessionTarget(req.ProjectID, req.ProjectKey, req.WorkspaceID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	var resolvedProject store.Project
-	projectResolved := false
-	if strings.TrimSpace(req.ProjectID) != "" {
-		if resolvedProject, err = a.store.GetProject(strings.TrimSpace(req.ProjectID)); err == nil {
-			projectResolved = true
-		} else if !isNoRows(err) {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-	}
-	if !projectResolved {
-		if resolvedProject, err = a.store.GetProjectByProjectKey(projectKey); err == nil {
-			projectResolved = true
-		} else if !isNoRows(err) {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-	}
-	session, err := a.store.GetOrCreateChatSession(projectKey)
+	session, err := a.store.GetOrCreateChatSessionForWorkspace(workspace.ID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	canvasSessionID := LocalSessionID
 	projectID := ""
-	if projectResolved {
+	if resolvedProject != nil {
 		projectID = resolvedProject.ID
-		canvasSessionID = a.canvasSessionIDForProject(resolvedProject)
+		canvasSessionID = a.canvasSessionIDForProject(*resolvedProject)
 		if err := a.store.SetActiveProjectID(resolvedProject.ID); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		_ = a.markProjectSeen(resolvedProject)
-		if err := a.ensureProjectCanvasReady(resolvedProject); err != nil {
+		_ = a.markProjectSeen(*resolvedProject)
+		if err := a.ensureProjectCanvasReady(*resolvedProject); err != nil {
 			http.Error(w, err.Error(), http.StatusBadGateway)
 			return
 		}
@@ -181,6 +163,7 @@ func (a *App) handleChatSessionCreate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]interface{}{
 		"ok":                true,
 		"session_id":        session.ID,
+		"workspace_id":      session.WorkspaceID,
 		"project_key":       session.ProjectKey,
 		"project_id":        projectID,
 		"mode":              session.Mode,

@@ -334,7 +334,7 @@ func TestHubSwitchModelTargetsPrimaryProject(t *testing.T) {
 	if _, err := app.activateProject(hub.ID); err != nil {
 		t.Fatalf("activate hub project: %v", err)
 	}
-	session, err := app.store.GetOrCreateChatSession(hub.ProjectKey)
+	session, err := app.chatSessionForProject(hub)
 	if err != nil {
 		t.Fatalf("hub session: %v", err)
 	}
@@ -470,7 +470,7 @@ func TestHubSwitchProjectActionReturnsActivationPayload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ensure hub project: %v", err)
 	}
-	session, err := app.store.GetOrCreateChatSession(hub.ProjectKey)
+	session, err := app.chatSessionForProject(hub)
 	if err != nil {
 		t.Fatalf("hub session: %v", err)
 	}
@@ -514,7 +514,7 @@ func TestExecuteSystemActionRejectsUnsupportedAction(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ensure hub project: %v", err)
 	}
-	session, err := app.store.GetOrCreateChatSession(hub.ProjectKey)
+	session, err := app.chatSessionForProject(hub)
 	if err != nil {
 		t.Fatalf("hub session: %v", err)
 	}
@@ -546,7 +546,7 @@ func TestHubRunTurnKeepsPlainTextAssistantOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ensure hub project: %v", err)
 	}
-	session, err := app.store.GetOrCreateChatSession(hub.ProjectKey)
+	session, err := app.chatSessionForProject(hub)
 	if err != nil {
 		t.Fatalf("hub session: %v", err)
 	}
@@ -587,7 +587,7 @@ func TestHubRunTurnExecutesHighConfidenceLocalIntent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ensure hub project: %v", err)
 	}
-	session, err := app.store.GetOrCreateChatSession(hub.ProjectKey)
+	session, err := app.chatSessionForProject(hub)
 	if err != nil {
 		t.Fatalf("hub session: %v", err)
 	}
@@ -751,7 +751,7 @@ func TestHubRunTurnFallsBackToSparkOnLowIntentConfidence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ensure hub project: %v", err)
 	}
-	session, err := app.store.GetOrCreateChatSession(hub.ProjectKey)
+	session, err := app.chatSessionForProject(hub)
 	if err != nil {
 		t.Fatalf("hub session: %v", err)
 	}
@@ -793,7 +793,7 @@ func TestHubRunTurnUsesIntentLLMFallbackOnLowIntentConfidence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ensure hub project: %v", err)
 	}
-	session, err := app.store.GetOrCreateChatSession(hub.ProjectKey)
+	session, err := app.chatSessionForProject(hub)
 	if err != nil {
 		t.Fatalf("hub session: %v", err)
 	}
@@ -864,7 +864,7 @@ func TestHubRunTurnPreservesClarificationContextForLocalLLM(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ensure hub project: %v", err)
 	}
-	session, err := app.store.GetOrCreateChatSession(hub.ProjectKey)
+	session, err := app.chatSessionForProject(hub)
 	if err != nil {
 		t.Fatalf("hub session: %v", err)
 	}
@@ -916,7 +916,7 @@ func TestHubRunTurnFallsBackToSparkWhenLocalIntentExecutionFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ensure hub project: %v", err)
 	}
-	session, err := app.store.GetOrCreateChatSession(hub.ProjectKey)
+	session, err := app.chatSessionForProject(hub)
 	if err != nil {
 		t.Fatalf("hub session: %v", err)
 	}
