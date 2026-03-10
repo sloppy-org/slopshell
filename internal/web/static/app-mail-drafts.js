@@ -166,6 +166,34 @@ export async function launchReplyAuthoring(item) {
   });
 }
 
+export async function replyAllToSidebarItem(item) {
+  const itemID = Number(item?.id || 0);
+  if (itemID <= 0) return false;
+  try {
+    await presentMailDraft('mail/drafts/reply-all', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ item_id: itemID }),
+    }, 'reply all draft ready');
+    return true;
+  } catch (err) {
+    showStatus(`reply all draft failed: ${String(err?.message || err || 'unknown error')}`);
+    return false;
+  }
+}
+
+export async function launchReplyAllAuthoring(item) {
+  if (!mailAuthoringUsesDictation()) {
+    return replyAllToSidebarItem(item);
+  }
+  return startDictationMode({
+    prompt: 'draft a reply to all',
+    targetKind: 'email_reply_all',
+    artifactTitle: mailReplyArtifactTitle(item),
+    successText: 'email reply all dictation ready',
+  });
+}
+
 export async function forwardSidebarItem(item) {
   const itemID = Number(item?.id || 0);
   if (itemID <= 0) return false;

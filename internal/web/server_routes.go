@@ -56,6 +56,7 @@ func (a *App) Router() http.Handler {
 	r.Post("/api/bugs/report", a.handleBugReportCreate)
 	r.Post("/api/mail/drafts", a.handleMailDraftCreate)
 	r.Post("/api/mail/drafts/reply", a.handleMailDraftReply)
+	r.Post("/api/mail/drafts/reply-all", a.handleMailDraftReplyAll)
 	r.Post("/api/mail/drafts/forward", a.handleMailDraftForward)
 	r.Get("/api/mail/drafts/{artifact_id}", a.handleMailDraftGet)
 	r.Put("/api/mail/drafts/{artifact_id}", a.handleMailDraftUpdate)

@@ -2,7 +2,7 @@ import { AnnotationLayer, GlobalWorkerOptions, TextLayer, getDocument } from './
 import { apiURL } from './paths.js';
 import { state } from './app-context.js';
 import { renderTextArtifact, sanitizeHtml } from './canvas-content.js';
-import { launchNewMailAuthoring, launchReplyAuthoring, launchForwardAuthoring, openMailDraftArtifact, renderMailDraftArtifact } from './app-mail-drafts.js';
+import { launchNewMailAuthoring, launchReplyAuthoring, launchReplyAllAuthoring, launchForwardAuthoring, openMailDraftArtifact, renderMailDraftArtifact } from './app-mail-drafts.js';
 import { buildEmailThreadHTML } from './app-item-sidebar-artifacts.js';
 
 export { escapeHtml, sanitizeHtml } from './canvas-content.js';
@@ -93,6 +93,16 @@ function renderCanvasMailActions(root, event) {
     void launchReplyAuthoring(item);
   });
   actions.appendChild(replyButton);
+
+  const replyAllButton = document.createElement('button');
+  replyAllButton.type = 'button';
+  replyAllButton.className = 'edge-btn';
+  replyAllButton.id = 'canvas-reply-all-mail-trigger';
+  replyAllButton.textContent = 'Reply All';
+  replyAllButton.addEventListener('click', () => {
+    void launchReplyAllAuthoring(item);
+  });
+  actions.appendChild(replyAllButton);
 
   const forwardButton = document.createElement('button');
   forwardButton.type = 'button';

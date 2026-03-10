@@ -33,6 +33,7 @@ const openWorkspaceSidebarFile = (...args) => refs.openWorkspaceSidebarFile(...a
 const openScanImportPicker = (...args) => refs.openScanImportPicker(...args);
 const launchNewMailAuthoring = (...args) => refs.launchNewMailAuthoring(...args);
 const launchReplyAuthoring = (...args) => refs.launchReplyAuthoring(...args);
+const launchReplyAllAuthoring = (...args) => refs.launchReplyAllAuthoring(...args);
 const launchForwardAuthoring = (...args) => refs.launchForwardAuthoring(...args);
 
 export async function openItemSidebarView(view = state.itemSidebarView, filters = null) {
@@ -566,6 +567,17 @@ export function renderItemSidebarList(list) {
       void launchReplyAuthoring(activeItem);
     });
     actions.appendChild(replyButton);
+  }
+  if (activeItem && ['email', 'email_thread'].includes(String(activeItem?.artifact_kind || '').trim().toLowerCase())) {
+    const replyAllButton = document.createElement('button');
+    replyAllButton.type = 'button';
+    replyAllButton.className = 'edge-btn';
+    replyAllButton.id = 'reply-all-mail-trigger';
+    replyAllButton.textContent = 'Reply All';
+    replyAllButton.addEventListener('click', () => {
+      void launchReplyAllAuthoring(activeItem);
+    });
+    actions.appendChild(replyAllButton);
   }
   if (activeItem && ['email', 'email_thread'].includes(String(activeItem?.artifact_kind || '').trim().toLowerCase())) {
     const forwardButton = document.createElement('button');

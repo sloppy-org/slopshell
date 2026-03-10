@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/mail"
 	"os"
 	"path/filepath"
 	"strings"
@@ -42,6 +43,10 @@ type mailDraftCreateRequest struct {
 }
 
 type mailDraftReplyRequest struct {
+	ItemID int64 `json:"item_id"`
+}
+
+type mailDraftReplyAllRequest struct {
 	ItemID int64 `json:"item_id"`
 }
 
@@ -152,6 +157,49 @@ func (a *App) handleMailDraftReply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	account, cfg, remoteMessageID, seed, err := a.replyDraftSeed(r.Context(), item)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	provider, draftProvider, err := a.mailDraftProviderForAccount(r.Context(), account, cfg)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	defer provider.Close()
+	remote, err := draftProvider.CreateReplyDraft(r.Context(), remoteMessageID, seed)
+	if err != nil {
+		writeAPIError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	payload, err := a.persistMailDraft(project, account, remote, seed, remoteMessageID)
+	if err != nil {
+		writeDomainStoreError(w, err)
+		return
+	}
+	writeAPIData(w, http.StatusCreated, map[string]any{"draft": payload})
+}
+
+func (a *App) handleMailDraftReplyAll(w http.ResponseWriter, r *http.Request) {
+	if !a.requireAuth(w, r) {
+		return
+	}
+	var req mailDraftReplyAllRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	item, err := a.store.GetItem(req.ItemID)
+	if err != nil {
+		writeDomainStoreError(w, err)
+		return
+	}
+	project, err := a.projectForItem(item)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	account, cfg, remoteMessageID, seed, err := a.replyAllDraftSeed(r.Context(), item)
 	if err != nil {
 		writeAPIError(w, http.StatusBadRequest, err.Error())
 		return
@@ -635,6 +683,123 @@ func (a *App) replyDraftSeed(ctx context.Context, item store.Item) (store.Extern
 		}
 	}
 	return seed.account, seed.config, remoteMessageID, input, nil
+}
+
+func (a *App) replyAllDraftSeed(ctx context.Context, item store.Item) (store.ExternalAccount, emailSyncAccountConfig, string, email.DraftInput, error) {
+	seed, err := a.resolveMailItemSeedContext(item)
+	if err != nil {
+		return store.ExternalAccount{}, emailSyncAccountConfig{}, "", email.DraftInput{}, err
+	}
+	fromAddr := strings.ToLower(strings.TrimSpace(firstNonEmpty(seed.config.FromAddress, seed.config.SMTPUsername, seed.config.Username)))
+	input := email.DraftInput{
+		From: firstNonEmpty(seed.config.FromAddress, seed.config.SMTPUsername, seed.config.Username),
+	}
+	remoteMessageID := seed.remoteMessageID
+	var allRecipients []string
+	if seed.artifact != nil {
+		meta := parseSidebarArtifactMeta(stringFromPointer(seed.artifact.MetaJSON))
+		if sender, messageID := replySeedFromArtifactMeta(meta); sender != "" || messageID != "" {
+			if sender != "" {
+				input.To = []string{sender}
+			}
+			if messageID != "" {
+				remoteMessageID = messageID
+			}
+		}
+		if subject := strings.TrimSpace(stringAny(meta["subject"])); subject != "" {
+			input.Subject = mailReplySubject(subject)
+		}
+		if threadID := strings.TrimSpace(stringAny(meta["thread_id"])); threadID != "" {
+			input.ThreadID = threadID
+		}
+		allRecipients = replyAllRecipientsFromMeta(meta)
+	}
+	if strings.TrimSpace(remoteMessageID) == "" {
+		return store.ExternalAccount{}, emailSyncAccountConfig{}, "", email.DraftInput{}, errors.New("item is not linked to a remote mail message")
+	}
+	if len(input.To) == 0 || strings.TrimSpace(input.Subject) == "" || len(allRecipients) == 0 {
+		provider, provErr := a.emailProviderForAccount(ctx, seed.account, seed.config)
+		if provErr == nil {
+			defer provider.Close()
+			if message, getErr := provider.GetMessage(ctx, remoteMessageID, "full"); getErr == nil && message != nil {
+				if len(input.To) == 0 && strings.TrimSpace(message.Sender) != "" {
+					input.To = []string{strings.TrimSpace(message.Sender)}
+				}
+				if strings.TrimSpace(input.Subject) == "" {
+					input.Subject = mailReplySubject(message.Subject)
+				}
+				if strings.TrimSpace(input.ThreadID) == "" {
+					input.ThreadID = strings.TrimSpace(message.ThreadID)
+				}
+				if len(allRecipients) == 0 {
+					allRecipients = message.Recipients
+				}
+			}
+		}
+	}
+	senderLower := ""
+	if len(input.To) > 0 {
+		senderLower = extractEmailLower(input.To[0])
+	}
+	seen := map[string]bool{}
+	if fromAddr != "" {
+		seen[fromAddr] = true
+	}
+	if senderLower != "" {
+		seen[senderLower] = true
+	}
+	for _, addr := range allRecipients {
+		lower := extractEmailLower(addr)
+		if lower == "" || seen[lower] {
+			continue
+		}
+		seen[lower] = true
+		input.Cc = append(input.Cc, addr)
+	}
+	return seed.account, seed.config, remoteMessageID, input, nil
+}
+
+func replyAllRecipientsFromMeta(meta map[string]any) []string {
+	if recipients := stringSliceAny(meta["recipients"]); len(recipients) > 0 {
+		return recipients
+	}
+	messages, _ := meta["messages"].([]any)
+	for i := len(messages) - 1; i >= 0; i-- {
+		entry, _ := messages[i].(map[string]any)
+		if recipients := stringSliceAny(entry["recipients"]); len(recipients) > 0 {
+			return recipients
+		}
+	}
+	return nil
+}
+
+func stringSliceAny(value any) []string {
+	if arr, ok := value.([]any); ok {
+		out := make([]string, 0, len(arr))
+		for _, v := range arr {
+			s := strings.TrimSpace(fmt.Sprintf("%v", v))
+			if s != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+	if arr, ok := value.([]string); ok {
+		return arr
+	}
+	return nil
+}
+
+func extractEmailLower(raw string) string {
+	clean := strings.TrimSpace(raw)
+	if clean == "" {
+		return ""
+	}
+	addr, err := mail.ParseAddress(clean)
+	if err != nil {
+		return strings.ToLower(clean)
+	}
+	return strings.ToLower(strings.TrimSpace(addr.Address))
 }
 
 func decodeMailDraftMeta(raw *string) (mailDraftArtifactMeta, error) {

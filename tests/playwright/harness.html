@@ -1127,6 +1127,44 @@
       window.__mailDrafts = drafts;
       return cloneMailDraft(draft);
     }
+    function createHarnessReplyAllDraft(itemID) {
+      const rows = ['inbox', 'waiting', 'someday', 'done']
+        .flatMap((stateKey) => Array.isArray((window.__itemSidebarData || {})[stateKey]) ? (window.__itemSidebarData || {})[stateKey] : []);
+      const item = rows.find((entry) => Number(entry?.id || 0) === Number(itemID)) || null;
+      if (!item) return null;
+      const provider = String(item?.source || 'gmail').trim().toLowerCase() || 'gmail';
+      const artifact = findItemArtifact(item);
+      const meta = parseArtifactMetaJSON(artifact);
+      const sender = firstMailAddress(meta.sender || meta.from || (Array.isArray(meta.participants) ? meta.participants[0] : ''));
+      const subjectSource = String(meta.subject || item?.artifact_title || item?.title || '').trim();
+      const subject = /^re:/i.test(subjectSource) ? subjectSource : `Re: ${subjectSource}`;
+      const recipients = Array.isArray(meta.recipients) ? meta.recipients : [];
+      const senderLower = String(sender || '').trim().toLowerCase();
+      const cc = recipients.filter((r) => {
+        const lower = String(r || '').trim().toLowerCase();
+        return lower && lower !== senderLower;
+      });
+      const draft = syncMailDraftSidebarItem({
+        artifact_id: nextMailDraftCounter('artifact_id'),
+        item_id: nextMailDraftCounter('item_id'),
+        account_id: 1,
+        account_label: providerAccountLabel(provider),
+        provider,
+        remote_draft_id: `draft-${provider}-${nextMailDraftCounter('remote_id')}`,
+        reply_to_message_id: String(item?.source_ref || '').trim(),
+        thread_id: String(meta.thread_id || '').trim(),
+        to: sender ? [sender] : [],
+        cc,
+        bcc: [],
+        subject,
+        body: '',
+        status: 'draft',
+      });
+      const drafts = window.__mailDrafts && typeof window.__mailDrafts === 'object' ? window.__mailDrafts : {};
+      drafts[String(draft.artifact_id)] = cloneMailDraft(draft);
+      window.__mailDrafts = drafts;
+      return cloneMailDraft(draft);
+    }
     function updateHarnessMailDraft(artifactID, patch = {}) {
       const drafts = window.__mailDrafts && typeof window.__mailDrafts === 'object' ? window.__mailDrafts : {};
       const current = drafts[String(artifactID)] || drafts[Number(artifactID)];
@@ -1885,6 +1923,22 @@
       if (u.includes('/api/actors')) {
         const actors = Array.isArray(window.__itemSidebarActors) ? window.__itemSidebarActors : [];
         return new Response(JSON.stringify({ ok: true, actors }), { status: 200 });
+      }
+      if (/\/api\/mail\/drafts\/reply-all(?:\?|$)/.test(u) && opts?.method === 'POST') {
+        let body = {};
+        try { body = JSON.parse(String(opts?.body || '{}')); } catch (_) { body = {}; }
+        const draft = createHarnessReplyAllDraft(Number(body.item_id || 0));
+        window.__harnessLog.push({
+          type: 'api_fetch',
+          action: 'mail_draft_reply_all',
+          method: opts?.method || 'POST',
+          url: u,
+          payload: body,
+        });
+        if (!draft) {
+          return new Response('item not found', { status: 404 });
+        }
+        return new Response(JSON.stringify({ ok: true, draft }), { status: 201 });
       }
       if (/\/api\/mail\/drafts\/forward(?:\?|$)/.test(u) && opts?.method === 'POST') {
         let body = {};

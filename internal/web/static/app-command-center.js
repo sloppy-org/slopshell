@@ -3,6 +3,7 @@ import { refs, state } from './app-context.js';
 const openItemSidebarView = (...args) => refs.openItemSidebarView(...args);
 const launchNewMailAuthoring = (...args) => refs.launchNewMailAuthoring(...args);
 const launchReplyAuthoring = (...args) => refs.launchReplyAuthoring(...args);
+const launchReplyAllAuthoring = (...args) => refs.launchReplyAllAuthoring(...args);
 const launchForwardAuthoring = (...args) => refs.launchForwardAuthoring(...args);
 const selectInteractionTool = (...args) => refs.selectInteractionTool(...args);
 
@@ -172,8 +173,20 @@ function availableCommandCenterCommands() {
     disabled: !replyItem,
     run: () => (replyItem ? launchReplyAuthoring(replyItem) : false),
   });
-  const forwardItem = activeReplySidebarItem();
+  const replyAllItem = activeReplySidebarItem();
   commands.splice(6, 0, {
+    id: 'reply-all-mail',
+    title: 'Reply All To Selected Email',
+    detail: replyAllItem
+      ? `Reply all to ${String(replyAllItem?.title || replyAllItem?.artifact_title || 'selected email').trim() || 'selected email'}.`
+      : 'Select an email item in the sidebar to reply all.',
+    shortcut: 'A',
+    keywords: 'reply all email everyone selected draft',
+    disabled: !replyAllItem,
+    run: () => (replyAllItem ? launchReplyAllAuthoring(replyAllItem) : false),
+  });
+  const forwardItem = activeReplySidebarItem();
+  commands.splice(7, 0, {
     id: 'forward-mail',
     title: 'Forward Selected Email',
     detail: forwardItem

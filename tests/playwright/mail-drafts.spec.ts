@@ -581,6 +581,110 @@ test.describe('mail drafts', () => {
     await expect(page.locator('#canvas-text')).toHaveClass(/mail-draft-canvas/);
   });
 
+  test('reply all includes all recipients in cc', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await waitReady(page);
+
+    await page.evaluate(() => {
+      (window as any).__setItemSidebarData({
+        inbox: [{
+          id: 812,
+          title: 'Team update',
+          state: 'inbox',
+          sphere: 'private',
+          artifact_id: 612,
+          source: 'exchange',
+          source_ref: 'msg-812',
+          artifact_title: 'Team update',
+          artifact_kind: 'email',
+          actor_name: 'Boss',
+          created_at: '2026-03-10 10:00:00',
+          updated_at: '2026-03-10 10:05:00',
+        }],
+        waiting: [],
+        someday: [],
+        done: [],
+      });
+      (window as any).__setItemSidebarArtifacts({
+        612: {
+          id: 612,
+          kind: 'email',
+          title: 'Team update',
+          meta_json: JSON.stringify({
+            subject: 'Team update',
+            sender: 'boss@example.com',
+            thread_id: 'thread-812',
+            recipients: ['alice@example.com', 'bob@example.com', 'carol@example.com'],
+            body: 'Please review the proposal.',
+          }),
+        },
+      });
+    });
+
+    await openInbox(page);
+    await page.locator('#pr-file-list .pr-file-item').first().click();
+    await expect(page.locator('#reply-all-mail-trigger')).toBeVisible();
+
+    await clearLog(page);
+    await page.locator('#reply-all-mail-trigger').click();
+    await waitForLogEntry(page, 'api_fetch', 'mail_draft_reply_all');
+
+    await expect(page.locator('#canvas-text')).toHaveClass(/mail-draft-canvas/);
+    await expect(page.locator('[name="to"]')).toHaveValue('boss@example.com');
+    const ccValue = await page.locator('[name="cc"]').inputValue();
+    expect(ccValue).toContain('bob@example.com');
+    expect(ccValue).toContain('carol@example.com');
+  });
+
+  test('reply all hotkey a works from sidebar', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await waitReady(page);
+
+    await page.evaluate(() => {
+      (window as any).__setItemSidebarData({
+        inbox: [{
+          id: 812,
+          title: 'Team update',
+          state: 'inbox',
+          sphere: 'private',
+          artifact_id: 612,
+          source: 'exchange',
+          source_ref: 'msg-812',
+          artifact_title: 'Team update',
+          artifact_kind: 'email',
+          actor_name: 'Boss',
+          created_at: '2026-03-10 10:00:00',
+          updated_at: '2026-03-10 10:05:00',
+        }],
+        waiting: [],
+        someday: [],
+        done: [],
+      });
+      (window as any).__setItemSidebarArtifacts({
+        612: {
+          id: 612,
+          kind: 'email',
+          title: 'Team update',
+          meta_json: JSON.stringify({
+            subject: 'Team update',
+            sender: 'boss@example.com',
+            thread_id: 'thread-812',
+            recipients: ['alice@example.com', 'bob@example.com'],
+            body: 'Please review.',
+          }),
+        },
+      });
+    });
+
+    await openInbox(page);
+    await page.locator('#pr-file-list .pr-file-item').first().click();
+
+    await clearLog(page);
+    await page.keyboard.press('a');
+    await waitForLogEntry(page, 'api_fetch', 'mail_draft_reply_all');
+    await expect(page.locator('#canvas-text')).toHaveClass(/mail-draft-canvas/);
+  });
+
   test('thread view shows foldable messages with last expanded', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await waitReady(page);

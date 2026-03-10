@@ -550,6 +550,88 @@ func TestMailDraftSendAppendsToThread(t *testing.T) {
 	}
 }
 
+func TestMailDraftReplyAllAPI(t *testing.T) {
+	app := newAuthedTestApp(t)
+	mustCreateProject(t, app)
+	account, err := app.store.CreateExternalAccount(store.SpherePrivate, store.ExternalProviderGmail, "Private Gmail", map[string]any{
+		"username": "alice@example.com",
+	})
+	if err != nil {
+		t.Fatalf("CreateExternalAccount() error: %v", err)
+	}
+	provider := &fakeMailDraftProvider{
+		message: &providerdata.EmailMessage{
+			ID:         "remote-ra-1",
+			ThreadID:   "thread-ra-1",
+			Subject:    "Team update",
+			Sender:     "boss@example.com",
+			Recipients: []string{"alice@example.com", "bob@example.com", "carol@example.com"},
+		},
+	}
+	app.newEmailProvider = func(context.Context, store.ExternalAccount) (email.EmailProvider, error) {
+		return provider, nil
+	}
+
+	artifactTitle := "Team update"
+	artifactMeta := `{"sender":"boss@example.com","subject":"Team update","thread_id":"thread-ra-1","recipients":["alice@example.com","bob@example.com","carol@example.com"]}`
+	artifact, err := app.store.CreateArtifact(store.ArtifactKindEmail, nil, nil, &artifactTitle, &artifactMeta)
+	if err != nil {
+		t.Fatalf("CreateArtifact() error: %v", err)
+	}
+	projectID, _ := app.store.ActiveProjectID()
+	source := store.ExternalProviderGmail
+	sourceRef := "remote-ra-1"
+	item, err := app.store.CreateItem("Team update", store.ItemOptions{
+		ProjectID:  &projectID,
+		ArtifactID: &artifact.ID,
+		Source:     &source,
+		SourceRef:  &sourceRef,
+	})
+	if err != nil {
+		t.Fatalf("CreateItem() error: %v", err)
+	}
+	if _, err := app.store.UpsertExternalBinding(store.ExternalBinding{
+		AccountID:  account.ID,
+		Provider:   account.Provider,
+		ObjectType: emailBindingObjectType,
+		RemoteID:   "remote-ra-1",
+		ItemID:     &item.ID,
+		ArtifactID: &artifact.ID,
+	}); err != nil {
+		t.Fatalf("UpsertExternalBinding() error: %v", err)
+	}
+
+	rr := doAuthedJSONRequest(t, app.Router(), http.MethodPost, "/api/mail/drafts/reply-all", map[string]any{
+		"item_id": item.ID,
+	})
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("reply-all draft status = %d, want 201: %s", rr.Code, rr.Body.String())
+	}
+	if len(provider.replyInputs) != 1 {
+		t.Fatalf("CreateReplyDraft calls = %d, want 1", len(provider.replyInputs))
+	}
+	reply := provider.replyInputs[0]
+	if len(reply.To) != 1 || reply.To[0] != "boss@example.com" {
+		t.Fatalf("reply-all To = %#v, want [boss@example.com]", reply.To)
+	}
+	if len(reply.Cc) != 2 {
+		t.Fatalf("reply-all Cc = %#v, want 2 addresses (bob and carol)", reply.Cc)
+	}
+	ccSet := map[string]bool{}
+	for _, addr := range reply.Cc {
+		ccSet[addr] = true
+	}
+	if !ccSet["bob@example.com"] || !ccSet["carol@example.com"] {
+		t.Fatalf("reply-all Cc = %#v, want bob and carol", reply.Cc)
+	}
+	if ccSet["alice@example.com"] {
+		t.Fatalf("reply-all Cc should not include self (alice)")
+	}
+	if reply.Subject != "Re: Team update" {
+		t.Fatalf("reply-all subject = %q, want Re: Team update", reply.Subject)
+	}
+}
+
 func mustCreateProject(t *testing.T, app *App) store.Project {
 	t.Helper()
 	project, err := app.store.CreateProject("Mail", "mail-project", filepath.Join(t.TempDir(), "mail-project"), "managed", "", "", false)

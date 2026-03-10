@@ -81,6 +81,7 @@ const stepPrReviewFile = (...args) => refs.stepPrReviewFile(...args);
 const maybeApplySelectionHighlight = (...args) => refs.maybeApplySelectionHighlight(...args);
 const launchNewMailAuthoring = (...args) => refs.launchNewMailAuthoring(...args);
 const launchReplyAuthoring = (...args) => refs.launchReplyAuthoring(...args);
+const launchReplyAllAuthoring = (...args) => refs.launchReplyAllAuthoring(...args);
 const launchForwardAuthoring = (...args) => refs.launchForwardAuthoring(...args);
 
 function handleMailShortcut(ev) {
@@ -97,6 +98,13 @@ function handleMailShortcut(ev) {
     if (!replyItem) return false;
     ev.preventDefault();
     void launchReplyAuthoring(replyItem);
+    return true;
+  }
+  if (String(ev.key || '') === 'a' || String(ev.key || '') === 'A') {
+    const replyAllItem = activeReplySidebarItem();
+    if (!replyAllItem) return false;
+    ev.preventDefault();
+    void launchReplyAllAuthoring(replyAllItem);
     return true;
   }
   if (String(ev.key || '') === 'f' || String(ev.key || '') === 'F') {

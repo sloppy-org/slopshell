@@ -75,6 +75,7 @@ Runtime and chat session management:
 - `POST /api/bugs/report`
 - `POST /api/mail/drafts`
 - `POST /api/mail/drafts/reply`
+- `POST /api/mail/drafts/reply-all`
 - `POST /api/mail/drafts/forward`
 - `GET /api/mail/drafts/{artifact_id}`
 - `PUT /api/mail/drafts/{artifact_id}`
