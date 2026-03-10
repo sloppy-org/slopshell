@@ -73,6 +73,11 @@ Runtime and chat session management:
 - `POST /api/scan/upload`
 - `POST /api/scan/confirm`
 - `POST /api/bugs/report`
+- `POST /api/mail/drafts`
+- `POST /api/mail/drafts/reply`
+- `GET /api/mail/drafts/{artifact_id}`
+- `PUT /api/mail/drafts/{artifact_id}`
+- `POST /api/mail/drafts/{artifact_id}/send`
 
 Domain model API:
 - `GET /api/workspaces`

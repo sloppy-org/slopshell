@@ -147,14 +147,6 @@ async function renderTestArtifact(page: Page, text = 'Line one\nLine two\nLine t
 
 async function renderPdfArtifactMock(page: Page) {
   await page.evaluate(() => {
-    const mod = (window as any).__canvasModule;
-    mod.renderCanvas({
-      event_id: 'art-pdf-1',
-      kind: 'pdf_artifact',
-      title: 'test.pdf',
-      path: 'docs/test.pdf',
-    });
-
     const pane = document.getElementById('canvas-pdf');
     if (!(pane instanceof HTMLElement)) return;
     pane.style.display = '';
@@ -202,6 +194,17 @@ async function renderPdfArtifactMock(page: Page) {
     surface.appendChild(pagesHost);
     pane.appendChild(surface);
 
+    const app = (window as any)._taburaApp;
+    const state = app?.getState?.();
+    if (state) {
+      state.currentCanvasArtifact = {
+        kind: 'pdf_artifact',
+        title: 'test.pdf',
+        path: 'docs/test.pdf',
+        event_id: 'art-pdf-1',
+      };
+      state.hasArtifact = true;
+    }
     document.dispatchEvent(new CustomEvent('tabura:canvas-rendered', {
       detail: {
         kind: 'pdf_artifact',
@@ -210,8 +213,6 @@ async function renderPdfArtifactMock(page: Page) {
         event_id: 'art-pdf-1',
       },
     }));
-    const app = (window as any)._taburaApp;
-    if (app?.getState) app.getState().hasArtifact = true;
   });
 }
 
