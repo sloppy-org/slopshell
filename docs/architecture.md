@@ -34,7 +34,7 @@ Runtime stack:
     `*.extension.json` files so the two retained compatibility paths stay
     distinct.
 - `internal/store/store.go`
-  - SQLite persistence for auth and chat session/message history.
+  - SQLite persistence for workspaces, artifacts, items, actors, labels, chat, and auth.
 - `internal/protocol/bootstrap.go`
   - Bootstrap behavior for project-local integration files.
 

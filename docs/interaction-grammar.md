@@ -75,3 +75,7 @@ New artifact kinds are allowed only when all of the following are true:
 - The artifact does not require its own naming scheme for live modes, state, or workflow concepts.
 
 Artifact kinds may add presentation or extraction details. They must not define a second product.
+
+## Design Lineage
+
+The intellectual foundations for this interaction model are documented in `design-lineage.md`. The core claim, supported by six decades of computing research and cognitive science, is that the workspace (not the app) should be the unit of design, and that action is situated (not pre-planned), which is why annotation-accumulation beats immediate-dispatch.
