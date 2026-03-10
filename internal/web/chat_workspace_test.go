@@ -200,7 +200,7 @@ func TestClassifyAndExecuteSystemActionCreateWorkspaceFromGit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ensure hub project: %v", err)
 	}
-	session, err := app.store.GetOrCreateChatSession(hub.ProjectKey)
+	session, err := app.chatSessionForProject(hub)
 	if err != nil {
 		t.Fatalf("chat session: %v", err)
 	}
@@ -301,11 +301,23 @@ func TestClassifyAndExecuteSystemActionListWorkspacesUsesActiveSphereByDefault(t
 	if !ok {
 		t.Fatalf("workspaces payload = %#v", payloads[0]["workspaces"])
 	}
-	if len(workspaces) != 1 || int64FromAny(workspaces[0]["workspace_id"]) != privateWorkspace.ID {
-		t.Fatalf("workspaces payload = %#v, want only private workspace", workspaces)
+	if len(workspaces) != 2 {
+		t.Fatalf("workspaces payload = %#v, want both private-sphere workspaces", workspaces)
 	}
-	if int64FromAny(payloads[0]["workspace_count"]) != 1 {
-		t.Fatalf("workspace_count = %v, want 1", payloads[0]["workspace_count"])
+	foundPrivateWorkspace := false
+	for _, workspace := range workspaces {
+		if got := strFromAny(workspace["sphere"]); got != store.SpherePrivate {
+			t.Fatalf("workspace sphere = %q, want private: %#v", got, workspaces)
+		}
+		if int64FromAny(workspace["workspace_id"]) == privateWorkspace.ID {
+			foundPrivateWorkspace = true
+		}
+	}
+	if !foundPrivateWorkspace {
+		t.Fatalf("workspaces payload missing private workspace %d: %#v", privateWorkspace.ID, workspaces)
+	}
+	if int64FromAny(payloads[0]["workspace_count"]) != 2 {
+		t.Fatalf("workspace_count = %v, want 2", payloads[0]["workspace_count"])
 	}
 
 	message, payloads, handled = app.classifyAndExecuteSystemAction(context.Background(), session.ID, session, "show all workspaces")
@@ -325,10 +337,17 @@ func TestClassifyAndExecuteSystemActionListWorkspacesUsesActiveSphereByDefault(t
 	if !ok {
 		t.Fatalf("workspaces payload = %#v", payloads[0]["workspaces"])
 	}
-	if len(workspacesAny) != 2 {
-		t.Fatalf("workspaces payload len = %d, want 2", len(workspacesAny))
+	if len(workspacesAny) < 3 {
+		t.Fatalf("workspaces payload len = %d, want at least 3", len(workspacesAny))
 	}
-	if int64FromAny(workspacesAny[1]["workspace_id"]) != workWorkspace.ID && int64FromAny(workspacesAny[0]["workspace_id"]) != workWorkspace.ID {
+	foundWorkWorkspace := false
+	for _, workspace := range workspacesAny {
+		if int64FromAny(workspace["workspace_id"]) == workWorkspace.ID {
+			foundWorkWorkspace = true
+			break
+		}
+	}
+	if !foundWorkWorkspace {
 		t.Fatalf("workspaces payload missing work workspace: %#v", workspacesAny)
 	}
 }
@@ -342,7 +361,7 @@ func TestClassifyAndExecuteSystemActionWorkspaceManagement(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ensure hub project: %v", err)
 	}
-	session, err := app.store.GetOrCreateChatSession(hub.ProjectKey)
+	session, err := app.chatSessionForProject(hub)
 	if err != nil {
 		t.Fatalf("chat session: %v", err)
 	}
@@ -351,7 +370,7 @@ func TestClassifyAndExecuteSystemActionWorkspaceManagement(t *testing.T) {
 	if !handled {
 		t.Fatal("expected create workspace command to be handled")
 	}
-	expectedDir := filepath.Join(hub.RootPath, "notes")
+	expectedDir := filepath.Join(app.cwdForProjectKey(session.ProjectKey), "notes")
 	if message != "Created workspace notes at "+expectedDir+"." {
 		t.Fatalf("message = %q", message)
 	}

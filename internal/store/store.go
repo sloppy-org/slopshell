@@ -36,6 +36,7 @@ type Store struct {
 
 type ChatSession struct {
 	ID          string `json:"id"`
+	WorkspaceID int64  `json:"workspace_id"`
 	ProjectKey  string `json:"project_key"`
 	AppThreadID string `json:"app_thread_id"`
 	Mode        string `json:"mode"`
@@ -179,7 +180,7 @@ CREATE TABLE IF NOT EXISTS remote_sessions (
 );
 CREATE TABLE IF NOT EXISTS chat_sessions (
   id TEXT PRIMARY KEY,
-  project_key TEXT NOT NULL UNIQUE,
+  workspace_id INTEGER NOT NULL UNIQUE REFERENCES workspaces(id) ON DELETE CASCADE,
   app_thread_id TEXT NOT NULL DEFAULT '',
   mode TEXT NOT NULL DEFAULT 'chat',
   created_at INTEGER NOT NULL,
@@ -280,7 +281,10 @@ CREATE TABLE IF NOT EXISTS participant_room_state (
 	if err := s.migrateDomainTables(); err != nil {
 		return err
 	}
-	return s.migrateLegacyProjectData()
+	if err := s.migrateLegacyProjectData(); err != nil {
+		return err
+	}
+	return s.migrateChatSessionWorkspaceKey()
 }
 
 func (s *Store) migrateProjectColumns() error {

@@ -123,7 +123,7 @@ func (a *App) chatSessionIDForProjectKey(projectKey string) (string, bool) {
 	if a == nil || a.store == nil {
 		return "", false
 	}
-	session, err := a.store.GetOrCreateChatSession(strings.TrimSpace(projectKey))
+	session, err := a.chatSessionForProjectKey(strings.TrimSpace(projectKey))
 	if err != nil {
 		return "", false
 	}

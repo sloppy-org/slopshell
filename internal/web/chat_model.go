@@ -109,7 +109,7 @@ func (a *App) resetProjectChatAppSession(projectKey string) {
 	if key == "" {
 		return
 	}
-	session, err := a.store.GetChatSessionByProjectKey(key)
+	session, err := a.chatSessionForProjectKey(key)
 	if err != nil {
 		return
 	}

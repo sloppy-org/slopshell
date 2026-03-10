@@ -313,6 +313,7 @@ func (s *Store) DeleteProject(id string) error {
 	defer tx.Rollback()
 
 	projectKey := strings.TrimSpace(project.ProjectKey)
+	projectIDText := strings.TrimSpace(project.ID)
 	if _, err := tx.Exec(
 		`DELETE FROM participant_room_state
 		 WHERE session_id IN (SELECT id FROM participant_sessions WHERE project_key = ?)`,
@@ -339,19 +340,29 @@ func (s *Store) DeleteProject(id string) error {
 	}
 	if _, err := tx.Exec(
 		`DELETE FROM chat_messages
-		 WHERE session_id IN (SELECT id FROM chat_sessions WHERE project_key = ?)`,
-		projectKey,
+		 WHERE session_id IN (
+		   SELECT cs.id
+		     FROM chat_sessions cs
+		     JOIN workspaces w ON w.id = cs.workspace_id
+		    WHERE w.project_id = ?
+		 )`,
+		projectIDText,
 	); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(
 		`DELETE FROM chat_events
-		 WHERE session_id IN (SELECT id FROM chat_sessions WHERE project_key = ?)`,
-		projectKey,
+		 WHERE session_id IN (
+		   SELECT cs.id
+		     FROM chat_sessions cs
+		     JOIN workspaces w ON w.id = cs.workspace_id
+		    WHERE w.project_id = ?
+		 )`,
+		projectIDText,
 	); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(`DELETE FROM chat_sessions WHERE project_key = ?`, projectKey); err != nil {
+	if _, err := tx.Exec(`DELETE FROM chat_sessions WHERE workspace_id IN (SELECT id FROM workspaces WHERE project_id = ?)`, projectIDText); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(`DELETE FROM projects WHERE id = ?`, projectID); err != nil {

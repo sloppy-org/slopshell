@@ -108,6 +108,34 @@ func TestProjectsListIncludesActiveAndSessions(t *testing.T) {
 	}
 }
 
+func TestHubProjectReusesWorkspaceChatSession(t *testing.T) {
+	app := newAuthedTestApp(t)
+
+	defaultProject, err := app.ensureDefaultProjectRecord()
+	if err != nil {
+		t.Fatalf("ensure default project: %v", err)
+	}
+	hub, err := app.ensureHubProject()
+	if err != nil {
+		t.Fatalf("ensure hub project: %v", err)
+	}
+
+	defaultItem, err := app.buildProjectAPIModel(defaultProject)
+	if err != nil {
+		t.Fatalf("build default project API model: %v", err)
+	}
+	hubItem, err := app.buildProjectAPIModel(hub)
+	if err != nil {
+		t.Fatalf("build hub project API model: %v", err)
+	}
+	if hubItem.ChatSessionID == "" {
+		t.Fatalf("expected hub chat session id")
+	}
+	if hubItem.ChatSessionID != defaultItem.ChatSessionID {
+		t.Fatalf("hub chat_session_id = %q, want shared session %q", hubItem.ChatSessionID, defaultItem.ChatSessionID)
+	}
+}
+
 func TestProjectsListIncludesWorkspaceSphere(t *testing.T) {
 	app := newAuthedTestApp(t)
 
@@ -216,8 +244,10 @@ func TestCreateActivateProjectAffectsChatSessionCreation(t *testing.T) {
 		t.Fatalf("expected chat session create 200, got %d: %s", rrSession.Code, rrSession.Body.String())
 	}
 	var sessionPayload struct {
-		OK        bool   `json:"ok"`
-		ProjectID string `json:"project_id"`
+		OK          bool   `json:"ok"`
+		SessionID   string `json:"session_id"`
+		WorkspaceID int64  `json:"workspace_id"`
+		ProjectID   string `json:"project_id"`
 	}
 	if err := json.Unmarshal(rrSession.Body.Bytes(), &sessionPayload); err != nil {
 		t.Fatalf("decode chat session response: %v", err)
@@ -227,6 +257,16 @@ func TestCreateActivateProjectAffectsChatSessionCreation(t *testing.T) {
 	}
 	if sessionPayload.ProjectID != createPayload.Project.ID {
 		t.Fatalf("expected chat session project %q, got %q", createPayload.Project.ID, sessionPayload.ProjectID)
+	}
+	if sessionPayload.WorkspaceID <= 0 {
+		t.Fatalf("expected workspace-backed chat session, got workspace_id=%d", sessionPayload.WorkspaceID)
+	}
+	session, err := app.store.GetChatSession(sessionPayload.SessionID)
+	if err != nil {
+		t.Fatalf("GetChatSession() error: %v", err)
+	}
+	if session.WorkspaceID != sessionPayload.WorkspaceID {
+		t.Fatalf("session workspace_id = %d, want %d", session.WorkspaceID, sessionPayload.WorkspaceID)
 	}
 }
 

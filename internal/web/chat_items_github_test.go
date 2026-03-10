@@ -242,7 +242,7 @@ func TestClassifyAndExecuteSystemActionCreateGitHubIssueRejectsMissingWorkspace(
 	if len(payloads) != 0 {
 		t.Fatalf("payloads = %#v, want none", payloads)
 	}
-	if message != "I couldn't create the GitHub issue: no workspace is linked to this conversation" {
+	if message != "I couldn't create the GitHub issue: workspace has no GitHub origin remote" {
 		t.Fatalf("message = %q", message)
 	}
 }

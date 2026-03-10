@@ -400,39 +400,6 @@ func (a *App) handleProjectsActivity(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (a *App) resolveProjectKey(projectID, projectKey string) (string, error) {
-	key := strings.TrimSpace(projectKey)
-	if key != "" {
-		return key, nil
-	}
-	id := strings.TrimSpace(projectID)
-	if id != "" {
-		project, err := a.store.GetProject(id)
-		if err != nil {
-			return "", err
-		}
-		return project.ProjectKey, nil
-	}
-	activeID, err := a.store.ActiveProjectID()
-	if err != nil {
-		return "", err
-	}
-	if activeID != "" {
-		project, err := a.store.GetProject(activeID)
-		if err == nil {
-			return project.ProjectKey, nil
-		}
-		if !isNoRows(err) {
-			return "", err
-		}
-	}
-	defaultProject, err := a.ensureDefaultProjectRecord()
-	if err != nil {
-		return "", err
-	}
-	return defaultProject.ProjectKey, nil
-}
-
 func (a *App) findProjectByCanvasSession(sessionID string) (store.Project, error) {
 	cleanSessionID := strings.TrimSpace(sessionID)
 	if cleanSessionID == "" {
