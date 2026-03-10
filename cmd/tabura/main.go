@@ -49,6 +49,10 @@ func run(args []string) int {
 		return cmdSchema()
 	case "bootstrap":
 		return cmdBootstrap(args[1:])
+	case "materialize":
+		return cmdMaterialize(args[1:])
+	case "archive":
+		return cmdArchive(args[1:])
 	case "server":
 		return cmdServer(args[1:])
 	case "mcp-server":
@@ -70,7 +74,7 @@ func run(args []string) int {
 
 func printHelp() {
 	fmt.Println("tabura <command> [flags]")
-	fmt.Println("commands: schema bootstrap server mcp-server set-password version update ptt-daemon")
+	fmt.Println("commands: schema bootstrap materialize archive server mcp-server set-password version update ptt-daemon")
 }
 
 func cmdSchema() int {
