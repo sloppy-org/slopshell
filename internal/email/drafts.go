@@ -71,19 +71,34 @@ func normalizeDraftAddresses(values []string) ([]string, error) {
 	out := make([]string, 0, len(values))
 	seen := map[string]struct{}{}
 	for _, raw := range values {
-		for _, part := range strings.Split(raw, ",") {
-			addr, err := normalizeDraftAddress(part)
-			if err != nil {
-				return nil, err
+		clean := strings.TrimSpace(raw)
+		if clean == "" {
+			continue
+		}
+		parsed, err := mail.ParseAddressList(clean)
+		if err != nil {
+			single, singleErr := normalizeDraftAddress(clean)
+			if singleErr != nil {
+				return nil, fmt.Errorf("invalid address %q", clean)
 			}
-			if addr == "" {
+			if single != "" {
+				if _, ok := seen[single]; !ok {
+					seen[single] = struct{}{}
+					out = append(out, single)
+				}
+			}
+			continue
+		}
+		for _, addr := range parsed {
+			lower := strings.ToLower(strings.TrimSpace(addr.Address))
+			if lower == "" {
 				continue
 			}
-			if _, ok := seen[addr]; ok {
+			if _, ok := seen[lower]; ok {
 				continue
 			}
-			seen[addr] = struct{}{}
-			out = append(out, addr)
+			seen[lower] = struct{}{}
+			out = append(out, lower)
 		}
 	}
 	return out, nil
