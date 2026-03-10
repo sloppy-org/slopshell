@@ -22,6 +22,7 @@ const setVoiceLifecycle = (...args) => refs.setVoiceLifecycle(...args);
 const updateAssistantActivityIndicator = (...args) => refs.updateAssistantActivityIndicator(...args);
 const isUiReadyForStatus = (...args) => refs.isUiReadyForStatus(...args);
 const syncVoiceLifecycle = (...args) => refs.syncVoiceLifecycle(...args);
+const maybeHandleDictationTranscript = (...args) => refs.maybeHandleDictationTranscript(...args);
 
 const VOICE_VAD_AUTO_SEND_DEFAULT = true;
 const VOICE_VAD_AUTO_SEND_STORAGE_KEY = 'tabura.voiceVadAutoSend';
@@ -714,9 +715,14 @@ export async function stopVoiceCaptureAndSend() {
       }
       throw new Error(voiceCaptureEmptyReasonMessage(result?.reason));
     }
-    showStatus('sending...');
-    state.voiceTranscriptSubmitInFlight = true;
-    void submitMessage(transcript, { kind: 'voice_transcript' });
+    if (await maybeHandleDictationTranscript(transcript)) {
+      state.voiceAwaitingTurn = false;
+      setVoiceLifecycle(VOICE_LIFECYCLE.IDLE, 'dictation-transcript-finished');
+    } else {
+      showStatus('sending...');
+      state.voiceTranscriptSubmitInFlight = true;
+      void submitMessage(transcript, { kind: 'voice_transcript' });
+    }
   } catch (err) {
     if (opSeq !== state.voiceLifecycleSeq) return;
     state.voiceAwaitingTurn = false;

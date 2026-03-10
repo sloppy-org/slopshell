@@ -160,6 +160,17 @@ export const state = {
   indicatorSuppressedByCanvasUpdate: false,
   chatCtrlHoldTimer: null,
   chatVoiceCapture: null,
+  dictation: {
+    active: false,
+    targetKind: 'document_section',
+    targetLabel: 'Document Section',
+    prompt: '',
+    artifactTitle: '',
+    transcript: '',
+    draftText: '',
+    scratchPath: '',
+    saving: false,
+  },
   reasoningEffortsByAlias: {
     codex: ['low', 'medium', 'high', 'xhigh'],
     gpt: ['low', 'medium', 'high', 'xhigh'],

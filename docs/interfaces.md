@@ -63,6 +63,11 @@ Runtime and chat session management:
 - `POST /api/chat/sessions/{session_id}/messages`
 - `POST /api/chat/sessions/{session_id}/commands`
 - `POST /api/chat/sessions/{session_id}/cancel`
+- `GET /api/chat/sessions/{session_id}/dictation`
+- `DELETE /api/chat/sessions/{session_id}/dictation`
+- `POST /api/chat/sessions/{session_id}/dictation/start`
+- `POST /api/chat/sessions/{session_id}/dictation/append`
+- `PUT /api/chat/sessions/{session_id}/dictation/draft`
 - `POST /api/ink/submit`
 - `POST /api/review/submit`
 - `POST /api/bugs/report`

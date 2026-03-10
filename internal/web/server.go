@@ -106,6 +106,7 @@ type App struct {
 	chatCaptureModes        *chatCaptureModeTracker
 	chatCursorContexts      *chatCursorContextTracker
 	chatCanvasPositions     *chatCanvasPositionTracker
+	dictationSessions       *dictationSessionTracker
 	workspaceWatches        *workspaceWatchTracker
 	reviewDispatches        *reviewDispatchTracker
 	projectAttention        *projectAttentionTracker
@@ -297,6 +298,7 @@ func New(dataDir, localProjectDir, localMCPURL, appServerURL, model, ttsURL, spa
 		chatCaptureModes:        newChatCaptureModeTracker(),
 		chatCursorContexts:      newChatCursorContextTracker(),
 		chatCanvasPositions:     newChatCanvasPositionTracker(),
+		dictationSessions:       newDictationSessionTracker(),
 		workspaceWatches:        newWorkspaceWatchTracker(),
 		reviewDispatches:        newReviewDispatchTracker(),
 		projectAttention:        newProjectAttentionTracker(),

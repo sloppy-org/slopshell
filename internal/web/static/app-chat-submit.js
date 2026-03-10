@@ -29,6 +29,7 @@ const setVoiceLifecycle = (...args) => refs.setVoiceLifecycle(...args);
 const shouldStopInUiClick = (...args) => refs.shouldStopInUiClick(...args);
 const sttCancel = (...args) => refs.sttCancel(...args);
 const maybeHandleInlineBugReport = (...args) => refs.maybeHandleInlineBugReport(...args);
+const maybeHandleDictationCommand = (...args) => refs.maybeHandleDictationCommand(...args);
 
 const STOP_REQUEST_TIMEOUT_MS = 3500;
 const VOICE_TRANSCRIPT_SUBMIT_GUARD_MS = 220;
@@ -192,6 +193,13 @@ export async function submitMessage(text, options = {}) {
   }
   cancelLiveSessionListen();
   startVoiceLifecycleOp('submit-message');
+  if (await maybeHandleDictationCommand(trimmed)) {
+    if (submitKind === 'voice_transcript') {
+      state.voiceTranscriptSubmitInFlight = false;
+      state.voiceAwaitingTurn = false;
+    }
+    return true;
+  }
   let submitController = null;
   if (submitKind) {
     submitController = new AbortController();

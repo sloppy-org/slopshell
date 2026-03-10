@@ -18,6 +18,7 @@ import * as canvasUiModule from './app-canvas-ui.js';
 import * as edgePanelsModule from './app-edge-panels.js';
 import * as bugReportModule from './app-bug-report.js';
 import * as annotationsModule from './app-annotations.js';
+import * as dictationModule from './app-dictation.js';
 import * as initModule from './app-init.js';
 import * as startupModule from './app-startup.js';
 
@@ -41,6 +42,7 @@ setAppRefs({
   ...edgePanelsModule,
   ...bugReportModule,
   ...annotationsModule,
+  ...dictationModule,
   ...initModule,
   ...startupModule,
 });
@@ -48,6 +50,7 @@ setAppRefs({
 runtimeUiModule.initRuntimeUi();
 bugReportModule.initBugReportUi();
 annotationsModule.initAnnotationUi();
+dictationModule.initDictationUi();
 
 window._taburaApp = {
   getState,
@@ -56,6 +59,8 @@ window._taburaApp = {
   sttSendBlob: voiceModule.sttSendBlob,
   sttStop: voiceModule.sttStop,
   sttCancel: voiceModule.sttCancel,
+  appendDictationTranscript: dictationModule.maybeHandleDictationTranscript,
+  sendDictationDraft: dictationModule.sendDictationDraft,
   refreshCompanionState: projectsModule.refreshCompanionState,
   syncCompanionIdleSurface: runtimeUiModule.syncCompanionIdleSurface,
 };

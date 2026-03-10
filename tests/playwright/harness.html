@@ -200,6 +200,42 @@
       startup_behavior: 'hub_first',
       active_sphere: 'private',
     };
+    let dictationState = {
+      active: false,
+      target_kind: 'document_section',
+      target_label: 'Document Section',
+      prompt: '',
+      artifact_title: '',
+      transcript: '',
+      draft_text: '',
+      scratch_path: '',
+    };
+    function dictationLabel(targetKind) {
+      if (targetKind === 'email_reply') return 'Email Reply';
+      if (targetKind === 'review_comment') return 'Review Comment';
+      return 'Document Section';
+    }
+    function dictationTargetForPrompt(prompt, artifactTitle) {
+      const combined = String(`${prompt || ''}\n${artifactTitle || ''}`).toLowerCase();
+      if (combined.includes('review') || combined.includes('.diff') || combined.includes('pr ')) return 'review_comment';
+      if (combined.includes('reply') || combined.includes('email') || combined.includes('thread') || combined.includes('letter')) return 'email_reply';
+      return 'document_section';
+    }
+    function dictationDraftForState(current) {
+      const transcript = String(current?.transcript || '').trim();
+      const title = String(current?.artifact_title || '').trim();
+      const paragraphs = transcript
+        ? transcript.split(/\n\s*\n/).map((part) => part.trim().replace(/\s+/g, ' ')).filter(Boolean)
+        : [];
+      if (current?.target_kind === 'email_reply') {
+        return `# Email Reply Draft\n\n${title ? `Thread: ${title}\n\n` : ''}${paragraphs.join('\n\n') || 'Start speaking to build the reply.'}`;
+      }
+      if (current?.target_kind === 'review_comment') {
+        const bullets = paragraphs.length > 0 ? paragraphs.map((part) => `- ${part}`).join('\n') : 'Start speaking to build the comment.';
+        return `# Review Comment Draft\n\n${title ? `Target: ${title}\n\n` : ''}${bullets}`;
+      }
+      return `# Document Section Draft\n\n${title ? `Working title: ${title}\n\n` : ''}${paragraphs.join('\n\n') || 'Start speaking to build the section.'}`;
+    }
     const TEST_BUG_REPORT_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO5W8xkAAAAASUVORK5CYII=';
     window.__taburaBugReportTestEnv = { screenshotDataURL: TEST_BUG_REPORT_PNG };
     window.__bugReportRequests = [];
@@ -1651,6 +1687,77 @@
           payload: activityResponse,
         });
         return new Response(JSON.stringify(activityResponse), { status: 200 });
+      }
+      if (u.includes('/api/chat/sessions') && u.includes('/dictation/start') && opts?.method === 'POST') {
+        let body = {};
+        try { body = JSON.parse(String(opts?.body || '{}')); } catch (_) { body = {}; }
+        const targetKind = dictationTargetForPrompt(body.prompt, body.artifact_title);
+        dictationState = {
+          active: true,
+          target_kind: targetKind,
+          target_label: dictationLabel(targetKind),
+          prompt: String(body.prompt || '').trim(),
+          artifact_title: String(body.artifact_title || '').trim(),
+          transcript: '',
+          draft_text: '',
+          scratch_path: '',
+        };
+        window.__harnessLog.push({
+          type: 'api_fetch',
+          action: 'dictation_start',
+          method: opts?.method || 'POST',
+          url: u,
+          payload: { ...dictationState },
+        });
+        return new Response(JSON.stringify({ ok: true, dictation: dictationState }), { status: 200 });
+      }
+      if (u.includes('/api/chat/sessions') && u.includes('/dictation/append') && opts?.method === 'POST') {
+        let body = {};
+        try { body = JSON.parse(String(opts?.body || '{}')); } catch (_) { body = {}; }
+        const chunk = String(body.text || '').trim();
+        dictationState.transcript = [dictationState.transcript, chunk].filter(Boolean).join('\n\n').trim();
+        dictationState.draft_text = dictationDraftForState(dictationState);
+        if (!dictationState.scratch_path) {
+          dictationState.scratch_path = '.tabura/artifacts/tmp/dictation-harness.md';
+        }
+        window.__harnessLog.push({
+          type: 'api_fetch',
+          action: 'dictation_append',
+          method: opts?.method || 'POST',
+          url: u,
+          payload: { ...dictationState, chunk },
+        });
+        return new Response(JSON.stringify({ ok: true, dictation: dictationState }), { status: 200 });
+      }
+      if (u.includes('/api/chat/sessions') && u.includes('/dictation/draft') && opts?.method === 'PUT') {
+        let body = {};
+        try { body = JSON.parse(String(opts?.body || '{}')); } catch (_) { body = {}; }
+        dictationState.draft_text = String(body.draft_text || '').trim();
+        if (!dictationState.scratch_path) {
+          dictationState.scratch_path = '.tabura/artifacts/tmp/dictation-harness.md';
+        }
+        window.__harnessLog.push({
+          type: 'api_fetch',
+          action: 'dictation_draft',
+          method: opts?.method || 'PUT',
+          url: u,
+          payload: { ...dictationState },
+        });
+        return new Response(JSON.stringify({ ok: true, dictation: dictationState }), { status: 200 });
+      }
+      if (u.includes('/api/chat/sessions') && u.includes('/dictation') && opts?.method === 'DELETE') {
+        dictationState = { ...dictationState, active: false };
+        window.__harnessLog.push({
+          type: 'api_fetch',
+          action: 'dictation_stop',
+          method: opts?.method || 'DELETE',
+          url: u,
+          payload: { ...dictationState },
+        });
+        return new Response(JSON.stringify({ ok: true, dictation: dictationState }), { status: 200 });
+      }
+      if (u.includes('/api/chat/sessions') && u.includes('/dictation')) {
+        return new Response(JSON.stringify({ ok: true, dictation: dictationState }), { status: 200 });
       }
       if (u.includes('/api/chat/sessions') && u.includes('/commands') && opts?.method === 'POST') {
         let body = {};

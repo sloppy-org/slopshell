@@ -36,6 +36,7 @@ const setInteractionSurface = (...args) => refs.setInteractionSurface(...args);
 const renderEdgeTopProjects = (...args) => refs.renderEdgeTopProjects(...args);
 const isLikelyIOS = (...args) => refs.isLikelyIOS(...args);
 const shouldStopInUiClick = (...args) => refs.shouldStopInUiClick(...args);
+const maybePersistDictationDraft = (...args) => refs.maybePersistDictationDraft(...args);
 
 export function mediaQueryMatches(query) {
   if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
@@ -726,6 +727,7 @@ export function exitArtifactEditMode(options = {}) {
   document.body.classList.remove('artifact-edit-mode');
   if (applyChanges) {
     applyArtifactEditorText(nextText);
+    maybePersistDictationDraft(nextText);
   }
   return true;
 }
