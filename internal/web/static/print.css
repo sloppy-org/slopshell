@@ -115,6 +115,35 @@ body.print-page {
   font: 0.95rem/1.55 "IBM Plex Mono", "SFMono-Regular", monospace;
 }
 
+.print-content-marked {
+  display: grid;
+  gap: 8px;
+}
+
+.print-marker-row {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.print-marker-row-paragraph {
+  margin-bottom: 8px;
+}
+
+.print-marker {
+  color: #9d9075;
+  font: 700 0.74rem/1.25 "Avenir Next Condensed", "Franklin Gothic Medium", sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  user-select: all;
+}
+
+.print-marker-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .print-details {
   margin-top: 16px;
 }

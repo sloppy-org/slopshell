@@ -63,6 +63,7 @@ type scanMappedAnnotation struct {
 	Content    string          `json:"content"`
 	AnchorText string          `json:"anchor_text,omitempty"`
 	Line       int             `json:"line,omitempty"`
+	Paragraph  int             `json:"paragraph,omitempty"`
 	Page       int             `json:"page,omitempty"`
 	Bounds     *scanNormBounds `json:"bounds,omitempty"`
 	Confidence float64         `json:"confidence,omitempty"`
@@ -539,11 +540,12 @@ func (a *App) extractScanAnnotations(ctx context.Context, req scanExtractRequest
 
 const scanExtractionSystemPrompt = `You extract handwritten annotations from scanned printouts.
 Return strict JSON with shape:
-{"summary":"short summary","annotations":[{"content":"required extracted note text","anchor_text":"printed source text nearest the note if known","line":42,"page":1,"bounds":{"x":0.1,"y":0.2,"width":0.3,"height":0.08},"confidence":0.9}]}
+{"summary":"short summary","annotations":[{"content":"required extracted note text","anchor_text":"printed source text nearest the note if known","line":42,"paragraph":3,"page":1,"bounds":{"x":0.1,"y":0.2,"width":0.3,"height":0.08},"confidence":0.9}]}
 
 Rules:
 - Prefer concise note text in content.
-- Use line for printed code/text documents when you can infer it.
+- Use line for printed code/text/diff documents when you can infer it.
+- Use paragraph for prose/email documents when you can infer it from printed paragraph markers.
 - Use page for PDF/page-based material when you can infer it.
 - bounds must be normalized 0..1 relative to the original artifact page when known.
 - Omit fields you cannot infer.
@@ -570,6 +572,9 @@ func buildScanExtractionUserPrompt(req scanExtractRequest) string {
 		}
 		b.WriteString(text)
 		b.WriteString("\n")
+		b.WriteString("\nPrinted excerpt notes:\n")
+		b.WriteString("- Machine-readable markers may be embedded inline, such as L001 for lines or P01 for paragraphs.\n")
+		b.WriteString("- Prefer those markers when inferring line or paragraph positions.\n")
 	}
 	if meta := strings.TrimSpace(req.SourceMetaPretty); meta != "" {
 		b.WriteString("\nSource metadata:\n")
@@ -593,6 +598,7 @@ func sanitizeScanAnnotations(in []scanMappedAnnotation) []scanMappedAnnotation {
 			Content:    content,
 			AnchorText: strings.TrimSpace(entry.AnchorText),
 			Line:       maxInt(entry.Line, 0),
+			Paragraph:  maxInt(entry.Paragraph, 0),
 			Page:       maxInt(entry.Page, 0),
 			Confidence: clampScanFloat(entry.Confidence),
 		}
@@ -634,6 +640,8 @@ func buildScanUploadSummary(project store.Project, item *store.Item, artifact *s
 		line := fmt.Sprintf("%d. %s", i+1, entry.Content)
 		if entry.Line > 0 {
 			line += fmt.Sprintf(" (line %d)", entry.Line)
+		} else if entry.Paragraph > 0 {
+			line += fmt.Sprintf(" (paragraph %d)", entry.Paragraph)
 		} else if entry.Page > 0 {
 			line += fmt.Sprintf(" (page %d)", entry.Page)
 		}
@@ -662,6 +670,8 @@ func buildScanConfirmSummary(project store.Project, item *store.Item, artifact *
 		line := fmt.Sprintf("%d. %s", i+1, entry.Content)
 		if entry.Line > 0 {
 			line += fmt.Sprintf(" (line %d)", entry.Line)
+		} else if entry.Paragraph > 0 {
+			line += fmt.Sprintf(" (paragraph %d)", entry.Paragraph)
 		} else if entry.Page > 0 {
 			line += fmt.Sprintf(" (page %d)", entry.Page)
 		}

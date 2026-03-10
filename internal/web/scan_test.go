@@ -282,3 +282,43 @@ func TestScanConfirmCreatesAnnotationArtifactAndUpdatesScanMeta(t *testing.T) {
 		t.Fatalf("expected source + scan + review artifacts, got %+v", linked)
 	}
 }
+
+func TestScanSummariesAndPromptPreserveParagraphMarkers(t *testing.T) {
+	project := store.Project{ID: "demo"}
+	item := &store.Item{Title: "Review email"}
+	artifact := &store.Artifact{Title: stringPtr("thread.eml")}
+
+	annotations := []scanMappedAnnotation{
+		{Content: "reply here", AnchorText: "Second paragraph", Paragraph: 2, Confidence: 0.88},
+	}
+
+	uploadSummary := buildScanUploadSummary(project, item, artifact, ".tabura/artifacts/scans/demo.png", scanExtractResult{
+		Summary:     "One margin note detected.",
+		Annotations: annotations,
+	})
+	if !strings.Contains(uploadSummary, "paragraph 2") {
+		t.Fatalf("upload summary missing paragraph marker:\n%s", uploadSummary)
+	}
+
+	confirmSummary := buildScanConfirmSummary(project, item, artifact, annotations)
+	if !strings.Contains(confirmSummary, "paragraph 2") {
+		t.Fatalf("confirm summary missing paragraph marker:\n%s", confirmSummary)
+	}
+
+	prompt := buildScanExtractionUserPrompt(scanExtractRequest{
+		Filename:       "thread-scan.png",
+		MIMEType:       "image/png",
+		Item:           item,
+		SourceArtifact: artifact,
+		SourceText:     "P01 First paragraph.\n\nP02 Second paragraph.",
+	})
+	for _, snippet := range []string{
+		"L001 for lines",
+		"P01 for paragraphs",
+		"Source artifact title: thread.eml",
+	} {
+		if !strings.Contains(prompt, snippet) {
+			t.Fatalf("scan prompt missing %q:\n%s", snippet, prompt)
+		}
+	}
+}

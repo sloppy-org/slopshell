@@ -62,7 +62,9 @@ var itemPrintTemplate = template.Must(template.New("item-print").Parse(`<!DOCTYP
           <div class="print-muted">{{.Artifact.RefPath}}</div>
           {{end}}
         </div>
-        {{if .Artifact.Content}}
+        {{if .Artifact.ContentHTML}}
+        <div class="print-content print-content-marked">{{.Artifact.ContentHTML}}</div>
+        {{else if .Artifact.Content}}
         <pre class="print-content">{{.Artifact.Content}}</pre>
         {{else}}
         <p class="print-muted">No inline artifact text was available for print preview.</p>
@@ -96,12 +98,13 @@ type printFact struct {
 }
 
 type printArtifactView struct {
-	Kind     string
-	Title    string
-	RefPath  string
-	RefURL   string
-	Content  string
-	Metadata string
+	Kind        string
+	Title       string
+	RefPath     string
+	RefURL      string
+	Content     string
+	ContentHTML template.HTML
+	Metadata    string
 }
 
 type itemPrintView struct {
@@ -194,14 +197,23 @@ func buildPrintArtifactView(artifact store.Artifact) *printArtifactView {
 	metaText, metaPretty := printableArtifactMeta(artifact.MetaJSON)
 	content := printableArtifactContent(artifact, metaText)
 	return &printArtifactView{
-		Kind:     string(artifact.Kind),
-		Title:    firstPrintableValue(optionalStringValue(artifact.Title), optionalStringValue(artifact.RefPath), optionalStringValue(artifact.RefURL), string(artifact.Kind)),
-		RefPath:  optionalStringValue(artifact.RefPath),
-		RefURL:   optionalStringValue(artifact.RefURL),
-		Content:  content,
-		Metadata: metaPretty,
+		Kind:        string(artifact.Kind),
+		Title:       firstPrintableValue(optionalStringValue(artifact.Title), optionalStringValue(artifact.RefPath), optionalStringValue(artifact.RefURL), string(artifact.Kind)),
+		RefPath:     optionalStringValue(artifact.RefPath),
+		RefURL:      optionalStringValue(artifact.RefURL),
+		Content:     content,
+		ContentHTML: printableArtifactContentHTML(artifact, content),
+		Metadata:    metaPretty,
 	}
 }
+
+type printMarkerMode string
+
+const (
+	printMarkerModeNone      printMarkerMode = ""
+	printMarkerModeLine      printMarkerMode = "line"
+	printMarkerModeParagraph printMarkerMode = "paragraph"
+)
 
 func printableArtifactContent(artifact store.Artifact, metaText string) string {
 	if path := strings.TrimSpace(optionalStringValue(artifact.RefPath)); path != "" {
@@ -212,6 +224,76 @@ func printableArtifactContent(artifact store.Artifact, metaText string) string {
 		}
 	}
 	return strings.TrimSpace(metaText)
+}
+
+func printableArtifactContentHTML(artifact store.Artifact, content string) template.HTML {
+	switch printableArtifactMarkerMode(artifact, content) {
+	case printMarkerModeLine:
+		return renderPrintableLineMarkers(content)
+	case printMarkerModeParagraph:
+		return renderPrintableParagraphMarkers(content)
+	default:
+		return ""
+	}
+}
+
+func printableArtifactMarkerMode(artifact store.Artifact, content string) printMarkerMode {
+	if strings.TrimSpace(content) == "" {
+		return printMarkerModeNone
+	}
+	switch artifact.Kind {
+	case store.ArtifactKindEmail, store.ArtifactKindEmailThread, artifactKindEmailDraft:
+		return printMarkerModeParagraph
+	default:
+		return printMarkerModeLine
+	}
+}
+
+func renderPrintableLineMarkers(content string) template.HTML {
+	lines := strings.Split(content, "\n")
+	var b strings.Builder
+	for i, line := range lines {
+		fmt.Fprintf(
+			&b,
+			`<div class="print-marker-row"><span class="print-marker" data-print-marker="line" data-print-value="%d">L%03d</span><span class="print-marker-text">%s</span></div>`,
+			i+1,
+			i+1,
+			template.HTMLEscapeString(line),
+		)
+	}
+	return template.HTML(b.String())
+}
+
+func renderPrintableParagraphMarkers(content string) template.HTML {
+	blocks := splitPrintableParagraphs(content)
+	var b strings.Builder
+	for i, block := range blocks {
+		fmt.Fprintf(
+			&b,
+			`<div class="print-marker-row print-marker-row-paragraph"><span class="print-marker" data-print-marker="paragraph" data-print-value="%d">P%02d</span><span class="print-marker-text">%s</span></div>`,
+			i+1,
+			i+1,
+			template.HTMLEscapeString(block),
+		)
+	}
+	return template.HTML(b.String())
+}
+
+func splitPrintableParagraphs(content string) []string {
+	text := strings.ReplaceAll(content, "\r\n", "\n")
+	parts := strings.Split(text, "\n\n")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		clean := strings.TrimSpace(part)
+		if clean == "" {
+			continue
+		}
+		out = append(out, clean)
+	}
+	if len(out) == 0 && strings.TrimSpace(text) != "" {
+		return []string{strings.TrimSpace(text)}
+	}
+	return out
 }
 
 func printableArtifactMeta(raw *string) (string, string) {

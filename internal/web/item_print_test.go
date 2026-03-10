@@ -70,6 +70,9 @@ func TestItemPrintHTMLIncludesCoverSheetAndArtifactFileContent(t *testing.T) {
 		"Alice",
 		"github",
 		"owner/tabura#193",
+		`data-print-marker="line"`,
+		"L001",
+		"L002",
 		"# Review",
 		"- tighten cover sheet",
 	} {
@@ -79,6 +82,45 @@ func TestItemPrintHTMLIncludesCoverSheetAndArtifactFileContent(t *testing.T) {
 	}
 	if strings.Contains(body, "window.print()") {
 		t.Fatalf("html-only print response should not auto-print:\n%s", body)
+	}
+}
+
+func TestItemPrintEmailArtifactUsesParagraphMarkers(t *testing.T) {
+	app := newAuthedTestApp(t)
+
+	workspace, err := app.store.CreateWorkspace("Mail", filepath.Join(t.TempDir(), "workspace"))
+	if err != nil {
+		t.Fatalf("CreateWorkspace() error: %v", err)
+	}
+	metaJSON := `{"text":"First paragraph.\n\nSecond paragraph."}`
+	title := "Re: annotated thread"
+	artifact, err := app.store.CreateArtifact(store.ArtifactKindEmail, nil, nil, &title, &metaJSON)
+	if err != nil {
+		t.Fatalf("CreateArtifact() error: %v", err)
+	}
+	item, err := app.store.CreateItem("Review email", store.ItemOptions{
+		WorkspaceID: &workspace.ID,
+		ArtifactID:  &artifact.ID,
+	})
+	if err != nil {
+		t.Fatalf("CreateItem() error: %v", err)
+	}
+
+	rr := doAuthedRequest(t, app.Router(), http.MethodGet, "/api/items/"+itoa(item.ID)+"/print?format=html")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("print html status = %d, want 200: %s", rr.Code, rr.Body.String())
+	}
+	body := rr.Body.String()
+	for _, snippet := range []string{
+		`data-print-marker="paragraph"`,
+		"P01",
+		"P02",
+		"First paragraph.",
+		"Second paragraph.",
+	} {
+		if !strings.Contains(body, snippet) {
+			t.Fatalf("print body missing %q:\n%s", snippet, body)
+		}
 	}
 }
 

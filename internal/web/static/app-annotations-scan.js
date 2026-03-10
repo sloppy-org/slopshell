@@ -82,6 +82,37 @@ function approximateTextRectsForLine(line, clamp01) {
   }];
 }
 
+function approximateTextRectsForParagraph(paragraph, clamp01) {
+  const pane = document.getElementById('canvas-text');
+  const paragraphNumber = Number.parseInt(String(paragraph || ''), 10);
+  if (!(pane instanceof HTMLElement) || !pane.classList.contains('is-active') || !Number.isFinite(paragraphNumber) || paragraphNumber <= 0) {
+    return [];
+  }
+  const blockNodes = Array.from(pane.querySelectorAll('p, li, blockquote, article, section')).filter((node) => node instanceof HTMLElement);
+  const block = blockNodes[paragraphNumber - 1];
+  if (block instanceof HTMLElement) {
+    return [normalizedRectFromClientRect(block.getBoundingClientRect(), pane.getBoundingClientRect(), {
+      scrollLeft: pane.scrollLeft,
+      scrollTop: pane.scrollTop,
+      width: Math.max(pane.scrollWidth, pane.clientWidth, 1),
+      height: Math.max(pane.scrollHeight, pane.clientHeight, 1),
+    }, clamp01)];
+  }
+  const paragraphs = String(pane.textContent || '').split(/\n\s*\n+/).map((entry) => entry.trim()).filter(Boolean);
+  if (paragraphs.length === 0) {
+    return [];
+  }
+  const height = Math.max(pane.scrollHeight, pane.clientHeight, 1);
+  const segmentHeight = height / paragraphs.length;
+  const top = Math.max(0, Math.min(height - segmentHeight, (paragraphNumber - 1) * segmentHeight));
+  return [{
+    x: 0.02,
+    y: clamp01(top / height),
+    width: 0.96,
+    height: clamp01(segmentHeight / height),
+  }];
+}
+
 function buildImportedScanAnnotation(entry, index, payload, deps) {
   const {
     clamp01,
@@ -93,6 +124,7 @@ function buildImportedScanAnnotation(entry, index, payload, deps) {
   const currentKind = safeText(state.currentCanvasArtifact?.kind || '');
   const page = Number.parseInt(safeText(entry?.page), 10);
   const line = Number.parseInt(safeText(entry?.line), 10);
+  const paragraph = Number.parseInt(safeText(entry?.paragraph), 10);
   const anchorText = safeText(entry?.anchor_text);
   const text = safeText(entry?.content || entry?.text || 'Scanned note');
   const bounds = normalizeScanBounds(entry?.bounds, clamp01);
@@ -101,6 +133,7 @@ function buildImportedScanAnnotation(entry, index, payload, deps) {
     text,
     anchor_text: anchorText,
     line: Number.isFinite(line) && line > 0 ? line : 0,
+    paragraph: Number.isFinite(paragraph) && paragraph > 0 ? paragraph : 0,
     color: highlightColor,
     notes: [],
     confidence: clamp01(Number(entry?.confidence)),
@@ -122,7 +155,9 @@ function buildImportedScanAnnotation(entry, index, payload, deps) {
   const rects = findTextAnchorRects(anchorText, safeText, collectNormalizedClientRects) || [];
   const mappedRects = rects.length > 0
     ? rects
-    : (Number.isFinite(line) && line > 0 ? approximateTextRectsForLine(line, clamp01) : []);
+    : (Number.isFinite(line) && line > 0
+      ? approximateTextRectsForLine(line, clamp01)
+      : (Number.isFinite(paragraph) && paragraph > 0 ? approximateTextRectsForParagraph(paragraph, clamp01) : []));
   return {
     ...base,
     type: 'highlight',
@@ -258,6 +293,7 @@ export function createScanAnnotationController(deps) {
             content: safeText(entry?.text),
             anchor_text: safeText(entry?.anchor_text),
             line: Number(entry?.line || 0),
+            paragraph: Number(entry?.paragraph || 0),
             page: Number(entry?.page || 0),
             bounds: normalizeScanBounds(Array.isArray(entry?.rects) ? entry.rects[0] : null, clamp01),
             confidence: Number(entry?.confidence || 0),

@@ -775,6 +775,69 @@ test.describe('floating tool palette', () => {
     expect(String(sent?.text || '')).toContain('Selection: "check nil case"');
   });
 
+  test('scan upload preserves paragraph mapping for email artifacts', async ({ page }) => {
+    await page.evaluate(() => {
+      (window as any).__setItemSidebarData({
+        inbox: [{
+          id: 905,
+          title: 'Review scanned reply notes',
+          state: 'inbox',
+          artifact_id: 702,
+          artifact_kind: 'email',
+          artifact_title: 'Re: follow-up',
+          updated_at: '2026-03-08 10:09:00',
+        }],
+      });
+      (window as any).__setItemSidebarArtifacts({
+        702: {
+          id: 702,
+          kind: 'email',
+          title: 'Re: follow-up',
+          meta_json: JSON.stringify({ text: 'First paragraph.\n\nSecond paragraph.' }),
+        },
+      });
+      (window as any).__setScanUploadResponse({
+        project_id: 'test',
+        item_id: 905,
+        artifact_id: 702,
+        scan_artifact: { id: 992, kind: 'image', title: 'Scanned email annotations' },
+        annotations: [
+          { content: 'reply here', anchor_text: 'Second paragraph.', paragraph: 2, confidence: 0.87 },
+        ],
+      });
+      (window as any).__setScanConfirmResponse({
+        project_id: 'test',
+        item_id: 905,
+        artifact_id: 702,
+        scan_artifact_id: 992,
+        review_artifact: { id: 993, kind: 'annotation', title: 'Reviewed email annotations' },
+      });
+    });
+
+    await page.locator('#edge-left-tap').click();
+    await page.locator('.sidebar-tab', { hasText: 'Inbox' }).click();
+    await page.locator('#pr-file-list .pr-file-item').first().click();
+    await expect(page.locator('#canvas-text')).toContainText('Second paragraph.');
+
+    await page.locator('#scan-upload-trigger').click();
+    await page.setInputFiles('#scan-upload-input', {
+      name: 'annotated-email.png',
+      mimeType: 'image/png',
+      buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a3xwAAAAASUVORK5CYII=', 'base64'),
+    });
+    await waitForLogEntry(page, 'api_fetch', 'scan_upload');
+    await expect(page.locator('#canvas-text .canvas-user-highlight.is-persistent')).toHaveCount(1);
+
+    await clearLog(page);
+    await page.locator('#annotation-bundle-send').click();
+    await waitForLogEntry(page, 'api_fetch', 'scan_confirm');
+
+    const confirmEntry = (await getLog(page)).find((entry) => entry.type === 'api_fetch' && entry.action === 'scan_confirm');
+    const confirmPayload = (confirmEntry?.payload || {}) as any;
+    const annotations = Array.isArray(confirmPayload.annotations) ? confirmPayload.annotations : [];
+    expect(Number(annotations[0]?.paragraph || 0)).toBe(2);
+  });
+
   test('email thread artifacts opened from the sidebar render thread text on annotate surface', async ({ page }) => {
     await page.evaluate(() => {
       (window as any).__setItemSidebarData({
