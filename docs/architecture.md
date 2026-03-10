@@ -60,7 +60,7 @@ The browser UI is a full-viewport canvas with no visible chrome:
 - **Tabula rasa**: blank white screen when no artifact is loaded.
 - **Artifact mode**: document (text, image, PDF) fills the viewport.
 - No toolbar, no prompt bar, no chat column. All interaction is invisible.
-- **Edge panels** (hidden): top edge = project switcher, right edge = chat log / diagnostics. Revealed by hovering near screen edge (desktop) or swiping inward (mobile).
+- **Edge panels** (hidden): top edge = workspace switcher, right edge = chat log / diagnostics. Revealed by hovering near screen edge (desktop) or swiping inward (mobile).
 
 ## Primary Data Flows
 

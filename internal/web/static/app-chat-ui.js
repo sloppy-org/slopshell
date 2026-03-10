@@ -503,7 +503,7 @@ export function renderWelcomeSurface(payload) {
   const sections = Array.isArray(payload?.sections) ? payload.sections : [];
   const title = String(payload?.title || 'Welcome').trim() || 'Welcome';
   const subtitle = isHubActive()
-    ? 'Choose a project or change a global runtime preference.'
+    ? 'Choose a workspace or change a global runtime preference.'
     : 'Pick up a recent file, open docs, or switch modes before asking.';
   const normalizedSections = sections.map((section, index) => ({
     ...section,

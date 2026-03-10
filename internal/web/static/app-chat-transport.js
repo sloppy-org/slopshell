@@ -821,7 +821,7 @@ export async function switchProject(projectID) {
   if (nextProjectID === state.activeProjectId && state.chatSessionId) return;
 
   state.projectSwitchInFlight = true;
-  showStatus('switching project...');
+  showStatus('switching workspace...');
   await deactivateLiveSession({ silent: true, disableMeetingConfig: true });
   cancelChatVoiceCapture();
   closeChatWs();
@@ -865,9 +865,9 @@ export async function switchProject(projectID) {
     openChatWs();
     showStatus(`ready`);
   } catch (err) {
-    const message = String(err?.message || err || 'project switch failed');
-    appendPlainMessage('system', `Project switch failed: ${message}`);
-    showStatus(`project switch failed: ${message}`);
+    const message = String(err?.message || err || 'workspace switch failed');
+    appendPlainMessage('system', `Workspace switch failed: ${message}`);
+    showStatus(`workspace switch failed: ${message}`);
   } finally {
     state.projectSwitchInFlight = false;
     renderEdgeTopModelButtons();

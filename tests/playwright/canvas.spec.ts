@@ -89,7 +89,11 @@ async function setInteractionTool(page: Page, tool: 'pointer' | 'highlight' | 'i
   await page.evaluate((mode) => {
     (window as any).__setRuntimeState?.({ tool: mode });
     const app = (window as any)._taburaApp;
-    if (app?.getState) app.getState().interaction.tool = mode;
+    if (app?.getState) {
+      const interaction = app.getState().interaction;
+      interaction.tool = mode;
+      interaction.conversation = mode === 'pointer' || mode === 'prompt' ? 'push_to_talk' : 'idle';
+    }
   }, tool);
 }
 
@@ -232,6 +236,19 @@ test.describe('canvas - tabula rasa', () => {
     await expect(indicator).toBeVisible();
     await expect(page.locator('.stop-square')).toBeVisible();
     await expect(page.locator('.record-dot')).toBeHidden();
+  });
+
+  test('ink mode tap does not reuse prompt tap-to-voice behavior', async ({ page }) => {
+    await clearLog(page);
+    await setInteractionTool(page, 'ink');
+
+    await page.mouse.click(400, 400);
+    await page.waitForTimeout(300);
+
+    const log = await getLog(page);
+    expect(log.some((entry) => entry.type === 'recorder' && entry.action === 'start')).toBe(false);
+    await expect(page.locator('#indicator')).toBeHidden();
+    await expect(page.locator('#ink-controls')).toBeHidden();
   });
 
   test('right-click opens text input at position', async ({ page }) => {

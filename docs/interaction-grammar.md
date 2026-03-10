@@ -61,7 +61,7 @@ Auxiliary surfaces are allowed only when all of the following are true:
 - The surface exists to make one job materially faster.
 - The surface writes back into the same Workspace / Artifact / Item / Actor / Label ontology.
 - The surface does not create its own action grammar.
-- The surface does not create a parallel runtime shell, inbox, review system, or project universe.
+- The surface does not create a parallel runtime shell, inbox, review system, or workspace universe.
 
 If a surface cannot satisfy all of those constraints, it does not belong in the product.
 

@@ -1,5 +1,15 @@
 import { expect, test, type Page } from '@playwright/test';
 
+async function clearLog(page: Page) {
+  await page.evaluate(() => {
+    (window as any).__harnessLog.splice(0);
+  });
+}
+
+async function getLog(page: Page) {
+  return page.evaluate(() => (window as any).__harnessLog.slice());
+}
+
 async function waitReady(page: Page) {
   await page.goto('/tests/playwright/harness.html');
   await page.waitForFunction(() => {
@@ -272,6 +282,30 @@ test('meeting idle surface tracks runtime state and hides behind open artifacts'
   await page.getByRole('button', { name: 'Meeting Transcript' }).click();
   await expect(page.locator('#canvas-text')).toContainText('Harness meeting transcript');
   await expect(page.locator('#companion-idle-surface')).toBeHidden();
+});
+
+test('meeting tap stays cursor-only and does not start local capture', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await waitReady(page);
+  await switchToProject(page, 'test');
+  const meetingButton = page.locator('#edge-top-models .edge-live-meeting-btn');
+  await expect(meetingButton).toBeEnabled();
+  await page.evaluate(() => {
+    const button = document.querySelector('#edge-top-models .edge-live-meeting-btn');
+    if (!(button instanceof HTMLButtonElement)) {
+      throw new Error('meeting button not found');
+    }
+    button.click();
+  });
+  await expect(page.locator('#edge-top-models .edge-live-status')).toContainText('Meeting');
+  await clearLog(page);
+
+  await page.mouse.click(420, 320);
+  await page.waitForTimeout(300);
+
+  const log = await getLog(page);
+  expect(log.some((entry: any) => entry?.type === 'recorder' && entry?.action === 'start')).toBe(false);
+  await expect(page.locator('#edge-top-models .edge-live-status')).toContainText('Meeting');
 });
 
 test('black mode toggle updates the meeting idle surface preference', async ({ page }) => {

@@ -110,7 +110,7 @@ async function init() {
 
   await fetchProjects();
   const initialProjectID = resolveInitialProjectID();
-  if (!initialProjectID) throw new Error('no projects available');
+  if (!initialProjectID) throw new Error('no workspaces available');
   await switchProject(initialProjectID);
   if (isMobileSilent()) {
     const edgeRight = document.getElementById('edge-right');

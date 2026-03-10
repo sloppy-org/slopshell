@@ -7,7 +7,7 @@ The main Tabura environment is `/`. Auxiliary surfaces are allowed only when the
 ### `/capture`
 
 - Purpose: fast mobile or transient capture when opening the full workspace would add friction.
-- Boundary: it is capture-only. It does not expose chat state, project switching, or a second workflow shell.
+- Boundary: it is capture-only. It does not expose chat state, workspace switching, or a second workflow shell.
 - Canonical write-back: it creates an `idea_note` artifact through `POST /api/artifacts` and then creates an inbox item through `POST /api/items`.
 - Canonical semantics: capture is still "make an artifact, create an item", not a separate product universe.
 

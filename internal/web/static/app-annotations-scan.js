@@ -203,7 +203,7 @@ export function createScanAnnotationController(deps) {
       return false;
     }
     if (!safeText(state.activeProjectId)) {
-      showStatus('scan import requires an active project');
+      showStatus('scan import requires an active workspace');
       return false;
     }
     if (scanUploadInFlight) {

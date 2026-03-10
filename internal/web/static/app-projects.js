@@ -336,11 +336,11 @@ export function renderEdgeTopProjects() {
       button.classList.add('is-queued');
     }
     button.dataset.runState = runState.status;
-    button.textContent = String(project.name || project.id || 'Project');
+    button.textContent = String(project.name || project.id || 'Workspace');
     const summary = projectRunStateSummary(project);
     const rootPath = String(project.root_path || '').trim();
     button.title = rootPath ? `${summary} | ${rootPath}` : summary;
-    button.setAttribute('aria-label', `${String(project.name || project.id || 'Project')}: ${summary}`);
+    button.setAttribute('aria-label', `${String(project.name || project.id || 'Workspace')}: ${summary}`);
     button.addEventListener('click', () => {
       if (isHubProject(project)) {
         void switchToHub();

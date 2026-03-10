@@ -115,10 +115,10 @@ Shared baseline:
 - black mode is the alternate idle surface
 - if a canvas document is visible, the document takes precedence over the idle surface
 
-Project model:
+Workspace model:
 
-- meetings and long-running jobs should default to temporary projects
-- each project keeps one active run in its main thread
+- meetings and long-running jobs should default to temporary workspaces
+- each workspace keeps one active run in its main thread
 - Hub remains for ad hoc requests and run monitoring only
 
 Noise filtering remains important:
