@@ -256,7 +256,7 @@ export function bindUi() {
     const isTapOnInteractiveUi = (ev) => {
       const t = ev.target;
       if (!(t instanceof Element)) return false;
-      return Boolean(t.closest('button, a, input, textarea, select, #edge-left-tap, #edge-right-tap, #edge-top, #edge-right, #pr-file-pane, #pr-file-drawer-backdrop'));
+      return Boolean(t.closest('button, a, input, textarea, select, #edge-left-tap, #edge-right-tap, #edge-top-tap, #edge-top, #edge-right, #pr-file-pane, #pr-file-drawer-backdrop'));
     };
     const handleIndicatorTap = (ev, x, y, isTouch = false) => {
       if (!isIndicatorArmed()) return;

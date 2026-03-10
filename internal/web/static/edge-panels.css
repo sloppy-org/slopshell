@@ -48,6 +48,27 @@ body.file-sidebar-open .edge-right-tap {
   background: transparent;
 }
 
+.edge-top-tap {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: calc(var(--safe-area-top) + 14px);
+  z-index: 430;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.edge-top-tap:hover,
+.edge-top-tap:active {
+  background: transparent;
+}
+
 .edge-panel {
   position: fixed;
   z-index: 200;

@@ -125,6 +125,15 @@ export function toggleRightEdgeDrawer(edgeRight) {
   edgeRight.classList.add('edge-active', 'edge-pinned');
 }
 
+export function toggleTopEdgeDrawer(edgeTop) {
+  if (!(edgeTop instanceof HTMLElement)) return;
+  if (edgeTop.classList.contains('edge-pinned')) {
+    edgeTop.classList.remove('edge-pinned', 'edge-active');
+    return;
+  }
+  edgeTop.classList.add('edge-active', 'edge-pinned');
+}
+
 export function handleRasaEdgeTap() {
   const hadOpenPanels = edgePanelsAreOpen();
   closeEdgePanels();
@@ -154,6 +163,7 @@ export function initEdgePanels() {
   const edgeTop = document.getElementById('edge-top');
   const edgeRight = document.getElementById('edge-right');
   const edgeLeftTap = document.getElementById('edge-left-tap');
+  const edgeTopTap = document.getElementById('edge-top-tap');
 
   // Desktop: hover near edge
   document.addEventListener('mousemove', (ev) => {
@@ -332,6 +342,20 @@ export function initEdgePanels() {
     }, { passive: false });
   }
 
+  if (edgeTopTap) {
+    let edgeTopLastTouchAt = 0;
+    edgeTopTap.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      if (Date.now() - edgeTopLastTouchAt < 700) return;
+      toggleTopEdgeDrawer(edgeTop);
+    });
+    edgeTopTap.addEventListener('touchend', (ev) => {
+      ev.preventDefault();
+      edgeTopLastTouchAt = Date.now();
+      toggleTopEdgeDrawer(edgeTop);
+    }, { passive: false });
+  }
+
   const prDrawerBackdrop = document.getElementById('pr-file-drawer-backdrop');
   if (prDrawerBackdrop) {
     prDrawerBackdrop.addEventListener('click', () => {
@@ -343,7 +367,7 @@ export function initEdgePanels() {
   let edgeTouchHandled = false;
   document.addEventListener('touchstart', (ev) => {
     if (ev.touches.length !== 1) return;
-    if (ev.target instanceof Element && ev.target.closest('#edge-left-tap,#edge-right-tap')) {
+    if (ev.target instanceof Element && ev.target.closest('#edge-left-tap,#edge-right-tap,#edge-top-tap')) {
       edgeTouchStart = null;
       return;
     }
