@@ -5,7 +5,7 @@ import { openMailDraftArtifact, renderMailDraftArtifact } from './app-mail-draft
 import { buildEmailThreadHTML } from './app-item-sidebar-artifacts.js';
 import {
   renderCanvasApprovalActions,
-  renderCanvasMailActions,
+  renderCanvasArtifactActions,
 } from './canvas-actions.js';
 
 export { escapeHtml, sanitizeHtml } from './canvas-content.js';
@@ -870,7 +870,7 @@ export function renderCanvas(event) {
       previousBlockTexts = nextState.previousBlockTexts;
       previousArtifactTitle = nextState.previousArtifactTitle;
     }
-    renderCanvasMailActions(e.text, event);
+    renderCanvasArtifactActions(e.text, event);
     renderCanvasApprovalActions(e.text, event);
     dispatchCanvasRendered(event);
   } else if (event.kind === 'email_draft') {

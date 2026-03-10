@@ -33,6 +33,7 @@ export function applyCanvasArtifactEvent(payload) {
   if (kind === 'clear_canvas') {
     state.currentCanvasArtifact = {
       kind: '',
+      artifactKind: '',
       title: '',
       surfaceDefault: '',
     };
@@ -72,8 +73,10 @@ export function applyCanvasArtifactEvent(payload) {
   const hintedSurface = String(
     meta?.surface_default ?? payload?.surface_default ?? '',
   ).trim().toLowerCase();
+  const artifactKind = String(meta?.artifact_kind || '').trim().toLowerCase();
   state.currentCanvasArtifact = {
     kind,
+    artifactKind,
     title: String(payload?.title || '').trim(),
     surfaceDefault: hintedSurface === 'editor' ? 'editor' : (hintedSurface === 'annotate' ? 'annotate' : ''),
   };

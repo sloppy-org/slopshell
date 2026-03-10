@@ -3,6 +3,7 @@ package web
 import (
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -61,6 +62,47 @@ func TestArtifactCRUDAPI(t *testing.T) {
 	rrMissing := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/artifacts/"+itoa(artifactID), nil)
 	if rrMissing.Code != http.StatusNotFound {
 		t.Fatalf("deleted artifact status = %d, want 404: %s", rrMissing.Code, rrMissing.Body.String())
+	}
+}
+
+func TestArtifactTaxonomyAPI(t *testing.T) {
+	app := newAuthedTestApp(t)
+	req := httptest.NewRequest(http.MethodGet, "/api/artifacts/taxonomy", nil)
+	rr := httptest.NewRecorder()
+
+	app.Router().ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("taxonomy status = %d, want 200: %s", rr.Code, rr.Body.String())
+	}
+	if got := rr.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("Cache-Control = %q, want no-store", got)
+	}
+	payload := decodeJSONResponse(t, rr)
+	order, ok := payload["canonical_action_order"].([]any)
+	if !ok || len(order) != 7 {
+		t.Fatalf("canonical_action_order = %#v", payload["canonical_action_order"])
+	}
+	actions, ok := payload["actions"].(map[string]any)
+	if !ok {
+		t.Fatalf("actions = %#v", payload["actions"])
+	}
+	if _, ok := actions["compose"]; !ok {
+		t.Fatalf("compose action missing from %#v", actions)
+	}
+	kinds, ok := payload["kinds"].(map[string]any)
+	if !ok {
+		t.Fatalf("kinds = %#v", payload["kinds"])
+	}
+	emailThread, ok := kinds["email_thread"].(map[string]any)
+	if !ok {
+		t.Fatalf("email_thread kind = %#v", kinds["email_thread"])
+	}
+	if got := strFromAny(emailThread["canvas_surface"]); got != "text_artifact" {
+		t.Fatalf("email_thread canvas_surface = %q, want text_artifact", got)
+	}
+	if got := boolFromAny(emailThread["mail_actions"]); !got {
+		t.Fatalf("email_thread mail_actions = %#v, want true", emailThread["mail_actions"])
 	}
 }
 

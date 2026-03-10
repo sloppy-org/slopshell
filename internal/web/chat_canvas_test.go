@@ -293,22 +293,40 @@ func TestBuildTurnPromptForMode_SparkOmitsModelSpecificHints(t *testing.T) {
 	}
 }
 
-func TestBuildPromptFromHistoryForMode_SilentSkipsCanvasContext(t *testing.T) {
-	ctx := &canvasContext{HasArtifact: true, ArtifactTitle: "Report.md", ArtifactKind: "text_artifact"}
+func TestBuildPromptFromHistoryForMode_SilentIncludesArtifactCapabilities(t *testing.T) {
+	ctx := &canvasContext{HasArtifact: true, ArtifactTitle: "Report.md", ArtifactKind: "markdown"}
 	prompt := buildPromptFromHistoryForMode("chat", nil, ctx, turnOutputModeSilent, "")
-	if strings.Contains(prompt, "Report.md") {
-		t.Error("silent prompt should not include canvas context")
+	if !strings.Contains(prompt, "Report.md") {
+		t.Error("silent prompt should include artifact title")
 	}
-	if strings.Contains(prompt, "Current Artifact") {
-		t.Error("silent prompt should not include artifact section")
+	if !strings.Contains(prompt, "Current Artifact") {
+		t.Error("silent prompt should include artifact section")
+	}
+	if !strings.Contains(prompt, "Open / Show; Annotate / Capture; Bundle / Review; Track as Item") {
+		t.Fatalf("silent prompt missing canonical action taxonomy: %q", prompt)
 	}
 }
 
 func TestBuildPromptFromHistory_WithCanvasContext(t *testing.T) {
-	ctx := &canvasContext{HasArtifact: true, ArtifactTitle: "Report.md", ArtifactKind: "text_artifact"}
+	ctx := &canvasContext{HasArtifact: true, ArtifactTitle: "Report.md", ArtifactKind: "markdown"}
 	prompt := buildPromptFromHistory("chat", nil, ctx)
 	if !strings.Contains(prompt, "Report.md") {
 		t.Error("prompt should include artifact title")
+	}
+	if !strings.Contains(prompt, "Artifact kind: markdown") {
+		t.Fatalf("prompt missing artifact kind: %q", prompt)
+	}
+}
+
+func TestResolveCanvasArtifactKindPrefersArtifactMetadata(t *testing.T) {
+	active := map[string]interface{}{
+		"kind": "text",
+		"meta": map[string]interface{}{
+			"artifact_kind": "github_issue",
+		},
+	}
+	if got := resolveCanvasArtifactKind(active); got != "github_issue" {
+		t.Fatalf("resolveCanvasArtifactKind() = %q, want github_issue", got)
 	}
 }
 
@@ -438,17 +456,20 @@ func TestBuildTurnPromptForMode_SilentUsesToolOnlyPreamble(t *testing.T) {
 	}
 }
 
-func TestBuildTurnPromptForMode_SilentSkipsCanvasContext(t *testing.T) {
-	ctx := &canvasContext{HasArtifact: true, ArtifactTitle: "Summary.md", ArtifactKind: "text_artifact"}
+func TestBuildTurnPromptForMode_SilentIncludesArtifactCapabilities(t *testing.T) {
+	ctx := &canvasContext{HasArtifact: true, ArtifactTitle: "Summary.md", ArtifactKind: "pdf"}
 	prompt := buildTurnPromptForMode([]store.ChatMessage{{
 		Role:         "user",
 		ContentPlain: "hello",
 	}}, ctx, turnOutputModeSilent, "")
-	if strings.Contains(prompt, "Summary.md") {
-		t.Error("silent turn prompt should not include canvas context")
+	if !strings.Contains(prompt, "Summary.md") {
+		t.Error("silent turn prompt should include artifact title")
 	}
-	if strings.Contains(prompt, "Active artifact") {
-		t.Error("silent turn prompt should not include artifact info")
+	if !strings.Contains(prompt, "Artifact kind: pdf") {
+		t.Fatalf("silent turn prompt missing artifact kind: %q", prompt)
+	}
+	if !strings.Contains(prompt, "Open / Show; Annotate / Capture; Bundle / Review; Track as Item") {
+		t.Fatalf("silent turn prompt missing canonical action taxonomy: %q", prompt)
 	}
 }
 

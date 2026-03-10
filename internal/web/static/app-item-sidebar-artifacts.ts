@@ -266,14 +266,14 @@ export function buildEmailThreadHTML(title, artifactMeta) {
 
 function buildSidebarCanvasMeta(item, artifactKind) {
   const normalizedKind = String(artifactKind || item?.artifact_kind || '').trim().toLowerCase();
-  if (!artifactSupportsMailActions(normalizedKind)) {
-    return undefined;
-  }
-  return {
-    surface_default: 'annotate',
+  const meta: Record<string, any> = {
     item_id: Number(item?.id || 0),
     artifact_kind: normalizedKind,
   };
+  if (artifactSupportsMailActions(normalizedKind)) {
+    meta.surface_default = 'annotate';
+  }
+  return meta;
 }
 
 export function buildSidebarItemFallbackText(item, artifact = null) {
@@ -339,6 +339,7 @@ export async function openSidebarArtifactItem(item) {
         event_id: `sidebar-item-${artifactID}-${Date.now()}`,
         title: String(artifact?.title || item?.artifact_title || item?.title || refPath),
         path: refPath,
+        meta: buildSidebarCanvasMeta(item, artifactKind),
       });
       return true;
     }
@@ -348,6 +349,7 @@ export async function openSidebarArtifactItem(item) {
         event_id: `sidebar-item-${artifactID}-${Date.now()}`,
         title: String(artifact?.title || item?.artifact_title || item?.title || refPath),
         path: refPath,
+        meta: buildSidebarCanvasMeta(item, artifactKind),
       });
       return true;
     }

@@ -1,5 +1,11 @@
 import { refs, state } from './app-context.js';
-import { artifactSupportsMailActions } from './artifact-taxonomy.js';
+import {
+  artifactKindSpec,
+  artifactSupportsMailActions,
+  canonicalActionLabel,
+  canonicalActionSpec,
+  normalizeArtifactKind,
+} from './artifact-taxonomy.js';
 import {
   launchForwardAuthoring,
   launchNewMailAuthoring,
@@ -7,29 +13,70 @@ import {
   launchReplyAuthoring,
 } from './app-mail-drafts.js';
 
-function activeCanvasMailItem(event) {
+function activeCanvasItem(event) {
   const meta = event?.meta && typeof event.meta === 'object' ? event.meta : {};
   const itemID = Number(meta?.item_id || 0);
   if (itemID <= 0) return null;
   const items = Array.isArray(state.itemSidebarItems) ? state.itemSidebarItems : [];
-  const item = items.find((entry) => Number(entry?.id || 0) === itemID) || null;
-  const artifactKind = String(item?.artifact_kind || meta?.artifact_kind || '').trim().toLowerCase();
-  if (!artifactSupportsMailActions(artifactKind)) return null;
-  return item;
+  return items.find((entry) => Number(entry?.id || 0) === itemID) || null;
 }
 
-export function renderCanvasMailActions(root, event) {
+function activeCanvasArtifactKind(event, item = null) {
+  const meta = event?.meta && typeof event.meta === 'object' ? event.meta : {};
+  const kind = normalizeArtifactKind(
+    meta?.artifact_kind
+    || item?.artifact_kind
+    || state.currentCanvasArtifact?.artifactKind
+    || '',
+  );
+  if (kind) return kind;
+  return normalizeArtifactKind(event?.kind || state.currentCanvasArtifact?.kind || '');
+}
+
+function clearExistingCanvasActionPanels(root) {
   if (!(root instanceof HTMLElement)) return;
-  const item = activeCanvasMailItem(event);
-  if (!item) return;
+  root.querySelectorAll('.canvas-capability-actions, .canvas-mail-actions').forEach((node) => node.remove());
+}
+
+export function renderCanvasArtifactActions(root, event) {
+  if (!(root instanceof HTMLElement)) return;
+  clearExistingCanvasActionPanels(root);
+
+  const item = activeCanvasItem(event);
+  const artifactKind = activeCanvasArtifactKind(event, item);
+  const spec = artifactKindSpec(artifactKind);
+
+  const panel = document.createElement('div');
+  panel.className = 'canvas-capability-actions';
+
+  const label = document.createElement('span');
+  label.className = 'canvas-capability-actions-label';
+  label.textContent = 'Available actions';
+  panel.appendChild(label);
+
+  for (const action of spec.actions) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'edge-btn canvas-canonical-action';
+    button.dataset.canonicalAction = action;
+    button.disabled = true;
+    const actionInfo = canonicalActionSpec(action);
+    button.textContent = canonicalActionLabel(action) || action;
+    button.title = String(actionInfo?.description || '').trim();
+    panel.appendChild(button);
+  }
+
+  root.prepend(panel);
+
+  if (!item || !artifactSupportsMailActions(artifactKind)) return;
 
   const actions = document.createElement('div');
   actions.className = 'canvas-mail-actions';
 
-  const label = document.createElement('span');
-  label.className = 'canvas-mail-actions-label';
-  label.textContent = 'Mail actions';
-  actions.appendChild(label);
+  const quickLabel = document.createElement('span');
+  quickLabel.className = 'canvas-mail-actions-label';
+  quickLabel.textContent = 'Mail quick actions';
+  actions.appendChild(quickLabel);
 
   const newMailButton = document.createElement('button');
   newMailButton.type = 'button';
@@ -71,7 +118,7 @@ export function renderCanvasMailActions(root, event) {
   });
   actions.appendChild(forwardButton);
 
-  root.append(actions);
+  panel.after(actions);
 }
 
 function approvalDecisionLabel(decision) {

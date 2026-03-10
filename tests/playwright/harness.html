@@ -664,6 +664,35 @@
         },
       ],
     });
+    const artifactTaxonomy = Object.freeze({
+      canonical_action_order: ['open_show', 'annotate_capture', 'compose', 'bundle_review', 'dispatch_execute', 'track_item', 'delegate_actor'],
+      actions: Object.freeze({
+        open_show: Object.freeze({ label: 'Open', prompt_label: 'Open / Show', description: 'Inspect or surface the artifact in context.' }),
+        annotate_capture: Object.freeze({ label: 'Annotate', prompt_label: 'Annotate / Capture', description: 'Mark up the artifact or capture observations from it.' }),
+        compose: Object.freeze({ label: 'Compose', prompt_label: 'Compose', description: 'Draft new content in response to the artifact.' }),
+        bundle_review: Object.freeze({ label: 'Review', prompt_label: 'Bundle / Review', description: 'Gather notes, compare context, and review before action.' }),
+        dispatch_execute: Object.freeze({ label: 'Dispatch', prompt_label: 'Dispatch / Execute', description: 'Send, apply, or execute the prepared result.' }),
+        track_item: Object.freeze({ label: 'Track', prompt_label: 'Track as Item', description: 'Track follow-up work as an item.' }),
+        delegate_actor: Object.freeze({ label: 'Delegate', prompt_label: 'Delegate to Actor', description: 'Hand the work to a specific actor.' }),
+      }),
+      kinds: Object.freeze({
+        annotation: Object.freeze({ family: 'review_bundle', canvas_surface: 'text_artifact', interaction_model: 'canonical_canvas', actions: ['open_show', 'annotate_capture', 'bundle_review', 'dispatch_execute', 'track_item'], mail_actions: false }),
+        document: Object.freeze({ family: 'reference', canvas_surface: 'text_artifact', interaction_model: 'canonical_canvas', actions: ['open_show', 'annotate_capture', 'bundle_review', 'track_item'], mail_actions: false }),
+        email: Object.freeze({ family: 'message', canvas_surface: 'text_artifact', interaction_model: 'canonical_canvas', actions: ['open_show', 'annotate_capture', 'compose', 'dispatch_execute', 'track_item'], mail_actions: true }),
+        email_thread: Object.freeze({ family: 'message', canvas_surface: 'text_artifact', interaction_model: 'canonical_canvas', actions: ['open_show', 'annotate_capture', 'compose', 'bundle_review', 'dispatch_execute', 'track_item'], mail_actions: true }),
+        external_note: Object.freeze({ family: 'captured_note', canvas_surface: 'text_artifact', interaction_model: 'canonical_canvas', actions: ['open_show', 'annotate_capture', 'compose', 'track_item'], mail_actions: false }),
+        external_task: Object.freeze({ family: 'action_card', canvas_surface: 'text_artifact', interaction_model: 'canonical_canvas', actions: ['open_show', 'compose', 'dispatch_execute', 'track_item', 'delegate_actor'], mail_actions: false }),
+        github_issue: Object.freeze({ family: 'proposal', canvas_surface: 'text_artifact', interaction_model: 'canonical_canvas', actions: ['open_show', 'annotate_capture', 'compose', 'bundle_review', 'dispatch_execute', 'track_item'], mail_actions: false }),
+        github_pr: Object.freeze({ family: 'proposal', canvas_surface: 'text_artifact', interaction_model: 'canonical_canvas', actions: ['open_show', 'annotate_capture', 'bundle_review', 'dispatch_execute', 'track_item', 'delegate_actor'], mail_actions: false }),
+        idea_note: Object.freeze({ family: 'planning_note', canvas_surface: 'text_artifact', interaction_model: 'canonical_canvas', actions: ['open_show', 'annotate_capture', 'compose', 'bundle_review', 'track_item'], mail_actions: false }),
+        image: Object.freeze({ family: 'reference', canvas_surface: 'image_artifact', interaction_model: 'canonical_canvas', actions: ['open_show', 'annotate_capture', 'bundle_review', 'track_item'], mail_actions: false }),
+        markdown: Object.freeze({ family: 'reference', canvas_surface: 'text_artifact', interaction_model: 'canonical_canvas', actions: ['open_show', 'annotate_capture', 'bundle_review', 'track_item'], mail_actions: false }),
+        pdf: Object.freeze({ family: 'reference', canvas_surface: 'pdf_artifact', interaction_model: 'canonical_canvas', actions: ['open_show', 'annotate_capture', 'bundle_review', 'track_item'], mail_actions: false }),
+        plan_note: Object.freeze({ family: 'planning_note', canvas_surface: 'text_artifact', interaction_model: 'canonical_canvas', actions: ['open_show', 'annotate_capture', 'compose', 'bundle_review', 'track_item'], mail_actions: false }),
+        reference: Object.freeze({ family: 'reference', canvas_surface: 'text_artifact', interaction_model: 'canonical_canvas', actions: ['open_show', 'annotate_capture', 'bundle_review', 'track_item'], mail_actions: false }),
+        transcript: Object.freeze({ family: 'transcript', canvas_surface: 'text_artifact', interaction_model: 'canonical_canvas', actions: ['open_show', 'annotate_capture', 'bundle_review', 'track_item'], mail_actions: false }),
+      }),
+    });
     const defaultMeetingSummaryProposals = () => ([
       {
         index: 0,
@@ -1284,6 +1313,9 @@
           authenticated: true,
           local_session: 'local',
         }), { status: 200 });
+      }
+      if (u.includes('/api/artifacts/taxonomy')) {
+        return new Response(JSON.stringify(artifactTaxonomy), { status: 200 });
       }
       if (u.includes('/api/runtime/preferences') && opts?.method === 'PATCH') {
         let body = {};

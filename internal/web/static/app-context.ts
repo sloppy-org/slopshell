@@ -208,6 +208,7 @@ export const state = {
   workspaceStepInFlight: false,
   currentCanvasArtifact: {
     kind: '',
+    artifactKind: '',
     title: '',
     surfaceDefault: '',
   },

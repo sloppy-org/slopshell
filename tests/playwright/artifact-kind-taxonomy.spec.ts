@@ -22,6 +22,12 @@ async function openSidebarTab(page: Page, label: 'Inbox' | 'Waiting' | 'Someday'
   await expect(page.locator('.sidebar-tab.is-active')).toContainText(label);
 }
 
+async function expectCanonicalActions(page: Page, actions: string[]) {
+  for (const action of actions) {
+    await expect(page.locator(`#canvas-text [data-canonical-action="${action}"]`)).toBeVisible();
+  }
+}
+
 test('artifact taxonomy keeps every stored kind on canonical canvas surfaces', async ({ page }) => {
   await waitReady(page);
 
@@ -60,24 +66,26 @@ test('artifact taxonomy keeps every stored kind on canonical canvas surfaces', a
   }
 });
 
-test('plan notes and GitHub issues stay on text canvas without mail-only actions', async ({ page }) => {
+test('plan notes and GitHub issues expose taxonomy-driven canonical actions without mail quick actions', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await waitReady(page);
 
   await openSidebarTab(page, 'Someday');
   await page.locator('#pr-file-list .pr-file-item[data-item-id="301"]').click();
   await expect(page.locator('#canvas-text')).toContainText('Gesture backlog');
+  await expectCanonicalActions(page, ['open_show', 'annotate_capture', 'compose', 'bundle_review', 'track_item']);
   await expect(page.locator('#canvas-new-mail-trigger')).toHaveCount(0);
   await expect(page.locator('#canvas-reply-mail-trigger')).toHaveCount(0);
 
   await openSidebarTab(page, 'Done');
   await page.locator('#pr-file-list .pr-file-item[data-item-id="401"]').click();
   await expect(page.locator('#canvas-text')).toContainText('Capture checklist');
+  await expectCanonicalActions(page, ['open_show', 'annotate_capture', 'compose', 'bundle_review', 'dispatch_execute', 'track_item']);
   await expect(page.locator('#canvas-new-mail-trigger')).toHaveCount(0);
   await expect(page.locator('#canvas-reply-mail-trigger')).toHaveCount(0);
 });
 
-test('mail threads keep canonical text canvas rendering and mail actions', async ({ page }) => {
+test('mail threads keep canonical text canvas rendering, taxonomy actions, and mail quick actions', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await waitReady(page);
 
@@ -107,6 +115,7 @@ test('mail threads keep canonical text canvas rendering and mail actions', async
   await page.locator('#pr-file-list .pr-file-item[data-item-id="105"]').click();
   await expect(page.locator('#canvas-text')).toContainText('Urgent follow-up');
   await expect(page.locator('#canvas-text')).toContainText('Need a response before tomorrow morning.');
+  await expectCanonicalActions(page, ['open_show', 'annotate_capture', 'compose', 'bundle_review', 'dispatch_execute', 'track_item']);
   await expect(page.locator('#reply-mail-trigger')).toBeVisible();
 
   await page.locator('#edge-left-tap').click();

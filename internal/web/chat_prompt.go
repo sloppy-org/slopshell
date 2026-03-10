@@ -88,10 +88,7 @@ func (a *App) resolveCanvasContext(projectKey string) *canvasContext {
 	if title == "<nil>" {
 		title = ""
 	}
-	kind := strings.TrimSpace(fmt.Sprint(active["kind"]))
-	if kind == "<nil>" {
-		kind = ""
-	}
+	kind := resolveCanvasArtifactKind(active)
 	return &canvasContext{HasArtifact: true, ArtifactTitle: title, ArtifactKind: kind}
 }
 
@@ -99,6 +96,41 @@ type canvasContext struct {
 	HasArtifact   bool
 	ArtifactTitle string
 	ArtifactKind  string
+}
+
+func resolveCanvasArtifactKind(active map[string]interface{}) string {
+	if active == nil {
+		return ""
+	}
+	meta, _ := active["meta"].(map[string]interface{})
+	if meta != nil {
+		kind := strings.TrimSpace(fmt.Sprint(meta["artifact_kind"]))
+		if kind != "" && kind != "<nil>" {
+			return normalizedArtifactKind(kind)
+		}
+	}
+	kind := strings.TrimSpace(fmt.Sprint(active["kind"]))
+	if kind == "<nil>" {
+		return ""
+	}
+	return normalizedArtifactKind(kind)
+}
+
+func appendArtifactCapabilityPrompt(b *strings.Builder, canvas *canvasContext) {
+	if b == nil || canvas == nil || !canvas.HasArtifact {
+		return
+	}
+	kind := normalizedArtifactKind(canvas.ArtifactKind)
+	actions := artifactPromptActions(kind)
+	b.WriteString("## Current Artifact\n")
+	fmt.Fprintf(b, "- Active artifact tab: %q\n", canvas.ArtifactTitle)
+	if kind != "" {
+		fmt.Fprintf(b, "- Artifact kind: %s\n", kind)
+	}
+	if len(actions) > 0 {
+		fmt.Fprintf(b, "- Canonical actions for this kind, in emphasis order: %s\n", strings.Join(actions, "; "))
+	}
+	b.WriteString("- When the user asks what they can do with this artifact, answer from this taxonomy rather than generic assumptions.\n\n")
 }
 
 func buildPromptFromHistory(mode string, messages []store.ChatMessage, canvas *canvasContext) string {
@@ -148,10 +180,7 @@ func buildPromptFromHistoryForSessionWithCompanionPolicy(mode string, autonomous
 	_ = modelAlias
 	appendExecutionPolicyPrompt(&b, mode, autonomous)
 
-	if isVoiceMode && canvas != nil && canvas.HasArtifact {
-		b.WriteString("## Current Artifact\n")
-		fmt.Fprintf(&b, "- Active artifact tab: %q (kind: %s)\n\n", canvas.ArtifactTitle, canvas.ArtifactKind)
-	}
+	appendArtifactCapabilityPrompt(&b, canvas)
 	appendResearchArtifactPrompt(&b, outputMode, userText, researchArtifactRoot(sessionID))
 
 	appendCompanionPromptContext(&b, companion)
@@ -222,10 +251,8 @@ func buildTurnPromptForSessionWithCompanion(sessionID string, messages []store.C
 	var b strings.Builder
 	if isVoiceMode {
 		b.WriteString(loadModePromptTemplate(outputMode, defaultVoiceTurnPrompt, ""))
-		if canvas != nil && canvas.HasArtifact {
-			fmt.Fprintf(&b, "[Active artifact tab: %q (kind: %s)]\n\n", canvas.ArtifactTitle, canvas.ArtifactKind)
-		}
 	}
+	appendArtifactCapabilityPrompt(&b, canvas)
 	appendResearchArtifactPrompt(&b, outputMode, lastUserMsg, researchArtifactRoot(sessionID))
 	appendCompanionPromptContext(&b, companion)
 	b.WriteString(lastUserMsg)

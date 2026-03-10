@@ -60,6 +60,9 @@ export function showCanvasColumn(paneId) {
   const currentArtifact: Record<string, any> = state.currentCanvasArtifact || {};
   state.currentCanvasArtifact = {
     kind: artifactKind,
+    artifactKind: currentArtifact.kind === artifactKind && currentArtifact.title === artifactTitle
+      ? String(currentArtifact.artifactKind || '')
+      : '',
     title: artifactTitle,
     surfaceDefault: currentArtifact.kind === artifactKind && currentArtifact.title === artifactTitle
       ? String(currentArtifact.surfaceDefault || '')
@@ -85,6 +88,7 @@ export function hideCanvasColumn() {
   state.interaction.surface = 'annotate';
   state.currentCanvasArtifact = {
     kind: '',
+    artifactKind: '',
     title: '',
     surfaceDefault: '',
   };

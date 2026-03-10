@@ -1,3 +1,5 @@
+import { apiURL } from './paths.js';
+
 const IMAGE_EXTENSIONS = new Set([
   '.apng',
   '.avif',
@@ -13,15 +15,11 @@ const IMAGE_EXTENSIONS = new Set([
   '.webp',
 ]);
 
-export const CANONICAL_ACTION_SEMANTICS = Object.freeze([
-  'open_show',
-  'annotate_capture',
-  'compose',
-  'bundle_review',
-  'dispatch_execute',
-  'track_item',
-  'delegate_actor',
-]);
+const EMPTY_TAXONOMY = Object.freeze({
+  canonical_action_order: Object.freeze([]),
+  actions: Object.freeze({}),
+  kinds: Object.freeze({}),
+});
 
 const DEFAULT_CANVAS_SURFACE = 'text_artifact';
 const DEFAULT_SPEC = Object.freeze({
@@ -38,123 +36,75 @@ const DEFAULT_SPEC = Object.freeze({
   mail_actions: false,
 });
 
-export const ARTIFACT_KIND_TAXONOMY = Object.freeze({
-  annotation: Object.freeze({
-    family: 'review_bundle',
-    canvas_surface: DEFAULT_CANVAS_SURFACE,
-    interaction_model: 'canonical_canvas',
-    actions: Object.freeze(['open_show', 'annotate_capture', 'bundle_review', 'dispatch_execute', 'track_item']),
-    mail_actions: false,
-  }),
-  document: Object.freeze({
-    family: 'reference',
-    canvas_surface: DEFAULT_CANVAS_SURFACE,
-    interaction_model: 'canonical_canvas',
-    actions: Object.freeze(['open_show', 'annotate_capture', 'bundle_review', 'track_item']),
-    mail_actions: false,
-  }),
-  email: Object.freeze({
-    family: 'message',
-    canvas_surface: DEFAULT_CANVAS_SURFACE,
-    interaction_model: 'canonical_canvas',
-    actions: Object.freeze(['open_show', 'annotate_capture', 'compose', 'dispatch_execute', 'track_item']),
-    mail_actions: true,
-  }),
-  email_thread: Object.freeze({
-    family: 'message',
-    canvas_surface: DEFAULT_CANVAS_SURFACE,
-    interaction_model: 'canonical_canvas',
-    actions: Object.freeze(['open_show', 'annotate_capture', 'compose', 'bundle_review', 'dispatch_execute', 'track_item']),
-    mail_actions: true,
-  }),
-  external_note: Object.freeze({
-    family: 'captured_note',
-    canvas_surface: DEFAULT_CANVAS_SURFACE,
-    interaction_model: 'canonical_canvas',
-    actions: Object.freeze(['open_show', 'annotate_capture', 'compose', 'track_item']),
-    mail_actions: false,
-  }),
-  external_task: Object.freeze({
-    family: 'action_card',
-    canvas_surface: DEFAULT_CANVAS_SURFACE,
-    interaction_model: 'canonical_canvas',
-    actions: Object.freeze(['open_show', 'compose', 'dispatch_execute', 'track_item', 'delegate_actor']),
-    mail_actions: false,
-  }),
-  github_issue: Object.freeze({
-    family: 'proposal',
-    canvas_surface: DEFAULT_CANVAS_SURFACE,
-    interaction_model: 'canonical_canvas',
-    actions: Object.freeze(['open_show', 'annotate_capture', 'compose', 'bundle_review', 'dispatch_execute', 'track_item']),
-    mail_actions: false,
-  }),
-  github_pr: Object.freeze({
-    family: 'proposal',
-    canvas_surface: DEFAULT_CANVAS_SURFACE,
-    interaction_model: 'canonical_canvas',
-    actions: Object.freeze(['open_show', 'annotate_capture', 'bundle_review', 'dispatch_execute', 'track_item', 'delegate_actor']),
-    mail_actions: false,
-  }),
-  idea_note: Object.freeze({
-    family: 'planning_note',
-    canvas_surface: DEFAULT_CANVAS_SURFACE,
-    interaction_model: 'canonical_canvas',
-    actions: Object.freeze(['open_show', 'annotate_capture', 'compose', 'bundle_review', 'track_item']),
-    mail_actions: false,
-  }),
-  image: Object.freeze({
-    family: 'reference',
-    canvas_surface: 'image_artifact',
-    interaction_model: 'canonical_canvas',
-    actions: Object.freeze(['open_show', 'annotate_capture', 'bundle_review', 'track_item']),
-    mail_actions: false,
-  }),
-  markdown: Object.freeze({
-    family: 'reference',
-    canvas_surface: DEFAULT_CANVAS_SURFACE,
-    interaction_model: 'canonical_canvas',
-    actions: Object.freeze(['open_show', 'annotate_capture', 'bundle_review', 'track_item']),
-    mail_actions: false,
-  }),
-  pdf: Object.freeze({
-    family: 'reference',
-    canvas_surface: 'pdf_artifact',
-    interaction_model: 'canonical_canvas',
-    actions: Object.freeze(['open_show', 'annotate_capture', 'bundle_review', 'track_item']),
-    mail_actions: false,
-  }),
-  plan_note: Object.freeze({
-    family: 'planning_note',
-    canvas_surface: DEFAULT_CANVAS_SURFACE,
-    interaction_model: 'canonical_canvas',
-    actions: Object.freeze(['open_show', 'annotate_capture', 'compose', 'bundle_review', 'track_item']),
-    mail_actions: false,
-  }),
-  reference: Object.freeze({
-    family: 'reference',
-    canvas_surface: DEFAULT_CANVAS_SURFACE,
-    interaction_model: 'canonical_canvas',
-    actions: Object.freeze(['open_show', 'annotate_capture', 'bundle_review', 'track_item']),
-    mail_actions: false,
-  }),
-  transcript: Object.freeze({
-    family: 'transcript',
-    canvas_surface: DEFAULT_CANVAS_SURFACE,
-    interaction_model: 'canonical_canvas',
-    actions: Object.freeze(['open_show', 'annotate_capture', 'bundle_review', 'track_item']),
-    mail_actions: false,
-  }),
-});
+async function loadArtifactTaxonomy() {
+  try {
+    const resp = await fetch(apiURL('artifacts/taxonomy'), {
+      cache: 'no-store',
+    });
+    if (!resp.ok) {
+      throw new Error(`HTTP ${resp.status}`);
+    }
+    const payload = await resp.json();
+    const actions = payload?.actions && typeof payload.actions === 'object' ? payload.actions : {};
+    const kinds = payload?.kinds && typeof payload.kinds === 'object' ? payload.kinds : {};
+    const order = Array.isArray(payload?.canonical_action_order) ? payload.canonical_action_order : [];
+    return {
+      canonical_action_order: Object.freeze(order.map((value) => String(value || '').trim()).filter(Boolean)),
+      actions: Object.freeze(actions),
+      kinds: Object.freeze(kinds),
+    };
+  } catch (err) {
+    console.warn('artifact taxonomy unavailable:', err);
+    return EMPTY_TAXONOMY;
+  }
+}
+
+const TAXONOMY_DATA = await loadArtifactTaxonomy();
+
+export const CANONICAL_ACTION_SEMANTICS = Object.freeze(
+  TAXONOMY_DATA.canonical_action_order.length > 0
+    ? [...TAXONOMY_DATA.canonical_action_order]
+    : [...DEFAULT_SPEC.actions],
+);
+
+export const CANONICAL_ACTION_SPECS = Object.freeze(TAXONOMY_DATA.actions);
+export const ARTIFACT_KIND_TAXONOMY = Object.freeze(TAXONOMY_DATA.kinds);
 
 export function normalizeArtifactKind(kind) {
   return String(kind || '').trim().toLowerCase();
 }
 
+export function canonicalActionSpec(action) {
+  const normalized = String(action || '').trim();
+  const spec = CANONICAL_ACTION_SPECS[normalized];
+  if (spec && typeof spec === 'object') {
+    return spec;
+  }
+  return {
+    label: normalized.replace(/_/g, ' ').trim(),
+    prompt_label: normalized.replace(/_/g, ' ').trim(),
+    description: '',
+  };
+}
+
+export function canonicalActionLabel(action) {
+  return String(canonicalActionSpec(action)?.label || '').trim();
+}
+
+export function canonicalActionPromptLabel(action) {
+  const spec = canonicalActionSpec(action);
+  return String(spec?.prompt_label || spec?.label || action || '').trim();
+}
+
 export function artifactKindSpec(kind) {
   const normalized = normalizeArtifactKind(kind);
   const spec = ARTIFACT_KIND_TAXONOMY[normalized];
-  if (spec) return spec;
+  if (spec && typeof spec === 'object') return spec;
   return DEFAULT_SPEC;
+}
+
+export function artifactKindActionLabels(kind) {
+  return artifactKindSpec(kind).actions.map((action) => canonicalActionLabel(action) || action);
 }
 
 function imageExtensionFromPath(refPath) {
