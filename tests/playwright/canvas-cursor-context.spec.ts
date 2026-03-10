@@ -202,17 +202,6 @@ async function currentDotPosition(page: Page) {
   });
 }
 
-async function submitVoiceStyleMessage(page: Page, text: string) {
-  await page.evaluate(async (messageText) => {
-    const app = (window as any)._taburaApp;
-    if (app?.getState) {
-      app.getState().lastInputOrigin = 'voice';
-    }
-    const mod = await import('../../internal/web/static/app-chat-submit.js');
-    await mod.submitMessage(messageText, { kind: 'voice_transcript' });
-  }, text);
-}
-
 async function triggerVoiceAssistantTTS(page: Page, turnID: string, text = 'Hello there.') {
   await page.evaluate(() => {
     const app = (window as any)._taburaApp;
@@ -230,7 +219,7 @@ test.beforeEach(async ({ page }) => {
   await injectCanvasModuleRef(page);
 });
 
-test('dialogue tap pins a cursor dot and scopes the next voice message without starting capture', async ({ page }) => {
+test('dialogue tap starts local capture with the tapped cursor context', async ({ page }) => {
   await page.evaluate(() => {
     (window as any).__taburaConversationListenMs = 1_200;
   });
@@ -247,31 +236,26 @@ test('dialogue tap pins a cursor dot and scopes the next voice message without s
   const x = 420;
   const y = 360;
   await page.mouse.click(x, y);
-  await page.waitForTimeout(200);
+  await expect.poll(async () => {
+    const log = await getLog(page);
+    return log.some((entry) => entry.type === 'recorder' && entry.action === 'start');
+  }).toBe(true);
 
-  const log = await getLog(page);
-  expect(log.some((entry) => entry.type === 'recorder' && entry.action === 'start')).toBe(false);
-  const streamedPosition = log.find((entry) => entry.type === 'canvas_position');
-  expect(streamedPosition?.gesture).toBe('tap');
-  expect(streamedPosition?.request_response).toBe(false);
-  expect((streamedPosition?.cursor as Record<string, unknown> | null)?.title).toBe('test.txt');
+  let log = await getLog(page);
+  expect(log.some((entry) => entry.type === 'canvas_position')).toBe(false);
 
-  await page.evaluate(async ({ x: anchorX, y: anchorY }) => {
-    const ui = await import('../../internal/web/static/ui.js');
-    ui.pinCursorAnchor(anchorX, anchorY, { line: 3, title: 'test.txt' });
-  }, { x, y });
-
-  await submitVoiceStyleMessage(page, 'fix this');
+  await page.mouse.click(x, y);
   await expect.poll(async () => {
     const nextLog = await getLog(page);
     return nextLog.find((entry) => entry.type === 'message_sent') || null;
   }).not.toBeNull();
-  const sentEntry = (await getLog(page)).find((entry) => entry.type === 'message_sent');
 
-  expect(sentEntry?.text).toBe('[Line 3 of "test.txt"] fix this');
+  log = await getLog(page);
+  expect(log.some((entry) => entry.type === 'canvas_position')).toBe(false);
+  const sentEntry = log.find((entry) => entry.type === 'message_sent');
+  expect(String(sentEntry?.text || '')).toContain('hello world');
   expect(sentEntry?.cursor).toMatchObject({
     title: 'test.txt',
-    line: 3,
   });
 });
 
@@ -324,7 +308,7 @@ test('request_position stays local in annotation tools instead of dispatching a 
   expect(await page.evaluate(() => (window as any)._taburaApp.getState().requestedPositionPrompt)).toBe('Tap where the comment should go.');
 });
 
-test('request_position still sends a reply from the prompt tool', async ({ page }) => {
+test('request_position in prompt tool starts a local capture instead of streaming a reply', async ({ page }) => {
   await renderTestArtifact(page);
   await setInteractionTool(page, 'prompt');
   await clearLog(page);
@@ -334,13 +318,26 @@ test('request_position still sends a reply from the prompt tool', async ({ page 
   });
 
   await page.mouse.click(420, 360);
-  await page.waitForTimeout(150);
+  await expect.poll(async () => {
+    const log = await getLog(page);
+    return log.some((entry) => entry.type === 'recorder' && entry.action === 'start');
+  }).toBe(true);
 
-  const log = await getLog(page);
-  expect(log.some((entry) => entry.type === 'recorder' && entry.action === 'start')).toBe(false);
-  const streamedPosition = log.find((entry) => entry.type === 'canvas_position');
-  expect(streamedPosition?.gesture).toBe('tap');
-  expect(streamedPosition?.request_response).toBe(true);
-  expect((streamedPosition?.cursor as Record<string, unknown> | null)?.title).toBe('test.txt');
+  let log = await getLog(page);
+  expect(log.some((entry) => entry.type === 'canvas_position')).toBe(false);
   expect(await page.evaluate(() => (window as any)._taburaApp.getState().requestedPositionPrompt)).toBe('');
+
+  await page.mouse.click(420, 360);
+  await expect.poll(async () => {
+    const nextLog = await getLog(page);
+    return nextLog.find((entry) => entry.type === 'message_sent') || null;
+  }).not.toBeNull();
+
+  log = await getLog(page);
+  expect(log.some((entry) => entry.type === 'canvas_position')).toBe(false);
+  const sentEntry = log.find((entry) => entry.type === 'message_sent');
+  expect(String(sentEntry?.text || '')).toContain('hello world');
+  expect(sentEntry?.cursor).toMatchObject({
+    title: 'test.txt',
+  });
 });

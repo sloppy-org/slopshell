@@ -166,12 +166,13 @@ export function bindUi() {
       y: Math.floor(window.innerHeight / 2),
     };
   };
-  const beginVoiceCaptureFromPoint = (x, y) => {
-    let anchor = null;
-    if (state.hasArtifact && canvasText) {
-      anchor = getAnchorFromPoint(x, y);
-    }
-    return beginVoiceCapture(x, y, anchor);
+  const captureAnchorAtPoint = (x, y) => {
+    if (!state.hasArtifact) return null;
+    return getAnchorFromPoint(x, y);
+  };
+  const beginVoiceCaptureFromPoint = (x, y, anchor = null) => {
+    const captureAnchor = anchor || captureAnchorAtPoint(x, y);
+    return beginVoiceCapture(x, y, captureAnchor);
   };
   const buildCanvasPositionPayload = (anchor, options = {}) => {
     if (!anchor || typeof anchor !== 'object') return null;
@@ -391,6 +392,7 @@ export function bindUi() {
 
     const handleWorkspaceTap = (target, x, y) => {
       const requestedPositionPrompt = String(state.requestedPositionPrompt || '').trim();
+      let tapAnchor = null;
       if (requestedPositionPrompt) {
         if (state.interaction.tool !== 'prompt') {
           if (prefersTextComposer() && state.hasArtifact && createPdfStickyNoteAt(x, y)) return;
@@ -400,25 +402,22 @@ export function bindUi() {
         const sel = window.getSelection();
         if (sel && !sel.isCollapsed) return;
         rememberMousePosition(x, y);
-        const anchor = state.hasArtifact && canvasText ? getAnchorFromPoint(x, y) : null;
-        pinCursorAnchor(x, y, anchor);
+        tapAnchor = captureAnchorAtPoint(x, y);
+        pinCursorAnchor(x, y, tapAnchor);
         state.requestedPositionPrompt = '';
-        sendCanvasPosition(anchor, { gesture: 'tap', requestResponse: true });
-        showStatus('position shared');
         updateAssistantActivityIndicator();
-        return;
       }
       const liveSessionPointerMode = state.liveSessionActive
-        && (state.liveSessionMode === LIVE_SESSION_MODE_DIALOGUE || state.liveSessionMode === LIVE_SESSION_MODE_MEETING);
+        && state.liveSessionMode === LIVE_SESSION_MODE_MEETING;
       if (liveSessionPointerMode) {
         if (prefersTextComposer() && state.hasArtifact && createPdfStickyNoteAt(x, y)) return;
         if (isVoiceInteractionTarget(target, x, y)) return;
         const sel = window.getSelection();
         if (sel && !sel.isCollapsed) return;
         rememberMousePosition(x, y);
-        const anchor = state.hasArtifact && canvasText ? getAnchorFromPoint(x, y) : null;
-        pinCursorAnchor(x, y, anchor);
-        sendCanvasPosition(anchor, { gesture: 'tap' });
+        tapAnchor = tapAnchor || captureAnchorAtPoint(x, y);
+        pinCursorAnchor(x, y, tapAnchor);
+        sendCanvasPosition(tapAnchor, { gesture: 'tap' });
         updateAssistantActivityIndicator();
         return;
       }
@@ -426,10 +425,10 @@ export function bindUi() {
         if (isVoiceInteractionTarget(target, x, y)) return;
         cancelLiveSessionListen();
         if (prefersTextComposer()) {
-          const anchor = state.hasArtifact && canvasText ? getAnchorFromPoint(x, y) : null;
+          const anchor = tapAnchor || captureAnchorAtPoint(x, y);
           openComposerAt(x, y, anchor);
         } else {
-          void beginVoiceCaptureFromPoint(x, y);
+          void beginVoiceCaptureFromPoint(x, y, tapAnchor);
         }
         return;
       }
@@ -447,12 +446,15 @@ export function bindUi() {
         return;
       }
       if (prefersTextComposer()) {
-        const anchor = state.hasArtifact && canvasText ? getAnchorFromPoint(x, y) : null;
+        const anchor = tapAnchor || captureAnchorAtPoint(x, y);
         openComposerAt(x, y, anchor);
         return;
       }
-      if (state.interaction.conversation === 'push_to_talk') {
-        void beginVoiceCaptureFromPoint(x, y);
+      if (
+        state.interaction.conversation === 'push_to_talk'
+        || (state.liveSessionActive && state.liveSessionMode === LIVE_SESSION_MODE_DIALOGUE)
+      ) {
+        void beginVoiceCaptureFromPoint(x, y, tapAnchor);
       }
     };
 
