@@ -577,6 +577,38 @@ test.describe('floating tool palette', () => {
     await expect(page.locator('#canvas-pdf .canvas-annotation-badge')).toHaveText('1');
   });
 
+  test('tablet touch keeps PDF notes local until explicit bundle send', async ({ page }) => {
+    await page.setViewportSize({ width: 834, height: 1112 });
+    await injectCanvasModuleRef(page);
+    await renderPdfArtifactMock(page);
+    await setInteractionTool(page, 'text_note');
+    await clearLog(page);
+
+    const pageBox = await page.locator('#canvas-pdf .canvas-pdf-page-inner').boundingBox();
+    if (!pageBox) throw new Error('pdf page unavailable for tablet touch note test');
+    await dispatchTouchTap(page, pageBox.x + 180, pageBox.y + 240);
+
+    await expect(page.locator('#canvas-pdf .canvas-sticky-note')).toHaveCount(1);
+    await expect(page.locator('#annotation-bubble')).toBeVisible();
+
+    await page.locator('#annotation-note-input').fill('Follow up on this section');
+    await page.locator('#annotation-note-save').click();
+    await expect(page.locator('#canvas-pdf .canvas-annotation-badge')).toHaveText('1');
+
+    let sentMessages = (await getLog(page)).filter((entry) => entry.type === 'message_sent');
+    expect(sentMessages).toHaveLength(0);
+
+    await page.locator('#annotation-bundle-send').click();
+    await waitForLogEntry(page, 'message_sent');
+
+    sentMessages = (await getLog(page)).filter((entry) => entry.type === 'message_sent');
+    expect(sentMessages).toHaveLength(1);
+    expect(String(sentMessages[0]?.text || '')).toContain('Use these annotations as instructions for the current artifact.');
+    expect(String(sentMessages[0]?.text || '')).toContain('PDF sticky note on page 1');
+    expect(String(sentMessages[0]?.text || '')).toContain('text: Follow up on this section');
+    await expect(page.locator('#canvas-pdf .canvas-annotation-badge')).toHaveCount(0);
+  });
+
   test('ink tool persists page-anchored PDF strokes across rerender', async ({ page }) => {
     await injectCanvasModuleRef(page);
     await renderPdfArtifactMock(page);
