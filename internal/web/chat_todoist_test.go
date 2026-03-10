@@ -170,6 +170,9 @@ func TestClassifyAndExecuteSystemActionSyncTodoist(t *testing.T) {
 	if item.WorkspaceID == nil || *item.WorkspaceID != workspace.ID {
 		t.Fatalf("item workspace_id = %#v, want %d", item.WorkspaceID, workspace.ID)
 	}
+	if item.State != store.ItemStateInbox {
+		t.Fatalf("item state = %q, want %q", item.State, store.ItemStateInbox)
+	}
 	if item.Sphere != store.SpherePrivate {
 		t.Fatalf("item sphere = %q, want %q", item.Sphere, store.SpherePrivate)
 	}
@@ -195,6 +198,105 @@ func TestClassifyAndExecuteSystemActionSyncTodoist(t *testing.T) {
 	}
 	if binding.ItemID == nil || *binding.ItemID != item.ID {
 		t.Fatalf("binding item_id = %#v, want %d", binding.ItemID, item.ID)
+	}
+}
+
+func TestClassifyAndExecuteSystemActionSyncTodoistPersistsCommentMetadata(t *testing.T) {
+	app := newAuthedTestApp(t)
+	app.intentLLMURL = ""
+	app.intentClassifierURL = ""
+
+	var detailCalls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/projects":
+			writeTodoistJSON(t, w, []map[string]any{{"id": "proj-1", "name": "Admin"}})
+		case r.Method == http.MethodGet && r.URL.Path == "/tasks":
+			writeTodoistJSON(t, w, []map[string]any{{
+				"id":            "task-1",
+				"content":       "Review proposal",
+				"project_id":    "proj-1",
+				"comment_count": 1,
+				"url":           "https://todoist.test/task-1",
+			}})
+		case r.Method == http.MethodGet && r.URL.Path == "/tasks/task-1":
+			detailCalls++
+			writeTodoistJSON(t, w, map[string]any{
+				"id":            "task-1",
+				"content":       "Review proposal",
+				"project_id":    "proj-1",
+				"comment_count": 1,
+				"url":           "https://todoist.test/task-1",
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/comments":
+			if got := r.URL.Query().Get("task_id"); got != "task-1" {
+				t.Fatalf("task_id = %q, want task-1", got)
+			}
+			writeTodoistJSON(t, w, []map[string]any{{
+				"id":        "comment-1",
+				"task_id":   "task-1",
+				"posted_at": "2026-03-10T09:00:00Z",
+				"content":   "Remember appendix",
+				"attachment": map[string]any{
+					"file_name":     "appendix.pdf",
+					"file_type":     "application/pdf",
+					"file_url":      "https://files.todoist.test/appendix.pdf",
+					"resource_type": "file",
+				},
+			}})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	createTodoistTestAccount(t, app, "Personal Todoist", server.URL)
+	project, err := app.ensureDefaultProjectRecord()
+	if err != nil {
+		t.Fatalf("ensure default project: %v", err)
+	}
+	session, err := app.store.GetOrCreateChatSession(project.ProjectKey)
+	if err != nil {
+		t.Fatalf("chat session: %v", err)
+	}
+
+	if _, _, handled := app.classifyAndExecuteSystemAction(context.Background(), session.ID, session, "sync todoist"); !handled {
+		t.Fatal("expected sync command to be handled")
+	}
+	if detailCalls != 1 {
+		t.Fatalf("detailCalls = %d, want 1", detailCalls)
+	}
+
+	item, err := app.store.GetItemBySource(store.ExternalProviderTodoist, "task:task-1")
+	if err != nil {
+		t.Fatalf("GetItemBySource() error: %v", err)
+	}
+	if item.ArtifactID == nil {
+		t.Fatal("expected synced todoist artifact")
+	}
+	artifact, err := app.store.GetArtifact(*item.ArtifactID)
+	if err != nil {
+		t.Fatalf("GetArtifact() error: %v", err)
+	}
+
+	var meta map[string]any
+	if artifact.MetaJSON == nil || json.Unmarshal([]byte(*artifact.MetaJSON), &meta) != nil {
+		t.Fatalf("artifact meta_json = %v, want valid JSON", artifact.MetaJSON)
+	}
+	if got := intFromAny(meta["comment_count"], 0); got != 1 {
+		t.Fatalf("comment_count = %d, want 1", got)
+	}
+	comments, _ := meta["comments"].([]any)
+	if len(comments) != 1 {
+		t.Fatalf("comments len = %d, want 1", len(comments))
+	}
+	comment, _ := comments[0].(map[string]any)
+	if got := strFromAny(comment["content"]); got != "Remember appendix" {
+		t.Fatalf("comment content = %q, want Remember appendix", got)
+	}
+	attachment, _ := comment["attachment"].(map[string]any)
+	if got := strFromAny(attachment["file_name"]); got != "appendix.pdf" {
+		t.Fatalf("attachment file_name = %q, want appendix.pdf", got)
 	}
 }
 

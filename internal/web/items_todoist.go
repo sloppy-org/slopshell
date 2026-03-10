@@ -37,7 +37,47 @@ func todoistItemState(task todoist.Task) string {
 	return store.ItemStateInbox
 }
 
-func todoistTaskArtifactMeta(task todoist.Task, projectNames map[string]string) (*string, error) {
+func todoistCommentMeta(comments []todoist.Comment) []map[string]any {
+	if len(comments) == 0 {
+		return nil
+	}
+	payload := make([]map[string]any, 0, len(comments))
+	for _, comment := range comments {
+		entry := map[string]any{
+			"id":        strings.TrimSpace(comment.ID),
+			"posted_at": strings.TrimSpace(comment.PostedAt),
+			"content":   strings.TrimSpace(comment.Content),
+		}
+		if taskID := strings.TrimSpace(optionalStringValue(comment.TaskID)); taskID != "" {
+			entry["task_id"] = taskID
+		}
+		if projectID := strings.TrimSpace(optionalStringValue(comment.ProjectID)); projectID != "" {
+			entry["project_id"] = projectID
+		}
+		if comment.Attachment != nil {
+			attachment := map[string]any{}
+			if value := strings.TrimSpace(comment.Attachment.FileName); value != "" {
+				attachment["file_name"] = value
+			}
+			if value := strings.TrimSpace(comment.Attachment.FileType); value != "" {
+				attachment["file_type"] = value
+			}
+			if value := strings.TrimSpace(comment.Attachment.FileURL); value != "" {
+				attachment["file_url"] = value
+			}
+			if value := strings.TrimSpace(comment.Attachment.ResourceType); value != "" {
+				attachment["resource_type"] = value
+			}
+			if len(attachment) > 0 {
+				entry["attachment"] = attachment
+			}
+		}
+		payload = append(payload, entry)
+	}
+	return payload
+}
+
+func todoistTaskArtifactMeta(task todoist.Task, projectNames map[string]string, comments []todoist.Comment) (*string, error) {
 	project := ""
 	if task.ProjectID != nil {
 		project = strings.TrimSpace(projectNames[strings.TrimSpace(*task.ProjectID)])
@@ -55,6 +95,9 @@ func todoistTaskArtifactMeta(task todoist.Task, projectNames map[string]string) 
 		"section_id":    strings.TrimSpace(optionalStringValue(task.SectionID)),
 		"comment_count": task.CommentCount,
 		"url":           strings.TrimSpace(task.URL),
+	}
+	if commentMeta := todoistCommentMeta(comments); len(commentMeta) > 0 {
+		payload["comments"] = commentMeta
 	}
 	raw, err := json.Marshal(payload)
 	if err != nil {
@@ -167,11 +210,11 @@ func (a *App) todoistRemoteForItem(item store.Item) (store.ExternalAccount, *tod
 	return account, client, taskID, nil
 }
 
-func (a *App) syncTodoistTaskArtifact(item store.Item, task todoist.Task, projectNames map[string]string) error {
+func (a *App) syncTodoistTaskArtifact(item store.Item, task todoist.Task, projectNames map[string]string, comments []todoist.Comment) error {
 	title := strings.TrimSpace(task.Content)
 	kind := store.ArtifactKindExternalTask
 	refURL := optionalTrimmedString(task.URL)
-	metaJSON, err := todoistTaskArtifactMeta(task, projectNames)
+	metaJSON, err := todoistTaskArtifactMeta(task, projectNames, comments)
 	if err != nil {
 		return err
 	}
@@ -299,7 +342,7 @@ func (a *App) createTodoistBackedItem(req itemCreateRequest) (store.Item, error)
 		task.IsCompleted = true
 	}
 
-	item, err := a.persistTodoistTask(account, task, mappings, todoistProjectNameByID(projects))
+	item, err := a.persistTodoistTask(account, task, nil, mappings, todoistProjectNameByID(projects))
 	if err != nil {
 		return store.Item{}, err
 	}
