@@ -9,8 +9,8 @@ import * as itemSidebarUiModule from './app-item-sidebar-ui.js';
 import * as prReviewModule from './app-pr-review.js';
 import * as chatUiModule from './app-chat-ui.js';
 import * as inkModule from './app-ink.js';
-import * as projectsModule from './app-projects.js';
-import * as projectStateModule from './app-project-state.js';
+import * as workspaceRuntimeModule from './app-workspace-runtime.js';
+import * as workspaceStateModule from './app-workspace-state.js';
 import * as chatTransportModule from './app-chat-transport.js';
 import * as chatSubmitModule from './app-chat-submit.js';
 import * as canvasTransportModule from './app-canvas-transport.js';
@@ -34,8 +34,8 @@ setAppRefs({
   ...prReviewModule,
   ...chatUiModule,
   ...inkModule,
-  ...projectsModule,
-  ...projectStateModule,
+  ...workspaceRuntimeModule,
+  ...workspaceStateModule,
   ...chatTransportModule,
   ...chatSubmitModule,
   ...canvasTransportModule,
@@ -63,8 +63,8 @@ window._taburaApp = {
   sttCancel: voiceModule.sttCancel,
   appendDictationTranscript: dictationModule.maybeHandleDictationTranscript,
   sendDictationDraft: dictationModule.sendDictationDraft,
-  fetchProjects: projectsModule.fetchProjects,
-  refreshCompanionState: projectsModule.refreshCompanionState,
+  fetchProjects: workspaceRuntimeModule.fetchProjects,
+  refreshCompanionState: workspaceRuntimeModule.refreshCompanionState,
   syncCompanionIdleSurface: runtimeUiModule.syncCompanionIdleSurface,
 };
 

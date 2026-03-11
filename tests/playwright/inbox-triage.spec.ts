@@ -34,7 +34,7 @@ async function clickSphereButton(page: Page, sphere: 'work' | 'private') {
 
 async function refreshProjects(page: Page) {
   await page.evaluate(async () => {
-    const mod = await import('../../internal/web/static/app-projects.js');
+    const mod = await import('../../internal/web/static/app-workspace-runtime.js');
     await mod.fetchProjects();
   });
 }

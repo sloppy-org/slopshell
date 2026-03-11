@@ -260,9 +260,9 @@ internal/
   web/                   Public HTTP/WS runtime and UI coordination
     chat.go              Chat HTTP handlers
     chat_canvas.go       Canvas artifact file lifecycle
-    chat_hub.go          Hub project orchestration
+    project_attention.go Workspace attention/activity tracking
     chat_intent.go       Intent classification and system actions
-    chat_model.go        Model profile resolution per project
+    chat_model.go        Model profile resolution for the active runtime
     chat_participant.go  Meeting participant capture
     chat_pr.go           PR review loading
     chat_prompt.go       Internal prompt construction
@@ -272,7 +272,7 @@ internal/
     chat_tts.go          TTS synthesis routing
     chat_turn.go         Assistant turn execution and render routing
     chat_ws.go           Chat websocket connection behavior
-    projects.go          Project CRUD, activation, bootstrap hookup
+    workspace_runtime.go Workspace runtime CRUD, activation, bootstrap hookup
     server.go            App wiring, router, lifecycle
     server_relay.go      Canvas relay and file proxying
     static/              Embedded frontend assets
