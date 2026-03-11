@@ -23,6 +23,14 @@ type LivePolicyConfig struct {
 	InterruptionAllowed bool `json:"interruption_allowed"`
 }
 
+func (c LivePolicyConfig) RequiresExplicitAddress() bool {
+	return !c.AssumeAddressed
+}
+
+func (c LivePolicyConfig) CapturesMeetingNotes() bool {
+	return c.CaptureDecisions || c.CaptureActionItems
+}
+
 type livePolicyRequest struct {
 	Policy string `json:"policy"`
 }
@@ -69,6 +77,18 @@ func (p LivePolicy) Config() LivePolicyConfig {
 			InterruptionAllowed: true,
 		}
 	}
+}
+
+func (p LivePolicy) RequiresExplicitAddress() bool {
+	return p.Config().RequiresExplicitAddress()
+}
+
+func (p LivePolicy) CapturesMeetingNotes() bool {
+	return p.Config().CapturesMeetingNotes()
+}
+
+func (p LivePolicy) UsesParticipantCapture() bool {
+	return p.RequiresExplicitAddress() || p.CapturesMeetingNotes()
 }
 
 func (a *App) initializeLivePolicy() error {
@@ -180,7 +200,7 @@ func (a *App) handleLivePolicyPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if changed {
-		if current == LivePolicyMeeting && policy != LivePolicyMeeting {
+		if current.UsesParticipantCapture() && !policy.UsesParticipantCapture() {
 			a.disableLiveMeetingCapture()
 		}
 		a.broadcastLivePolicyChanged(policy)

@@ -712,7 +712,7 @@ func (a *App) evaluateLocalTurn(ctx context.Context, sessionID string, session s
 }
 
 func resolveIntentAddressedness(policy LivePolicy, text string, addressed *bool) (bool, bool) {
-	if normalizeLivePolicy(policy.String()) != LivePolicyMeeting {
+	if !policy.RequiresExplicitAddress() {
 		return true, true
 	}
 	if isCompanionDirectAddress(text) {

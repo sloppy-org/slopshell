@@ -315,9 +315,9 @@ func (a *App) runAssistantTurnParallel(
 		}()
 	}
 
-	policy := normalizeLivePolicy(a.LivePolicy().String())
+	policy := a.LivePolicy()
 	var precomputedLocal *localTurnEvaluation
-	if policy == LivePolicyMeeting {
+	if policy.RequiresExplicitAddress() {
 		evaluation := a.evaluateLocalTurn(context.Background(), sessionID, session, userText, cursorCtx, turn.captureMode)
 		precomputedLocal = &evaluation
 		if evaluation.suppressesResponse() {

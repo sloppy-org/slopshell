@@ -24,6 +24,12 @@ func TestLivePolicyConfig(t *testing.T) {
 	if !dialogue.InterruptionAllowed {
 		t.Fatal("dialogue interruption_allowed = false, want true")
 	}
+	if dialogue.RequiresExplicitAddress() {
+		t.Fatal("dialogue requires explicit address = true, want false")
+	}
+	if dialogue.CapturesMeetingNotes() {
+		t.Fatal("dialogue captures meeting notes = true, want false")
+	}
 
 	meeting := LivePolicyMeeting.Config()
 	if meeting.AssumeAddressed {
@@ -40,6 +46,33 @@ func TestLivePolicyConfig(t *testing.T) {
 	}
 	if meeting.InterruptionAllowed {
 		t.Fatal("meeting interruption_allowed = true, want false")
+	}
+	if !meeting.RequiresExplicitAddress() {
+		t.Fatal("meeting requires explicit address = false, want true")
+	}
+	if !meeting.CapturesMeetingNotes() {
+		t.Fatal("meeting captures meeting notes = false, want true")
+	}
+}
+
+func TestLivePolicyCapabilities(t *testing.T) {
+	if LivePolicyDialogue.RequiresExplicitAddress() {
+		t.Fatal("dialogue RequiresExplicitAddress = true, want false")
+	}
+	if LivePolicyDialogue.CapturesMeetingNotes() {
+		t.Fatal("dialogue CapturesMeetingNotes = true, want false")
+	}
+	if LivePolicyDialogue.UsesParticipantCapture() {
+		t.Fatal("dialogue UsesParticipantCapture = true, want false")
+	}
+	if !LivePolicyMeeting.RequiresExplicitAddress() {
+		t.Fatal("meeting RequiresExplicitAddress = false, want true")
+	}
+	if !LivePolicyMeeting.CapturesMeetingNotes() {
+		t.Fatal("meeting CapturesMeetingNotes = false, want true")
+	}
+	if !LivePolicyMeeting.UsesParticipantCapture() {
+		t.Fatal("meeting UsesParticipantCapture = false, want true")
 	}
 }
 

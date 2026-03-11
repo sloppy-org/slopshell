@@ -116,6 +116,41 @@ func assertNoParticipantMessage(t *testing.T, clientConn *websocket.Conn, timeou
 	}
 }
 
+func TestParticipantStartRequiresCapturePolicy(t *testing.T) {
+	app := newAuthedTestApp(t)
+	project, err := app.ensureDefaultProjectRecord()
+	if err != nil {
+		t.Fatalf("ensureDefaultProjectRecord: %v", err)
+	}
+	projectRecord, err := app.store.GetProjectByProjectKey(project.ProjectKey)
+	if err != nil {
+		t.Fatalf("GetProjectByProjectKey: %v", err)
+	}
+	cfg := app.loadCompanionConfig(projectRecord)
+	cfg.CompanionEnabled = true
+	if err := app.saveCompanionConfig(projectRecord.ID, cfg); err != nil {
+		t.Fatalf("save companion config: %v", err)
+	}
+	setLivePolicyForTest(t, app, LivePolicyDialogue)
+
+	session, err := app.store.GetOrCreateChatSession(project.ProjectKey)
+	if err != nil {
+		t.Fatalf("GetOrCreateChatSession: %v", err)
+	}
+	conn, clientConn, cleanup := newParticipantTestWSConn(t)
+	defer cleanup()
+
+	handleParticipantStart(app, conn, session.ID)
+
+	msg := readParticipantMessage(t, clientConn, 2*time.Second)
+	if msg.Type != "participant_error" {
+		t.Fatalf("message type = %q, want participant_error", msg.Type)
+	}
+	if msg.Error != "meeting mode is disabled" {
+		t.Fatalf("error = %q, want meeting mode is disabled", msg.Error)
+	}
+}
+
 func TestParticipantConfigGetRequiresAuth(t *testing.T) {
 	app := newAuthedTestApp(t)
 

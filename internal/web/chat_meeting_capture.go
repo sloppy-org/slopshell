@@ -150,7 +150,7 @@ func (a *App) captureMeetingNotesForSegment(participantSessionID string, seg sto
 	if a == nil || a.store == nil || seg.ID == 0 {
 		return
 	}
-	if normalizeLivePolicy(a.LivePolicy().String()) != LivePolicyMeeting {
+	if !a.LivePolicy().CapturesMeetingNotes() {
 		return
 	}
 	text := strings.TrimSpace(seg.Text)

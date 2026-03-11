@@ -143,7 +143,7 @@ For annotate_capture or compose on idea notes include target="idea_note".
 For bundle_review on someday work include target="someday" and operation.
 For dispatch_execute issue filing include target="github_issue" and mode="split" when local items are also required.
 Prefer case-insensitive filename search (for example -iname) and use single quotes inside JSON command strings.`
-	if normalizeLivePolicy(policy.String()) == LivePolicyMeeting {
+	if policy.RequiresExplicitAddress() {
 		prompt += `
 Meeting mode: include an "addressed" boolean on every JSON response indicating whether the utterance is directed at Tabura.
 If the user explicitly mentions "Tabura" or "assistant", set "addressed":true.
