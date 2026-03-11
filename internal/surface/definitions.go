@@ -501,6 +501,7 @@ var WebRouteSections = []RouteSection{
 			"POST /api/actors",
 			"GET /api/actors/{actor_id}",
 			"DELETE /api/actors/{actor_id}",
+			"GET /api/contexts",
 			"GET /api/artifacts",
 			"POST /api/artifacts",
 			"GET /api/artifacts/taxonomy",
