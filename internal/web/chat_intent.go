@@ -29,8 +29,9 @@ type SystemAction struct {
 }
 
 type intentPlanClassification struct {
-	Actions   []*SystemAction
-	Addressed *bool
+	Actions     []*SystemAction
+	Addressed   *bool
+	LocalAnswer *intentLocalAnswer
 }
 
 const systemActionLastShellPathPlaceholder = "$last_shell_path"
@@ -575,7 +576,7 @@ func (a *App) classifyAndExecuteSystemActionForTurn(ctx context.Context, session
 	}
 	intentText = a.contextualizeClarificationReplyForSession(sessionID, trimmedText)
 	if strings.TrimSpace(a.intentLLMURL) != "" {
-		classification, llmErr := a.classifyIntentPlanWithLLMResult(ctx, intentText)
+		classification, llmErr := a.classifyIntentPlanWithLLMResultForTurn(ctx, sessionID, session, intentText)
 		if llmErr == nil {
 			if addressed, known := resolveIntentAddressedness(livePolicy, intentText, classification.Addressed); known && !addressed {
 				return "", []map[string]interface{}{{
@@ -583,6 +584,9 @@ func (a *App) classifyAndExecuteSystemActionForTurn(ctx context.Context, session
 					"addressed":         false,
 					"suppress_response": true,
 				}}, true
+			}
+			if classification.LocalAnswer != nil && strings.TrimSpace(classification.LocalAnswer.Text) != "" {
+				return classification.LocalAnswer.Text, nil, true
 			}
 			if message, payloads, ok := tryExecutePlan(classification.Actions); ok {
 				return message, payloads, true

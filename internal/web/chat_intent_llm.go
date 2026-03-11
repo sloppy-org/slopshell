@@ -8,6 +8,9 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
+
+	"github.com/krystophny/tabura/internal/store"
 )
 
 var intentLLMSystemPrompt = buildIntentLLMSystemPrompt()
@@ -22,6 +25,11 @@ type localIntentLLMChoice struct {
 
 type localIntentLLMMessage struct {
 	Content string `json:"content"`
+}
+
+type intentLocalAnswer struct {
+	Text       string
+	Confidence string
 }
 
 func parseIntentLLMProfileOptions(raw string) []string {
@@ -101,6 +109,19 @@ func parseOptionalBool(value interface{}) (bool, bool) {
 	}
 }
 
+func normalizeIntentLocalAnswerConfidence(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "high":
+		return "high"
+	case "medium":
+		return "medium"
+	case "low":
+		return "low"
+	default:
+		return ""
+	}
+}
+
 func parseIntentPlanClassification(raw string) (intentPlanClassification, error) {
 	decoded, ok := decodeSystemActionJSON(raw)
 	if !ok {
@@ -110,6 +131,14 @@ func parseIntentPlanClassification(raw string) (intentPlanClassification, error)
 		Actions: collectSystemActionsFromDecoded(decoded),
 	}
 	if obj, ok := decoded.(map[string]interface{}); ok {
+		if normalizeIntentResponseKind(fmt.Sprint(obj["kind"])) == intentKindLocalAnswer {
+			if text := strings.TrimSpace(fmt.Sprint(obj["text"])); text != "" {
+				result.LocalAnswer = &intentLocalAnswer{
+					Text:       text,
+					Confidence: normalizeIntentLocalAnswerConfidence(fmt.Sprint(obj["confidence"])),
+				}
+			}
+		}
 		if addressed, ok := parseOptionalBool(obj["addressed"]); ok {
 			result.Addressed = addressedBoolPtr(addressed)
 		}
@@ -118,6 +147,66 @@ func parseIntentPlanClassification(raw string) (intentPlanClassification, error)
 }
 
 func (a *App) classifyIntentPlanWithLLMResult(ctx context.Context, text string) (intentPlanClassification, error) {
+	return a.classifyIntentPlanWithLLMResultForTurn(ctx, "", store.ChatSession{}, text)
+}
+
+func truncateIntentPromptText(text string, limit int) string {
+	trimmed := strings.TrimSpace(text)
+	if limit <= 0 || len(trimmed) <= limit {
+		return trimmed
+	}
+	if limit <= 3 {
+		return trimmed[:limit]
+	}
+	return trimmed[:limit-3] + "..."
+}
+
+func (a *App) buildIntentLLMUserPrompt(sessionID string, session store.ChatSession, text string) string {
+	trimmedText := strings.TrimSpace(text)
+	if trimmedText == "" {
+		return ""
+	}
+	var lines []string
+	now := time.Now().UTC()
+	if a != nil && a.calendarNow != nil {
+		now = a.calendarNow().UTC()
+	}
+	lines = append(lines, "Current UTC time: "+now.Format(time.RFC3339))
+
+	if a != nil {
+		if workspaceCtx := a.loadWorkspacePromptContext(session.ProjectKey); workspaceCtx != nil {
+			lines = append(lines, fmt.Sprintf("Active workspace: %s (%s)", workspaceCtx.Workspace.Name, workspaceCtx.Workspace.DirPath))
+			lines = append(lines, fmt.Sprintf("Open items in active workspace: %d", workspaceCtx.OpenItemCount))
+			lines = append(lines, "Focused target workspace: unavailable in current runtime; use the active workspace context.")
+		}
+		activeTurns := a.activeChatTurnCount(sessionID)
+		queuedTurns := a.queuedChatTurnCount(sessionID)
+		lines = append(lines, fmt.Sprintf("Running tasks: %d active, %d queued", activeTurns, queuedTurns))
+	}
+
+	if a != nil && a.store != nil && strings.TrimSpace(sessionID) != "" {
+		if messages, err := a.store.ListChatMessages(sessionID, 8); err == nil {
+			tail := recentConversationTail(messages, 3)
+			if len(tail) > 0 {
+				lines = append(lines, "Recent conversation:")
+				for _, msg := range tail {
+					role := strings.ToUpper(strings.TrimSpace(msg.Role))
+					if role == "" {
+						continue
+					}
+					lines = append(lines, fmt.Sprintf("- %s: %s", role, truncateIntentPromptText(chatMessageText(msg), 160)))
+				}
+			}
+		}
+	}
+
+	if len(lines) == 0 {
+		return trimmedText
+	}
+	return "Runtime context:\n" + strings.Join(lines, "\n") + "\n\nUser request:\n" + trimmedText
+}
+
+func (a *App) classifyIntentPlanWithLLMResultForTurn(ctx context.Context, sessionID string, session store.ChatSession, text string) (intentPlanClassification, error) {
 	baseURL := strings.TrimRight(strings.TrimSpace(a.intentLLMURL), "/")
 	if baseURL == "" {
 		return intentPlanClassification{}, nil
@@ -130,6 +219,10 @@ func (a *App) classifyIntentPlanWithLLMResult(ctx context.Context, text string) 
 	policy := LivePolicyDialogue
 	if a != nil {
 		policy = a.LivePolicy()
+	}
+	userPrompt := a.buildIntentLLMUserPrompt(sessionID, session, trimmedText)
+	if strings.TrimSpace(userPrompt) == "" {
+		userPrompt = trimmedText
 	}
 	requestPlan := func(systemPrompt string, userPrompt string) (intentPlanClassification, error) {
 		requestBody, _ := json.Marshal(map[string]interface{}{
@@ -197,7 +290,7 @@ func (a *App) classifyIntentPlanWithLLMResult(ctx context.Context, text string) 
 	if requiresOpenCanvas {
 		initialSystemPrompt += "\n\nConstraint: for explicit open/show/display file requests you MUST return an actions array whose final step is open_file_canvas. If path is uncertain, include a shell search step first and then use path=\"$last_shell_path\"."
 	}
-	classification, err := requestPlan(initialSystemPrompt, trimmedText)
+	classification, err := requestPlan(initialSystemPrompt, userPrompt)
 	if err != nil {
 		return intentPlanClassification{}, err
 	}
