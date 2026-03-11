@@ -204,7 +204,7 @@ export async function refreshCompanionState(projectID = state.activeProjectId) {
     resetCompanionState();
     return null;
   }
-  const resp = await fetch(apiURL(`projects/${encodeURIComponent(project.id)}/companion/state`), { cache: 'no-store' });
+  const resp = await fetch(apiURL('workspaces/active/companion/state'), { cache: 'no-store' });
   if (!resp.ok) {
     resetCompanionState();
     throw new Error(`meeting state failed: HTTP ${resp.status}`);
@@ -218,7 +218,7 @@ export async function refreshCompanionState(projectID = state.activeProjectId) {
 export async function updateCompanionConfig(patch) {
   const project = activeProject();
   if (!project || !project.id) return null;
-  const resp = await fetch(apiURL(`projects/${encodeURIComponent(project.id)}/companion/config`), {
+  const resp = await fetch(apiURL('workspaces/active/companion/config'), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(patch || {}),

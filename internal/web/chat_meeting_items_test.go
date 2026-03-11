@@ -79,7 +79,7 @@ func TestProjectMeetingItemsAPIAndCreation(t *testing.T) {
 		t.Fatalf("UpsertParticipantRoomState() error: %v", err)
 	}
 
-	rr := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/projects/"+project.ID+"/meeting-items", nil)
+	rr := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/workspaces/"+itoa(workspace.ID)+"/meeting-items", nil)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("GET meeting-items status = %d, want 200: %s", rr.Code, rr.Body.String())
 	}
@@ -97,7 +97,7 @@ func TestProjectMeetingItemsAPIAndCreation(t *testing.T) {
 		t.Fatalf("first proposed actor = %q, want Alice", proposals.ProposedItems[0].ActorName)
 	}
 
-	rr = doAuthedJSONRequest(t, app.Router(), http.MethodPost, "/api/projects/"+project.ID+"/meeting-items", map[string]any{
+	rr = doAuthedJSONRequest(t, app.Router(), http.MethodPost, "/api/workspaces/"+itoa(workspace.ID)+"/meeting-items", map[string]any{
 		"selected": []int{0, 1},
 	})
 	if rr.Code != http.StatusOK {
@@ -165,12 +165,13 @@ func TestProjectMeetingItemsAPIAndCreation(t *testing.T) {
 func TestProjectMeetingItemsCreateRejectsEmptySelection(t *testing.T) {
 	app := newAuthedTestApp(t)
 	project, session := seedProjectCompanionSession(t, app)
+	workspace := requireWorkspaceForProject(t, app, project)
 
 	if err := app.store.UpsertParticipantRoomState(session.ID, "- ACTION: Alice will draft the revised agenda.", `["Alice"]`, `[]`); err != nil {
 		t.Fatalf("UpsertParticipantRoomState() error: %v", err)
 	}
 
-	rr := doAuthedJSONRequest(t, app.Router(), http.MethodPost, "/api/projects/"+project.ID+"/meeting-items", map[string]any{
+	rr := doAuthedJSONRequest(t, app.Router(), http.MethodPost, "/api/workspaces/"+itoa(workspace.ID)+"/meeting-items", map[string]any{
 		"selected": []int{},
 	})
 	if rr.Code != http.StatusBadRequest {

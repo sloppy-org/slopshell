@@ -209,8 +209,8 @@ func meetingPayloadProject(workspace store.Workspace, project *store.Project) (s
 	return projectID, projectKey
 }
 
-func (a *App) loadProjectMeetingItems(w http.ResponseWriter, r *http.Request) (store.Workspace, *store.Project, []store.ParticipantSession, *store.ParticipantSession, string, []proposedMeetingItem, bool) {
-	workspace, project, sessions, session, ok := a.resolveProjectCompanionArtifact(w, r)
+func (a *App) loadWorkspaceMeetingItems(w http.ResponseWriter, r *http.Request) (store.Workspace, *store.Project, []store.ParticipantSession, *store.ParticipantSession, string, []proposedMeetingItem, bool) {
+	workspace, project, sessions, session, ok := a.resolveWorkspaceCompanionArtifact(w, r)
 	if !ok {
 		return store.Workspace{}, nil, nil, nil, "", nil, false
 	}
@@ -226,11 +226,11 @@ func (a *App) loadProjectMeetingItems(w http.ResponseWriter, r *http.Request) (s
 	return workspace, project, sessions, session, summaryText, a.extractMeetingItems(summaryText), true
 }
 
-func (a *App) handleProjectMeetingItemsGet(w http.ResponseWriter, r *http.Request) {
+func (a *App) handleWorkspaceMeetingItemsGet(w http.ResponseWriter, r *http.Request) {
 	if !a.requireAuth(w, r) {
 		return
 	}
-	workspace, project, sessions, session, summaryText, proposed, ok := a.loadProjectMeetingItems(w, r)
+	workspace, project, sessions, session, summaryText, proposed, ok := a.loadWorkspaceMeetingItems(w, r)
 	if !ok {
 		return
 	}
@@ -367,11 +367,11 @@ func (a *App) handleCreateMeetingItems(workspace store.Workspace, project *store
 	return created, nil
 }
 
-func (a *App) handleProjectMeetingItemsCreate(w http.ResponseWriter, r *http.Request) {
+func (a *App) handleWorkspaceMeetingItemsCreate(w http.ResponseWriter, r *http.Request) {
 	if !a.requireAuth(w, r) {
 		return
 	}
-	workspace, project, _, session, summaryText, proposed, ok := a.loadProjectMeetingItems(w, r)
+	workspace, project, _, session, summaryText, proposed, ok := a.loadWorkspaceMeetingItems(w, r)
 	if !ok {
 		return
 	}

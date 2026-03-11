@@ -76,6 +76,7 @@ func TestCompanionRuntimeProtocolEmitsListeningAndTranscriptEvents(t *testing.T)
 	if err != nil {
 		t.Fatalf("ensureDefaultProjectRecord: %v", err)
 	}
+	workspace := requireWorkspaceForProject(t, app, project)
 	cfg := app.loadCompanionConfig(project)
 	cfg.CompanionEnabled = true
 	cfg.DirectedSpeechGateEnabled = false
@@ -133,7 +134,7 @@ func TestCompanionRuntimeProtocolEmitsListeningAndTranscriptEvents(t *testing.T)
 		t.Fatalf("final companion reason = %q, want transcript_finalized", got)
 	}
 
-	rr := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/projects/"+project.ID+"/companion/state", nil)
+	rr := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/workspaces/"+itoa(workspace.ID)+"/companion/state", nil)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("GET companion state status = %d, want 200", rr.Code)
 	}
@@ -217,6 +218,7 @@ func TestInterruptCompanionPendingTurnBroadcastsListeningState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ensureDefaultProjectRecord: %v", err)
 	}
+	workspace := requireWorkspaceForProject(t, app, project)
 	cfg := app.loadCompanionConfig(project)
 	cfg.CompanionEnabled = true
 	cfg.DirectedSpeechGateEnabled = true
@@ -249,7 +251,7 @@ func TestInterruptCompanionPendingTurnBroadcastsListeningState(t *testing.T) {
 		t.Fatalf("interrupt companion reason = %q, want assistant_interrupted", got)
 	}
 
-	rr := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/projects/"+project.ID+"/companion/state", nil)
+	rr := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/workspaces/"+itoa(workspace.ID)+"/companion/state", nil)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("GET companion state status = %d, want 200", rr.Code)
 	}

@@ -8,7 +8,7 @@ import (
 	"github.com/krystophny/tabura/internal/store"
 )
 
-func TestWorkspaceProjectAssignmentAndProjectScopeAPI(t *testing.T) {
+func TestWorkspaceProjectAssignmentPreservesProjectScopedItemQueries(t *testing.T) {
 	app := newAuthedTestApp(t)
 
 	project, _, err := app.createProject(projectCreateRequest{Name: "EUROfusion"})
@@ -43,22 +43,13 @@ func TestWorkspaceProjectAssignmentAndProjectScopeAPI(t *testing.T) {
 		t.Fatalf("item project_id = %v, want %q", item.ProjectID, project.ID)
 	}
 
-	rrProjectWorkspaces := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/projects/"+project.ID+"/workspaces", nil)
-	if rrProjectWorkspaces.Code != http.StatusOK {
-		t.Fatalf("project workspaces status = %d, want 200: %s", rrProjectWorkspaces.Code, rrProjectWorkspaces.Body.String())
-	}
-	projectWorkspaces, ok := decodeJSONDataResponse(t, rrProjectWorkspaces)["workspaces"].([]any)
-	if !ok || len(projectWorkspaces) != 1 {
-		t.Fatalf("project workspaces payload = %#v", rrProjectWorkspaces.Body.String())
-	}
-
-	rrProjectItems := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/projects/"+project.ID+"/items", nil)
+	rrProjectItems := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/items?project_id="+project.ID, nil)
 	if rrProjectItems.Code != http.StatusOK {
-		t.Fatalf("project items status = %d, want 200: %s", rrProjectItems.Code, rrProjectItems.Body.String())
+		t.Fatalf("project filtered items status = %d, want 200: %s", rrProjectItems.Code, rrProjectItems.Body.String())
 	}
 	projectItems, ok := decodeJSONDataResponse(t, rrProjectItems)["items"].([]any)
 	if !ok || len(projectItems) != 1 {
-		t.Fatalf("project items payload = %#v", rrProjectItems.Body.String())
+		t.Fatalf("project filtered items payload = %#v", rrProjectItems.Body.String())
 	}
 
 	rrInbox := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/items/inbox?project_id="+project.ID, nil)

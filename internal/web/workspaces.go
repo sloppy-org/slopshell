@@ -1,7 +1,9 @@
 package web
 
 import (
+	"database/sql"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/krystophny/tabura/internal/store"
@@ -18,6 +20,23 @@ type workspaceUpdateRequest struct {
 	Name     *string `json:"name"`
 	Sphere   *string `json:"sphere"`
 	IsActive *bool   `json:"is_active"`
+}
+
+func (a *App) resolveWorkspaceByIDOrActive(raw string) (store.Workspace, error) {
+	clean := strings.TrimSpace(raw)
+	if clean == "" || strings.EqualFold(clean, "active") {
+		if workspace, err := a.store.ActiveWorkspace(); err == nil {
+			return workspace, nil
+		} else if !isNoRows(err) {
+			return store.Workspace{}, err
+		}
+		return a.ensureStartupWorkspace()
+	}
+	id, err := strconv.ParseInt(clean, 10, 64)
+	if err != nil {
+		return store.Workspace{}, sql.ErrNoRows
+	}
+	return a.store.GetWorkspace(id)
 }
 
 func (a *App) handleWorkspaceList(w http.ResponseWriter, r *http.Request) {

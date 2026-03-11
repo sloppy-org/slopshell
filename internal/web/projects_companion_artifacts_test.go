@@ -27,6 +27,7 @@ func seedProjectCompanionSession(t *testing.T, app *App) (store.Project, store.P
 func TestProjectCompanionTranscriptAPIAndExports(t *testing.T) {
 	app := newAuthedTestApp(t)
 	project, session := seedProjectCompanionSession(t, app)
+	workspace := requireWorkspaceForProject(t, app, project)
 
 	_, _ = app.store.AddParticipantSegment(store.ParticipantSegment{
 		SessionID: session.ID,
@@ -45,7 +46,7 @@ func TestProjectCompanionTranscriptAPIAndExports(t *testing.T) {
 		Status:    "final",
 	})
 
-	rr := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/projects/"+project.ID+"/transcript?q=beta", nil)
+	rr := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/workspaces/"+itoa(workspace.ID)+"/transcript?q=beta", nil)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("GET transcript status = %d, want 200", rr.Code)
 	}
@@ -70,7 +71,7 @@ func TestProjectCompanionTranscriptAPIAndExports(t *testing.T) {
 		t.Fatalf("transcript payload must remain text-only: %s", body)
 	}
 
-	rr = doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/projects/"+project.ID+"/transcript?format=md", nil)
+	rr = doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/workspaces/"+itoa(workspace.ID)+"/transcript?format=md", nil)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("GET transcript markdown status = %d, want 200", rr.Code)
 	}
@@ -81,7 +82,7 @@ func TestProjectCompanionTranscriptAPIAndExports(t *testing.T) {
 		t.Fatalf("transcript markdown missing segment text: %q", rr.Body.String())
 	}
 
-	rr = doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/projects/"+project.ID+"/transcript?format=txt", nil)
+	rr = doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/workspaces/"+itoa(workspace.ID)+"/transcript?format=txt", nil)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("GET transcript text status = %d, want 200", rr.Code)
 	}
@@ -93,11 +94,12 @@ func TestProjectCompanionTranscriptAPIAndExports(t *testing.T) {
 func TestProjectCompanionSummaryAndReferencesAPIAndExports(t *testing.T) {
 	app := newAuthedTestApp(t)
 	project, session := seedProjectCompanionSession(t, app)
+	workspace := requireWorkspaceForProject(t, app, project)
 	if err := app.store.UpsertParticipantRoomState(session.ID, "Decision summary", `["Acme","Budget"]`, `[{"topic":"Status"},{"topic":"Risks"}]`); err != nil {
 		t.Fatalf("UpsertParticipantRoomState: %v", err)
 	}
 
-	rr := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/projects/"+project.ID+"/summary", nil)
+	rr := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/workspaces/"+itoa(workspace.ID)+"/summary", nil)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("GET summary status = %d, want 200", rr.Code)
 	}
@@ -115,7 +117,7 @@ func TestProjectCompanionSummaryAndReferencesAPIAndExports(t *testing.T) {
 		t.Fatalf("summary payload must remain text-only: %s", rr.Body.String())
 	}
 
-	rr = doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/projects/"+project.ID+"/summary?format=md", nil)
+	rr = doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/workspaces/"+itoa(workspace.ID)+"/summary?format=md", nil)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("GET summary markdown status = %d, want 200", rr.Code)
 	}
@@ -123,7 +125,7 @@ func TestProjectCompanionSummaryAndReferencesAPIAndExports(t *testing.T) {
 		t.Fatalf("summary markdown missing expected content: %q", rr.Body.String())
 	}
 
-	rr = doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/projects/"+project.ID+"/references", nil)
+	rr = doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/workspaces/"+itoa(workspace.ID)+"/references", nil)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("GET references status = %d, want 200", rr.Code)
 	}
@@ -141,7 +143,7 @@ func TestProjectCompanionSummaryAndReferencesAPIAndExports(t *testing.T) {
 		t.Fatalf("references payload must remain text-only: %s", rr.Body.String())
 	}
 
-	rr = doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/projects/"+project.ID+"/references?format=md", nil)
+	rr = doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/workspaces/"+itoa(workspace.ID)+"/references?format=md", nil)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("GET references markdown status = %d, want 200", rr.Code)
 	}
@@ -184,6 +186,7 @@ func TestProjectCompanionSummaryAndReferencesAPIAndExports(t *testing.T) {
 func TestProjectCompanionRoomMemoryDerivesFromTranscriptAndEvents(t *testing.T) {
 	app := newAuthedTestApp(t)
 	project, session := seedProjectCompanionSession(t, app)
+	workspace := requireWorkspaceForProject(t, app, project)
 
 	if err := app.store.AddParticipantEvent(session.ID, 0, "session_started", `{"reason":"manual"}`); err != nil {
 		t.Fatalf("AddParticipantEvent session_started: %v", err)
@@ -225,7 +228,7 @@ func TestProjectCompanionRoomMemoryDerivesFromTranscriptAndEvents(t *testing.T) 
 		t.Fatalf("AddParticipantEvent assistant_turn_completed: %v", err)
 	}
 
-	rr := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/projects/"+project.ID+"/summary", nil)
+	rr := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/workspaces/"+itoa(workspace.ID)+"/summary", nil)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("GET derived summary status = %d, want 200", rr.Code)
 	}
@@ -243,7 +246,7 @@ func TestProjectCompanionRoomMemoryDerivesFromTranscriptAndEvents(t *testing.T) 
 		t.Fatalf("summary_text = %q, want derived entity", summary.SummaryText)
 	}
 
-	rr = doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/projects/"+project.ID+"/references", nil)
+	rr = doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/workspaces/"+itoa(workspace.ID)+"/references", nil)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("GET derived references status = %d, want 200", rr.Code)
 	}
@@ -270,7 +273,7 @@ func TestProjectCompanionRoomMemoryDerivesFromTranscriptAndEvents(t *testing.T) 
 		t.Fatalf("last topic = %q, want Assistant response completed", got)
 	}
 
-	rr = doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/projects/"+project.ID+"/references?format=md", nil)
+	rr = doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/workspaces/"+itoa(workspace.ID)+"/references?format=md", nil)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("GET derived references markdown status = %d, want 200", rr.Code)
 	}
@@ -285,6 +288,7 @@ func TestProjectCompanionRoomMemoryDerivesFromTranscriptAndEvents(t *testing.T) 
 func TestProjectCompanionRoomMemoryIsProjectScoped(t *testing.T) {
 	app := newAuthedTestApp(t)
 	project, session := seedProjectCompanionSession(t, app)
+	workspace := requireWorkspaceForProject(t, app, project)
 
 	otherProject, err := app.store.CreateProject("Meeting Temp", "meeting-temp", t.TempDir(), "managed", "", "", false)
 	if err != nil {
@@ -318,7 +322,7 @@ func TestProjectCompanionRoomMemoryIsProjectScoped(t *testing.T) {
 		t.Fatalf("AddParticipantSegment other: %v", err)
 	}
 
-	rr := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/projects/"+project.ID+"/references", nil)
+	rr := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/workspaces/"+itoa(workspace.ID)+"/references", nil)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("GET scoped references status = %d, want 200", rr.Code)
 	}

@@ -60,12 +60,12 @@ type projectsActivityResponse struct {
 	} `json:"projects"`
 }
 
-type projectFilesListResponse struct {
-	OK        bool   `json:"ok"`
-	ProjectID string `json:"project_id"`
-	Path      string `json:"path"`
-	IsRoot    bool   `json:"is_root"`
-	Entries   []struct {
+type workspaceFilesListResponse struct {
+	OK          bool   `json:"ok"`
+	WorkspaceID int64  `json:"workspace_id"`
+	Path        string `json:"path"`
+	IsRoot      bool   `json:"is_root"`
+	Entries     []struct {
 		Name  string `json:"name"`
 		Path  string `json:"path"`
 		IsDir bool   `json:"is_dir"`
@@ -952,6 +952,7 @@ func TestProjectFilesListReturnsOneLevelAndSupportsSubfolders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("default project: %v", err)
 	}
+	workspace := requireWorkspaceForProject(t, app, project)
 	root := filepath.Clean(project.RootPath)
 	dirName := "zz_test_dir"
 	fileName := "zz_test_file.txt"
@@ -971,18 +972,21 @@ func TestProjectFilesListReturnsOneLevelAndSupportsSubfolders(t *testing.T) {
 		t,
 		app.Router(),
 		http.MethodGet,
-		"/api/projects/"+project.ID+"/files",
+		"/api/workspaces/"+itoa(workspace.ID)+"/files",
 		nil,
 	)
 	if rrRoot.Code != http.StatusOK {
 		t.Fatalf("expected root list 200, got %d: %s", rrRoot.Code, rrRoot.Body.String())
 	}
-	var rootPayload projectFilesListResponse
+	var rootPayload workspaceFilesListResponse
 	if err := json.Unmarshal(rrRoot.Body.Bytes(), &rootPayload); err != nil {
 		t.Fatalf("decode root payload: %v", err)
 	}
 	if !rootPayload.OK {
 		t.Fatalf("expected ok=true")
+	}
+	if rootPayload.WorkspaceID != workspace.ID {
+		t.Fatalf("workspace_id = %d, want %d", rootPayload.WorkspaceID, workspace.ID)
 	}
 	if !rootPayload.IsRoot || rootPayload.Path != "" {
 		t.Fatalf("expected root listing, got is_root=%v path=%q", rootPayload.IsRoot, rootPayload.Path)
@@ -1014,13 +1018,13 @@ func TestProjectFilesListReturnsOneLevelAndSupportsSubfolders(t *testing.T) {
 		t,
 		app.Router(),
 		http.MethodGet,
-		"/api/projects/"+project.ID+"/files?path="+dirName,
+		"/api/workspaces/"+itoa(workspace.ID)+"/files?path="+dirName,
 		nil,
 	)
 	if rrSub.Code != http.StatusOK {
 		t.Fatalf("expected subdirectory list 200, got %d: %s", rrSub.Code, rrSub.Body.String())
 	}
-	var subPayload projectFilesListResponse
+	var subPayload workspaceFilesListResponse
 	if err := json.Unmarshal(rrSub.Body.Bytes(), &subPayload); err != nil {
 		t.Fatalf("decode sub payload: %v", err)
 	}
@@ -1038,11 +1042,12 @@ func TestProjectFilesListRejectsTraversal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("default project: %v", err)
 	}
+	workspace := requireWorkspaceForProject(t, app, project)
 	rr := doAuthedJSONRequest(
 		t,
 		app.Router(),
 		http.MethodGet,
-		"/api/projects/"+project.ID+"/files?path=../secret",
+		"/api/workspaces/"+itoa(workspace.ID)+"/files?path=../secret",
 		nil,
 	)
 	if rr.Code != http.StatusBadRequest {

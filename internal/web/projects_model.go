@@ -459,15 +459,14 @@ func (a *App) handleProjectContext(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (a *App) handleProjectFilesList(w http.ResponseWriter, r *http.Request) {
+func (a *App) handleWorkspaceFilesList(w http.ResponseWriter, r *http.Request) {
 	if !a.requireAuth(w, r) {
 		return
 	}
-	projectID := strings.TrimSpace(chi.URLParam(r, "project_id"))
-	project, err := a.resolveProjectByIDOrActive(projectID)
+	workspace, err := a.resolveWorkspaceByIDOrActive(chi.URLParam(r, "workspace_id"))
 	if err != nil {
 		if isNoRows(err) {
-			http.Error(w, "project not found", http.StatusNotFound)
+			http.Error(w, "workspace not found", http.StatusNotFound)
 			return
 		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -479,7 +478,7 @@ func (a *App) handleProjectFilesList(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	rootPath := filepath.Clean(project.RootPath)
+	rootPath := filepath.Clean(strings.TrimSpace(workspace.DirPath))
 	targetPath := rootPath
 	if relPath != "" {
 		targetPath = filepath.Join(rootPath, filepath.FromSlash(relPath))
@@ -535,10 +534,10 @@ func (a *App) handleProjectFilesList(w http.ResponseWriter, r *http.Request) {
 		return items[i].Name < items[j].Name
 	})
 	writeJSON(w, map[string]interface{}{
-		"ok":         true,
-		"project_id": project.ID,
-		"path":       relPath,
-		"is_root":    relPath == "",
-		"entries":    items,
+		"ok":           true,
+		"workspace_id": workspace.ID,
+		"path":         relPath,
+		"is_root":      relPath == "",
+		"entries":      items,
 	})
 }

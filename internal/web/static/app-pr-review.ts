@@ -255,30 +255,12 @@ export async function loadWorkspaceBrowserPath(path = '') {
   state.workspaceBrowserError = '';
   renderPrReviewFileList();
   try {
-    const urls = [
-      apiURL(`projects/${encodeURIComponent(projectID)}/files?path=${encodeURIComponent(requestedPath)}`),
-    ];
-    if (projectID.toLowerCase() !== 'active') {
-      urls.push(apiURL(`projects/active/files?path=${encodeURIComponent(requestedPath)}`));
-    }
-
-    let payload = null;
-    let lastError = '';
-    for (let i = 0; i < urls.length; i += 1) {
-      const resp = await fetch(urls[i], { cache: 'no-store' });
-      if (resp.ok) {
-        payload = await resp.json();
-        break;
-      }
+    const resp = await fetch(apiURL(`workspaces/active/files?path=${encodeURIComponent(requestedPath)}`), { cache: 'no-store' });
+    if (!resp.ok) {
       const detail = (await resp.text()).trim() || `HTTP ${resp.status}`;
-      if (resp.status !== 404) {
-        throw new Error(detail);
-      }
-      lastError = detail;
+      throw new Error(detail || 'file list unavailable');
     }
-    if (!payload) {
-      throw new Error(lastError || 'file list unavailable');
-    }
+    const payload = await resp.json();
     if (projectID !== String(state.activeProjectId || '')) return false;
     state.workspaceBrowserPath = normalizeWorkspaceBrowserPath(payload?.path || requestedPath);
     state.workspaceBrowserActivePath = state.workspaceBrowserPath;
@@ -409,7 +391,7 @@ export async function openCompanionWorkspaceView(viewKind, filePath) {
     : '';
   if (!endpoint) return false;
   try {
-    const resp = await fetch(apiURL(`projects/${encodeURIComponent(projectID)}/${endpoint}?format=md`), { cache: 'no-store' });
+    const resp = await fetch(apiURL(`workspaces/active/${endpoint}?format=md`), { cache: 'no-store' });
     if (!resp.ok) {
       const detail = (await resp.text()).trim() || `HTTP ${resp.status}`;
       throw new Error(detail);
@@ -424,7 +406,7 @@ export async function openCompanionWorkspaceView(viewKind, filePath) {
       text,
     });
     if (viewKind === 'summary') {
-      void renderMeetingSummaryItems(projectID, filePath);
+      void renderMeetingSummaryItems(filePath);
     }
     showCanvasColumn('canvas-text');
     if (isMobileViewport()) { setPrReviewDrawerOpen(false); closeEdgePanels(); }
@@ -442,8 +424,8 @@ export function clearMeetingSummaryItemsPanel() {
   }
 }
 
-export function isCurrentMeetingSummaryView(projectID, filePath) {
-  return String(state.activeProjectId || '').trim() === String(projectID || '').trim()
+export function isCurrentMeetingSummaryView(filePath) {
+  return Boolean(String(state.activeProjectId || '').trim())
     && normalizeWorkspaceBrowserPath(state.workspaceOpenFilePath) === normalizeWorkspaceBrowserPath(filePath);
 }
 
@@ -480,7 +462,7 @@ export function updateMeetingSummaryItemsSelection(panel) {
   }
 }
 
-export async function submitMeetingSummaryItems(projectID, panel) {
+export async function submitMeetingSummaryItems(panel) {
   if (!(panel instanceof HTMLElement)) return false;
   const selected = Array.from(panel.querySelectorAll('.meeting-summary-items-list input[type="checkbox"]:checked'))
     .map((node) => Number((node as HTMLInputElement).value || '-1'))
@@ -491,7 +473,7 @@ export async function submitMeetingSummaryItems(projectID, panel) {
   }
   setMeetingSummaryItemsBusy(panel, true, 'Creating inbox items...');
   try {
-    const resp = await fetch(apiURL(`projects/${encodeURIComponent(projectID)}/meeting-items`), {
+    const resp = await fetch(apiURL('workspaces/active/meeting-items'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ selected }),
@@ -539,10 +521,10 @@ export async function submitMeetingSummaryItems(projectID, panel) {
   }
 }
 
-export async function renderMeetingSummaryItems(projectID, filePath) {
+export async function renderMeetingSummaryItems(filePath) {
   clearMeetingSummaryItemsPanel();
   const pane = document.getElementById('canvas-text');
-  if (!(pane instanceof HTMLElement) || !isCurrentMeetingSummaryView(projectID, filePath)) return false;
+  if (!(pane instanceof HTMLElement) || !isCurrentMeetingSummaryView(filePath)) return false;
 
   const panel = document.createElement('section');
   panel.id = MEETING_SUMMARY_ITEMS_PANEL_ID;
@@ -565,13 +547,13 @@ export async function renderMeetingSummaryItems(projectID, filePath) {
   pane.appendChild(panel);
 
   try {
-    const resp = await fetch(apiURL(`projects/${encodeURIComponent(projectID)}/meeting-items`), { cache: 'no-store' });
+    const resp = await fetch(apiURL('workspaces/active/meeting-items'), { cache: 'no-store' });
     if (!resp.ok) {
       const detail = (await resp.text()).trim() || `HTTP ${resp.status}`;
       throw new Error(detail);
     }
     const payload = await resp.json();
-    if (!panel.isConnected || !isCurrentMeetingSummaryView(projectID, filePath)) return false;
+    if (!panel.isConnected || !isCurrentMeetingSummaryView(filePath)) return false;
     const proposedItems = Array.isArray(payload?.proposed_items) ? payload.proposed_items : [];
     if (proposedItems.length === 0) {
       status.textContent = 'No action items detected in this summary yet.';
@@ -626,13 +608,13 @@ export async function renderMeetingSummaryItems(projectID, filePath) {
     submit.type = 'button';
     submit.className = 'meeting-summary-items-submit';
     submit.addEventListener('click', () => {
-      void submitMeetingSummaryItems(projectID, panel);
+      void submitMeetingSummaryItems(panel);
     });
     panel.appendChild(submit);
     updateMeetingSummaryItemsSelection(panel);
     return true;
   } catch (err) {
-    if (!panel.isConnected || !isCurrentMeetingSummaryView(projectID, filePath)) return false;
+    if (!panel.isConnected || !isCurrentMeetingSummaryView(filePath)) return false;
     status.textContent = `Action items unavailable: ${String(err?.message || err || 'unknown error')}`;
     return false;
   }

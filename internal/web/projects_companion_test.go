@@ -9,19 +9,29 @@ import (
 	"github.com/krystophny/tabura/internal/store"
 )
 
+func requireWorkspaceForProject(t *testing.T, app *App, project store.Project) store.Workspace {
+	t.Helper()
+	workspace, err := app.ensureWorkspaceForProject(project, false)
+	if err != nil {
+		t.Fatalf("ensureWorkspaceForProject(%q): %v", project.ID, err)
+	}
+	return workspace
+}
+
 func TestProjectCompanionConfigRequiresAuth(t *testing.T) {
 	app := newAuthedTestApp(t)
 	project, err := app.ensureDefaultProjectRecord()
 	if err != nil {
 		t.Fatalf("ensureDefaultProjectRecord: %v", err)
 	}
+	workspace := requireWorkspaceForProject(t, app, project)
 
-	rr := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/projects/"+project.ID+"/companion/config", nil)
+	rr := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/workspaces/"+itoa(workspace.ID)+"/companion/config", nil)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("authed GET status = %d, want 200", rr.Code)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/projects/"+project.ID+"/companion/config", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/workspaces/"+itoa(workspace.ID)+"/companion/config", nil)
 	unauth := httptest.NewRecorder()
 	app.Router().ServeHTTP(unauth, req)
 	if unauth.Code != http.StatusUnauthorized {
@@ -35,12 +45,13 @@ func TestProjectCompanionConfigPutAndState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ensureDefaultProjectRecord: %v", err)
 	}
+	workspace := requireWorkspaceForProject(t, app, project)
 	session, err := app.store.GetOrCreateChatSession(project.ProjectKey)
 	if err != nil {
 		t.Fatalf("GetOrCreateChatSession: %v", err)
 	}
 
-	rrPut := doAuthedJSONRequest(t, app.Router(), http.MethodPut, "/api/projects/"+project.ID+"/companion/config", map[string]any{
+	rrPut := doAuthedJSONRequest(t, app.Router(), http.MethodPut, "/api/workspaces/"+itoa(workspace.ID)+"/companion/config", map[string]any{
 		"companion_enabled":            false,
 		"directed_speech_gate_enabled": true,
 		"language":                     "de",
@@ -92,7 +103,7 @@ func TestProjectCompanionConfigPutAndState(t *testing.T) {
 		t.Fatalf("active participant session id = %q, want empty", activeSessionID)
 	}
 
-	rrState := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/projects/"+project.ID+"/companion/state", nil)
+	rrState := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/workspaces/"+itoa(workspace.ID)+"/companion/state", nil)
 	if rrState.Code != http.StatusOK {
 		t.Fatalf("GET state status = %d, want 200", rrState.Code)
 	}
@@ -141,6 +152,7 @@ func TestProjectCompanionStateReportsListeningWhenEnabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ensureDefaultProjectRecord: %v", err)
 	}
+	workspace := requireWorkspaceForProject(t, app, project)
 	cfg := app.loadCompanionConfig(project)
 	cfg.CompanionEnabled = true
 	if err := app.saveCompanionConfig(project.ID, cfg); err != nil {
@@ -164,7 +176,7 @@ func TestProjectCompanionStateReportsListeningWhenEnabled(t *testing.T) {
 		t.Fatal("expected active participant session id")
 	}
 
-	rrState := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/projects/"+project.ID+"/companion/state", nil)
+	rrState := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/workspaces/"+itoa(workspace.ID)+"/companion/state", nil)
 	if rrState.Code != http.StatusOK {
 		t.Fatalf("GET state status = %d, want 200", rrState.Code)
 	}
@@ -192,6 +204,7 @@ func TestProjectCompanionStateExposesDirectedSpeechGateMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ensureDefaultProjectRecord: %v", err)
 	}
+	workspace := requireWorkspaceForProject(t, app, project)
 	cfg := app.loadCompanionConfig(project)
 	cfg.CompanionEnabled = true
 	cfg.DirectedSpeechGateEnabled = true
@@ -222,7 +235,7 @@ func TestProjectCompanionStateExposesDirectedSpeechGateMetadata(t *testing.T) {
 		t.Fatalf("AddParticipantEvent segment_committed: %v", err)
 	}
 
-	rr := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/projects/"+project.ID+"/companion/state", nil)
+	rr := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/workspaces/"+itoa(workspace.ID)+"/companion/state", nil)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("GET state status = %d, want 200", rr.Code)
 	}

@@ -1727,20 +1727,14 @@
         }));
         return new Response(JSON.stringify({ ok: true, projects }), { status: 200 });
       }
-      if (u.includes('/api/projects/') && u.includes('/files')) {
-        const pathPart = u.split('/api/projects/')[1] || '';
-        const projectId = decodeURIComponent(pathPart.split('/files')[0] || '').trim();
-        const effectiveProjectId = projectId.toLowerCase() === 'active' ? activeProjectId : projectId;
+      if (u.includes('/api/workspaces/') && u.includes('/files')) {
         const query = new URL(u, window.location.href).searchParams;
         const path = String(query.get('path') || '').trim();
         const cleanedPath = path.replace(/^\/+|\/+$/g, '');
-        if (effectiveProjectId !== activeProjectId && !harnessProjects.some((project) => project.id === effectiveProjectId)) {
-          return new Response('project not found', { status: 404 });
-        }
         if (!cleanedPath) {
           return new Response(JSON.stringify({
             ok: true,
-            project_id: effectiveProjectId || activeProjectId,
+            project_id: activeProjectId,
             path: '',
             is_root: true,
             entries: [
@@ -1753,7 +1747,7 @@
         if (cleanedPath === 'docs') {
           return new Response(JSON.stringify({
             ok: true,
-            project_id: effectiveProjectId || activeProjectId,
+            project_id: activeProjectId,
             path: 'docs',
             is_root: false,
             entries: [
@@ -1764,13 +1758,13 @@
         }
         return new Response(JSON.stringify({
           ok: true,
-          project_id: effectiveProjectId || activeProjectId,
+          project_id: activeProjectId,
           path: cleanedPath,
           is_root: false,
           entries: [],
         }), { status: 200 });
       }
-      if (u.includes('/api/projects/') && u.includes('/transcript')) {
+      if (u.includes('/api/workspaces/') && u.includes('/transcript')) {
         const format = new URL(u, window.location.href).searchParams.get('format') || 'json';
         if (format === 'md') {
           return new Response('# Meeting Transcript\n\n- **Speaker** (10:00:00): Harness meeting transcript\n', {
@@ -1787,7 +1781,7 @@
           segments: [{ id: 1, session_id: 'psess-harness-001', start_ts: 100, end_ts: 100, speaker: 'Speaker', text: 'Harness meeting transcript', model: 'whisper-1', latency_ms: 10, committed_at: 100, status: 'final' }],
         }), { status: 200 });
       }
-      if (u.includes('/api/projects/') && u.includes('/summary')) {
+      if (u.includes('/api/workspaces/') && u.includes('/summary')) {
         const format = new URL(u, window.location.href).searchParams.get('format') || 'json';
         if (format === 'md') {
           return new Response('# Meeting Summary\n\nHarness meeting summary\n', {
@@ -1805,7 +1799,7 @@
           updated_at: 101,
         }), { status: 200 });
       }
-      if (u.includes('/api/projects/') && u.includes('/meeting-items') && opts?.method === 'POST') {
+      if (u.includes('/api/workspaces/') && u.includes('/meeting-items') && opts?.method === 'POST') {
         let body = {};
         try { body = JSON.parse(String(opts?.body || '{}')); } catch (_) { body = {}; }
         const proposals = Array.isArray(window.__meetingSummaryProposals) ? window.__meetingSummaryProposals : defaultMeetingSummaryProposals();
@@ -1854,7 +1848,7 @@
           created_items: createdItems,
         }), { status: 200 });
       }
-      if (u.includes('/api/projects/') && u.includes('/meeting-items')) {
+      if (u.includes('/api/workspaces/') && u.includes('/meeting-items')) {
         const proposals = Array.isArray(window.__meetingSummaryProposals) ? window.__meetingSummaryProposals : defaultMeetingSummaryProposals();
         return new Response(JSON.stringify({
           ok: true,
@@ -1866,7 +1860,7 @@
           proposed_items: proposals,
         }), { status: 200 });
       }
-      if (u.includes('/api/projects/') && u.includes('/references')) {
+      if (u.includes('/api/workspaces/') && u.includes('/references')) {
         const format = new URL(u, window.location.href).searchParams.get('format') || 'json';
         if (format === 'md') {
           return new Response('# Meeting References\n\n## Entities\n\n- Acme\n\n## Topic Timeline\n\n- Budget\n', {
@@ -1884,7 +1878,7 @@
           topic_timeline: ['Budget'],
         }), { status: 200 });
       }
-      if (u.includes('/api/projects/') && u.includes('/companion/config') && opts?.method === 'PUT') {
+      if (u.includes('/api/workspaces/') && u.includes('/companion/config') && opts?.method === 'PUT') {
         let body = {};
         try { body = JSON.parse(String(opts?.body || '{}')); } catch (_) { body = {}; }
         window.__participantConfig = {
@@ -1902,10 +1896,10 @@
         };
         return new Response(JSON.stringify(window.__participantConfig), { status: 200 });
       }
-      if (u.includes('/api/projects/') && u.includes('/companion/config')) {
+      if (u.includes('/api/workspaces/') && u.includes('/companion/config')) {
         return new Response(JSON.stringify(window.__participantConfig), { status: 200 });
       }
-      if (u.includes('/api/projects/') && u.includes('/companion/state')) {
+      if (u.includes('/api/workspaces/') && u.includes('/companion/state')) {
         const runtime = window.__companionRuntimeState || {};
         return new Response(JSON.stringify({
           ok: true,

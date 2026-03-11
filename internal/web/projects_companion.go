@@ -245,16 +245,16 @@ func (a *App) companionKeyForWorkspace(workspace store.Workspace) string {
 	return strings.TrimSpace(workspace.DirPath)
 }
 
-func (a *App) companionWorkspaceForProjectIDOrActive(projectID string) (store.Workspace, *store.Project, error) {
-	project, err := a.resolveProjectByIDOrActive(projectID)
+func (a *App) companionWorkspaceForWorkspaceIDOrActive(workspaceID string) (store.Workspace, *store.Project, error) {
+	workspace, err := a.resolveWorkspaceByIDOrActive(workspaceID)
 	if err != nil {
 		return store.Workspace{}, nil, err
 	}
-	workspace, err := a.ensureWorkspaceForProject(project, false)
+	project, err := a.projectForWorkspace(workspace)
 	if err != nil {
 		return store.Workspace{}, nil, err
 	}
-	return workspace, &project, nil
+	return workspace, project, nil
 }
 
 func (a *App) resolveParticipantProject(chatSessionID string) (string, companionConfig) {
@@ -331,14 +331,14 @@ func (a *App) handleParticipantConfigPut(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, cfg)
 }
 
-func (a *App) handleProjectCompanionConfigGet(w http.ResponseWriter, r *http.Request) {
+func (a *App) handleWorkspaceCompanionConfigGet(w http.ResponseWriter, r *http.Request) {
 	if !a.requireAuth(w, r) {
 		return
 	}
-	workspace, _, err := a.companionWorkspaceForProjectIDOrActive(chi.URLParam(r, "project_id"))
+	workspace, _, err := a.companionWorkspaceForWorkspaceIDOrActive(chi.URLParam(r, "workspace_id"))
 	if err != nil {
 		if isNoRows(err) {
-			http.Error(w, "project not found", http.StatusNotFound)
+			http.Error(w, "workspace not found", http.StatusNotFound)
 			return
 		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -347,14 +347,14 @@ func (a *App) handleProjectCompanionConfigGet(w http.ResponseWriter, r *http.Req
 	writeJSON(w, a.loadCompanionConfig(workspace))
 }
 
-func (a *App) handleProjectCompanionConfigPut(w http.ResponseWriter, r *http.Request) {
+func (a *App) handleWorkspaceCompanionConfigPut(w http.ResponseWriter, r *http.Request) {
 	if !a.requireAuth(w, r) {
 		return
 	}
-	workspace, _, err := a.companionWorkspaceForProjectIDOrActive(chi.URLParam(r, "project_id"))
+	workspace, _, err := a.companionWorkspaceForWorkspaceIDOrActive(chi.URLParam(r, "workspace_id"))
 	if err != nil {
 		if isNoRows(err) {
-			http.Error(w, "project not found", http.StatusNotFound)
+			http.Error(w, "workspace not found", http.StatusNotFound)
 			return
 		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -377,14 +377,14 @@ func (a *App) handleProjectCompanionConfigPut(w http.ResponseWriter, r *http.Req
 	writeJSON(w, cfg)
 }
 
-func (a *App) handleProjectCompanionState(w http.ResponseWriter, r *http.Request) {
+func (a *App) handleWorkspaceCompanionState(w http.ResponseWriter, r *http.Request) {
 	if !a.requireAuth(w, r) {
 		return
 	}
-	workspace, project, err := a.companionWorkspaceForProjectIDOrActive(chi.URLParam(r, "project_id"))
+	workspace, project, err := a.companionWorkspaceForWorkspaceIDOrActive(chi.URLParam(r, "workspace_id"))
 	if err != nil {
 		if isNoRows(err) {
-			http.Error(w, "project not found", http.StatusNotFound)
+			http.Error(w, "workspace not found", http.StatusNotFound)
 			return
 		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)

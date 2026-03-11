@@ -49,11 +49,11 @@ type companionReferencesResponse struct {
 	TopicTimeline []any                      `json:"topic_timeline"`
 }
 
-func (a *App) resolveProjectCompanionArtifact(w http.ResponseWriter, r *http.Request) (store.Workspace, *store.Project, []store.ParticipantSession, *store.ParticipantSession, bool) {
-	workspace, project, err := a.companionWorkspaceForProjectIDOrActive(chi.URLParam(r, "project_id"))
+func (a *App) resolveWorkspaceCompanionArtifact(w http.ResponseWriter, r *http.Request) (store.Workspace, *store.Project, []store.ParticipantSession, *store.ParticipantSession, bool) {
+	workspace, project, err := a.companionWorkspaceForWorkspaceIDOrActive(chi.URLParam(r, "workspace_id"))
 	if err != nil {
 		if isNoRows(err) {
-			http.Error(w, "project not found", http.StatusNotFound)
+			http.Error(w, "workspace not found", http.StatusNotFound)
 			return store.Workspace{}, nil, nil, nil, false
 		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -589,11 +589,11 @@ func renderCompanionReferencesText(session *store.ParticipantSession, entities [
 	return b.String()
 }
 
-func (a *App) handleProjectCompanionTranscript(w http.ResponseWriter, r *http.Request) {
+func (a *App) handleWorkspaceCompanionTranscript(w http.ResponseWriter, r *http.Request) {
 	if !a.requireAuth(w, r) {
 		return
 	}
-	workspace, project, sessions, session, ok := a.resolveProjectCompanionArtifact(w, r)
+	workspace, project, sessions, session, ok := a.resolveWorkspaceCompanionArtifact(w, r)
 	if !ok {
 		return
 	}
@@ -632,11 +632,11 @@ func (a *App) handleProjectCompanionTranscript(w http.ResponseWriter, r *http.Re
 	respondCompanionArtifact(w, r.URL.Query().Get("format"), payload, renderCompanionTranscriptMarkdown(session, segments), renderCompanionTranscriptText(session, segments))
 }
 
-func (a *App) handleProjectCompanionSummary(w http.ResponseWriter, r *http.Request) {
+func (a *App) handleWorkspaceCompanionSummary(w http.ResponseWriter, r *http.Request) {
 	if !a.requireAuth(w, r) {
 		return
 	}
-	workspace, project, sessions, session, ok := a.resolveProjectCompanionArtifact(w, r)
+	workspace, project, sessions, session, ok := a.resolveWorkspaceCompanionArtifact(w, r)
 	if !ok {
 		return
 	}
@@ -677,11 +677,11 @@ func (a *App) handleProjectCompanionSummary(w http.ResponseWriter, r *http.Reque
 	respondCompanionArtifact(w, r.URL.Query().Get("format"), payload, renderCompanionSummaryMarkdown(session, summaryText, updatedAt, notes), renderCompanionSummaryText(session, summaryText, updatedAt, notes))
 }
 
-func (a *App) handleProjectCompanionReferences(w http.ResponseWriter, r *http.Request) {
+func (a *App) handleWorkspaceCompanionReferences(w http.ResponseWriter, r *http.Request) {
 	if !a.requireAuth(w, r) {
 		return
 	}
-	workspace, project, sessions, session, ok := a.resolveProjectCompanionArtifact(w, r)
+	workspace, project, sessions, session, ok := a.resolveWorkspaceCompanionArtifact(w, r)
 	if !ok {
 		return
 	}
