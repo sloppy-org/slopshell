@@ -410,6 +410,27 @@ func TestStoreChatSessionMessageAndThreading(t *testing.T) {
 	if msg2.ThreadKey != "thread-a" {
 		t.Fatalf("msg2 thread key = %q, want thread-a", msg2.ThreadKey)
 	}
+	msg3, err := s.AddChatMessage(
+		session.ID,
+		"assistant",
+		"m3",
+		"p3",
+		"markdown",
+		WithThreadKey("thread-b"),
+		WithProviderMetadata("OpenAI", "gpt-5.3-codex-spark", 321),
+	)
+	if err != nil {
+		t.Fatalf("AddChatMessage(msg3) error: %v", err)
+	}
+	if msg3.Provider != "openai" {
+		t.Fatalf("msg3 provider = %q, want openai", msg3.Provider)
+	}
+	if msg3.ProviderModel != "gpt-5.3-codex-spark" {
+		t.Fatalf("msg3 provider_model = %q, want gpt-5.3-codex-spark", msg3.ProviderModel)
+	}
+	if msg3.ProviderLatency != 321 {
+		t.Fatalf("msg3 provider_latency = %d, want 321", msg3.ProviderLatency)
+	}
 
 	defaultThreadMessages, err := s.ListChatMessages(session.ID, 10)
 	if err != nil {
@@ -426,8 +447,18 @@ func TestStoreChatSessionMessageAndThreading(t *testing.T) {
 	if len(threadMessages) != 1 || threadMessages[0].ID != msg2.ID {
 		t.Fatalf("thread-a message selection mismatch")
 	}
+	threadMessages, err = s.ListChatMessages(session.ID, 10, WithThreadKey("thread-b"))
+	if err != nil {
+		t.Fatalf("ListChatMessages(thread-b) error: %v", err)
+	}
+	if len(threadMessages) != 1 || threadMessages[0].ID != msg3.ID {
+		t.Fatalf("thread-b message selection mismatch")
+	}
+	if threadMessages[0].Provider != "openai" {
+		t.Fatalf("thread-b provider = %q, want openai", threadMessages[0].Provider)
+	}
 
-	if err := s.UpdateChatMessageContent(msg2.ID, "m2-updated", "p2-updated", "canvas"); err != nil {
+	if err := s.UpdateChatMessageContent(msg2.ID, "m2-updated", "p2-updated", "canvas", WithProviderMetadata("local", "qwen3.5-9b", 27)); err != nil {
 		t.Fatalf("UpdateChatMessageContent() error: %v", err)
 	}
 	threadMessages, err = s.ListChatMessages(session.ID, 10, WithThreadKey("thread-a"))
@@ -436,6 +467,15 @@ func TestStoreChatSessionMessageAndThreading(t *testing.T) {
 	}
 	if threadMessages[0].RenderFormat != "text" {
 		t.Fatalf("updated message render format = %q, want text", threadMessages[0].RenderFormat)
+	}
+	if threadMessages[0].Provider != "local" {
+		t.Fatalf("updated message provider = %q, want local", threadMessages[0].Provider)
+	}
+	if threadMessages[0].ProviderModel != "qwen3.5-9b" {
+		t.Fatalf("updated message provider_model = %q, want qwen3.5-9b", threadMessages[0].ProviderModel)
+	}
+	if threadMessages[0].ProviderLatency != 27 {
+		t.Fatalf("updated message provider_latency = %d, want 27", threadMessages[0].ProviderLatency)
 	}
 	if err := s.UpdateChatMessageContent(0, "x", "y", "markdown"); err == nil {
 		t.Fatalf("expected invalid message id validation error")
@@ -606,6 +646,9 @@ func TestStoreSchemaAndHelperNormalizers(t *testing.T) {
 	chatMessageCols := strings.Join(columns["chat_messages"], ",")
 	if !strings.Contains(chatMessageCols, "thread_key") {
 		t.Fatalf("chat_messages missing thread_key column: %q", chatMessageCols)
+	}
+	if !strings.Contains(chatMessageCols, "provider") || !strings.Contains(chatMessageCols, "provider_model") || !strings.Contains(chatMessageCols, "provider_latency_ms") {
+		t.Fatalf("chat_messages missing provider columns: %q", chatMessageCols)
 	}
 	projectCols := strings.Join(columns["projects"], ",")
 	if !strings.Contains(projectCols, "canvas_session_id") {

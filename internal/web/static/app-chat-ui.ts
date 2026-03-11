@@ -274,6 +274,48 @@ export function resolveApprovalRequestCard(requestID, decision) {
   status.textContent = approvalDecisionLabel(decision);
 }
 
+function normalizeAssistantProvider(provider) {
+  const value = String(provider || '').trim().toLowerCase();
+  if (value === 'local' || value === 'cerebras' || value === 'google' || value === 'openai') return value;
+  return '';
+}
+
+function assistantProviderLabel(provider, explicitLabel = '') {
+  const label = String(explicitLabel || '').trim();
+  if (label) return label;
+  switch (normalizeAssistantProvider(provider)) {
+    case 'local':
+      return 'Local';
+    case 'cerebras':
+      return 'Cerebras';
+    case 'google':
+      return 'Google';
+    case 'openai':
+      return 'OpenAI';
+    default:
+      return 'Assistant';
+  }
+}
+
+function setAssistantRowProvider(row, options: Record<string, any> = {}) {
+  if (!(row instanceof HTMLElement)) return;
+  const meta = row.querySelector('.chat-message-meta');
+  if (meta instanceof HTMLElement) meta.textContent = '';
+  const label = row.querySelector('.chat-assistant-label');
+  if (!(label instanceof HTMLElement)) return;
+  const provider = normalizeAssistantProvider(options.provider);
+  const display = assistantProviderLabel(provider, options.providerLabel);
+  label.textContent = display;
+  label.dataset.provider = provider || 'assistant';
+  row.dataset.provider = provider;
+  const model = String(options.providerModel || '').trim();
+  if (model) {
+    label.title = model;
+  } else {
+    label.removeAttribute('title');
+  }
+}
+
 export function appendRenderedAssistant(markdownText, options: Record<string, any> = {}) {
   const host = chatHistoryEl();
   if (!host) return null;
@@ -286,7 +328,6 @@ export function appendRenderedAssistant(markdownText, options: Record<string, an
 
   const meta = document.createElement('div');
   meta.className = 'chat-message-meta';
-  meta.textContent = 'assistant';
 
   const bubble = document.createElement('div');
   bubble.className = 'chat-bubble markdown';
@@ -294,21 +335,30 @@ export function appendRenderedAssistant(markdownText, options: Record<string, an
   progress.className = 'chat-bubble-progress';
   const body = document.createElement('div');
   body.className = 'chat-bubble-body';
+  const label = document.createElement('div');
+  label.className = 'chat-assistant-label';
+  const content = document.createElement('div');
+  content.className = 'chat-assistant-content';
   const { text: markdownBody, stash: mathSegments } = extractMathSegments(markdownText);
   const rendered = marked.parse(markdownBody || '');
-  body.innerHTML = restoreMathSegments(sanitizeHtml(rendered), mathSegments);
+  content.innerHTML = restoreMathSegments(sanitizeHtml(rendered), mathSegments);
+  body.appendChild(label);
+  body.appendChild(content);
   bubble.appendChild(progress);
   bubble.appendChild(body);
   row.appendChild(meta);
   row.appendChild(bubble);
   host.appendChild(row);
+  setAssistantRowProvider(row, options);
   syncChatScroll(host);
-  void typesetMath(body).finally(() => syncChatScroll(host));
+  void typesetMath(content).finally(() => syncChatScroll(host));
   return row;
 }
 
 export function assistantRowBodyEl(row) {
   if (!(row instanceof HTMLElement)) return null;
+  const content = row.querySelector('.chat-assistant-content');
+  if (content instanceof HTMLElement) return content;
   const body = row.querySelector('.chat-bubble-body');
   if (body instanceof HTMLElement) return body;
   const bubble = row.querySelector('.chat-bubble');
@@ -390,10 +440,11 @@ export function appendAssistantProgressForTurn(turnID, text) {
   appendAssistantProgressLine(row, line);
 }
 
-export function updateAssistantRow(row, markdownText, pending = true) {
+export function updateAssistantRow(row, markdownText, pending = true, options: Record<string, any> = {}) {
   if (!row) return;
   const host = chatHistoryEl();
   row.classList.toggle('is-pending', pending);
+  setAssistantRowProvider(row, options);
   const body = assistantRowBodyEl(row);
   if (!(body instanceof HTMLElement)) return;
   const { text: markdownBody, stash: mathSegments } = extractMathSegments(markdownText);

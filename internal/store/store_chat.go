@@ -332,15 +332,21 @@ func (s *Store) AddChatMessage(sessionID, role, contentMarkdown, contentPlain, r
 		fn(&o)
 	}
 	threadKey := strings.TrimSpace(o.threadKey)
+	provider := normalizeChatMessageProvider(o.provider)
+	providerModel := strings.TrimSpace(o.providerModel)
+	providerLatency := normalizeChatMessageProviderLatency(o.providerLatency)
 	now := time.Now().Unix()
 	res, err := s.db.Exec(
-		`INSERT INTO chat_messages (session_id, role, content_markdown, content_plain, render_format, thread_key, created_at) VALUES (?,?,?,?,?,?,?)`,
+		`INSERT INTO chat_messages (session_id, role, content_markdown, content_plain, render_format, thread_key, provider, provider_model, provider_latency_ms, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,
 		strings.TrimSpace(sessionID),
 		role,
 		contentMarkdown,
 		contentPlain,
 		renderFormat,
 		threadKey,
+		provider,
+		providerModel,
+		providerLatency,
 		now,
 	)
 	if err != nil {
@@ -358,12 +364,18 @@ func (s *Store) AddChatMessage(sessionID, role, contentMarkdown, contentPlain, r
 		ContentPlain:    contentPlain,
 		RenderFormat:    renderFormat,
 		ThreadKey:       threadKey,
+		Provider:        provider,
+		ProviderModel:   providerModel,
+		ProviderLatency: providerLatency,
 		CreatedAt:       now,
 	}, nil
 }
 
 type chatMessageOpts struct {
-	threadKey string
+	threadKey       string
+	provider        string
+	providerModel   string
+	providerLatency int
 }
 
 type ChatMessageOption func(*chatMessageOpts)
@@ -374,16 +386,45 @@ func WithThreadKey(key string) ChatMessageOption {
 	}
 }
 
-func (s *Store) UpdateChatMessageContent(id int64, contentMarkdown, contentPlain, renderFormat string) error {
+func WithProviderMetadata(provider, model string, latencyMS int) ChatMessageOption {
+	return func(o *chatMessageOpts) {
+		o.provider = provider
+		o.providerModel = model
+		o.providerLatency = latencyMS
+	}
+}
+
+func normalizeChatMessageProvider(raw string) string {
+	return strings.ToLower(strings.TrimSpace(raw))
+}
+
+func normalizeChatMessageProviderLatency(raw int) int {
+	if raw < 0 {
+		return 0
+	}
+	return raw
+}
+
+func (s *Store) UpdateChatMessageContent(id int64, contentMarkdown, contentPlain, renderFormat string, opts ...ChatMessageOption) error {
 	if id <= 0 {
 		return errors.New("message id is required")
 	}
 	renderFormat = normalizeRenderFormat(renderFormat)
+	var o chatMessageOpts
+	for _, fn := range opts {
+		fn(&o)
+	}
 	_, err := s.db.Exec(
-		`UPDATE chat_messages SET content_markdown = ?, content_plain = ?, render_format = ? WHERE id = ?`,
+		`UPDATE chat_messages
+		 SET content_markdown = ?, content_plain = ?, render_format = ?,
+		     provider = ?, provider_model = ?, provider_latency_ms = ?
+		 WHERE id = ?`,
 		contentMarkdown,
 		contentPlain,
 		renderFormat,
+		normalizeChatMessageProvider(o.provider),
+		strings.TrimSpace(o.providerModel),
+		normalizeChatMessageProviderLatency(o.providerLatency),
 		id,
 	)
 	return err
@@ -399,7 +440,7 @@ func (s *Store) ListChatMessages(sessionID string, limit int, opts ...ChatMessag
 	}
 	threadKey := strings.TrimSpace(o.threadKey)
 	rows, err := s.db.Query(
-		`SELECT id, session_id, role, content_markdown, content_plain, render_format, thread_key, created_at
+		`SELECT id, session_id, role, content_markdown, content_plain, render_format, thread_key, provider, provider_model, provider_latency_ms, created_at
 		 FROM chat_messages WHERE session_id = ? AND thread_key = ? ORDER BY id ASC LIMIT ?`,
 		strings.TrimSpace(sessionID), threadKey, limit,
 	)
@@ -418,12 +459,18 @@ func (s *Store) ListChatMessages(sessionID string, limit int, opts ...ChatMessag
 			&item.ContentPlain,
 			&item.RenderFormat,
 			&item.ThreadKey,
+			&item.Provider,
+			&item.ProviderModel,
+			&item.ProviderLatency,
 			&item.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
 		item.Role = normalizeChatRole(item.Role)
 		item.RenderFormat = normalizeRenderFormat(item.RenderFormat)
+		item.Provider = normalizeChatMessageProvider(item.Provider)
+		item.ProviderModel = strings.TrimSpace(item.ProviderModel)
+		item.ProviderLatency = normalizeChatMessageProviderLatency(item.ProviderLatency)
 		out = append(out, item)
 	}
 	return out, nil

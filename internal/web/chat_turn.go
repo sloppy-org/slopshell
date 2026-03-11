@@ -5,6 +5,7 @@ import (
 	"errors"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/krystophny/tabura/internal/appserver"
 	"github.com/krystophny/tabura/internal/plugins"
@@ -54,6 +55,8 @@ func (a *App) runAssistantTurn(sessionID string, turn dequeuedTurn) {
 		)
 	}
 	profile = a.appServerProfileForChatSession(session, profile)
+	turnStartedAt := time.Now()
+	responseMeta := newAssistantResponseMetadata(providerForAppServerProfile(profile), profile.Model, 0)
 	appSess, resumed, sessErr := a.getOrCreateAppSession(sessionID, cwd, profile)
 	if sessErr != nil {
 		a.runAssistantTurnLegacy(sessionID, session, messages, cursorCtx, inkCtx, positionCtx, turn.outputMode, profile)
@@ -106,6 +109,11 @@ func (a *App) runAssistantTurn(sessionID string, turn dequeuedTurn) {
 	persistedAssistantPlain := ""
 	persistedAssistantFormat := ""
 	persistWriteFailed := false
+	snapshotOpts := func() []store.ChatMessageOption {
+		meta := responseMeta
+		meta.ProviderLatency = int(time.Since(turnStartedAt) / time.Millisecond)
+		return meta.storeOptions()
+	}
 
 	persistAssistantSnapshot := func(text string, renderOnCanvas bool, autoCanvas bool) {
 		candidateMarkdown, candidatePlain, candidateFormat := assistantSnapshotContent(text, renderOnCanvas, autoCanvas)
@@ -113,7 +121,7 @@ func (a *App) runAssistantTurn(sessionID string, turn dequeuedTurn) {
 			return
 		}
 		if persistedAssistantID == 0 {
-			storedAssistant, storeErr := a.store.AddChatMessage(sessionID, "assistant", candidateMarkdown, candidatePlain, candidateFormat)
+			storedAssistant, storeErr := a.store.AddChatMessage(sessionID, "assistant", candidateMarkdown, candidatePlain, candidateFormat, snapshotOpts()...)
 			if storeErr != nil {
 				if !persistWriteFailed {
 					persistWriteFailed = true
@@ -135,7 +143,7 @@ func (a *App) runAssistantTurn(sessionID string, turn dequeuedTurn) {
 			candidateFormat == persistedAssistantFormat {
 			return
 		}
-		if storeErr := a.store.UpdateChatMessageContent(persistedAssistantID, candidateMarkdown, candidatePlain, candidateFormat); storeErr != nil {
+		if storeErr := a.store.UpdateChatMessageContent(persistedAssistantID, candidateMarkdown, candidatePlain, candidateFormat, snapshotOpts()...); storeErr != nil {
 			if !persistWriteFailed {
 				persistWriteFailed = true
 				a.broadcastChatEvent(sessionID, map[string]interface{}{
@@ -276,8 +284,18 @@ func (a *App) runAssistantTurn(sessionID string, turn dequeuedTurn) {
 		assistantText = "(assistant returned no content)"
 	}
 
-	assistantText = a.finalizeAssistantResponse(sessionID, session.ProjectKey, assistantText,
-		&persistedAssistantID, &persistedAssistantText, appResp.TurnID, latestTurnID, appResp.ThreadID, turn.outputMode)
+	assistantText = a.finalizeAssistantResponseWithMetadata(
+		sessionID,
+		session.ProjectKey,
+		assistantText,
+		&persistedAssistantID,
+		&persistedAssistantText,
+		appResp.TurnID,
+		latestTurnID,
+		appResp.ThreadID,
+		turn.outputMode,
+		newAssistantResponseMetadata(responseMeta.Provider, responseMeta.ProviderModel, time.Since(turnStartedAt)),
+	)
 	_ = assistantText
 }
 
@@ -285,6 +303,7 @@ func (a *App) tryRunLocalSystemActionTurn(sessionID string, session store.ChatSe
 	if strings.TrimSpace(userText) == "" {
 		return false
 	}
+	turnStartedAt := time.Now()
 	actionMessage, actionPayloads, handled := a.classifyAndExecuteSystemActionForTurn(context.Background(), sessionID, session, userText, cursorCtx, captureMode)
 	if !handled && !localOnly {
 		return false
@@ -322,7 +341,7 @@ func (a *App) tryRunLocalSystemActionTurn(sessionID string, session store.ChatSe
 	}
 	persistedAssistantID := int64(0)
 	persistedAssistantText := ""
-	a.finalizeAssistantResponse(
+	a.finalizeAssistantResponseWithMetadata(
 		sessionID,
 		session.ProjectKey,
 		assistantText,
@@ -332,6 +351,7 @@ func (a *App) tryRunLocalSystemActionTurn(sessionID string, session store.ChatSe
 		runID,
 		"",
 		outputMode,
+		newAssistantResponseMetadata(assistantProviderLocal, a.localAssistantModelLabel(), time.Since(turnStartedAt)),
 	)
 	return true
 }
@@ -358,6 +378,8 @@ func (a *App) runAssistantTurnLegacy(sessionID string, session store.ChatSession
 		return
 	}
 	profile = a.appServerProfileForChatSession(session, profile)
+	turnStartedAt := time.Now()
+	responseMeta := newAssistantResponseMetadata(providerForAppServerProfile(profile), profile.Model, 0)
 	canvasCtx := a.resolveCanvasContext(session.ProjectKey)
 	prompt := buildPromptFromHistoryForSessionWithPolicy(session.Mode, a.yoloModeEnabled(), sessionID, messages, canvasCtx, outputMode, profile.Alias)
 	prompt = appendChatCursorPrompt(prompt, cursorCtx)
@@ -397,13 +419,18 @@ func (a *App) runAssistantTurnLegacy(sessionID string, session store.ChatSession
 	persistedAssistantPlain := ""
 	persistedAssistantFormat := ""
 	persistWriteFailed := false
+	snapshotOpts := func() []store.ChatMessageOption {
+		meta := responseMeta
+		meta.ProviderLatency = int(time.Since(turnStartedAt) / time.Millisecond)
+		return meta.storeOptions()
+	}
 	persistAssistantSnapshot := func(text string, renderOnCanvas bool, autoCanvas bool) {
 		candidateMarkdown, candidatePlain, candidateFormat := assistantSnapshotContent(text, renderOnCanvas, autoCanvas)
 		if candidateMarkdown == "" && candidatePlain == "" {
 			return
 		}
 		if persistedAssistantID == 0 {
-			storedAssistant, storeErr := a.store.AddChatMessage(sessionID, "assistant", candidateMarkdown, candidatePlain, candidateFormat)
+			storedAssistant, storeErr := a.store.AddChatMessage(sessionID, "assistant", candidateMarkdown, candidatePlain, candidateFormat, snapshotOpts()...)
 			if storeErr != nil {
 				if !persistWriteFailed {
 					persistWriteFailed = true
@@ -425,7 +452,7 @@ func (a *App) runAssistantTurnLegacy(sessionID string, session store.ChatSession
 			candidateFormat == persistedAssistantFormat {
 			return
 		}
-		if storeErr := a.store.UpdateChatMessageContent(persistedAssistantID, candidateMarkdown, candidatePlain, candidateFormat); storeErr != nil {
+		if storeErr := a.store.UpdateChatMessageContent(persistedAssistantID, candidateMarkdown, candidatePlain, candidateFormat, snapshotOpts()...); storeErr != nil {
 			if !persistWriteFailed {
 				persistWriteFailed = true
 				a.broadcastChatEvent(sessionID, map[string]interface{}{
@@ -550,8 +577,18 @@ func (a *App) runAssistantTurnLegacy(sessionID string, session store.ChatSession
 		assistantText = "(assistant returned no content)"
 	}
 
-	assistantText = a.finalizeAssistantResponse(sessionID, session.ProjectKey, assistantText,
-		&persistedAssistantID, &persistedAssistantText, appResp.TurnID, latestTurnID, appResp.ThreadID, outputMode)
+	assistantText = a.finalizeAssistantResponseWithMetadata(
+		sessionID,
+		session.ProjectKey,
+		assistantText,
+		&persistedAssistantID,
+		&persistedAssistantText,
+		appResp.TurnID,
+		latestTurnID,
+		appResp.ThreadID,
+		outputMode,
+		newAssistantResponseMetadata(responseMeta.Provider, responseMeta.ProviderModel, time.Since(turnStartedAt)),
+	)
 	_ = assistantText
 }
 
@@ -563,6 +600,27 @@ func (a *App) finalizeAssistantResponse(
 	persistedID *int64, persistedText *string,
 	turnID, fallbackTurnID, threadID string,
 	outputMode string,
+) string {
+	return a.finalizeAssistantResponseWithMetadata(
+		sessionID,
+		projectKey,
+		text,
+		persistedID,
+		persistedText,
+		turnID,
+		fallbackTurnID,
+		threadID,
+		outputMode,
+		assistantResponseMetadata{},
+	)
+}
+
+func (a *App) finalizeAssistantResponseWithMetadata(
+	sessionID, projectKey, text string,
+	persistedID *int64, persistedText *string,
+	turnID, fallbackTurnID, threadID string,
+	outputMode string,
+	metadata assistantResponseMetadata,
 ) string {
 	postResult := a.applyPluginHook(context.Background(), plugins.HookRequest{
 		Hook:       plugins.HookChatPostAssistantReply,
@@ -631,7 +689,7 @@ func (a *App) finalizeAssistantResponse(
 	a.refreshCanvasFromDisk(projectKey)
 
 	if *persistedID == 0 {
-		stored, err := a.store.AddChatMessage(sessionID, "assistant", chatMarkdown, chatPlain, renderFormat)
+		stored, err := a.store.AddChatMessage(sessionID, "assistant", chatMarkdown, chatPlain, renderFormat, metadata.storeOptions()...)
 		if err != nil {
 			a.finishCompanionPendingTurn(sessionID, "assistant_turn_failed")
 			a.broadcastChatEvent(sessionID, map[string]interface{}{"type": "error", "error": err.Error()})
@@ -640,7 +698,7 @@ func (a *App) finalizeAssistantResponse(
 		*persistedID = stored.ID
 		*persistedText = chatMarkdown
 	} else {
-		if err := a.store.UpdateChatMessageContent(*persistedID, chatMarkdown, chatPlain, renderFormat); err != nil {
+		if err := a.store.UpdateChatMessageContent(*persistedID, chatMarkdown, chatPlain, renderFormat, metadata.storeOptions()...); err != nil {
 			a.finishCompanionPendingTurn(sessionID, "assistant_turn_failed")
 			a.broadcastChatEvent(sessionID, map[string]interface{}{"type": "error", "error": err.Error()})
 			return chatMarkdown
@@ -662,6 +720,7 @@ func (a *App) finalizeAssistantResponse(
 		"message":          chatMarkdown,
 		"render_on_canvas": renderOnCanvas,
 	}
+	metadata.applyToPayload(payload)
 	if autoCanvas {
 		payload["auto_canvas"] = true
 	}

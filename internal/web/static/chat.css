@@ -36,6 +36,10 @@
   color: #4b5563;
 }
 
+.chat-message-meta:empty {
+  display: none;
+}
+
 .chat-bubble {
   border: 1px solid #d1d5db;
   border-radius: 8px;
@@ -70,6 +74,37 @@
 }
 
 .chat-bubble-body {
+  min-width: 0;
+}
+
+.chat-assistant-label {
+  display: inline-flex;
+  align-items: center;
+  margin-bottom: 0.35rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #4b5563;
+}
+
+.chat-assistant-label[data-provider="local"] {
+  color: #4b5563;
+}
+
+.chat-assistant-label[data-provider="cerebras"] {
+  color: #1d4ed8;
+}
+
+.chat-assistant-label[data-provider="google"] {
+  color: #c2410c;
+}
+
+.chat-assistant-label[data-provider="openai"] {
+  color: #047857;
+}
+
+.chat-assistant-content {
   min-width: 0;
 }
 

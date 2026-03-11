@@ -766,7 +766,10 @@ export async function loadChatHistory() {
     const plain = String(msg.content_plain || markdown);
     if (role === 'assistant') {
       if (!shouldRenderAssistantHistoryInChat(renderFormat, markdown, plain)) continue;
-      appendRenderedAssistant(markdown || plain);
+      appendRenderedAssistant(markdown || plain, {
+        provider: msg.provider,
+        providerModel: msg.provider_model,
+      });
     } else {
       appendPlainMessage(role, plain);
     }

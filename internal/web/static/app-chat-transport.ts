@@ -672,6 +672,11 @@ export function handleChatEvent(payload) {
     if (String(payload.role || '') !== 'assistant') return;
     const turnID = String(payload.turn_id || '').trim();
     const md = String(payload.message || '');
+    const providerOptions = {
+      provider: payload.provider,
+      providerLabel: payload.provider_label,
+      providerModel: payload.provider_model,
+    };
     const autoCanvas = Boolean(payload.auto_canvas);
     const lastTTSText = getTTSLastSpeakText();
     const inferredText = md || lastTTSText;
@@ -682,11 +687,12 @@ export function handleChatEvent(payload) {
     const mobileSilent = isMobileSilent();
     const row = takePendingRow(turnID);
     if (row && hasDisplayMd) {
-      updateAssistantRow(row, displayMd, false);
+      updateAssistantRow(row, displayMd, false, providerOptions);
     } else if (row) {
       row.classList.remove('is-pending');
+      updateAssistantRow(row, '', false, providerOptions);
     } else if (hasDisplayMd) {
-      appendRenderedAssistant(displayMd);
+      appendRenderedAssistant(displayMd, providerOptions);
     }
     const shouldSpeakTurn = isVoiceOutputModePayload(payload) || (turnID ? state.voiceTurns.has(turnID) : false) || isVoiceTurn();
     trackAssistantTurnFinished(turnID);

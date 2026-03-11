@@ -52,6 +52,9 @@ type ChatMessage struct {
 	ContentPlain    string `json:"content_plain"`
 	RenderFormat    string `json:"render_format"`
 	ThreadKey       string `json:"thread_key,omitempty"`
+	Provider        string `json:"provider,omitempty"`
+	ProviderModel   string `json:"provider_model,omitempty"`
+	ProviderLatency int    `json:"provider_latency_ms,omitempty"`
 	CreatedAt       int64  `json:"created_at"`
 }
 
@@ -193,6 +196,10 @@ CREATE TABLE IF NOT EXISTS chat_messages (
   content_markdown TEXT NOT NULL DEFAULT '',
   content_plain TEXT NOT NULL DEFAULT '',
   render_format TEXT NOT NULL DEFAULT 'markdown',
+  thread_key TEXT NOT NULL DEFAULT '',
+  provider TEXT NOT NULL DEFAULT '',
+  provider_model TEXT NOT NULL DEFAULT '',
+  provider_latency_ms INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_chat_messages_session_created
@@ -310,6 +317,9 @@ func (s *Store) migrateProjectColumns() error {
 		{Table: "projects", Name: "updated_at", SQL: `ALTER TABLE projects ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0`},
 		{Table: "projects", Name: "last_opened_at", SQL: `ALTER TABLE projects ADD COLUMN last_opened_at INTEGER NOT NULL DEFAULT 0`},
 		{Table: "chat_messages", Name: "thread_key", SQL: `ALTER TABLE chat_messages ADD COLUMN thread_key TEXT NOT NULL DEFAULT ''`},
+		{Table: "chat_messages", Name: "provider", SQL: `ALTER TABLE chat_messages ADD COLUMN provider TEXT NOT NULL DEFAULT ''`},
+		{Table: "chat_messages", Name: "provider_model", SQL: `ALTER TABLE chat_messages ADD COLUMN provider_model TEXT NOT NULL DEFAULT ''`},
+		{Table: "chat_messages", Name: "provider_latency_ms", SQL: `ALTER TABLE chat_messages ADD COLUMN provider_latency_ms INTEGER NOT NULL DEFAULT 0`},
 	}
 
 	tableColumns := map[string]map[string]bool{}
