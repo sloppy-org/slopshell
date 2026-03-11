@@ -121,3 +121,76 @@ func TestItemContextQueryRejectsContextAndContextIDTogether(t *testing.T) {
 		t.Fatalf("conflicting context filters status = %d, want 400: %s", rr.Code, rr.Body.String())
 	}
 }
+
+func TestArtifactContextQueryCombinesDateAndTopicFilters(t *testing.T) {
+	app := newAuthedTestApp(t)
+
+	plasmaWorkspace, err := app.store.EnsureDailyWorkspace("2026-03-11", filepath.Join(t.TempDir(), "daily", "2026", "03", "11", "plasma"))
+	if err != nil {
+		t.Fatalf("EnsureDailyWorkspace(plasma) error: %v", err)
+	}
+	healthWorkspace, err := app.store.CreateWorkspace("Health notes", filepath.Join(t.TempDir(), "health"))
+	if err != nil {
+		t.Fatalf("CreateWorkspace(health) error: %v", err)
+	}
+
+	workRoot := contextByNameForTest(t, app, "work")
+	privateRoot := contextByNameForTest(t, app, "private")
+	plasmaContext, err := app.store.CreateContext("work/plasma", &workRoot.ID)
+	if err != nil {
+		t.Fatalf("CreateContext(work/plasma) error: %v", err)
+	}
+	healthContext, err := app.store.CreateContext("private/health", &privateRoot.ID)
+	if err != nil {
+		t.Fatalf("CreateContext(private/health) error: %v", err)
+	}
+	marchDay := contextByNameForTest(t, app, "2026/03/11")
+	if err := app.store.LinkContextToWorkspace(plasmaContext.ID, plasmaWorkspace.ID); err != nil {
+		t.Fatalf("LinkContextToWorkspace(plasma) error: %v", err)
+	}
+	if err := app.store.LinkContextToWorkspace(marchDay.ID, healthWorkspace.ID); err != nil {
+		t.Fatalf("LinkContextToWorkspace(march day) error: %v", err)
+	}
+	if err := app.store.LinkContextToWorkspace(healthContext.ID, healthWorkspace.ID); err != nil {
+		t.Fatalf("LinkContextToWorkspace(health) error: %v", err)
+	}
+
+	plasmaPath := filepath.Join(plasmaWorkspace.DirPath, "plan.md")
+	plasmaTitle := "Plasma plan"
+	plasmaArtifact, err := app.store.CreateArtifact(store.ArtifactKindMarkdown, &plasmaPath, nil, &plasmaTitle, nil)
+	if err != nil {
+		t.Fatalf("CreateArtifact(plasma) error: %v", err)
+	}
+	healthPath := filepath.Join(healthWorkspace.DirPath, "notes.md")
+	healthTitle := "Health notes"
+	if _, err := app.store.CreateArtifact(store.ArtifactKindMarkdown, &healthPath, nil, &healthTitle, nil); err != nil {
+		t.Fatalf("CreateArtifact(health) error: %v", err)
+	}
+
+	rr := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/artifacts?context=2026/03/11%20%2B%20work/plasma", nil)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("artifact combined context status = %d, want 200: %s", rr.Code, rr.Body.String())
+	}
+	artifacts, ok := decodeJSONDataResponse(t, rr)["artifacts"].([]any)
+	if !ok || len(artifacts) != 1 {
+		t.Fatalf("artifact combined context payload = %#v", decodeJSONDataResponse(t, rr))
+	}
+	if got := int64(artifacts[0].(map[string]any)["id"].(float64)); got != plasmaArtifact.ID {
+		t.Fatalf("artifact combined context id = %d, want %d", got, plasmaArtifact.ID)
+	}
+}
+
+func contextByNameForTest(t *testing.T, app *App, name string) store.Context {
+	t.Helper()
+	contexts, err := app.store.ListContexts()
+	if err != nil {
+		t.Fatalf("ListContexts() error: %v", err)
+	}
+	for _, context := range contexts {
+		if context.Name == name {
+			return context
+		}
+	}
+	t.Fatalf("context %q not found", name)
+	return store.Context{}
+}

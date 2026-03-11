@@ -108,6 +108,8 @@ Inbox is a global view accessible from any workspace sidebar. It shows all items
 
 Starting without an explicit workspace activates today's Daily Workspace. It is a persistent directory under `<data-dir>/daily/YYYY/MM/DD/`, and it is reused across restarts for the same day.
 
+Daily Workspaces also carry stable date contexts in the same hierarchy: `YYYY`, `YYYY/MM`, and `YYYY/MM/DD`. Those date contexts combine with topic contexts, for example `2026/03/11 + work/plasma`.
+
 - **Day rollover**: the next interaction after midnight creates and activates a new Daily Workspace for the new date.
 - **Promote**: renaming the Daily Workspace turns it into a normal explicit workspace while retaining its recorded date.
 
