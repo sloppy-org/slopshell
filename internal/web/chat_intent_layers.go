@@ -5,6 +5,7 @@ import "strings"
 const (
 	intentKindSystemCommand   = "system_command"
 	intentKindCanonicalAction = "canonical_action"
+	intentKindLocalAnswer     = "local_answer"
 	intentKindDialogue        = "dialogue"
 
 	canonicalActionOpenShow        = "open_show"
@@ -98,6 +99,8 @@ func normalizeIntentResponseKind(raw string) string {
 		return intentKindSystemCommand
 	case intentKindCanonicalAction:
 		return intentKindCanonicalAction
+	case intentKindLocalAnswer:
+		return intentKindLocalAnswer
 	case intentKindDialogue:
 		return intentKindDialogue
 	default:
@@ -116,9 +119,15 @@ Canonical artifact actions: ` + strings.Join(artifactTaxonomy.CanonicalActionOrd
 Return exactly one of:
 - {"kind":"system_command","action":"<system_command>", ...params}
 - {"kind":"canonical_action","action":"<canonical_action>", ...params}
+- {"kind":"local_answer","text":"<short reply>","confidence":"high|medium|low"}
 - {"actions":[{"action":"shell",...},{"action":"open_file_canvas","path":"..."}]}
 - {"kind":"dialogue"}
 Use {"kind":"dialogue"} unless the user clearly requests a system command or canonical artifact action.
+Use {"kind":"local_answer"} for short complete replies you can answer from the provided runtime context without tools: greetings, acknowledgments, brief social turns, and simple workspace/status questions.
+Local answers must stay within 1-3 sentences.
+Use confidence="high" only when the answer is complete and correct.
+Use confidence="medium" when a plausible short answer exists but a richer model should answer.
+Use {"kind":"dialogue"} for anything requiring file/code inspection, internet/current information, multi-step reasoning, or longer-form writing.
 Use canonical_action for artifact/item work and do not emit legacy artifact intents such as ` + strings.Join(legacyArtifactIntentNames, ", ") + `.
 Composite operations must be expressed as a canonical action plus parameters or as a multi-step system-command plan.
 For current-information requests (weather, web search, news, prices, schedules, latest/current updates), use {"kind":"dialogue"} and MUST NOT use shell.

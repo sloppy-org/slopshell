@@ -164,12 +164,18 @@ func TestIntentPromptsSeparateSystemCommandsFromCanonicalActions(t *testing.T) {
 		if !strings.Contains(prompt, "kind\":\"canonical_action") {
 			t.Fatalf("%s prompt missing canonical_action schema", name)
 		}
+		if !strings.Contains(prompt, "kind\":\"local_answer") {
+			t.Fatalf("%s prompt missing local_answer schema", name)
+		}
 		lowerPrompt := strings.ToLower(prompt)
 		if !strings.Contains(lowerPrompt, "do not emit legacy artifact intents such as") {
 			t.Fatalf("%s prompt missing legacy-intent rejection", name)
 		}
 		if !strings.Contains(lowerPrompt, "triage_item_by_title") {
 			t.Fatalf("%s prompt should explicitly forbid triage_item_by_title", name)
+		}
+		if !strings.Contains(lowerPrompt, "file/code inspection") {
+			t.Fatalf("%s prompt should forbid local answers for file inspection", name)
 		}
 	}
 }
@@ -576,6 +582,39 @@ func TestRunAssistantTurnExecutesHighConfidenceLocalIntentInProjectSession(t *te
 
 	if got := latestAssistantMessage(t, app, session.ID); got != "Toggled silent mode." {
 		t.Fatalf("assistant message = %q, want %q", got, "Toggled silent mode.")
+	}
+}
+
+func TestRunAssistantTurnPersistsLocalAnswer(t *testing.T) {
+	app, err := New(t.TempDir(), "", "", "", "", "", "", false)
+	if err != nil {
+		t.Fatalf("new app: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = app.Shutdown(context.Background())
+	})
+
+	project, err := app.ensureDefaultProjectRecord()
+	if err != nil {
+		t.Fatalf("ensure default project: %v", err)
+	}
+	reply := "You are in " + project.RootPath + "."
+	llm := setupMockIntentLLMServer(t, http.StatusOK, `{"kind":"local_answer","text":"`+reply+`","confidence":"high"}`)
+	defer llm.Close()
+	app.intentLLMURL = llm.URL
+
+	session, err := app.store.GetOrCreateChatSession(project.ProjectKey)
+	if err != nil {
+		t.Fatalf("chat session: %v", err)
+	}
+	if _, err := app.store.AddChatMessage(session.ID, "user", "what workspace am I in?", "what workspace am I in?", "text"); err != nil {
+		t.Fatalf("add user message: %v", err)
+	}
+
+	app.runAssistantTurn(session.ID, dequeuedTurn{outputMode: turnOutputModeSilent})
+
+	if got := latestAssistantMessage(t, app, session.ID); got != reply {
+		t.Fatalf("assistant message = %q, want %q", got, reply)
 	}
 }
 
