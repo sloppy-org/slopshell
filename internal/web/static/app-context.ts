@@ -117,6 +117,12 @@ export const state = {
   serverActiveProjectId: '',
   activeProjectId: '',
   activeSphere: 'private',
+  workspaceFocus: {
+    anchor: null,
+    focus: null,
+    explicit: false,
+  },
+  workspaceBusyStates: [],
   projectsOpen: false,
   projectSwitchInFlight: false,
   projectModelSwitchInFlight: false,

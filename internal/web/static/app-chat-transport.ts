@@ -9,6 +9,8 @@ const showStatus = (...args) => refs.showStatus(...args);
 const renderEdgeTopModelButtons = (...args) => refs.renderEdgeTopModelButtons(...args);
 const renderEdgeTopProjects = (...args) => refs.renderEdgeTopProjects(...args);
 const updateAssistantActivityIndicator = (...args) => refs.updateAssistantActivityIndicator(...args);
+const applyWorkspaceFocusSnapshot = (...args) => refs.applyWorkspaceFocusSnapshot(...args);
+const applyWorkspaceBusyStates = (...args) => refs.applyWorkspaceBusyStates(...args);
 const stopTTSPlayback = (...args) => refs.stopTTSPlayback(...args);
 const clearChatHistory = (...args) => refs.clearChatHistory(...args);
 const clearWelcomeSurface = (...args) => refs.clearWelcomeSurface(...args);
@@ -397,6 +399,16 @@ export function handleChatEvent(payload) {
       : LIVE_SESSION_MODE_DIALOGUE;
     renderEdgeTopModelButtons();
     updateAssistantActivityIndicator();
+    return;
+  }
+
+  if (type === 'workspace_focus_changed') {
+    applyWorkspaceFocusSnapshot(payload);
+    return;
+  }
+
+  if (type === 'workspace_busy_changed') {
+    applyWorkspaceBusyStates(payload?.states || []);
     return;
   }
 

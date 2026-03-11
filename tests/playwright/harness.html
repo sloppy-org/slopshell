@@ -457,6 +457,91 @@
     let harnessProjectRunStates = {
       test: { active_turns: 0, queued_turns: 0, is_working: false, status: 'idle' },
     };
+    let harnessWorkspaceFocus = {
+      anchor: {
+        id: 1,
+        name: 'Daily Workspace',
+        dir_path: '/tmp/daily',
+        sphere: 'private',
+        is_daily: true,
+      },
+      focus: {
+        id: 1,
+        name: 'Daily Workspace',
+        dir_path: '/tmp/daily',
+        sphere: 'private',
+        is_daily: true,
+      },
+      explicit: false,
+    };
+    let harnessWorkspaceBusyStates = [
+      {
+        workspace_id: 1,
+        workspace_name: 'Daily Workspace',
+        dir_path: '/tmp/daily',
+        is_daily: true,
+        is_anchor: true,
+        is_focused: true,
+        active_turns: 0,
+        queued_turns: 0,
+        status: 'idle',
+      },
+    ];
+    function normalizeHarnessWorkspace(workspace, fallback = {}) {
+      const source = workspace && typeof workspace === 'object' ? workspace : {};
+      const fallbackSource = fallback && typeof fallback === 'object' ? fallback : {};
+      const id = Math.max(0, Number(source.id ?? fallbackSource.id ?? 0) || 0);
+      const dirPath = String(source.dir_path ?? fallbackSource.dir_path ?? '').trim();
+      const name = String(source.name ?? fallbackSource.name ?? '').trim() || 'Workspace';
+      const rawSphere = source.sphere ?? fallbackSource.sphere ?? runtimeState.active_sphere ?? 'private';
+      return {
+        id,
+        name,
+        dir_path: dirPath,
+        sphere: String(rawSphere).trim().toLowerCase() === 'work' ? 'work' : 'private',
+        is_daily: Boolean(source.is_daily ?? fallbackSource.is_daily),
+      };
+    }
+    function normalizeHarnessWorkspaceFocus(snapshot) {
+      const source = snapshot && typeof snapshot === 'object' ? snapshot : {};
+      const anchor = normalizeHarnessWorkspace(source.anchor, harnessWorkspaceFocus.anchor);
+      const focus = normalizeHarnessWorkspace(source.focus, anchor);
+      return {
+        anchor,
+        focus,
+        explicit: Boolean(source.explicit),
+      };
+    }
+    function normalizeHarnessWorkspaceBusyState(state, index = 0) {
+      const source = state && typeof state === 'object' ? state : {};
+      const workspaceID = Math.max(0, Number(source.workspace_id || source.id || index + 1) || index + 1);
+      const dirPath = String(source.dir_path || '').trim();
+      const workspaceName = String(source.workspace_name || source.name || '').trim() || `Workspace ${workspaceID}`;
+      const activeTurns = Math.max(0, Number(source.active_turns || 0) || 0);
+      const queuedTurns = Math.max(0, Number(source.queued_turns || 0) || 0);
+      let status = String(source.status || '').trim().toLowerCase();
+      if (status !== 'running' && status !== 'queued' && status !== 'idle') {
+        status = activeTurns > 0 ? 'running' : (queuedTurns > 0 ? 'queued' : 'idle');
+      }
+      return {
+        workspace_id: workspaceID,
+        workspace_name: workspaceName,
+        dir_path: dirPath,
+        is_daily: Boolean(source.is_daily),
+        is_anchor: Boolean(source.is_anchor),
+        is_focused: Boolean(source.is_focused),
+        active_turns: activeTurns,
+        queued_turns: queuedTurns,
+        status,
+      };
+    }
+    window.__setWorkspaceFocus = (snapshot) => {
+      harnessWorkspaceFocus = normalizeHarnessWorkspaceFocus(snapshot);
+    };
+    window.__setWorkspaceBusyStates = (states) => {
+      const source = Array.isArray(states) ? states : [];
+      harnessWorkspaceBusyStates = source.map((entry, index) => normalizeHarnessWorkspaceBusyState(entry, index));
+    };
     window.__setProjects = (projects, nextActiveProjectId = '') => {
       const source = Array.isArray(projects) ? projects : [];
       const normalized = source
@@ -1403,6 +1488,28 @@
       }
       if (u.includes('/api/live-policy')) {
         return new Response(JSON.stringify({ policy: runtimeState.live_policy }), { status: 200 });
+      }
+      if (u.includes('/api/workspace/focus')) {
+        const payload = normalizeHarnessWorkspaceFocus(harnessWorkspaceFocus);
+        window.__harnessLog.push({
+          type: 'api_fetch',
+          action: 'workspace_focus',
+          method: opts?.method || 'GET',
+          url: u,
+          payload,
+        });
+        return new Response(JSON.stringify(payload), { status: 200 });
+      }
+      if (u.includes('/api/workspaces/busy')) {
+        const states = harnessWorkspaceBusyStates.map((entry, index) => normalizeHarnessWorkspaceBusyState(entry, index));
+        window.__harnessLog.push({
+          type: 'api_fetch',
+          action: 'workspace_busy',
+          method: opts?.method || 'GET',
+          url: u,
+          payload: { count: states.length },
+        });
+        return new Response(JSON.stringify({ ok: true, states }), { status: 200 });
       }
       if (u.includes('/api/bugs/report') && opts?.method === 'POST') {
         let body = {};

@@ -71,6 +71,13 @@ async function seedTwoProjects(page: Page) {
   });
 }
 
+async function refreshWorkspaceRuntimeState(page: Page) {
+  await page.evaluate(async () => {
+    const app = (window as any)._taburaApp;
+    await app?.fetchProjects?.();
+  });
+}
+
 test.beforeEach(async ({ page }) => {
   await page.goto('/tests/playwright/harness.html');
   await page.waitForFunction(() => {
@@ -128,6 +135,96 @@ test('inactive projects show run state and unread state clears on activation', a
   await notesButton.click();
   await expect(notesButton).not.toHaveClass(/is-unread/);
   await expect(notesButton).toHaveClass(/is-active/);
+});
+
+test('workspace runtime badges show anchor, focus, and busy overview from fetch and websocket updates', async ({ page }) => {
+  await seedTwoProjects(page);
+  await page.evaluate(() => {
+    (window as any).__setWorkspaceFocus({
+      anchor: {
+        id: 11,
+        name: '2026/03/11',
+        dir_path: '/tmp/daily',
+        is_daily: true,
+      },
+      focus: {
+        id: 22,
+        name: 'Plasma',
+        dir_path: '/tmp/plasma',
+        is_daily: false,
+      },
+      explicit: true,
+    });
+    (window as any).__setWorkspaceBusyStates([
+      {
+        workspace_id: 11,
+        workspace_name: '2026/03/11',
+        dir_path: '/tmp/daily',
+        is_daily: true,
+        is_anchor: true,
+        is_focused: false,
+        active_turns: 0,
+        queued_turns: 0,
+        status: 'idle',
+      },
+      {
+        workspace_id: 22,
+        workspace_name: 'Plasma',
+        dir_path: '/tmp/plasma',
+        is_daily: false,
+        is_anchor: false,
+        is_focused: true,
+        active_turns: 1,
+        queued_turns: 2,
+        status: 'running',
+      },
+      {
+        workspace_id: 33,
+        workspace_name: 'Notes',
+        dir_path: '/tmp/notes',
+        is_daily: false,
+        is_anchor: false,
+        is_focused: false,
+        active_turns: 0,
+        queued_turns: 1,
+        status: 'queued',
+      },
+    ]);
+  });
+  await refreshWorkspaceRuntimeState(page);
+
+  await expect(page.locator('#edge-top-models .edge-workspace-anchor')).toHaveText('Anchor 2026/03/11');
+  await expect(page.locator('#edge-top-models .edge-workspace-focus')).toHaveText('Focus Plasma');
+  await expect(page.locator('#edge-top-models .edge-workspace-busy')).toHaveText('Busy 2 active');
+  await expect(page.locator('#edge-top-models .edge-workspace-busy')).toHaveAttribute('title', /Plasma \(focus\): running \(1 active, 2 queued\)/);
+  await expect(page.locator('#edge-top-models .edge-workspace-busy')).toHaveAttribute('title', /Notes: queued \(1 queued\)/);
+
+  await injectChatEvent(page, {
+    type: 'workspace_focus_changed',
+    anchor: { id: 11, name: '2026/03/11', dir_path: '/tmp/daily', is_daily: true },
+    focus: { id: 11, name: '2026/03/11', dir_path: '/tmp/daily', is_daily: true },
+    explicit: false,
+  });
+  await injectChatEvent(page, {
+    type: 'workspace_busy_changed',
+    states: [
+      {
+        workspace_id: 11,
+        workspace_name: '2026/03/11',
+        dir_path: '/tmp/daily',
+        is_daily: true,
+        is_anchor: true,
+        is_focused: true,
+        active_turns: 0,
+        queued_turns: 0,
+        status: 'idle',
+      },
+    ],
+  });
+
+  await expect(page.locator('#edge-top-models .edge-workspace-focus')).toHaveText('Focus anchor');
+  await expect(page.locator('#edge-top-models .edge-workspace-busy')).toHaveText('Busy idle');
+  await expect(page.locator('#edge-top-models .edge-workspace-busy')).toHaveAttribute('title', /Focus: 2026\/03\/11 \(follows anchor\)/);
 });
 
 test('system actions route through ordinary projects', async ({ page }) => {
