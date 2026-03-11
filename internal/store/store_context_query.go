@@ -259,13 +259,24 @@ func (s *Store) ListArtifactsByContextPrefix(prefix string) ([]Artifact, error) 
 	if cleanPrefix == "" {
 		return nil, errors.New("context is required")
 	}
-	contextIDs, err := s.resolveContextQueryIDs(cleanPrefix)
-	if err != nil {
-		return nil, err
-	}
 	artifacts, err := s.ListArtifacts()
 	if err != nil {
 		return nil, err
 	}
-	return s.filterArtifactsByContextIDs(artifacts, contextIDs)
+	terms := splitContextQueryTerms(cleanPrefix)
+	filtered := artifacts
+	for _, term := range terms {
+		contextIDs, err := s.resolveContextQueryIDs(term)
+		if err != nil {
+			return nil, err
+		}
+		filtered, err = s.filterArtifactsByContextIDs(filtered, contextIDs)
+		if err != nil {
+			return nil, err
+		}
+		if len(filtered) == 0 {
+			return []Artifact{}, nil
+		}
+	}
+	return filtered, nil
 }

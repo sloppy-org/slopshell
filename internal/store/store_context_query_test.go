@@ -175,3 +175,66 @@ func TestContextPrefixQueriesMatchFlatContextNames(t *testing.T) {
 		t.Fatalf("ListItemsByContextPrefix(2026/03/11) = %+v, want item %d", exact, march11Item.ID)
 	}
 }
+
+func TestArtifactContextPrefixQueriesCanCombineDateAndTopicContexts(t *testing.T) {
+	s := newTestStore(t)
+
+	plasmaWorkspace, err := s.EnsureDailyWorkspace("2026-03-11", filepath.Join(t.TempDir(), "daily", "2026", "03", "11", "plasma"))
+	if err != nil {
+		t.Fatalf("EnsureDailyWorkspace(plasma) error: %v", err)
+	}
+	healthWorkspace, err := s.CreateWorkspace("Health notes", filepath.Join(t.TempDir(), "health"))
+	if err != nil {
+		t.Fatalf("CreateWorkspace(health) error: %v", err)
+	}
+
+	workRootID := contextIDByNameForTest(t, s, "work")
+	workRoot, err := s.GetContext(workRootID)
+	if err != nil {
+		t.Fatalf("GetContext(work) error: %v", err)
+	}
+	privateRootID := contextIDByNameForTest(t, s, "private")
+	privateRoot, err := s.GetContext(privateRootID)
+	if err != nil {
+		t.Fatalf("GetContext(private) error: %v", err)
+	}
+	plasmaContext, err := s.CreateContext("work/plasma", &workRoot.ID)
+	if err != nil {
+		t.Fatalf("CreateContext(work/plasma) error: %v", err)
+	}
+	healthContext, err := s.CreateContext("private/health", &privateRoot.ID)
+	if err != nil {
+		t.Fatalf("CreateContext(private/health) error: %v", err)
+	}
+	marchDay := mustGetContextByName(t, s, "2026/03/11")
+	if err := s.LinkContextToWorkspace(plasmaContext.ID, plasmaWorkspace.ID); err != nil {
+		t.Fatalf("LinkContextToWorkspace(plasma) error: %v", err)
+	}
+	if err := s.LinkContextToWorkspace(marchDay.ID, healthWorkspace.ID); err != nil {
+		t.Fatalf("LinkContextToWorkspace(march day) error: %v", err)
+	}
+	if err := s.LinkContextToWorkspace(healthContext.ID, healthWorkspace.ID); err != nil {
+		t.Fatalf("LinkContextToWorkspace(health) error: %v", err)
+	}
+
+	plasmaPath := filepath.Join(plasmaWorkspace.DirPath, "plan.md")
+	plasmaTitle := "Plasma plan"
+	plasmaArtifact, err := s.CreateArtifact(ArtifactKindMarkdown, &plasmaPath, nil, &plasmaTitle, nil)
+	if err != nil {
+		t.Fatalf("CreateArtifact(plasma) error: %v", err)
+	}
+	healthPath := filepath.Join(healthWorkspace.DirPath, "notes.md")
+	healthTitle := "Health notes"
+	_, err = s.CreateArtifact(ArtifactKindMarkdown, &healthPath, nil, &healthTitle, nil)
+	if err != nil {
+		t.Fatalf("CreateArtifact(health) error: %v", err)
+	}
+
+	artifacts, err := s.ListArtifactsByContextPrefix("2026/03/11 + work/plasma")
+	if err != nil {
+		t.Fatalf("ListArtifactsByContextPrefix(combined) error: %v", err)
+	}
+	if len(artifacts) != 1 || artifacts[0].ID != plasmaArtifact.ID {
+		t.Fatalf("ListArtifactsByContextPrefix(combined) = %+v, want artifact %d", artifacts, plasmaArtifact.ID)
+	}
+}
