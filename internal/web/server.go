@@ -116,7 +116,7 @@ type App struct {
 	projectAttention        *projectAttentionTracker
 	tunnels                 *tunnelRegistry
 	chatAppSessions         map[string]*appserver.Session
-	pendingDanger           map[string]*pendingDangerousAction
+	pendingConfirmations    map[string]*pendingActionConfirmation
 	pendingApprovals        map[string]map[string]*pendingAppServerApproval
 	ghCommandRunner         ghCommandRunner
 	workspaceWatchProcessor workspaceWatchProcessorFunc
@@ -309,7 +309,7 @@ func New(dataDir, localProjectDir, localMCPURL, appServerURL, model, ttsURL, spa
 		projectAttention:        newProjectAttentionTracker(),
 		tunnels:                 newTunnelRegistry(),
 		chatAppSessions:         map[string]*appserver.Session{},
-		pendingDanger:           map[string]*pendingDangerousAction{},
+		pendingConfirmations:    map[string]*pendingActionConfirmation{},
 		pendingApprovals:        map[string]map[string]*pendingAppServerApproval{},
 		ghCommandRunner:         runGitHubCLI,
 		workspaceWatchProcessor: nil,

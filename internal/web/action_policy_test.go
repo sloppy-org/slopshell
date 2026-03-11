@@ -6,7 +6,38 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/krystophny/tabura/internal/store"
 )
+
+func requireConfirmationRequired(t *testing.T, message string, payloads []map[string]interface{}, wantKind string) {
+	t.Helper()
+	if !strings.Contains(strings.ToLower(message), "reply `confirm`") {
+		t.Fatalf("message = %q, want confirmation guidance", message)
+	}
+	if len(payloads) != 1 {
+		t.Fatalf("payloads len=%d want 1", len(payloads))
+	}
+	if got := strings.TrimSpace(strFromAny(payloads[0]["type"])); got != "confirmation_required" {
+		t.Fatalf("payload type=%q want confirmation_required", got)
+	}
+	if got := strings.TrimSpace(strFromAny(payloads[0]["confirmation_kind"])); got != wantKind {
+		t.Fatalf("confirmation_kind=%q want %q", got, wantKind)
+	}
+}
+
+func confirmNextAction(t *testing.T, app *App, session store.ChatSession) (string, []map[string]interface{}, bool) {
+	t.Helper()
+	return app.classifyAndExecuteSystemAction(context.Background(), session.ID, session, "confirm")
+}
+
+func requireConfirmationFailureMessage(t *testing.T, got string, wantErr string) {
+	t.Helper()
+	want := "Confirmation failed: " + wantErr
+	if got != want {
+		t.Fatalf("message = %q, want %q", got, want)
+	}
+}
 
 func TestIsDestructiveShellCommand(t *testing.T) {
 	cases := []struct {
@@ -51,12 +82,7 @@ func TestDestructivePlanRequiresConfirmationAndConfirmExecutes(t *testing.T) {
 	if !strings.Contains(strings.ToLower(message), "destructive action blocked") {
 		t.Fatalf("unexpected block message: %q", message)
 	}
-	if len(payloads) != 1 {
-		t.Fatalf("payloads len=%d want 1", len(payloads))
-	}
-	if got := strings.TrimSpace(strFromAny(payloads[0]["type"])); got != "confirmation_required" {
-		t.Fatalf("payload type=%q want confirmation_required", got)
-	}
+	requireConfirmationRequired(t, message, payloads, "dangerous")
 	beforeInfo, err := os.Stat(targetPath)
 	if err != nil {
 		t.Fatalf("stat before confirm: %v", err)
@@ -65,7 +91,7 @@ func TestDestructivePlanRequiresConfirmationAndConfirmExecutes(t *testing.T) {
 		t.Fatalf("file should not be modified before confirm")
 	}
 
-	confirmedMessage, _, handled := app.classifyAndExecuteSystemAction(context.Background(), session.ID, session, "confirm")
+	confirmedMessage, _, handled := confirmNextAction(t, app, session)
 	if !handled {
 		t.Fatal("expected confirm to be handled")
 	}

@@ -188,6 +188,19 @@ func TestClassifyAndExecuteSystemActionDelegateItemUsesActorAndCanvasArtifact(t 
 	if !handled {
 		t.Fatal("expected delegate command to be handled")
 	}
+	requireConfirmationRequired(t, message, payloads, "artifact")
+	waitingItems, err := app.store.ListItemsByState(store.ItemStateWaiting)
+	if err != nil {
+		t.Fatalf("ListItemsByState(waiting) error: %v", err)
+	}
+	if len(waitingItems) != 0 {
+		t.Fatalf("waiting item count = %d, want 0 before confirm", len(waitingItems))
+	}
+
+	message, payloads, handled = confirmNextAction(t, app, session)
+	if !handled {
+		t.Fatal("expected delegate confirmation to be handled")
+	}
 	if message != `Created waiting item "Review the README cleanup plan" for Codex.` {
 		t.Fatalf("message = %q", message)
 	}
@@ -422,6 +435,21 @@ func TestClassifyAndExecuteSystemActionRefineIdeaUpdatesArtifactAndCanvas(t *tes
 	if !handled {
 		t.Fatal("expected idea refinement to be handled")
 	}
+	requireConfirmationRequired(t, message, payloads, "artifact")
+
+	updatedArtifact, err := app.store.GetArtifact(*item.ArtifactID)
+	if err != nil {
+		t.Fatalf("GetArtifact() before confirm error: %v", err)
+	}
+	meta := parseIdeaNoteMeta(updatedArtifact.MetaJSON, ideaNoteString(updatedArtifact.Title))
+	if len(meta.Refinements) != 0 {
+		t.Fatalf("refinements len = %d, want 0 before confirm", len(meta.Refinements))
+	}
+
+	message, payloads, handled = confirmNextAction(t, app, session)
+	if !handled {
+		t.Fatal("expected idea refinement confirmation to be handled")
+	}
 	if message != "Updated idea note with Pros and Cons." {
 		t.Fatalf("message = %q", message)
 	}
@@ -429,11 +457,11 @@ func TestClassifyAndExecuteSystemActionRefineIdeaUpdatesArtifactAndCanvas(t *tes
 		t.Fatalf("payloads = %#v", payloads)
 	}
 
-	updatedArtifact, err := app.store.GetArtifact(*item.ArtifactID)
+	updatedArtifact, err = app.store.GetArtifact(*item.ArtifactID)
 	if err != nil {
 		t.Fatalf("GetArtifact() updated error: %v", err)
 	}
-	meta := parseIdeaNoteMeta(updatedArtifact.MetaJSON, ideaNoteString(updatedArtifact.Title))
+	meta = parseIdeaNoteMeta(updatedArtifact.MetaJSON, ideaNoteString(updatedArtifact.Title))
 	if len(meta.Refinements) != 1 {
 		t.Fatalf("refinements len = %d, want 1", len(meta.Refinements))
 	}
@@ -444,8 +472,13 @@ func TestClassifyAndExecuteSystemActionRefineIdeaUpdatesArtifactAndCanvas(t *tes
 		t.Fatalf("canvas content = %q", mock.lastShownContent)
 	}
 
-	if _, _, handled := app.classifyAndExecuteSystemAction(context.Background(), session.ID, session, "outline an implementation"); !handled {
+	message, payloads, handled = app.classifyAndExecuteSystemAction(context.Background(), session.ID, session, "outline an implementation")
+	if !handled {
 		t.Fatal("expected second idea refinement to be handled")
+	}
+	requireConfirmationRequired(t, message, payloads, "artifact")
+	if _, _, handled := confirmNextAction(t, app, session); !handled {
+		t.Fatal("expected second idea refinement confirmation to be handled")
 	}
 	updatedArtifact, err = app.store.GetArtifact(*item.ArtifactID)
 	if err != nil {
@@ -519,11 +552,59 @@ func TestClassifyAndExecuteSystemActionDelegateItemSurfacesMissingActor(t *testi
 	if !handled {
 		t.Fatal("expected missing-actor command to be handled")
 	}
+	requireConfirmationRequired(t, message, payloads, "artifact")
+	message, payloads, handled = confirmNextAction(t, app, session)
+	if !handled {
+		t.Fatal("expected missing-actor confirmation to be handled")
+	}
 	if len(payloads) != 0 {
 		t.Fatalf("payloads = %#v, want none", payloads)
 	}
-	if message != `I couldn't create the item: actor "Missing" not found` {
+	requireConfirmationFailureMessage(t, message, `actor "Missing" not found`)
+}
+
+func TestClassifyAndExecuteSystemActionArtifactConfirmationCanBeCanceled(t *testing.T) {
+	app := newAuthedTestApp(t)
+	app.intentLLMURL = ""
+	app.intentClassifierURL = ""
+
+	project, err := app.ensureDefaultProjectRecord()
+	if err != nil {
+		t.Fatalf("ensure default project: %v", err)
+	}
+	if _, err := app.store.CreateActor("Codex", store.ActorKindAgent); err != nil {
+		t.Fatalf("CreateActor() error: %v", err)
+	}
+	session, err := app.store.GetOrCreateChatSession(project.ProjectKey)
+	if err != nil {
+		t.Fatalf("chat session: %v", err)
+	}
+	if _, err := app.store.AddChatMessage(session.ID, "assistant", "Prepare the handoff note", "Prepare the handoff note", "markdown"); err != nil {
+		t.Fatalf("add assistant message: %v", err)
+	}
+
+	message, payloads, handled := app.classifyAndExecuteSystemAction(context.Background(), session.ID, session, "delegate this to Codex")
+	if !handled {
+		t.Fatal("expected delegate command to be handled")
+	}
+	requireConfirmationRequired(t, message, payloads, "artifact")
+
+	message, payloads, handled = app.classifyAndExecuteSystemAction(context.Background(), session.ID, session, "cancel")
+	if !handled {
+		t.Fatal("expected cancel to be handled")
+	}
+	if message != "Canceled pending artifact action." {
 		t.Fatalf("message = %q", message)
+	}
+	if len(payloads) != 1 || strFromAny(payloads[0]["type"]) != "confirmation_canceled" {
+		t.Fatalf("payloads = %#v", payloads)
+	}
+	items, err := app.store.ListItemsByState(store.ItemStateWaiting)
+	if err != nil {
+		t.Fatalf("ListItemsByState(waiting) error: %v", err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("waiting item count = %d, want 0", len(items))
 	}
 }
 

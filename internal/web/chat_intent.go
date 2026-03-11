@@ -567,7 +567,7 @@ func (a *App) classifyAndExecuteSystemActionForTurn(ctx context.Context, session
 		return message, payloads, true
 	}
 
-	if pending := a.popPendingDangerousAction(sessionID); pending != nil {
+	if pending := a.popPendingActionConfirmation(sessionID); pending != nil {
 		if isExplicitDangerConfirm(trimmedText) {
 			message, payloads, err := a.executeSystemActionPlanUnsafe(sessionID, session, pending.UserText, pending.Actions)
 			if err != nil {
@@ -576,7 +576,7 @@ func (a *App) classifyAndExecuteSystemActionForTurn(ctx context.Context, session
 			return message, payloads, true
 		}
 		if isExplicitDangerDecline(trimmedText) {
-			return "Canceled dangerous action.", []map[string]interface{}{{"type": "confirmation_canceled"}}, true
+			return pendingConfirmationCanceledMessage(pending.Kind), []map[string]interface{}{{"type": "confirmation_canceled"}}, true
 		}
 	}
 

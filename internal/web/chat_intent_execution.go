@@ -20,6 +20,9 @@ func (a *App) executeSystemActionPlan(sessionID string, session store.ChatSessio
 	if guardMessage, guardPayloads, blocked := a.guardDangerousSystemActionPlan(sessionID, userText, actions); blocked {
 		return guardMessage, guardPayloads, nil
 	}
+	if guardMessage, guardPayloads, blocked := a.guardArtifactSystemActionPlan(sessionID, userText, actions); blocked {
+		return guardMessage, guardPayloads, nil
+	}
 	return a.executeSystemActionPlanUnsafe(sessionID, session, userText, actions)
 }
 
