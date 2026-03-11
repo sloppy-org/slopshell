@@ -46,9 +46,12 @@ func TestProjectMeetingItemsAPIAndCreation(t *testing.T) {
 	app := newAuthedTestApp(t)
 	project, session := seedProjectCompanionSession(t, app)
 
-	workspace, err := app.store.CreateWorkspace("Default", project.RootPath)
+	workspace, err := app.store.GetWorkspace(session.WorkspaceID)
 	if err != nil {
-		t.Fatalf("CreateWorkspace() error: %v", err)
+		t.Fatalf("GetWorkspace() error: %v", err)
+	}
+	if workspace.DirPath != project.RootPath {
+		t.Fatalf("workspace dir_path = %q, want %q", workspace.DirPath, project.RootPath)
 	}
 	if err := app.store.UpsertParticipantRoomState(session.ID, strings.Join([]string{
 		"Meeting summary",
