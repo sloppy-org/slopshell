@@ -58,3 +58,32 @@ test('unknown provider falls back to Assistant', async ({ page }) => {
   const label = page.locator('.chat-message.chat-assistant .chat-assistant-label').last();
   await expect(label).toHaveText('Assistant');
 });
+
+test('provisional assistant message is replaced by final output for the same turn', async ({ page }) => {
+  await waitReady(page);
+
+  await injectChatEvent(page, { type: 'turn_started', turn_id: 'provider-turn-3' });
+  await injectChatEvent(page, {
+    type: 'assistant_message',
+    role: 'assistant',
+    turn_id: 'provider-turn-3',
+    message: 'Let me check.',
+    provider: 'local',
+    provider_label: 'Local',
+    provider_model: 'qwen3.5-9b',
+  });
+  await injectChatEvent(page, {
+    type: 'assistant_output',
+    role: 'assistant',
+    turn_id: 'provider-turn-3',
+    message: 'Final grounded answer.',
+    provider: 'openai',
+    provider_label: 'OpenAI',
+    provider_model: 'gpt-5.3-codex-spark',
+  });
+
+  const rows = page.locator('.chat-message.chat-assistant');
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first().locator('.chat-assistant-content')).toContainText('Final grounded answer.');
+  await expect(rows.first().locator('.chat-assistant-label')).toHaveText('OpenAI');
+});

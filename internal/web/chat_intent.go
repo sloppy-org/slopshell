@@ -34,6 +34,35 @@ type intentPlanClassification struct {
 	LocalAnswer *intentLocalAnswer
 }
 
+type localTurnEvaluation struct {
+	handled               bool
+	text                  string
+	payloads              []map[string]interface{}
+	localAnswerConfidence string
+}
+
+func (e localTurnEvaluation) suppressesResponse() bool {
+	return suppressLocalAssistantResponse(e.payloads)
+}
+
+func (e localTurnEvaluation) isCommand() bool {
+	return e.handled && len(e.payloads) > 0 && !e.suppressesResponse()
+}
+
+func (e localTurnEvaluation) isHighConfidenceLocalAnswer() bool {
+	return e.handled &&
+		len(e.payloads) == 0 &&
+		strings.TrimSpace(e.text) != "" &&
+		e.localAnswerConfidence == "high"
+}
+
+func (e localTurnEvaluation) fallbackText() string {
+	if strings.TrimSpace(e.text) == "" {
+		return ""
+	}
+	return strings.TrimSpace(e.text)
+}
+
 const systemActionLastShellPathPlaceholder = "$last_shell_path"
 
 func extractEmbeddedJSON(raw string) string {
@@ -521,35 +550,55 @@ func (a *App) classifyAndExecuteSystemActionWithCursor(ctx context.Context, sess
 }
 
 func (a *App) classifyAndExecuteSystemActionForTurn(ctx context.Context, sessionID string, session store.ChatSession, text string, cursor *chatCursorContext, captureMode string) (string, []map[string]interface{}, bool) {
+	evaluation := a.evaluateLocalTurn(ctx, sessionID, session, text, cursor, captureMode)
+	return evaluation.text, evaluation.payloads, evaluation.handled
+}
+
+func (a *App) evaluateLocalTurn(ctx context.Context, sessionID string, session store.ChatSession, text string, cursor *chatCursorContext, captureMode string) localTurnEvaluation {
 	trimmedText := strings.TrimSpace(text)
 	if trimmedText == "" {
-		return "", nil, false
+		return localTurnEvaluation{}
 	}
 	intentText := trimmedText
 	livePolicy := a.LivePolicy()
 	assumeAddressed := livePolicy.Config().AssumeAddressed
-	tryExecutePlan := func(actions []*SystemAction) (string, []map[string]interface{}, bool) {
+	tryExecutePlan := func(actions []*SystemAction) localTurnEvaluation {
 		enforced := enforceRoutingPolicy(trimmedText, actions)
 		if len(enforced) == 0 {
-			return "", nil, false
+			return localTurnEvaluation{}
 		}
 		message, payloads, err := a.executeSystemActionPlan(sessionID, session, trimmedText, enforced)
 		if err != nil {
-			return "", nil, false
+			return localTurnEvaluation{}
 		}
-		return message, payloads, true
+		return localTurnEvaluation{
+			handled:  true,
+			text:     message,
+			payloads: payloads,
+		}
 	}
 
 	if pending := a.popPendingActionConfirmation(sessionID); pending != nil {
 		if isExplicitDangerConfirm(trimmedText) {
 			message, payloads, err := a.executeSystemActionPlanUnsafe(sessionID, session, pending.UserText, pending.Actions)
 			if err != nil {
-				return fmt.Sprintf("Confirmation failed: %v", err), nil, true
+				return localTurnEvaluation{
+					handled: true,
+					text:    fmt.Sprintf("Confirmation failed: %v", err),
+				}
 			}
-			return message, payloads, true
+			return localTurnEvaluation{
+				handled:  true,
+				text:     message,
+				payloads: payloads,
+			}
 		}
 		if isExplicitDangerDecline(trimmedText) {
-			return pendingConfirmationCanceledMessage(pending.Kind), []map[string]interface{}{{"type": "confirmation_canceled"}}, true
+			return localTurnEvaluation{
+				handled:  true,
+				text:     pendingConfirmationCanceledMessage(pending.Kind),
+				payloads: []map[string]interface{}{{"type": "confirmation_canceled"}},
+			}
 		}
 	}
 
@@ -571,7 +620,11 @@ func (a *App) classifyAndExecuteSystemActionForTurn(ctx context.Context, session
 	}
 	if assumeAddressed {
 		if message, payloads, handled := tryDeterministicPlan(); handled {
-			return message, payloads, true
+			return localTurnEvaluation{
+				handled:  true,
+				text:     message,
+				payloads: payloads,
+			}
 		}
 	}
 	intentText = a.contextualizeClarificationReplyForSession(sessionID, trimmedText)
@@ -579,45 +632,67 @@ func (a *App) classifyAndExecuteSystemActionForTurn(ctx context.Context, session
 		classification, llmErr := a.classifyIntentPlanWithLLMResultForTurn(ctx, sessionID, session, intentText)
 		if llmErr == nil {
 			if addressed, known := resolveIntentAddressedness(livePolicy, intentText, classification.Addressed); known && !addressed {
-				return "", []map[string]interface{}{{
-					"type":              "meeting_capture",
-					"addressed":         false,
-					"suppress_response": true,
-				}}, true
+				return localTurnEvaluation{
+					handled: true,
+					payloads: []map[string]interface{}{{
+						"type":              "meeting_capture",
+						"addressed":         false,
+						"suppress_response": true,
+					}},
+				}
 			}
 			if classification.LocalAnswer != nil && strings.TrimSpace(classification.LocalAnswer.Text) != "" {
-				return classification.LocalAnswer.Text, nil, true
+				return localTurnEvaluation{
+					handled:               true,
+					text:                  classification.LocalAnswer.Text,
+					localAnswerConfidence: classification.LocalAnswer.Confidence,
+				}
 			}
-			if message, payloads, ok := tryExecutePlan(classification.Actions); ok {
-				return message, payloads, true
+			if evaluation := tryExecutePlan(classification.Actions); evaluation.handled {
+				return evaluation
 			}
 			if !assumeAddressed {
 				if message, payloads, handled := tryDeterministicPlan(); handled {
-					return message, payloads, true
+					return localTurnEvaluation{
+						handled:  true,
+						text:     message,
+						payloads: payloads,
+					}
 				}
 			}
 		}
 		if requestRequiresOpenCanvasAction(intentText) {
 			if fallbackPlan := buildOpenCanvasFallbackPlan(intentText); len(fallbackPlan) > 0 {
-				if message, payloads, ok := tryExecutePlan(fallbackPlan); ok {
-					return message, payloads, true
+				if evaluation := tryExecutePlan(fallbackPlan); evaluation.handled {
+					return evaluation
 				}
 			}
-			return "I couldn't open that file on canvas. Please provide an exact relative path (for example: docs/CLAUDE.md).", nil, true
+			return localTurnEvaluation{
+				handled: true,
+				text:    "I couldn't open that file on canvas. Please provide an exact relative path (for example: docs/CLAUDE.md).",
+			}
 		}
 	}
 	if !assumeAddressed && isCompanionDirectAddress(intentText) {
 		if message, payloads, handled := tryDeterministicPlan(); handled {
-			return message, payloads, true
+			return localTurnEvaluation{
+				handled:  true,
+				text:     message,
+				payloads: payloads,
+			}
 		}
 	}
 
 	if cursor != nil && cursor.hasPointedItem() && looksLikeStandaloneSystemRequest(trimmedText) {
 		if message, payloads, ok := a.suggestCanonicalActionsForCursorItem(cursor); ok {
-			return message, payloads, true
+			return localTurnEvaluation{
+				handled:  true,
+				text:     message,
+				payloads: payloads,
+			}
 		}
 	}
-	return "", nil, false
+	return localTurnEvaluation{}
 }
 
 func resolveIntentAddressedness(policy LivePolicy, text string, addressed *bool) (bool, bool) {
