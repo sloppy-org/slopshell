@@ -36,16 +36,15 @@ Supported loopback sidecars and helpers:
 - `tabura-codex-app-server.service` for Codex app-server (`ws://127.0.0.1:8787`)
 - `tabura-piper-tts.service` for Piper TTS (`http://127.0.0.1:8424/v1/audio/speech`)
 - `tabura-stt.service` for voxtype STT (`/v1/audio/transcriptions` on `127.0.0.1:8427`)
-- `tabura-intent.service` for local intent classification (`/classify` on `127.0.0.1:8425`)
 - `tabura-llm.service` for the local Qwen routing/fallback layer (`/v1/chat/completions` via base URL `http://127.0.0.1:8426`)
 - `tabura-ptt.service` for the Linux desktop push-to-talk daemon (`tabura ptt-daemon`)
 
 Non-runtime notes:
 - No separate `tabura-mcp.service` sidecar is part of the current model.
 - No Helpy runtime is part of Tabura.
-- `scripts/install.sh` currently sets `TABURA_INTENT_CLASSIFIER_URL=off` and wires `TABURA_INTENT_LLM_URL=http://127.0.0.1:8426` for `tabura-web.service`.
+- `scripts/install.sh` wires `TABURA_INTENT_LLM_URL=http://127.0.0.1:8426` for `tabura-web.service`.
 - Current Qwen profile defaults in code are `qwen3.5-9b` with profile options `qwen3.5-9b,qwen3.5-4b`.
-- `scripts/install-tabura-user-units.sh` enables the full local unit set, including `tabura-intent.service`, `tabura-llm.service`, `tabura-stt.service`, and `tabura-ptt.service`.
+- `scripts/install-tabura-user-units.sh` enables the full local unit set, including `tabura-llm.service`, `tabura-stt.service`, and `tabura-ptt.service`.
 
 ## Project Bootstrap Contract
 
@@ -117,7 +116,6 @@ Core runtime user units:
 - `tabura-codex-app-server.service`
 - `tabura-piper-tts.service`
 - `tabura-stt.service`
-- `tabura-intent.service`
 - `tabura-llm.service`
 
 Optional input helper:
@@ -126,13 +124,13 @@ Optional input helper:
 Quick status:
 
 ```bash
-systemctl --user status tabura-web.service tabura-codex-app-server.service tabura-piper-tts.service tabura-stt.service tabura-intent.service tabura-llm.service --no-pager -n 40
+systemctl --user status tabura-web.service tabura-codex-app-server.service tabura-piper-tts.service tabura-stt.service tabura-llm.service --no-pager -n 40
 ```
 
 Restart core stack:
 
 ```bash
-systemctl --user restart tabura-codex-app-server.service tabura-piper-tts.service tabura-stt.service tabura-intent.service tabura-llm.service tabura-web.service
+systemctl --user restart tabura-codex-app-server.service tabura-piper-tts.service tabura-stt.service tabura-llm.service tabura-web.service
 ```
 
 ## Endpoints
@@ -142,14 +140,12 @@ systemctl --user restart tabura-codex-app-server.service tabura-piper-tts.servic
 - MCP canvas WS: `ws://127.0.0.1:9420/ws/canvas`
 - App-server: `ws://127.0.0.1:8787`
 - TTS base URL: `http://127.0.0.1:8424` (`/v1/audio/speech`)
-- Intent classifier base URL: `http://127.0.0.1:8425` (`/classify`)
-- Intent LLM fallback base URL: `http://127.0.0.1:8426` (Tabura calls `/v1/chat/completions`)
+- Intent LLM base URL: `http://127.0.0.1:8426` (Tabura calls `/v1/chat/completions`)
 - STT base URL: `http://127.0.0.1:8427` (`/v1/audio/transcriptions`)
 - Local canvas session: `local`
 
 Environment toggles:
 - `TABURA_TTS_URL` overrides the TTS base URL
-- `TABURA_INTENT_CLASSIFIER_URL=off` disables classifier fallback input
 - `TABURA_INTENT_LLM_URL=off` disables intent LLM fallback
 - `TABURA_INTENT_LLM_MODEL` selects the local routing model id (default `local`)
 - `TABURA_INTENT_LLM_PROFILE` selects the active local routing profile (default `qwen3.5-9b`)

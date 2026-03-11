@@ -47,7 +47,6 @@ func TestChatTurnTrackerDequeuesQueuedCursorContextInOrder(t *testing.T) {
 func TestRunAssistantTurnUsesQueuedMessageForCursorAction(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	account, err := app.store.CreateExternalAccount(store.SpherePrivate, store.ExternalProviderGmail, "Private Gmail", nil)
 	if err != nil {

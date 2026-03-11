@@ -103,7 +103,6 @@ func TestClassifyIntentPlanWithLLMMultiAction(t *testing.T) {
 	defer llm.Close()
 
 	app := newAuthedTestApp(t)
-	app.intentClassifierURL = ""
 	app.intentLLMURL = llm.URL
 
 	actions, err := app.classifyIntentPlanWithLLM(context.Background(), "Open README")
@@ -130,7 +129,6 @@ func TestClassifyIntentPlanWithLLMCanonicalAction(t *testing.T) {
 	defer llm.Close()
 
 	app := newAuthedTestApp(t)
-	app.intentClassifierURL = ""
 	app.intentLLMURL = llm.URL
 
 	actions, err := app.classifyIntentPlanWithLLM(context.Background(), "delegate this to Codex")
@@ -407,7 +405,6 @@ func TestExecuteSystemActionPlanPrefersRootClaudeMarkdownCaseInsensitive(t *test
 
 func TestClassifyAndExecuteSystemActionWithoutIntentLLMDoesNotAutoOpen(t *testing.T) {
 	app := newAuthedTestApp(t)
-	app.intentClassifierURL = ""
 	app.intentLLMURL = ""
 
 	project, err := app.ensureDefaultProjectRecord()
@@ -442,15 +439,6 @@ func TestClassifyAndExecuteSystemActionWithoutIntentLLMDoesNotAutoOpen(t *testin
 }
 
 func TestClassifyAndExecuteSystemActionToolRequestsUseQwenPlan(t *testing.T) {
-	classifier := setupMockIntentClassifierServer(t, http.StatusOK, map[string]interface{}{
-		"intent":     "shell",
-		"confidence": 0.99,
-		"entities": map[string]interface{}{
-			"command": "printf './README.md\\n'",
-		},
-	})
-	defer classifier.Close()
-
 	llmCalls := 0
 	llm := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -476,7 +464,6 @@ func TestClassifyAndExecuteSystemActionToolRequestsUseQwenPlan(t *testing.T) {
 	defer llm.Close()
 
 	app := newAuthedTestApp(t)
-	app.intentClassifierURL = classifier.URL
 	app.intentLLMURL = llm.URL
 
 	project, err := app.ensureDefaultProjectRecord()
@@ -525,16 +512,8 @@ func TestClassifyAndExecuteSystemActionToolRequestsUseQwenPlan(t *testing.T) {
 	}
 }
 
-func TestClassifyAndExecuteSystemActionFallsBackToClassifierWhenLLMUnavailable(t *testing.T) {
-	classifier := setupMockIntentClassifierServer(t, http.StatusOK, map[string]interface{}{
-		"intent":     "toggle_silent",
-		"confidence": 0.99,
-		"entities":   map[string]interface{}{},
-	})
-	defer classifier.Close()
-
+func TestClassifyAndExecuteSystemActionFallsThroughWhenLLMUnavailable(t *testing.T) {
 	app := newAuthedTestApp(t)
-	app.intentClassifierURL = classifier.URL
 	app.intentLLMURL = "http://127.0.0.1:1"
 
 	project, err := app.ensureDefaultProjectRecord()
@@ -547,28 +526,12 @@ func TestClassifyAndExecuteSystemActionFallsBackToClassifierWhenLLMUnavailable(t
 	}
 
 	message, payloads, handled := app.classifyAndExecuteSystemAction(context.Background(), session.ID, session, "be quiet")
-	if !handled {
-		t.Fatal("expected classifier fallback to handle request")
-	}
-	if strings.TrimSpace(message) != "Toggled silent mode." {
-		t.Fatalf("message = %q, want %q", message, "Toggled silent mode.")
-	}
-	if len(payloads) != 1 {
-		t.Fatalf("payloads length = %d, want 1", len(payloads))
-	}
-	if got := strings.TrimSpace(strFromAny(payloads[0]["type"])); got != "toggle_silent" {
-		t.Fatalf("payload type = %q, want toggle_silent", got)
+	if handled {
+		t.Fatalf("expected request to remain unhandled, got message %q and %d payloads", message, len(payloads))
 	}
 }
 
-func TestClassifyAndExecuteSystemActionWithIntentLLMPrefersLLMPlanOverUnsupportedClassifierIntent(t *testing.T) {
-	classifier := setupMockIntentClassifierServer(t, http.StatusOK, map[string]interface{}{
-		"intent":     "unsupported_action",
-		"confidence": 0.99,
-		"entities":   map[string]interface{}{},
-	})
-	defer classifier.Close()
-
+func TestClassifyAndExecuteSystemActionWithIntentLLMHandlesSupportedPlan(t *testing.T) {
 	llmCalls := 0
 	llm := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -594,7 +557,6 @@ func TestClassifyAndExecuteSystemActionWithIntentLLMPrefersLLMPlanOverUnsupporte
 	defer llm.Close()
 
 	app := newAuthedTestApp(t)
-	app.intentClassifierURL = classifier.URL
 	app.intentLLMURL = llm.URL
 
 	project, err := app.ensureDefaultProjectRecord()
@@ -655,7 +617,6 @@ func TestClassifyAndExecuteSystemActionHandlesMalformedQwenJSON(t *testing.T) {
 	defer llm.Close()
 
 	app := newAuthedTestApp(t)
-	app.intentClassifierURL = ""
 	app.intentLLMURL = llm.URL
 
 	project, err := app.ensureDefaultProjectRecord()
@@ -725,7 +686,6 @@ func TestClassifyIntentPlanWithLLMRepairsMissingOpenAction(t *testing.T) {
 	defer llm.Close()
 
 	app := newAuthedTestApp(t)
-	app.intentClassifierURL = ""
 	app.intentLLMURL = llm.URL
 
 	actions, err := app.classifyIntentPlanWithLLM(context.Background(), "Open README")
@@ -773,7 +733,6 @@ func TestClassifyIntentPlanWithLLMRepairsChatResponseForOpenRequest(t *testing.T
 	defer llm.Close()
 
 	app := newAuthedTestApp(t)
-	app.intentClassifierURL = ""
 	app.intentLLMURL = llm.URL
 
 	actions, err := app.classifyIntentPlanWithLLM(context.Background(), "Open README")
@@ -817,7 +776,6 @@ func TestClassifyIntentPlanWithLLMAppendsOpenActionAfterRetryForShellOnlyPlan(t 
 	defer llm.Close()
 
 	app := newAuthedTestApp(t)
-	app.intentClassifierURL = ""
 	app.intentLLMURL = llm.URL
 
 	actions, err := app.classifyIntentPlanWithLLM(context.Background(), "Open README")
@@ -861,7 +819,6 @@ func TestClassifyIntentPlanWithLLMRejectsOpenRequestWithoutShellOrOpenActionAfte
 	defer llm.Close()
 
 	app := newAuthedTestApp(t)
-	app.intentClassifierURL = ""
 	app.intentLLMURL = llm.URL
 
 	actions, err := app.classifyIntentPlanWithLLM(context.Background(), "Open README")
@@ -900,7 +857,6 @@ func TestClassifyAndExecuteSystemActionOpenRequestUsesFallbackPlanWhenLLMPlanInv
 	defer llm.Close()
 
 	app := newAuthedTestApp(t)
-	app.intentClassifierURL = ""
 	app.intentLLMURL = llm.URL
 	project, err := app.ensureDefaultProjectRecord()
 	if err != nil {
@@ -1043,7 +999,6 @@ func TestClassifyAndExecuteSystemActionUsesClarificationContextForOpenFileFollow
 	defer llm.Close()
 
 	app := newAuthedTestApp(t)
-	app.intentClassifierURL = ""
 	app.intentLLMURL = llm.URL
 
 	project, err := app.ensureDefaultProjectRecord()

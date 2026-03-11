@@ -2,8 +2,6 @@ package web
 
 import (
 	"context"
-	"net/http"
-	"net/http/httptest"
 	"reflect"
 	"strings"
 	"testing"
@@ -30,15 +28,8 @@ func stringSliceFromAny(v any) []string {
 }
 
 func TestClassifyAndExecuteSystemActionForTurnSuggestsCanonicalActionsForLowConfidenceCursorItem(t *testing.T) {
-	classifier := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"confidence":0.31}`))
-	}))
-	defer classifier.Close()
-
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = classifier.URL
 
 	project, err := app.ensureDefaultProjectRecord()
 	if err != nil {

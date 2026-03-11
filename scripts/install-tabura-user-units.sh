@@ -16,9 +16,6 @@ command -v codex >/dev/null 2>&1 || fail "codex not in PATH. Install @openai/cod
 
 # --- Bootstrap service dependencies ---
 
-log "Setting up intent classifier"
-"$REPO_ROOT/scripts/setup-intent-classifier.sh"
-
 log "Ensuring LLM model is downloaded"
 MODEL_DIR="${HOME}/.local/share/tabura-llm/models"
 MODEL_FILE="Qwen3.5-9B-Q4_K_M.gguf"
@@ -51,7 +48,6 @@ units=(
   tabura-codex-app-server.service
   tabura-piper-tts.service
   tabura-stt.service
-  tabura-intent.service
   tabura-llm.service
   tabura-ptt.service
   tabura-web.service

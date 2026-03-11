@@ -46,7 +46,6 @@ func TestParseInlineBearIntent(t *testing.T) {
 func TestClassifyAndExecuteSystemActionSyncBear(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	dbPath := seedBearTestDatabase(t, []bearSeedNote{{
 		ID:       "note-1",
@@ -136,7 +135,6 @@ func TestClassifyAndExecuteSystemActionSyncBear(t *testing.T) {
 func TestClassifyAndExecuteSystemActionSyncBearSkipsMissingDatabase(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	createBearTestAccount(t, app, filepath.Join(t.TempDir(), "missing.sqlite"))
 	project, err := app.ensureDefaultProjectRecord()
@@ -163,7 +161,6 @@ func TestClassifyAndExecuteSystemActionSyncBearSkipsMissingDatabase(t *testing.T
 func TestClassifyAndExecuteSystemActionPromoteBearChecklist(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	dbPath := seedBearTestDatabase(t, []bearSeedNote{{
 		ID:       "note-1",

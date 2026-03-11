@@ -13,33 +13,6 @@ import (
 	"github.com/krystophny/tabura/internal/modelprofile"
 )
 
-func setupMockIntentClassifierServer(t *testing.T, status int, response map[string]interface{}) *httptest.Server {
-	t.Helper()
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		if strings.TrimSpace(r.URL.Path) != "/classify" {
-			http.Error(w, "not found", http.StatusNotFound)
-			return
-		}
-		var payload map[string]interface{}
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-			http.Error(w, "invalid json", http.StatusBadRequest)
-			return
-		}
-		rawText, _ := payload["text"].(string)
-		if strings.TrimSpace(rawText) == "" {
-			http.Error(w, "missing text", http.StatusBadRequest)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(status)
-		_ = json.NewEncoder(w).Encode(response)
-	}))
-}
-
 func setupMockIntentLLMServer(t *testing.T, status int, content string) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -198,35 +171,6 @@ func TestIntentPromptsSeparateSystemCommandsFromCanonicalActions(t *testing.T) {
 		if !strings.Contains(lowerPrompt, "triage_item_by_title") {
 			t.Fatalf("%s prompt should explicitly forbid triage_item_by_title", name)
 		}
-	}
-}
-
-func TestClassifyIntentLocallyIgnoresUnsupportedIntent(t *testing.T) {
-	classifier := setupMockIntentClassifierServer(t, http.StatusOK, map[string]interface{}{
-		"intent":     "unknown_action",
-		"confidence": 0.92,
-		"entities":   map[string]interface{}{},
-	})
-	defer classifier.Close()
-
-	app, err := New(t.TempDir(), "", "", "", "", "", "", false)
-	if err != nil {
-		t.Fatalf("new app: %v", err)
-	}
-	app.intentClassifierURL = classifier.URL
-	t.Cleanup(func() {
-		_ = app.Shutdown(context.Background())
-	})
-
-	action, confidence, err := app.classifyIntentLocally(context.Background(), "route repo review")
-	if err != nil {
-		t.Fatalf("classify intent locally: %v", err)
-	}
-	if action != nil {
-		t.Fatalf("expected nil action for unsupported intent, got %#v", action)
-	}
-	if confidence != 0.92 {
-		t.Fatalf("confidence = %v, want 0.92", confidence)
 	}
 }
 
@@ -572,18 +516,14 @@ func TestRunAssistantTurnKeepsPlainTextAssistantOutput(t *testing.T) {
 }
 
 func TestRunAssistantTurnExecutesHighConfidenceLocalIntent(t *testing.T) {
-	classifier := setupMockIntentClassifierServer(t, http.StatusOK, map[string]interface{}{
-		"intent":     "toggle_silent",
-		"confidence": 0.95,
-		"entities":   map[string]interface{}{},
-	})
-	defer classifier.Close()
+	llm := setupMockIntentLLMServer(t, http.StatusOK, `{"action":"toggle_silent"}`)
+	defer llm.Close()
 
 	app, err := New(t.TempDir(), "", "", "", "", "", "", false)
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}
-	app.intentClassifierURL = classifier.URL
+	app.intentLLMURL = llm.URL
 	t.Cleanup(func() {
 		_ = app.Shutdown(context.Background())
 	})
@@ -608,18 +548,14 @@ func TestRunAssistantTurnExecutesHighConfidenceLocalIntent(t *testing.T) {
 }
 
 func TestRunAssistantTurnExecutesHighConfidenceLocalIntentInProjectSession(t *testing.T) {
-	classifier := setupMockIntentClassifierServer(t, http.StatusOK, map[string]interface{}{
-		"intent":     "toggle_silent",
-		"confidence": 0.95,
-		"entities":   map[string]interface{}{},
-	})
-	defer classifier.Close()
+	llm := setupMockIntentLLMServer(t, http.StatusOK, `{"action":"toggle_silent"}`)
+	defer llm.Close()
 
 	app, err := New(t.TempDir(), "", "", "", "", "", "", false)
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}
-	app.intentClassifierURL = classifier.URL
+	app.intentLLMURL = llm.URL
 	t.Cleanup(func() {
 		_ = app.Shutdown(context.Background())
 	})
@@ -672,7 +608,6 @@ func TestRunAssistantTurnOpenReadmeUsesMultiActionPlanAndOpensCanvas(t *testing.
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}
-	app.intentClassifierURL = ""
 	app.intentLLMURL = llm.URL
 	t.Cleanup(func() {
 		_ = app.Shutdown(context.Background())
@@ -724,27 +659,17 @@ func TestRunAssistantTurnOpenReadmeUsesMultiActionPlanAndOpensCanvas(t *testing.
 	}
 }
 
-func TestRunAssistantTurnFallsBackToAppServerOnLowIntentConfidence(t *testing.T) {
+func TestRunAssistantTurnFallsBackToAppServerWhenIntentLLMUnavailable(t *testing.T) {
 	const assistantReply = "All systems nominal."
 	wsServer := setupMockAppServerStatusServer(t, assistantReply)
 	defer wsServer.Close()
 	wsURL := "ws" + strings.TrimPrefix(wsServer.URL, "http")
 
-	classifier := setupMockIntentClassifierServer(t, http.StatusOK, map[string]interface{}{
-		"intent":     "toggle_silent",
-		"confidence": 0.25,
-		"entities":   map[string]interface{}{},
-	})
-	defer classifier.Close()
-	llm := setupMockIntentLLMServer(t, http.StatusServiceUnavailable, "temporary failure")
-	defer llm.Close()
-
 	app, err := New(t.TempDir(), "", "", wsURL, "", "", "", false)
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}
-	app.intentClassifierURL = classifier.URL
-	app.intentLLMURL = llm.URL
+	app.intentLLMURL = "http://127.0.0.1:1"
 	t.Cleanup(func() {
 		_ = app.Shutdown(context.Background())
 	})
@@ -768,13 +693,7 @@ func TestRunAssistantTurnFallsBackToAppServerOnLowIntentConfidence(t *testing.T)
 	}
 }
 
-func TestRunAssistantTurnUsesIntentLLMFallbackOnLowIntentConfidence(t *testing.T) {
-	classifier := setupMockIntentClassifierServer(t, http.StatusOK, map[string]interface{}{
-		"intent":     "toggle_silent",
-		"confidence": 0.25,
-		"entities":   map[string]interface{}{},
-	})
-	defer classifier.Close()
+func TestRunAssistantTurnUsesIntentLLMPlanForSystemAction(t *testing.T) {
 	llm := setupMockIntentLLMServer(t, http.StatusOK, "```json\n{\"action\":\"toggle_silent\"}\n```")
 	defer llm.Close()
 
@@ -782,7 +701,6 @@ func TestRunAssistantTurnUsesIntentLLMFallbackOnLowIntentConfidence(t *testing.T
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}
-	app.intentClassifierURL = classifier.URL
 	app.intentLLMURL = llm.URL
 	t.Cleanup(func() {
 		_ = app.Shutdown(context.Background())
@@ -850,7 +768,6 @@ func TestRunAssistantTurnPreservesClarificationContextForLocalLLM(t *testing.T) 
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}
-	app.intentClassifierURL = ""
 	app.intentLLMURL = llm.URL
 	t.Cleanup(func() {
 		_ = app.Shutdown(context.Background())
@@ -886,19 +803,14 @@ func TestRunAssistantTurnFallsBackToAppServerWhenLocalIntentExecutionFails(t *te
 	defer wsServer.Close()
 	wsURL := "ws" + strings.TrimPrefix(wsServer.URL, "http")
 
-	classifier := setupMockIntentClassifierServer(t, http.StatusOK, map[string]interface{}{
-		"intent":     "switch_project",
-		"confidence": 0.97,
-		"entities":   map[string]interface{}{},
-	})
-	defer classifier.Close()
+	llm := setupMockIntentLLMServer(t, http.StatusOK, `{"action":"switch_project"}`)
+	defer llm.Close()
 
 	app, err := New(t.TempDir(), "", "", wsURL, "", "", "", false)
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}
-	app.intentClassifierURL = classifier.URL
-	app.intentLLMURL = ""
+	app.intentLLMURL = llm.URL
 	t.Cleanup(func() {
 		_ = app.Shutdown(context.Background())
 	})

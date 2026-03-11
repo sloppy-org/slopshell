@@ -37,7 +37,6 @@ func TestParseInlineBriefingIntent(t *testing.T) {
 func TestClassifyAndExecuteSystemActionShowBriefingRendersArtifact(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 	now := time.Date(2026, time.March, 9, 8, 0, 0, 0, time.UTC)
 	app.calendarNow = func() time.Time { return now }
 	app.newICSCalendarReader = func() (icsCalendarReader, error) { return stubICSCalendarReader{}, nil }

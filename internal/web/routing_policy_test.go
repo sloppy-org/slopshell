@@ -108,7 +108,6 @@ func TestClassifyAndExecuteSystemActionCurrentInfoDropsShellPlan(t *testing.T) {
 	defer llm.Close()
 
 	app := newAuthedTestApp(t)
-	app.intentClassifierURL = ""
 	app.intentLLMURL = llm.URL
 
 	project, err := app.ensureDefaultProjectRecord()

@@ -50,7 +50,6 @@ func TestParseInlineGitHubIssueActions(t *testing.T) {
 func TestClassifyAndExecuteSystemActionCreateGitHubIssuePromotesExistingItem(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	project, err := app.ensureDefaultProjectRecord()
 	if err != nil {
@@ -175,7 +174,6 @@ func TestClassifyAndExecuteSystemActionCreateGitHubIssuePromotesExistingItem(t *
 func TestClassifyAndExecuteSystemActionCreateGitHubIssueCreatesLinkedItem(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	project, err := app.ensureDefaultProjectRecord()
 	if err != nil {
@@ -237,7 +235,6 @@ func TestClassifyAndExecuteSystemActionCreateGitHubIssueCreatesLinkedItem(t *tes
 func TestClassifyAndExecuteSystemActionCreateGitHubIssueRejectsMissingWorkspace(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	project, err := app.ensureDefaultProjectRecord()
 	if err != nil {
@@ -270,7 +267,6 @@ func TestClassifyAndExecuteSystemActionCreateGitHubIssueRejectsMissingWorkspace(
 func TestClassifyAndExecuteSystemActionCreateGitHubIssueRejectsMissingRemote(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	project, err := app.ensureDefaultProjectRecord()
 	if err != nil {
@@ -317,7 +313,6 @@ func TestClassifyAndExecuteSystemActionCreateGitHubIssueRejectsMissingRemote(t *
 func TestClassifyAndExecuteSystemActionCreateGitHubIssueSurfacesCreateFailure(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	project, err := app.ensureDefaultProjectRecord()
 	if err != nil {
@@ -331,7 +326,7 @@ func TestClassifyAndExecuteSystemActionCreateGitHubIssueSurfacesCreateFailure(t 
 	if err != nil {
 		t.Fatalf("chat session: %v", err)
 	}
-	assistantText := "Ship the local intent classifier defaults"
+	assistantText := "Ship the local routing defaults"
 	if _, err := app.store.AddChatMessage(session.ID, "assistant", assistantText, assistantText, "markdown"); err != nil {
 		t.Fatalf("add assistant message: %v", err)
 	}
@@ -361,7 +356,6 @@ func TestClassifyAndExecuteSystemActionCreateGitHubIssueSurfacesCreateFailure(t 
 func TestClassifyAndExecuteSystemActionCreateGitHubIssueRejectsDuplicateLinkedItem(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	project, err := app.ensureDefaultProjectRecord()
 	if err != nil {

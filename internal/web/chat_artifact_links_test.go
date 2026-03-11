@@ -66,7 +66,6 @@ func TestParseInlineArtifactLinkIntent(t *testing.T) {
 func TestClassifyAndExecuteSystemActionLinkWorkspaceArtifact(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	project, err := app.ensureDefaultProjectRecord()
 	if err != nil {
@@ -138,7 +137,6 @@ func TestClassifyAndExecuteSystemActionLinkWorkspaceArtifact(t *testing.T) {
 func TestClassifyAndExecuteSystemActionListLinkedArtifactsUsesActiveWorkspace(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	project, err := app.ensureDefaultProjectRecord()
 	if err != nil {

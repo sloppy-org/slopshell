@@ -65,7 +65,6 @@ run_install_sh_dry_run() {
     esac
     assert_contains "$out_file" "Service mode:  ${expected_os}"
     assert_contains "$out_file" "Piper TTS"
-    assert_contains "$out_file" "Intent Classifier"
     assert_contains "$out_file" "Local LLM"
     assert_contains "$out_file" "skipping voxtype STT setup"
 
@@ -85,9 +84,7 @@ run_install_ps1_static_checks() {
     assert_contains "$ps1" "Speech-to-text requires voxtype (Linux/macOS only)"
     assert_contains "$ps1" "schtasks /Create"
     assert_contains "$ps1" "piper-tts"
-    assert_contains "$ps1" "tabura-intent"
     assert_contains "$ps1" "tabura-llm"
-    assert_contains "$ps1" "Setup-IntentClassifier"
     assert_contains "$ps1" "Setup-LocalLlm"
     assert_contains "$ps1" "Print-WindowsSTTNotice"
 }

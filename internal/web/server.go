@@ -64,7 +64,6 @@ type App struct {
 	appServerURL                  string
 	appServerModel                string
 	appServerSparkReasoningEffort string
-	intentClassifierURL           string
 	intentLLMURL                  string
 	intentLLMModel                string
 	intentLLMProfile              string
@@ -165,12 +164,6 @@ func New(dataDir, localProjectDir, localMCPURL, appServerURL, model, ttsURL, spa
 	if resolvedTTSURL == "" {
 		resolvedTTSURL = strings.TrimSpace(os.Getenv("TABURA_TTS_URL"))
 	}
-	resolvedIntentClassifierURL := strings.TrimSpace(os.Getenv("TABURA_INTENT_CLASSIFIER_URL"))
-	if strings.EqualFold(resolvedIntentClassifierURL, "off") {
-		resolvedIntentClassifierURL = ""
-	} else if resolvedIntentClassifierURL == "" {
-		resolvedIntentClassifierURL = DefaultIntentClassifierURL
-	}
 	resolvedIntentLLMURL := strings.TrimSpace(os.Getenv("TABURA_INTENT_LLM_URL"))
 	if strings.EqualFold(resolvedIntentLLMURL, "off") {
 		resolvedIntentLLMURL = ""
@@ -265,7 +258,6 @@ func New(dataDir, localProjectDir, localMCPURL, appServerURL, model, ttsURL, spa
 		appServerURL:                  appServerURL,
 		appServerModel:                resolvedModel,
 		appServerSparkReasoningEffort: resolvedSparkReasoningEffort,
-		intentClassifierURL:           resolvedIntentClassifierURL,
 		intentLLMURL:                  resolvedIntentLLMURL,
 		intentLLMModel:                resolvedIntentLLMModel,
 		intentLLMProfile:              resolvedIntentLLMProfile,
@@ -508,7 +500,6 @@ func (a *App) handleRuntime(w http.ResponseWriter, r *http.Request) {
 		"app_server_url":              a.appServerURL,
 		"app_server_model":            a.appServerModel,
 		"app_server_reasoning_effort": sparkReasoningEffort,
-		"intent_classifier_url":       a.intentClassifierURL,
 		"intent_llm_url":              a.intentLLMURL,
 		"intent_llm_model":            a.localIntentLLMModel(),
 		"intent_llm_profile":          a.intentLLMProfile,

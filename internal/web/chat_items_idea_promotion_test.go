@@ -133,7 +133,6 @@ func TestParseInlineItemIntentIdeaPromotion(t *testing.T) {
 func TestClassifyAndExecuteSystemActionPreviewIdeaPromotionRendersReview(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	_, session, _, artifact, mock := seedActiveIdeaNote(t, app, []string{
 		"Draft the rollout checklist",
@@ -177,7 +176,6 @@ func TestClassifyAndExecuteSystemActionPreviewIdeaPromotionRendersReview(t *test
 func TestClassifyAndExecuteSystemActionApplyIdeaPromotionCreatesItemsAndMarksDone(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	_, session, ideaItem, artifact, _ := seedActiveIdeaNote(t, app, []string{
 		"Draft the rollout checklist",
@@ -260,7 +258,6 @@ func TestClassifyAndExecuteSystemActionApplyIdeaPromotionCreatesItemsAndMarksDon
 func TestClassifyAndExecuteSystemActionApplyIdeaPromotionCreatesGitHubIssue(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	project, session, ideaItem, _, _ := seedActiveIdeaNote(t, app, []string{
 		"Draft the rollout checklist",

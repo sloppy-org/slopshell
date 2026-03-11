@@ -61,7 +61,6 @@ func TestParseInlineItemIntentSomedayCommands(t *testing.T) {
 func TestClassifyAndExecuteSystemActionReviewSomedayList(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	project, err := app.ensureDefaultProjectRecord()
 	if err != nil {
@@ -103,7 +102,6 @@ func TestClassifyAndExecuteSystemActionReviewSomedayList(t *testing.T) {
 func TestClassifyAndExecuteSystemActionTriageSomedayUsesCanvasItem(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	project, err := app.ensureDefaultProjectRecord()
 	if err != nil {
@@ -167,7 +165,6 @@ func TestClassifyAndExecuteSystemActionTriageSomedayUsesCanvasItem(t *testing.T)
 func TestClassifyAndExecuteSystemActionPromoteSomedayPreservesActor(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	project, err := app.ensureDefaultProjectRecord()
 	if err != nil {
@@ -240,7 +237,6 @@ func TestClassifyAndExecuteSystemActionPromoteSomedayPreservesActor(t *testing.T
 func TestClassifyAndExecuteSystemActionPromoteDoneEmailRestoresRemoteInbox(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	account, err := app.store.CreateExternalAccount(store.SpherePrivate, store.ExternalProviderGmail, "Private Gmail", nil)
 	if err != nil {
@@ -348,7 +344,6 @@ func TestClassifyAndExecuteSystemActionPromoteDoneEmailRestoresRemoteInbox(t *te
 func TestClassifyAndExecuteSystemActionToggleSomedayReminder(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	project, err := app.ensureDefaultProjectRecord()
 	if err != nil {

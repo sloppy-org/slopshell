@@ -76,7 +76,6 @@ func TestParseInlineBatchIntent(t *testing.T) {
 func TestClassifyAndExecuteSystemActionBatchConfigPersistsWorkspaceSettings(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	project, err := app.ensureDefaultProjectRecord()
 	if err != nil {
@@ -155,7 +154,6 @@ func TestClassifyAndExecuteSystemActionBatchConfigPersistsWorkspaceSettings(t *t
 func TestClassifyAndExecuteSystemActionBatchWorkUsesFiltersLimitAndStatus(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	project, err := app.ensureDefaultProjectRecord()
 	if err != nil {

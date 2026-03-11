@@ -76,7 +76,6 @@ func TestParseInlineWorkspaceIntent(t *testing.T) {
 func TestClassifyAndExecuteSystemActionSwitchWorkspace(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	project, err := app.ensureDefaultProjectRecord()
 	if err != nil {
@@ -123,7 +122,6 @@ func TestClassifyAndExecuteSystemActionSwitchWorkspace(t *testing.T) {
 func TestClassifyAndExecuteSystemActionListWorkspaceItemsUsesActiveWorkspace(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	project, err := app.ensureDefaultProjectRecord()
 	if err != nil {
@@ -190,7 +188,6 @@ func TestClassifyAndExecuteSystemActionListWorkspaceItemsUsesActiveWorkspace(t *
 func TestClassifyAndExecuteSystemActionCreateWorkspaceFromGit(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	cloneRoot := filepath.Join(t.TempDir(), "code")
 	t.Setenv("TABURA_WORKSPACE_CLONE_ROOT", cloneRoot)
@@ -259,7 +256,6 @@ func TestClassifyAndExecuteSystemActionCreateWorkspaceFromGit(t *testing.T) {
 func TestClassifyAndExecuteSystemActionListWorkspacesUsesActiveSphereByDefault(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	project, err := app.ensureDefaultProjectRecord()
 	if err != nil {
@@ -355,7 +351,6 @@ func TestClassifyAndExecuteSystemActionListWorkspacesUsesActiveSphereByDefault(t
 func TestClassifyAndExecuteSystemActionWorkspaceManagement(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	project, err := app.ensureDefaultProjectRecord()
 	if err != nil {

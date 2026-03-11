@@ -29,7 +29,6 @@ func TestParseInlineZoteroIntent(t *testing.T) {
 func TestClassifyAndExecuteSystemActionSyncZotero(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	dbPath := seedZoteroTestLibrary(t)
 	account := createZoteroTestAccount(t, app, dbPath)
@@ -162,7 +161,6 @@ func TestClassifyAndExecuteSystemActionSyncZotero(t *testing.T) {
 func TestClassifyAndExecuteSystemActionSyncZoteroSkipsMissingDatabase(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	createZoteroTestAccount(t, app, filepath.Join(t.TempDir(), "missing.sqlite"))
 	project, err := app.ensureDefaultProjectRecord()

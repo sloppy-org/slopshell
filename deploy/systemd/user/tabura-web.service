@@ -10,7 +10,6 @@ PassEnvironment=DISPLAY WAYLAND_DISPLAY XAUTHORITY XDG_RUNTIME_DIR DBUS_SESSION_
 Environment=HOME=%h
 Environment=SHELL=/usr/bin/bash
 Environment=TABURA_APP_SERVER_MODEL=gpt-5.3-codex-spark
-Environment=TABURA_INTENT_CLASSIFIER_URL=off
 Environment=TABURA_INTENT_LLM_URL=http://127.0.0.1:8426
 Environment=TABURA_INTENT_LLM_MODEL=local
 Environment=TABURA_INTENT_LLM_PROFILE=qwen3.5-9b

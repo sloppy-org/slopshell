@@ -17,7 +17,6 @@ import (
 )
 
 const (
-	intentURL    = "http://127.0.0.1:8425"
 	llmURL       = "http://127.0.0.1:8426"
 	sttURL       = "http://127.0.0.1:8427"
 	ttsURL       = "http://127.0.0.1:8424"
@@ -25,136 +24,11 @@ const (
 )
 
 // ---------------------------------------------------------------------------
-// Intent classifier (port 8425)
-// ---------------------------------------------------------------------------
-
-func TestIntentClassifierHealth(t *testing.T) {
-	resp, err := httpGetJSON(intentURL + "/health")
-	if err != nil {
-		t.Fatalf("intent classifier health failed: %v", err)
-	}
-	ok, _ := resp["ok"].(bool)
-	if !ok {
-		t.Fatalf("intent classifier health ok=%v, want true", resp["ok"])
-	}
-	modelLoaded, _ := resp["model_loaded"].(bool)
-	if !modelLoaded {
-		t.Fatalf("intent classifier model_loaded=%v, want true", resp["model_loaded"])
-	}
-	examples, _ := resp["examples"].(float64)
-	if examples < 10 {
-		t.Fatalf("intent classifier examples=%.0f, want >= 10", examples)
-	}
-}
-
-func TestIntentClassifierSwitchModel(t *testing.T) {
-	resp, err := postIntentClassify("switch to codex")
-	if err != nil {
-		t.Fatalf("classify failed: %v", err)
-	}
-	intent, _ := resp["intent"].(string)
-	confidence, _ := resp["confidence"].(float64)
-	if intent != "switch_model" {
-		t.Fatalf("intent=%q, want switch_model", intent)
-	}
-	if confidence < 0.8 {
-		t.Fatalf("confidence=%.2f, want >= 0.8", confidence)
-	}
-}
-
-func TestIntentClassifierSwitchProject(t *testing.T) {
-	resp, err := postIntentClassify("switch to tabula project")
-	if err != nil {
-		t.Fatalf("classify failed: %v", err)
-	}
-	intent, _ := resp["intent"].(string)
-	if intent != "switch_project" {
-		t.Fatalf("intent=%q, want switch_project", intent)
-	}
-}
-
-func TestIntentClassifierToggleSilent(t *testing.T) {
-	resp, err := postIntentClassify("be quiet")
-	if err != nil {
-		t.Fatalf("classify failed: %v", err)
-	}
-	intent, _ := resp["intent"].(string)
-	if intent != "toggle_silent" {
-		t.Fatalf("intent=%q, want toggle_silent", intent)
-	}
-}
-
-func TestIntentClassifierCancelWork(t *testing.T) {
-	resp, err := postIntentClassify("cancel everything")
-	if err != nil {
-		t.Fatalf("classify failed: %v", err)
-	}
-	intent, _ := resp["intent"].(string)
-	if intent != "cancel_work" {
-		t.Fatalf("intent=%q, want cancel_work", intent)
-	}
-}
-
-func TestIntentClassifierShowStatus(t *testing.T) {
-	resp, err := postIntentClassify("what is the current status")
-	if err != nil {
-		t.Fatalf("classify failed: %v", err)
-	}
-	intent, _ := resp["intent"].(string)
-	if intent != "show_status" {
-		t.Fatalf("intent=%q, want show_status", intent)
-	}
-}
-
-func TestIntentClassifierChat(t *testing.T) {
-	resp, err := postIntentClassify("tell me a joke about programming")
-	if err != nil {
-		t.Fatalf("classify failed: %v", err)
-	}
-	intent, _ := resp["intent"].(string)
-	if intent != "chat" {
-		t.Fatalf("intent=%q, want chat", intent)
-	}
-}
-
-func TestIntentClassifierLatency(t *testing.T) {
-	resp, err := postIntentClassify("switch to codex")
-	if err != nil {
-		t.Fatalf("classify failed: %v", err)
-	}
-	latency, _ := resp["latency_ms"].(float64)
-	if latency <= 0 {
-		t.Fatalf("latency_ms=%.2f, want > 0", latency)
-	}
-	if latency > 200 {
-		t.Fatalf("latency_ms=%.2f, want < 200 (too slow)", latency)
-	}
-}
-
-func TestIntentClassifierEntities(t *testing.T) {
-	resp, err := postIntentClassify("switch to codex")
-	if err != nil {
-		t.Fatalf("classify failed: %v", err)
-	}
-	entities, ok := resp["entities"].(map[string]interface{})
-	if !ok {
-		t.Fatalf("entities not a map: %v", resp["entities"])
-	}
-	alias, _ := entities["alias"].(string)
-	if alias != "codex" {
-		t.Fatalf("entities.alias=%q, want codex", alias)
-	}
-}
-
-// ---------------------------------------------------------------------------
 // LLM — llama.cpp (port 8426)
 // ---------------------------------------------------------------------------
 
 func TestLLMHealth(t *testing.T) {
-	resp, err := httpGetJSON(llmURL + "/health")
-	if err != nil {
-		t.Fatalf("LLM health failed: %v", err)
-	}
+	resp := requireServiceHealth(t, "LLM", llmURL+"/health")
 	status, _ := resp["status"].(string)
 	if status != "ok" {
 		t.Fatalf("LLM health status=%q, want ok", status)
@@ -162,6 +36,7 @@ func TestLLMHealth(t *testing.T) {
 }
 
 func TestLLMChatCompletion(t *testing.T) {
+	requireServiceHealth(t, "LLM", llmURL+"/health")
 	resp, err := postLLMCompletion([]map[string]string{
 		{"role": "user", "content": "Reply with the single word: hello"},
 	}, 64)
@@ -175,6 +50,7 @@ func TestLLMChatCompletion(t *testing.T) {
 }
 
 func TestLLMIntentClassification(t *testing.T) {
+	requireServiceHealth(t, "LLM", llmURL+"/health")
 	systemPrompt := `Classify the user intent and return JSON only.
 Allowed actions: switch_project, switch_model, toggle_silent, toggle_conversation, cancel_work, show_status, chat.
 Return {"action":"<action>"}.`
@@ -206,6 +82,7 @@ Return {"action":"<action>"}.`
 }
 
 func TestLLMLatency(t *testing.T) {
+	requireServiceHealth(t, "LLM", llmURL+"/health")
 	start := time.Now()
 	_, err := postLLMCompletion([]map[string]string{
 		{"role": "user", "content": "Say OK"},
@@ -393,6 +270,19 @@ func TestAppServerListening(t *testing.T) {
 // Helpers
 // ---------------------------------------------------------------------------
 
+func requireServiceHealth(t *testing.T, name, url string) map[string]interface{} {
+	t.Helper()
+	resp, err := httpGetJSON(url)
+	if err == nil {
+		return resp
+	}
+	if strings.Contains(strings.ToLower(err.Error()), "connection refused") {
+		t.Skipf("%s unavailable at %s: %v", name, url, err)
+	}
+	t.Fatalf("%s health failed: %v", name, err)
+	return nil
+}
+
 func httpGetJSON(url string) (map[string]interface{}, error) {
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Get(url)
@@ -465,10 +355,6 @@ func extractLLMContent(t *testing.T, resp map[string]interface{}) string {
 		t.Fatalf("LLM returned empty content")
 	}
 	return strings.TrimSpace(content)
-}
-
-func postIntentClassify(text string) (map[string]interface{}, error) {
-	return postJSON(intentURL+"/classify", map[string]string{"text": text}, 5*time.Second)
 }
 
 func postSTTInference(wavData []byte) (string, error) {

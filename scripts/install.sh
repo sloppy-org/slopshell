@@ -9,7 +9,6 @@ ASSUME_YES="${TABURA_ASSUME_YES:-0}"
 DRY_RUN="${TABURA_INSTALL_DRY_RUN:-0}"
 SKIP_BROWSER="${TABURA_INSTALL_SKIP_BROWSER:-0}"
 SKIP_STT="${TABURA_INSTALL_SKIP_STT:-0}"
-SKIP_INTENT="${TABURA_INSTALL_SKIP_INTENT:-0}"
 SKIP_LLM="${TABURA_INSTALL_SKIP_LLM:-0}"
 REQUESTED_VERSION=""
 DO_UNINSTALL=0
@@ -25,8 +24,6 @@ MODEL_DIR=""
 VENV_DIR=""
 SCRIPT_DIR=""
 PIPER_SERVER_SCRIPT=""
-INTENT_DIR=""
-INTENT_VENV_DIR=""
 LLM_DIR=""
 LLM_MODEL_DIR=""
 LLM_SETUP_SCRIPT=""
@@ -88,7 +85,6 @@ Environment overrides:
   TABURA_INSTALL_DRY_RUN=1
   TABURA_INSTALL_SKIP_BROWSER=1
   TABURA_INSTALL_SKIP_STT=1
-  TABURA_INSTALL_SKIP_INTENT=1
   TABURA_INSTALL_SKIP_LLM=1
   TABURA_REPO_OWNER / TABURA_REPO_NAME / TABURA_RELEASE_API_BASE
 USAGE
@@ -165,8 +161,6 @@ resolve_paths() {
     VENV_DIR="${PIPER_DIR}/venv"
     SCRIPT_DIR="${DATA_ROOT}/scripts"
     PIPER_SERVER_SCRIPT="${SCRIPT_DIR}/piper_tts_server.py"
-    INTENT_DIR="${DATA_ROOT}/intent-classifier"
-    INTENT_VENV_DIR="${INTENT_DIR}/venv"
     LLM_DIR="${DATA_ROOT}/llm"
     LLM_MODEL_DIR="${LLM_DIR}/models"
     LLM_SETUP_SCRIPT="${SCRIPT_DIR}/setup-local-llm.sh"
@@ -345,14 +339,6 @@ BIN
             echo "#!/usr/bin/env bash" >"${tmpdir}/setup-local-llm.sh"
         fi
         chmod +x "${tmpdir}/setup-local-llm.sh"
-        mkdir -p "${tmpdir}/intent-classifier"
-        if [ -f "services/intent-classifier/main.py" ]; then
-            cp "services/intent-classifier/main.py" "${tmpdir}/intent-classifier/main.py"
-            cp "services/intent-classifier/intents.json" "${tmpdir}/intent-classifier/intents.json"
-        else
-            echo "# dry-run intent" >"${tmpdir}/intent-classifier/main.py"
-            echo "[]" >"${tmpdir}/intent-classifier/intents.json"
-        fi
         printf '%s\n' "$tag"
         return
     fi
@@ -375,11 +361,6 @@ BIN
     cp "${tmpdir}/scripts/piper_tts_server.py" "${tmpdir}/piper_tts_server.py"
     if [ -f "${tmpdir}/scripts/setup-local-llm.sh" ]; then
         cp "${tmpdir}/scripts/setup-local-llm.sh" "${tmpdir}/setup-local-llm.sh"
-    fi
-    if [ -d "${tmpdir}/services/intent-classifier" ]; then
-        mkdir -p "${tmpdir}/intent-classifier"
-        cp "${tmpdir}/services/intent-classifier/main.py" "${tmpdir}/intent-classifier/main.py"
-        cp "${tmpdir}/services/intent-classifier/intents.json" "${tmpdir}/intent-classifier/intents.json"
     fi
     printf '%s\n' "$tag"
 }
@@ -462,37 +443,6 @@ setup_piper_tts() {
 
     download_model "en_GB-alan-medium" "en/en_GB/alan/medium" "Model card indicates MIT-compatible terms."
     download_model "de_DE-karlsson-low" "de/de_DE/karlsson/low" "Per-model terms are documented in the model card."
-}
-
-setup_intent_classifier() {
-    if [ "$SKIP_INTENT" = "1" ]; then
-        log "skipping intent classifier due to TABURA_INSTALL_SKIP_INTENT=1"
-        return
-    fi
-    cat <<NOTICE
-=== Intent Classifier (local, optional) ===
-A lightweight intent classifier for system action routing.
-Runs as a local HTTP service on port 8425.
-NOTICE
-    if ! confirm_default_yes "Install intent classifier?"; then
-        log "skipping intent classifier setup"
-        return
-    fi
-
-    run_cmd mkdir -p "$INTENT_DIR"
-    if [ "$DRY_RUN" = "0" ] && [ ! -x "${INTENT_VENV_DIR}/bin/python" ]; then
-        python3 -m venv "$INTENT_VENV_DIR"
-    fi
-    if [ "$DRY_RUN" = "0" ]; then
-        "${INTENT_VENV_DIR}/bin/python" -m pip install --upgrade pip
-        "${INTENT_VENV_DIR}/bin/python" -m pip install fastapi 'uvicorn[standard]' numpy onnxruntime transformers
-    fi
-
-    local staging_intent="${1:-}"
-    if [ -n "$staging_intent" ] && [ -f "${staging_intent}/intent-classifier/main.py" ]; then
-        run_cmd cp "${staging_intent}/intent-classifier/main.py" "$INTENT_DIR/"
-        run_cmd cp "${staging_intent}/intent-classifier/intents.json" "$INTENT_DIR/"
-    fi
 }
 
 ensure_llama_server() {
@@ -639,24 +589,6 @@ RestartSec=2
 WantedBy=default.target
 UNIT
 
-    if [ -x "${INTENT_VENV_DIR}/bin/uvicorn" ]; then
-        cat >"${systemd_dir}/tabura-intent.service" <<UNIT
-[Unit]
-Description=Tabura Intent Classifier
-After=network.target
-
-[Service]
-Type=simple
-Environment=PYTHONUNBUFFERED=1
-ExecStart=${INTENT_VENV_DIR}/bin/uvicorn main:app --app-dir ${INTENT_DIR} --host 127.0.0.1 --port 8425
-Restart=on-failure
-RestartSec=2
-
-[Install]
-WantedBy=default.target
-UNIT
-    fi
-
     if [ -x "$LLM_SETUP_SCRIPT" ]; then
         cat >"${systemd_dir}/tabura-llm.service" <<UNIT
 [Unit]
@@ -686,7 +618,6 @@ Wants=tabura-codex-app-server.service tabura-piper-tts.service
 
 [Service]
 Type=simple
-Environment=TABURA_INTENT_CLASSIFIER_URL=off
 Environment=TABURA_INTENT_LLM_URL=http://127.0.0.1:8426
 Environment=TABURA_INTENT_LLM_MODEL=local
 Environment=TABURA_INTENT_LLM_PROFILE=qwen3.5-9b
@@ -706,9 +637,6 @@ install_services_linux() {
     write_systemd_units
     run_cmd systemctl --user daemon-reload
     units=(tabura-codex-app-server.service tabura-piper-tts.service tabura-web.service)
-    if [ -f "${HOME}/.config/systemd/user/tabura-intent.service" ]; then
-        units+=(tabura-intent.service)
-    fi
     if [ -f "${HOME}/.config/systemd/user/tabura-llm.service" ]; then
         units+=(tabura-llm.service)
     fi
@@ -759,26 +687,6 @@ PLIST
 </dict></plist>
 PLIST
 
-    if [ -x "${INTENT_VENV_DIR}/bin/uvicorn" ]; then
-        cat >"${agent_dir}/io.tabura.intent.plist" <<PLIST
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-  <key>Label</key><string>io.tabura.intent</string>
-  <key>ProgramArguments</key><array>
-    <string>${INTENT_VENV_DIR}/bin/uvicorn</string><string>main:app</string><string>--app-dir</string><string>${INTENT_DIR}</string><string>--host</string><string>127.0.0.1</string><string>--port</string><string>8425</string>
-  </array>
-  <key>EnvironmentVariables</key><dict>
-    <key>PYTHONUNBUFFERED</key><string>1</string>
-  </dict>
-  <key>RunAtLoad</key><true/>
-  <key>KeepAlive</key><true/>
-  <key>StandardOutPath</key><string>/tmp/tabura-intent.log</string>
-  <key>StandardErrorPath</key><string>/tmp/tabura-intent.log</string>
-</dict></plist>
-PLIST
-    fi
-
     if [ -x "$LLM_SETUP_SCRIPT" ]; then
         cat >"${agent_dir}/io.tabura.llm.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -808,7 +716,6 @@ PLIST
     <string>${BIN_PATH}</string><string>server</string><string>--project-dir</string><string>${PROJECT_DIR}</string><string>--data-dir</string><string>${WEB_DATA_DIR}</string><string>--web-host</string><string>127.0.0.1</string><string>--web-port</string><string>8420</string><string>--mcp-host</string><string>127.0.0.1</string><string>--mcp-port</string><string>9420</string><string>--app-server-url</string><string>ws://127.0.0.1:8787</string><string>--tts-url</string><string>http://127.0.0.1:8424</string>
   </array>
   <key>EnvironmentVariables</key><dict>
-    <key>TABURA_INTENT_CLASSIFIER_URL</key><string>off</string>
     <key>TABURA_INTENT_LLM_URL</key><string>http://127.0.0.1:8426</string>
     <key>TABURA_INTENT_LLM_MODEL</key><string>local</string>
     <key>TABURA_INTENT_LLM_PROFILE</key><string>qwen3.5-9b</string>
@@ -887,28 +794,26 @@ remove_linux_services() {
     if have_cmd systemctl; then
         run_cmd systemctl --user disable --now \
             tabura-web.service tabura-piper-tts.service tabura-codex-app-server.service \
-            tabura-intent.service tabura-llm.service >/dev/null 2>&1 || true
+            tabura-llm.service >/dev/null 2>&1 || true
         run_cmd systemctl --user daemon-reload >/dev/null 2>&1 || true
     fi
     run_cmd rm -f \
         "${systemd_dir}/tabura-web.service" \
         "${systemd_dir}/tabura-piper-tts.service" \
         "${systemd_dir}/tabura-codex-app-server.service" \
-        "${systemd_dir}/tabura-intent.service" \
         "${systemd_dir}/tabura-llm.service"
 }
 
 remove_macos_services() {
     local agent_dir plist
     agent_dir="${HOME}/Library/LaunchAgents"
-    for plist in io.tabura.web io.tabura.llm io.tabura.intent io.tabura.piper-tts io.tabura.codex-app-server; do
+    for plist in io.tabura.web io.tabura.llm io.tabura.piper-tts io.tabura.codex-app-server; do
         run_cmd launchctl unload "${agent_dir}/${plist}.plist" >/dev/null 2>&1 || true
     done
     run_cmd rm -f \
         "${agent_dir}/io.tabura.web.plist" \
         "${agent_dir}/io.tabura.piper-tts.plist" \
         "${agent_dir}/io.tabura.codex-app-server.plist" \
-        "${agent_dir}/io.tabura.intent.plist" \
         "${agent_dir}/io.tabura.llm.plist"
 }
 
@@ -945,7 +850,6 @@ install_flow() {
     install_binary_payload "$tmpdir"
     bootstrap_project
     setup_piper_tts
-    setup_intent_classifier "$tmpdir"
     setup_local_llm "$tmpdir"
     install_voxtype_stt
     if [ "$TABURA_OS" = "darwin" ]; then

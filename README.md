@@ -84,14 +84,13 @@ tabura server --project-dir . --data-dir ~/.tabura-web --web-host 0.0.0.0 --web-
 
 ## Runtime Stack (Canonical)
 
-Tabura runs as one Go runtime plus six local services:
+Tabura runs as one Go runtime plus five local services:
 
 1. `tabura-web.service` (`tabura server`)
 2. `tabura-codex-app-server.service` (`codex app-server`)
 3. `tabura-piper-tts.service` (Piper `/v1/audio/speech`)
 4. `tabura-stt.service` (voxtype `/v1/audio/transcriptions`)
-5. `tabura-intent.service` (local intent classifier at `127.0.0.1:8425/classify`)
-6. `tabura-llm.service` (Qwen3.5 9B local coordinator at `127.0.0.1:8426/v1/chat/completions`)
+5. `tabura-llm.service` (Qwen3.5 9B local coordinator at `127.0.0.1:8426/v1/chat/completions`)
 
 Voice commit still uses built-in browser VAD auto-stop, then sends audio to the local STT sidecar.
 
@@ -108,8 +107,7 @@ Why Piper remains an HTTP sidecar:
 - Codex app-server websocket: `ws://127.0.0.1:8787`
 - Piper TTS endpoint: `http://127.0.0.1:8424/v1/audio/speech`
 - Voxtype STT endpoint: `http://127.0.0.1:8427/v1/audio/transcriptions`
-- Intent classifier endpoint: `http://127.0.0.1:8425/classify` (`TABURA_INTENT_CLASSIFIER_URL`, set `off` to disable)
-- Intent LLM fallback endpoint: `http://127.0.0.1:8426/v1/chat/completions` (`TABURA_INTENT_LLM_URL`, set `off` to disable)
+- Intent LLM endpoint: `http://127.0.0.1:8426/v1/chat/completions` (`TABURA_INTENT_LLM_URL`, set `off` to disable)
 - Intent/delegator request model id: `TABURA_INTENT_LLM_MODEL` (default `local`)
 - Intent/delegator profile selection: `TABURA_INTENT_LLM_PROFILE` (default `qwen3.5-9b`)
 - Intent/delegator profile options: `TABURA_INTENT_LLM_PROFILE_OPTIONS` (default `qwen3.5-9b,qwen3.5-4b`)

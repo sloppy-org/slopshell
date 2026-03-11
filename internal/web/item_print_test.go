@@ -165,7 +165,6 @@ func TestItemPrintDefaultIncludesAutoPrintAndArtifactMetadataFallback(t *testing
 func TestClassifyAndExecuteSystemActionPrintItemUsesActiveWorkspaceItem(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	project, err := app.ensureDefaultProjectRecord()
 	if err != nil {

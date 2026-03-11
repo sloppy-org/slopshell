@@ -137,7 +137,6 @@ func waitForCapturedPrompt(t *testing.T, promptCh <-chan string) string {
 }
 
 func TestCompanionResponseTriggerExecutesAssistantTurn(t *testing.T) {
-	t.Setenv("TABURA_INTENT_CLASSIFIER_URL", "off")
 	t.Setenv("TABURA_INTENT_LLM_URL", "off")
 	app := newAuthedTestApp(t)
 	app.appServerClient = newCompanionAppServerClient(t, "Companion reply.")
@@ -217,7 +216,6 @@ func TestCompanionResponseTriggerExecutesAssistantTurn(t *testing.T) {
 }
 
 func TestCompanionResponseTriggerSkipsWhenCompanionDisabled(t *testing.T) {
-	t.Setenv("TABURA_INTENT_CLASSIFIER_URL", "off")
 	t.Setenv("TABURA_INTENT_LLM_URL", "off")
 	app := newAuthedTestApp(t)
 	app.appServerClient = newCompanionAppServerClient(t, "unexpected reply")
@@ -271,7 +269,6 @@ func TestCompanionResponseTriggerSkipsWhenCompanionDisabled(t *testing.T) {
 }
 
 func TestCompanionResponseTriggerSkipsFalseTriggerTranscript(t *testing.T) {
-	t.Setenv("TABURA_INTENT_CLASSIFIER_URL", "off")
 	t.Setenv("TABURA_INTENT_LLM_URL", "off")
 	app := newAuthedTestApp(t)
 	app.appServerClient = newCompanionAppServerClient(t, "unexpected reply")
@@ -334,7 +331,6 @@ func TestCompanionResponseTriggerSkipsFalseTriggerTranscript(t *testing.T) {
 }
 
 func TestCompanionResponseTriggerUsesSilentModeOutputQueue(t *testing.T) {
-	t.Setenv("TABURA_INTENT_CLASSIFIER_URL", "off")
 	t.Setenv("TABURA_INTENT_LLM_URL", "off")
 	app := newAuthedTestApp(t)
 	app.appServerClient = newCompanionAppServerClient(t, "Silent companion reply.")
@@ -388,7 +384,6 @@ func TestCompanionResponseTriggerUsesSilentModeOutputQueue(t *testing.T) {
 }
 
 func TestCompanionResponseTriggerDoesNotDuplicateSegment(t *testing.T) {
-	t.Setenv("TABURA_INTENT_CLASSIFIER_URL", "off")
 	t.Setenv("TABURA_INTENT_LLM_URL", "off")
 	app := newAuthedTestApp(t)
 	app.appServerClient = newCompanionAppServerClient(t, "Companion reply.")
@@ -445,7 +440,6 @@ func TestCompanionResponseTriggerDoesNotDuplicateSegment(t *testing.T) {
 }
 
 func TestCompanionResponseTriggerInterruptsPendingTurn(t *testing.T) {
-	t.Setenv("TABURA_INTENT_CLASSIFIER_URL", "off")
 	t.Setenv("TABURA_INTENT_LLM_URL", "off")
 	app := newAuthedTestApp(t)
 
@@ -554,7 +548,6 @@ func TestCompanionResponseTriggerInterruptsPendingTurn(t *testing.T) {
 }
 
 func TestCompanionResponseTriggerIncludesProjectScopedCompanionContext(t *testing.T) {
-	t.Setenv("TABURA_INTENT_CLASSIFIER_URL", "off")
 	t.Setenv("TABURA_INTENT_LLM_URL", "off")
 	app := newAuthedTestApp(t)
 	client, promptCh := newCompanionAppServerClientWithCapture(t, "Companion reply.")

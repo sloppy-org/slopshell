@@ -10,7 +10,6 @@ Runtime stack:
 - `tabura-web.service` runs the Go monolith (`tabura server`)
 - `tabura-codex-app-server.service` runs Codex app-server
 - `tabura-piper-tts.service` runs Piper TTS API on loopback
-- `tabura-intent.service` runs local intent classification on loopback (`/classify`)
 - `tabura-llm.service` runs Qwen3.5 9B local coordinator on loopback (`/v1/chat/completions`)
 
 ## Components
@@ -47,8 +46,7 @@ Runtime stack:
 
 - Codex app-server remains a separate local service and is consumed over `ws://127.0.0.1:8787`.
 - Piper TTS remains a separate local HTTP service on `http://127.0.0.1:8424`.
-- Intent classifier remains a separate local HTTP service on `http://127.0.0.1:8425/classify`.
-- Intent LLM fallback remains a separate local HTTP service on `http://127.0.0.1:8426/v1/chat/completions`.
+- Intent LLM remains a separate local HTTP service on `http://127.0.0.1:8426/v1/chat/completions`.
 - Voxtype STT remains a separate local HTTP service on `http://127.0.0.1:8427/v1/audio/transcriptions`.
 - Current Tabura integration tracks voxtype branch `feature/single-daemon-openai-stt-api` from `https://github.com/peteonrails/voxtype`.
 - Piper is intentionally not linked into the Go binary (`libpiper`) to avoid GPL-linked distribution coupling.

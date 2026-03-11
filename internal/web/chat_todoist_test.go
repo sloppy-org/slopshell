@@ -58,7 +58,6 @@ func TestParseInlineTodoistIntent(t *testing.T) {
 func TestClassifyAndExecuteSystemActionMapTodoistProject(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	project, err := app.ensureDefaultProjectRecord()
 	if err != nil {
@@ -117,7 +116,6 @@ func TestClassifyAndExecuteSystemActionMapTodoistProject(t *testing.T) {
 func TestClassifyAndExecuteSystemActionSyncTodoist(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -204,7 +202,6 @@ func TestClassifyAndExecuteSystemActionSyncTodoist(t *testing.T) {
 func TestClassifyAndExecuteSystemActionSyncTodoistPersistsCommentMetadata(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	var detailCalls int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -303,7 +300,6 @@ func TestClassifyAndExecuteSystemActionSyncTodoistPersistsCommentMetadata(t *tes
 func TestClassifyAndExecuteSystemActionSyncTodoistRemapUpdatesExistingItem(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -368,7 +364,6 @@ func TestClassifyAndExecuteSystemActionSyncTodoistRemapUpdatesExistingItem(t *te
 func TestClassifyAndExecuteSystemActionSyncTodoistUsesAccountSphereAsSourceOfTruth(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -444,7 +439,6 @@ func TestClassifyAndExecuteSystemActionSyncTodoistUsesAccountSphereAsSourceOfTru
 func TestClassifyAndExecuteSystemActionCreateTodoistTask(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	var createBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -61,7 +61,6 @@ func TestParseInlineItemIntentFilterCommands(t *testing.T) {
 func TestClassifyAndExecuteSystemActionShowFilteredItems(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	project, err := app.ensureDefaultProjectRecord()
 	if err != nil {

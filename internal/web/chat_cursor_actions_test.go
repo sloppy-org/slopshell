@@ -107,7 +107,6 @@ func TestParseInlineTitledItemIntent_MoveBackToInbox(t *testing.T) {
 func TestClassifyAndExecuteSystemActionWithCursorDeletesPointedItem(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	project, err := app.ensureDefaultProjectRecord()
 	if err != nil {
@@ -160,7 +159,6 @@ func TestClassifyAndExecuteSystemActionWithCursorDeletesPointedItem(t *testing.T
 func TestClassifyAndExecuteSystemActionWithCursorMovesPointedItemToWaiting(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	project, err := app.ensureDefaultProjectRecord()
 	if err != nil {
@@ -217,7 +215,6 @@ func TestClassifyAndExecuteSystemActionWithCursorMovesPointedItemToWaiting(t *te
 func TestClassifyAndExecuteSystemActionWithCursorMovesDoneEmailBackToInbox(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	account, err := app.store.CreateExternalAccount(store.SpherePrivate, store.ExternalProviderGmail, "Private Gmail", nil)
 	if err != nil {
@@ -306,7 +303,6 @@ func TestClassifyAndExecuteSystemActionWithCursorMovesDoneEmailBackToInbox(t *te
 func TestClassifyAndExecuteSystemActionWithNamedItemMovesDoneEmailBackToInbox(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	account, err := app.store.CreateExternalAccount(store.SpherePrivate, store.ExternalProviderGmail, "Private Gmail", nil)
 	if err != nil {
@@ -388,7 +384,6 @@ func TestClassifyAndExecuteSystemActionWithNamedItemMovesDoneEmailBackToInbox(t 
 func TestClassifyAndExecuteSystemActionWithCursorOpensPointedWorkspacePath(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	project, err := app.ensureDefaultProjectRecord()
 	if err != nil {

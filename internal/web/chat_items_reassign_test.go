@@ -43,7 +43,6 @@ func TestParseInlineItemReassignmentIntent(t *testing.T) {
 func TestClassifyAndExecuteSystemActionItemReassignment(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	project, err := app.ensureDefaultProjectRecord()
 	if err != nil {

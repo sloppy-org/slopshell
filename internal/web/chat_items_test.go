@@ -94,7 +94,6 @@ func TestDeriveIdeaTitlePreservesGermanText(t *testing.T) {
 func TestClassifyAndExecuteSystemActionMakeItemCreatesInboxItemFromAssistantContext(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	project, err := app.ensureDefaultProjectRecord()
 	if err != nil {
@@ -148,7 +147,6 @@ func TestClassifyAndExecuteSystemActionMakeItemCreatesInboxItemFromAssistantCont
 func TestClassifyAndExecuteSystemActionDelegateItemUsesActorAndCanvasArtifact(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	project, err := app.ensureDefaultProjectRecord()
 	if err != nil {
@@ -233,7 +231,6 @@ func TestClassifyAndExecuteSystemActionDelegateItemUsesActorAndCanvasArtifact(t 
 func TestClassifyAndExecuteSystemActionSnoozeItemCreatesWaitingItem(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	project, err := app.ensureDefaultProjectRecord()
 	if err != nil {
@@ -271,7 +268,6 @@ func TestClassifyAndExecuteSystemActionSnoozeItemCreatesWaitingItem(t *testing.T
 func TestClassifyAndExecuteSystemActionCaptureIdeaCreatesInboxItemFromUserInput(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	project, err := app.ensureDefaultProjectRecord()
 	if err != nil {
@@ -350,7 +346,6 @@ func TestClassifyAndExecuteSystemActionCaptureIdeaCreatesInboxItemFromUserInput(
 func TestRunAssistantTurnCaptureIdeaPersistsAssistantConfirmation(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	project, err := app.ensureDefaultProjectRecord()
 	if err != nil {
@@ -389,7 +384,6 @@ func TestRunAssistantTurnCaptureIdeaPersistsAssistantConfirmation(t *testing.T) 
 func TestClassifyAndExecuteSystemActionRefineIdeaUpdatesArtifactAndCanvas(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	project, err := app.ensureDefaultProjectRecord()
 	if err != nil {
@@ -497,7 +491,6 @@ func TestClassifyAndExecuteSystemActionRefineIdeaUpdatesArtifactAndCanvas(t *tes
 func TestClassifyAndExecuteSystemActionSplitItemsCreatesMultipleItems(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	project, err := app.ensureDefaultProjectRecord()
 	if err != nil {
@@ -534,7 +527,6 @@ func TestClassifyAndExecuteSystemActionSplitItemsCreatesMultipleItems(t *testing
 func TestClassifyAndExecuteSystemActionDelegateItemSurfacesMissingActor(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	project, err := app.ensureDefaultProjectRecord()
 	if err != nil {
@@ -566,7 +558,6 @@ func TestClassifyAndExecuteSystemActionDelegateItemSurfacesMissingActor(t *testi
 func TestClassifyAndExecuteSystemActionArtifactConfirmationCanBeCanceled(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	project, err := app.ensureDefaultProjectRecord()
 	if err != nil {

@@ -41,7 +41,6 @@ func TestParseInlineProjectIntent(t *testing.T) {
 func TestClassifyAndExecuteSystemActionAssignWorkspaceProject(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	project, _, err := app.createProject(projectCreateRequest{Name: "EUROfusion"})
 	if err != nil {
@@ -85,7 +84,6 @@ func TestClassifyAndExecuteSystemActionAssignWorkspaceProject(t *testing.T) {
 func TestClassifyAndExecuteSystemActionShowProjectItemsByName(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	project, _, err := app.createProject(projectCreateRequest{Name: "EUROfusion"})
 	if err != nil {
@@ -135,7 +133,6 @@ func TestClassifyAndExecuteSystemActionShowProjectItemsByName(t *testing.T) {
 func TestClassifyAndExecuteSystemActionSyncProjectSkipsNonGitWorkspace(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	project, _, err := app.createProject(projectCreateRequest{Name: "EUROfusion"})
 	if err != nil {
@@ -180,7 +177,6 @@ func TestClassifyAndExecuteSystemActionSyncProjectSkipsNonGitWorkspace(t *testin
 func TestClassifyAndExecuteSystemActionSyncProjectPullsGitWorkspace(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	project, _, err := app.createProject(projectCreateRequest{Name: "EUROfusion"})
 	if err != nil {

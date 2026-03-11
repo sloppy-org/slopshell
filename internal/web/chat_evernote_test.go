@@ -27,7 +27,6 @@ func TestParseInlineEvernoteIntent(t *testing.T) {
 func TestClassifyAndExecuteSystemActionSyncEvernote(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -169,7 +168,6 @@ func TestClassifyAndExecuteSystemActionSyncEvernote(t *testing.T) {
 func TestClassifyAndExecuteSystemActionSyncEvernoteLinksNoteArtifactsWithoutTasks(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -259,7 +257,6 @@ func TestClassifyAndExecuteSystemActionSyncEvernoteLinksNoteArtifactsWithoutTask
 func TestClassifyAndExecuteSystemActionSyncEvernoteUsesUpdatedAfterAndRemapsExistingItem(t *testing.T) {
 	app := newAuthedTestApp(t)
 	app.intentLLMURL = ""
-	app.intentClassifierURL = ""
 
 	var updatedAfterSeen string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

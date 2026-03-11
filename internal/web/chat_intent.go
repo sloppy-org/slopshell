@@ -1,12 +1,9 @@
 package web
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"path/filepath"
 	"strings"
 	"time"
@@ -15,32 +12,16 @@ import (
 )
 
 const (
-	DefaultIntentClassifierURL     = "http://127.0.0.1:8425"
 	DefaultIntentLLMURL            = "http://127.0.0.1:8426"
 	DefaultIntentLLMModel          = "local"
 	DefaultIntentLLMProfile        = "qwen3.5-9b"
 	DefaultIntentLLMProfileOptions = "qwen3.5-9b,qwen3.5-4b"
-	intentClassifierMinConfidence  = 0.8
-	intentClassifierRequestTimeout = 75 * time.Millisecond
-	intentClassifierResponseLimit  = 64 * 1024
 	intentLLMRequestTimeout        = 900 * time.Millisecond
 	intentLLMResponseLimit         = 128 * 1024
 	systemActionShellTimeout       = 8 * time.Second
 	systemActionShellOutputLimit   = 16 * 1024
 	systemActionOpenFileSizeLimit  = 256 * 1024
 )
-
-type localIntentClassifierResponse struct {
-	Action          string                 `json:"action"`
-	Intent          string                 `json:"intent"`
-	Confidence      float64                `json:"confidence"`
-	Entities        map[string]interface{} `json:"entities"`
-	Params          map[string]interface{} `json:"params"`
-	Name            string                 `json:"name"`
-	Alias           string                 `json:"alias"`
-	Effort          string                 `json:"effort"`
-	ReasoningEffort string                 `json:"reasoning_effort"`
-}
 
 type SystemAction struct {
 	Action string                 `json:"action"`
@@ -328,63 +309,6 @@ func stripCodeFence(raw string) string {
 		return ""
 	}
 	return strings.TrimSpace(strings.Join(lines[1:end], "\n"))
-}
-
-func (a *App) classifyIntentLocally(ctx context.Context, text string) (*SystemAction, float64, error) {
-	baseURL := strings.TrimRight(strings.TrimSpace(a.intentClassifierURL), "/")
-	if baseURL == "" {
-		return nil, 0, nil
-	}
-	trimmedText := strings.TrimSpace(text)
-	if trimmedText == "" {
-		return nil, 0, nil
-	}
-	requestBody, _ := json.Marshal(map[string]string{"text": trimmedText})
-	requestCtx, cancel := context.WithTimeout(ctx, intentClassifierRequestTimeout)
-	defer cancel()
-	req, err := http.NewRequestWithContext(
-		requestCtx,
-		http.MethodPost,
-		baseURL+"/classify",
-		bytes.NewReader(requestBody),
-	)
-	if err != nil {
-		return nil, 0, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, 0, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, intentClassifierResponseLimit))
-		return nil, 0, fmt.Errorf("intent classifier HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-	var payload localIntentClassifierResponse
-	if err := json.NewDecoder(io.LimitReader(resp.Body, intentClassifierResponseLimit)).Decode(&payload); err != nil {
-		return nil, 0, err
-	}
-	actionName := normalizeSystemActionName(payload.Action)
-	if actionName == "" {
-		actionName = normalizeSystemActionName(payload.Intent)
-	}
-	if actionName == "" {
-		return nil, payload.Confidence, nil
-	}
-	params := map[string]interface{}{}
-	mergeSystemActionParams(params, payload.Entities)
-	mergeSystemActionParams(params, payload.Params)
-	if strings.TrimSpace(payload.Name) != "" {
-		params["name"] = strings.TrimSpace(payload.Name)
-	}
-	if strings.TrimSpace(payload.Alias) != "" {
-		params["alias"] = strings.TrimSpace(payload.Alias)
-	}
-	if actionName == "switch_model" && strings.TrimSpace(payload.Effort) != "" {
-		params["effort"] = strings.TrimSpace(payload.Effort)
-	}
-	return &SystemAction{Action: actionName, Params: params}, payload.Confidence, nil
 }
 
 func normalizeSystemActionForExecution(action *SystemAction, fallbackText string) *SystemAction {
@@ -806,36 +730,6 @@ func (a *App) classifyAndExecuteSystemActionForTurn(ctx context.Context, session
 		}
 	}
 
-	localAction, localConfidence, localErr := a.classifyIntentLocally(ctx, intentText)
-	if localErr == nil && localAction != nil && localConfidence >= intentClassifierMinConfidence {
-		if normalized := normalizeSystemActionForExecution(localAction, trimmedText); normalized != nil {
-			if isItemSystemAction(normalized.Action) && strings.TrimSpace(systemActionStringParam(normalized.Params, "capture_mode")) == "" {
-				normalized.Params["capture_mode"] = captureMode
-			}
-			if isItemSystemAction(normalized.Action) {
-				enforced := enforceRoutingPolicy(trimmedText, []*SystemAction{normalized})
-				if len(enforced) == 0 {
-					return "", nil, false
-				}
-				message, payloads, err := a.executeSystemActionPlan(sessionID, session, trimmedText, enforced)
-				if err != nil {
-					if strings.HasPrefix(normalized.Action, "create_github_issue") {
-						return githubIssueActionFailurePrefix(enforced) + err.Error(), nil, true
-					}
-					return itemActionFailurePrefix(normalized.Action) + err.Error(), nil, true
-				}
-				return message, payloads, true
-			}
-			if normalized.Action != "shell" && normalized.Action != "open_file_canvas" {
-				if message, payloads, ok := tryExecutePlan([]*SystemAction{normalized}); ok {
-					return message, payloads, true
-				}
-			}
-		}
-	}
-	if localErr == nil && localAction == nil && localConfidence >= intentClassifierMinConfidence {
-		return "", nil, false
-	}
 	if cursor != nil && cursor.hasPointedItem() && looksLikeStandaloneSystemRequest(trimmedText) {
 		if message, payloads, ok := a.suggestCanonicalActionsForCursorItem(cursor); ok {
 			return message, payloads, true
