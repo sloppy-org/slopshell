@@ -581,6 +581,12 @@ func (a *App) handleChatWS(w http.ResponseWriter, r *http.Request) {
 		"type":   "live_policy_changed",
 		"policy": a.LivePolicy().String(),
 	})
+	if states, err := a.allWorkspaceBusyStates(); err == nil {
+		_ = conn.writeJSON(map[string]interface{}{
+			"type":   "workspace_busy_changed",
+			"states": states,
+		})
+	}
 	for {
 		mt, data, err := ws.ReadMessage()
 		if err != nil {

@@ -146,6 +146,9 @@ func (a *App) setActiveWorkspaceTracked(id int64, activity string) error {
 		return err
 	}
 	_, _, err := a.syncTimeTrackingContext(activity)
+	if err == nil {
+		a.broadcastWorkspaceBusyChanged()
+	}
 	return err
 }
 

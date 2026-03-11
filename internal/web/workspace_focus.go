@@ -136,6 +136,7 @@ func (a *App) broadcastWorkspaceFocusChanged() {
 	a.hub.forEachChatConn(func(conn *chatWSConn) {
 		_ = conn.writeJSON(payload)
 	})
+	a.broadcastWorkspaceBusyChanged()
 }
 
 func (a *App) handleWorkspaceFocusGet(w http.ResponseWriter, r *http.Request) {

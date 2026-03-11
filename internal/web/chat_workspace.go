@@ -34,6 +34,8 @@ func parseInlineWorkspaceIntent(text string) *SystemAction {
 	switch lower {
 	case "show items here", "show open items here", "show items for this workspace", "what's open", "what is open", "what's open here", "what is open here":
 		return &SystemAction{Action: "list_workspace_items", Params: map[string]interface{}{}}
+	case "what's running", "whats running", "what is running", "show busy state", "show workspace busy state", "show running workspaces":
+		return &SystemAction{Action: "show_busy_state", Params: map[string]interface{}{}}
 	case "list workspaces", "show my workspaces", "show workspaces":
 		return &SystemAction{Action: "list_workspaces", Params: map[string]interface{}{}}
 	case "list all workspaces", "show all workspaces":

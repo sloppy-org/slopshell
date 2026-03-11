@@ -295,7 +295,7 @@ func systemActionStringParam(params map[string]interface{}, key string) string {
 
 func normalizeSystemActionName(raw string) string {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case "switch_project", "switch_workspace", "focus_workspace", "clear_focus", "list_workspace_items", "list_workspaces", "create_workspace", "create_workspace_from_git", "rename_workspace", "delete_workspace", "show_workspace_details", "workspace_watch_start", "workspace_watch_stop", "workspace_watch_status", "batch_work", "batch_configure", "review_policy", "batch_limit", "batch_status", "assign_workspace_project", "show_workspace_project", "create_project", "list_project_workspaces", "link_workspace_artifact", "list_linked_artifacts", "switch_model", "toggle_silent", "toggle_live_dialogue", "cancel_work", "show_status", "shell", "open_file_canvas", "show_calendar", "show_briefing", "make_item", "delegate_item", "snooze_item", "split_items", "reassign_workspace", "reassign_project", "clear_workspace", "clear_project", "capture_idea", "refine_idea_note", "promote_idea", "apply_idea_promotion", "create_github_issue", "create_github_issue_split", "print_item", "review_someday", "triage_someday", "promote_someday", "toggle_someday_review_nudge", "show_filtered_items", "sync_project", "sync_sources", "map_todoist_project", "sync_todoist", "create_todoist_task", "sync_evernote", "sync_bear", "promote_bear_checklist", "sync_zotero", "cursor_open_item", "cursor_triage_item", "cursor_open_path":
+	case "switch_project", "switch_workspace", "focus_workspace", "clear_focus", "list_workspace_items", "list_workspaces", "create_workspace", "create_workspace_from_git", "rename_workspace", "delete_workspace", "show_workspace_details", "workspace_watch_start", "workspace_watch_stop", "workspace_watch_status", "batch_work", "batch_configure", "review_policy", "batch_limit", "batch_status", "assign_workspace_project", "show_workspace_project", "create_project", "list_project_workspaces", "link_workspace_artifact", "list_linked_artifacts", "switch_model", "toggle_silent", "toggle_live_dialogue", "cancel_work", "show_busy_state", "show_status", "shell", "open_file_canvas", "show_calendar", "show_briefing", "make_item", "delegate_item", "snooze_item", "split_items", "reassign_workspace", "reassign_project", "clear_workspace", "clear_project", "capture_idea", "refine_idea_note", "promote_idea", "apply_idea_promotion", "create_github_issue", "create_github_issue_split", "print_item", "review_someday", "triage_someday", "promote_someday", "toggle_someday_review_nudge", "show_filtered_items", "sync_project", "sync_sources", "map_todoist_project", "sync_todoist", "create_todoist_task", "sync_evernote", "sync_bear", "promote_bear_checklist", "sync_zotero", "cursor_open_item", "cursor_triage_item", "cursor_open_path":
 		return strings.ToLower(strings.TrimSpace(raw))
 	default:
 		return ""
@@ -611,6 +611,16 @@ func (a *App) evaluateLocalTurn(ctx context.Context, sessionID string, session s
 		now = a.calendarNow().UTC()
 	}
 	pendingAck := ""
+	if looksLikeWorkspaceBusyQuery(trimmedText) {
+		message, err := a.workspaceBusyOverview()
+		if err == nil && strings.TrimSpace(message) != "" {
+			return localTurnEvaluation{
+				handled:               true,
+				text:                  message,
+				localAnswerConfidence: "high",
+			}
+		}
+	}
 	tryDeterministicPlan := func() (string, []map[string]interface{}, bool) {
 		match := tryDeterministicFastPath(trimmedText, deterministicFastPathContext{
 			Now:         now,

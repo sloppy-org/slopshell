@@ -366,6 +366,12 @@ func (a *App) executeSystemAction(sessionID string, session store.ChatSession, a
 	case "cancel_work":
 		activeCanceled, queuedCanceled := a.cancelChatWork(sessionID)
 		return fmt.Sprintf("Canceled %d running task(s).", activeCanceled+queuedCanceled), nil, nil
+	case "show_busy_state":
+		message, err := a.workspaceBusyOverview()
+		if err != nil {
+			return "", nil, err
+		}
+		return message, nil, nil
 	case "show_status":
 		status, err := a.fetchCodexStatusMessage(session.ProjectKey)
 		if err != nil {

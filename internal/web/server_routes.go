@@ -64,6 +64,7 @@ func (a *App) Router() http.Handler {
 	r.Put("/api/mail/drafts/{artifact_id}", a.handleMailDraftUpdate)
 	r.Post("/api/mail/drafts/{artifact_id}/send", a.handleMailDraftSend)
 	r.Get("/api/workspaces", a.handleWorkspaceList)
+	r.Get("/api/workspaces/busy", a.handleWorkspaceBusyList)
 	r.Get("/api/workspace/focus", a.handleWorkspaceFocusGet)
 	r.Post("/api/workspace/focus", a.handleWorkspaceFocusPost)
 	r.Delete("/api/workspace/focus", a.handleWorkspaceFocusDelete)

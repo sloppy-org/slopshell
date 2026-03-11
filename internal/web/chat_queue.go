@@ -281,18 +281,28 @@ func newProjectRunState(activeTurns, queuedTurns int, activeTurnID string) proje
 
 func (a *App) registerActiveChatTurn(sessionID, runID string, cancel context.CancelFunc) {
 	a.turns.register(sessionID, runID, cancel)
+	a.broadcastWorkspaceBusyChanged()
 }
 
 func (a *App) unregisterActiveChatTurn(sessionID, runID string) {
 	a.turns.unregister(sessionID, runID)
+	a.broadcastWorkspaceBusyChanged()
 }
 
 func (a *App) cancelActiveChatTurns(sessionID string) int {
-	return a.turns.cancelActive(sessionID)
+	count := a.turns.cancelActive(sessionID)
+	if count > 0 {
+		a.broadcastWorkspaceBusyChanged()
+	}
+	return count
 }
 
 func (a *App) clearQueuedChatTurns(sessionID string) int {
-	return a.turns.clearQueued(sessionID)
+	count := a.turns.clearQueued(sessionID)
+	if count > 0 {
+		a.broadcastWorkspaceBusyChanged()
+	}
+	return count
 }
 
 func (a *App) cancelChatWork(sessionID string) (int, int) {
@@ -427,11 +437,16 @@ func (a *App) enqueueAssistantTurn(sessionID, outputMode string, opts ...chatTur
 	if startWorker {
 		a.startAssistantTurnWorker(sessionID)
 	}
+	a.broadcastWorkspaceBusyChanged()
 	return queued
 }
 
 func (a *App) dequeueAssistantTurn(sessionID string) (dequeuedTurn, bool) {
-	return a.turns.dequeue(sessionID)
+	turn, ok := a.turns.dequeue(sessionID)
+	if ok {
+		a.broadcastWorkspaceBusyChanged()
+	}
+	return turn, ok
 }
 
 func (a *App) markAssistantWorkerIdleIfQueueEmpty(sessionID string) bool {
