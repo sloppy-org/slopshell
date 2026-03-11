@@ -85,13 +85,16 @@ Runtime and chat session management:
 
 Domain model API:
 - `GET /api/workspaces`
+- `GET /api/workspace/focus`
 - `GET /api/watches`
 - `POST /api/workspaces`
+- `POST /api/workspace/focus`
 - `GET /api/workspaces/{workspace_id}`
 - `PUT /api/workspaces/{workspace_id}`
 - `GET /api/workspaces/{workspace_id}/watch`
 - `POST /api/workspaces/{workspace_id}/watch`
 - `DELETE /api/workspaces/{workspace_id}/watch`
+- `DELETE /api/workspace/focus`
 - `DELETE /api/workspaces/{workspace_id}`
 - `GET /api/time-entries`
 - `GET /api/time-entries/summary`
