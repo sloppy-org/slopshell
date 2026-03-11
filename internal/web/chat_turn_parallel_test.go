@@ -217,6 +217,30 @@ func countAssistantMessages(t *testing.T, app *App, sessionID string) int {
 	return count
 }
 
+func TestFinalParallelCommandTextPrefersLocalFallbackOverAck(t *testing.T) {
+	evaluation := localTurnEvaluation{
+		handled:  true,
+		text:     "Focused on Focused.",
+		payloads: []map[string]interface{}{{"type": "focus_workspace"}},
+		ack:      "Switching to Focused.",
+	}
+	if got := finalParallelCommandText(evaluation, evaluation.ack); got != evaluation.text {
+		t.Fatalf("finalParallelCommandText() = %q, want %q", got, evaluation.text)
+	}
+}
+
+func TestCommandParallelTurnProvisionalTextPrefersExplicitAck(t *testing.T) {
+	evaluation := localTurnEvaluation{
+		handled:  true,
+		text:     "Focused on Focused.",
+		payloads: []map[string]interface{}{{"type": "focus_workspace"}},
+		ack:      "Switching to Focused.",
+	}
+	if got := commandParallelTurnProvisionalText("focus on focused", evaluation); got != evaluation.ack {
+		t.Fatalf("commandParallelTurnProvisionalText() = %q, want %q", got, evaluation.ack)
+	}
+}
+
 func TestRunAssistantTurnParallelLocalHighConfidenceClaimsTurn(t *testing.T) {
 	appServer, serverState := setupMockParallelAppServer(t, 200*time.Millisecond, "Spark fallback.")
 	defer appServer.Close()
@@ -368,7 +392,7 @@ func TestRunAssistantTurnParallelSlowSparkEmitsAcknowledgment(t *testing.T) {
 	defer appServer.Close()
 	wsURL := "ws" + strings.TrimPrefix(appServer.URL, "http")
 
-	llm := setupMockIntentLLMServer(t, http.StatusOK, `{"kind":"dialogue"}`)
+	llm := setupMockIntentLLMServer(t, http.StatusOK, `{"kind":"dialogue","ack":"Checking."}`)
 	defer llm.Close()
 
 	app := newParallelTestApp(t, wsURL)
@@ -405,8 +429,54 @@ func TestRunAssistantTurnParallelSlowSparkEmitsAcknowledgment(t *testing.T) {
 		}
 		provisionalText = strings.TrimSpace(strFromAny(payload["message"]))
 	}
-	if provisionalText != "Let me check." {
-		t.Fatalf("provisional assistant_message = %q, want %q", provisionalText, "Let me check.")
+	if provisionalText != "Checking." {
+		t.Fatalf("provisional assistant_message = %q, want %q", provisionalText, "Checking.")
+	}
+	if got := countAssistantMessages(t, app, session.ID); got != 1 {
+		t.Fatalf("assistant message count = %d, want 1", got)
+	}
+}
+
+func TestRunAssistantTurnParallelFastSparkSkipsAcknowledgment(t *testing.T) {
+	appServer, _ := setupMockParallelAppServer(t, 25*time.Millisecond, "Spark wins quickly.")
+	defer appServer.Close()
+	wsURL := "ws" + strings.TrimPrefix(appServer.URL, "http")
+
+	llm := setupMockIntentLLMServer(t, http.StatusOK, `{"kind":"dialogue","ack":"Checking."}`)
+	defer llm.Close()
+
+	app := newParallelTestApp(t, wsURL)
+	app.intentLLMURL = llm.URL
+
+	project, err := app.ensureDefaultProjectRecord()
+	if err != nil {
+		t.Fatalf("ensureDefaultProjectRecord: %v", err)
+	}
+	session, err := app.store.GetOrCreateChatSession(project.ProjectKey)
+	if err != nil {
+		t.Fatalf("GetOrCreateChatSession: %v", err)
+	}
+	if _, err := app.store.AddChatMessage(session.ID, "user", "what changed?", "what changed?", "text"); err != nil {
+		t.Fatalf("AddChatMessage(user): %v", err)
+	}
+
+	conn, clientConn, cleanup := newParticipantTestWSConn(t)
+	defer cleanup()
+	app.hub.registerChat(session.ID, conn)
+	defer app.hub.unregisterChat(session.ID, conn)
+
+	app.runAssistantTurn(session.ID, dequeuedTurn{outputMode: turnOutputModeSilent})
+
+	if got := latestAssistantMessage(t, app, session.ID); got != "Spark wins quickly." {
+		t.Fatalf("assistant message = %q, want Spark final reply", got)
+	}
+
+	payloads := collectWSJSONTypesUntil(t, clientConn, 2*time.Second, "assistant_output")
+	for _, payload := range payloads {
+		if strings.TrimSpace(strFromAny(payload["type"])) != "assistant_message" {
+			continue
+		}
+		t.Fatalf("unexpected provisional assistant_message payload: %#v", payload)
 	}
 }
 

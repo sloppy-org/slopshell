@@ -32,6 +32,7 @@ type intentPlanClassification struct {
 	Actions     []*SystemAction
 	Addressed   *bool
 	LocalAnswer *intentLocalAnswer
+	Ack         string
 }
 
 type localTurnEvaluation struct {
@@ -39,6 +40,7 @@ type localTurnEvaluation struct {
 	text                  string
 	payloads              []map[string]interface{}
 	localAnswerConfidence string
+	ack                   string
 }
 
 func (e localTurnEvaluation) suppressesResponse() bool {
@@ -562,7 +564,7 @@ func (a *App) evaluateLocalTurn(ctx context.Context, sessionID string, session s
 	intentText := trimmedText
 	livePolicy := a.LivePolicy()
 	assumeAddressed := livePolicy.Config().AssumeAddressed
-	tryExecutePlan := func(actions []*SystemAction) localTurnEvaluation {
+	tryExecutePlan := func(actions []*SystemAction, ack string) localTurnEvaluation {
 		enforced := enforceRoutingPolicy(trimmedText, actions)
 		if len(enforced) == 0 {
 			return localTurnEvaluation{}
@@ -575,6 +577,7 @@ func (a *App) evaluateLocalTurn(ctx context.Context, sessionID string, session s
 			handled:  true,
 			text:     message,
 			payloads: payloads,
+			ack:      strings.TrimSpace(ack),
 		}
 	}
 
@@ -607,6 +610,7 @@ func (a *App) evaluateLocalTurn(ctx context.Context, sessionID string, session s
 	if a != nil && a.calendarNow != nil {
 		now = a.calendarNow().UTC()
 	}
+	pendingAck := ""
 	tryDeterministicPlan := func() (string, []map[string]interface{}, bool) {
 		match := tryDeterministicFastPath(trimmedText, deterministicFastPathContext{
 			Now:         now,
@@ -631,6 +635,7 @@ func (a *App) evaluateLocalTurn(ctx context.Context, sessionID string, session s
 	if strings.TrimSpace(a.intentLLMURL) != "" {
 		classification, llmErr := a.classifyIntentPlanWithLLMResultForTurn(ctx, sessionID, session, intentText)
 		if llmErr == nil {
+			pendingAck = classification.Ack
 			if addressed, known := resolveIntentAddressedness(livePolicy, intentText, classification.Addressed); known && !addressed {
 				return localTurnEvaluation{
 					handled: true,
@@ -646,9 +651,10 @@ func (a *App) evaluateLocalTurn(ctx context.Context, sessionID string, session s
 					handled:               true,
 					text:                  classification.LocalAnswer.Text,
 					localAnswerConfidence: classification.LocalAnswer.Confidence,
+					ack:                   classification.Ack,
 				}
 			}
-			if evaluation := tryExecutePlan(classification.Actions); evaluation.handled {
+			if evaluation := tryExecutePlan(classification.Actions, classification.Ack); evaluation.handled {
 				return evaluation
 			}
 			if !assumeAddressed {
@@ -663,7 +669,7 @@ func (a *App) evaluateLocalTurn(ctx context.Context, sessionID string, session s
 		}
 		if requestRequiresOpenCanvasAction(intentText) {
 			if fallbackPlan := buildOpenCanvasFallbackPlan(intentText); len(fallbackPlan) > 0 {
-				if evaluation := tryExecutePlan(fallbackPlan); evaluation.handled {
+				if evaluation := tryExecutePlan(fallbackPlan, pendingAck); evaluation.handled {
 					return evaluation
 				}
 			}
@@ -692,7 +698,7 @@ func (a *App) evaluateLocalTurn(ctx context.Context, sessionID string, session s
 			}
 		}
 	}
-	return localTurnEvaluation{}
+	return localTurnEvaluation{ack: pendingAck}
 }
 
 func resolveIntentAddressedness(policy LivePolicy, text string, addressed *bool) (bool, bool) {

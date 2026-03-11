@@ -32,6 +32,14 @@ type intentLocalAnswer struct {
 	Confidence string
 }
 
+func normalizeIntentAck(raw string) string {
+	clean := strings.Join(strings.Fields(strings.TrimSpace(raw)), " ")
+	if clean == "" {
+		return ""
+	}
+	return clean
+}
+
 func parseIntentLLMProfileOptions(raw string) []string {
 	clean := strings.TrimSpace(raw)
 	if clean == "" {
@@ -131,6 +139,7 @@ func parseIntentPlanClassification(raw string) (intentPlanClassification, error)
 		Actions: collectSystemActionsFromDecoded(decoded),
 	}
 	if obj, ok := decoded.(map[string]interface{}); ok {
+		result.Ack = normalizeIntentAck(fmt.Sprint(obj["ack"]))
 		if normalizeIntentResponseKind(fmt.Sprint(obj["kind"])) == intentKindLocalAnswer {
 			if text := strings.TrimSpace(fmt.Sprint(obj["text"])); text != "" {
 				result.LocalAnswer = &intentLocalAnswer{

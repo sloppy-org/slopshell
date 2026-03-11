@@ -47,6 +47,16 @@ func TestParseIntentPlanClassificationReadsLocalAnswer(t *testing.T) {
 	}
 }
 
+func TestParseIntentPlanClassificationReadsAckField(t *testing.T) {
+	classification, err := parseIntentPlanClassification(`{"kind":"dialogue","ack":"  Checking   now.  "}`)
+	if err != nil {
+		t.Fatalf("parseIntentPlanClassification returned error: %v", err)
+	}
+	if classification.Ack != "Checking now." {
+		t.Fatalf("ack = %q, want %q", classification.Ack, "Checking now.")
+	}
+}
+
 func TestClassifyIntentPlanWithLLMMeetingPromptRequestsAddressedness(t *testing.T) {
 	var systemPrompt string
 	llm := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -61,13 +61,36 @@ func (a *App) emitParallelProvisional(sessionID, turnID, outputMode, text string
 	a.broadcastChatEvent(sessionID, payload)
 }
 
-func defaultParallelTurnAck(userText string) string {
+func looksLikeParallelTurnStatusQuery(lower string) bool {
+	switch {
+	case strings.HasPrefix(lower, "status"),
+		strings.HasPrefix(lower, "what's running"),
+		strings.HasPrefix(lower, "whats running"),
+		strings.HasPrefix(lower, "what is running"),
+		strings.HasPrefix(lower, "are you"),
+		strings.HasPrefix(lower, "can you"),
+		strings.HasPrefix(lower, "did you"),
+		strings.HasPrefix(lower, "have you"):
+		return true
+	default:
+		return false
+	}
+}
+
+func defaultParallelTurnAck(userText string, evaluation localTurnEvaluation) string {
+	if ack := strings.TrimSpace(evaluation.ack); ack != "" {
+		return ack
+	}
 	trimmed := strings.TrimSpace(userText)
 	if trimmed == "" {
 		return "One moment."
 	}
 	lower := strings.ToLower(trimmed)
 	switch {
+	case evaluation.isCommand():
+		return "On it."
+	case looksLikeParallelTurnStatusQuery(lower):
+		return "One moment."
 	case strings.HasPrefix(lower, "what "), strings.HasPrefix(lower, "how "), strings.HasPrefix(lower, "why "):
 		return "Let me check."
 	case strings.HasPrefix(lower, "please "), strings.HasPrefix(lower, "run "), strings.HasPrefix(lower, "open "):
@@ -75,6 +98,26 @@ func defaultParallelTurnAck(userText string) string {
 	default:
 		return "Let me think."
 	}
+}
+
+func commandParallelTurnProvisionalText(userText string, evaluation localTurnEvaluation) string {
+	if ack := strings.TrimSpace(evaluation.ack); ack != "" {
+		return ack
+	}
+	if text := strings.TrimSpace(evaluation.text); text != "" {
+		return text
+	}
+	return defaultParallelTurnAck(userText, evaluation)
+}
+
+func finalParallelCommandText(evaluation localTurnEvaluation, provisionalText string) string {
+	if text := evaluation.fallbackText(); text != "" {
+		return text
+	}
+	if text := strings.TrimSpace(provisionalText); text != "" {
+		return text
+	}
+	return "Done."
 }
 
 func (a *App) runSparkTurn(ctx context.Context, sessionID string, appSess *appserver.Session, prompt string, profile appServerModelProfile) sparkTurnResult {
@@ -280,10 +323,7 @@ func (a *App) runAssistantTurnParallel(
 				return true
 			}
 			if evaluation.isCommand() {
-				nextText := strings.TrimSpace(evaluation.text)
-				if nextText == "" {
-					nextText = "Done."
-				}
+				nextText := commandParallelTurnProvisionalText(userText, evaluation)
 				previousText := provisionalText
 				provisionalText = nextText
 				if !commandPayloadsBroadcast {
@@ -309,7 +349,7 @@ func (a *App) runAssistantTurnParallel(
 					provisionalEmitted = true
 				}
 				if sparkDone && (sparkResult.err != nil || strings.TrimSpace(sparkResult.text) == "") {
-					commitFinal(provisionalText, localMetadata, assistantProviderLocal, "")
+					commitFinal(finalParallelCommandText(evaluation, provisionalText), localMetadata, assistantProviderLocal, "")
 					return true
 				}
 			} else if sparkDone {
@@ -359,11 +399,7 @@ func (a *App) runAssistantTurnParallel(
 			}
 			if localReady {
 				if localEvaluation.isCommand() {
-					finalText := provisionalText
-					if finalText == "" {
-						finalText = "Done."
-					}
-					commitFinal(finalText, localMetadata, assistantProviderLocal, "")
+					commitFinal(finalParallelCommandText(localEvaluation, provisionalText), localMetadata, assistantProviderLocal, "")
 					return true
 				}
 				if cerebrasDone && cerebrasResult.canFallback() {
@@ -397,21 +433,14 @@ func (a *App) runAssistantTurnParallel(
 			if localReady && (localEvaluation.isHighConfidenceLocalAnswer() || localEvaluation.isCommand()) {
 				continue
 			}
-			provisionalText = defaultParallelTurnAck(userText)
+			provisionalText = defaultParallelTurnAck(userText, localEvaluation)
 			a.emitTurnStage(sessionID, "turn_provisional", turnID, assistantProviderLocal, provisionalText)
 			a.emitParallelProvisional(sessionID, turnID, turn.outputMode, provisionalText, localMetadata)
 			provisionalEmitted = true
 		case <-deadlineTimer.C:
 			if localReady {
 				if localEvaluation.isCommand() {
-					finalText := provisionalText
-					if finalText == "" {
-						finalText = strings.TrimSpace(localEvaluation.text)
-					}
-					if finalText == "" {
-						finalText = "Done."
-					}
-					commitFinal(finalText, localMetadata, assistantProviderLocal, "")
+					commitFinal(finalParallelCommandText(localEvaluation, provisionalText), localMetadata, assistantProviderLocal, "")
 					return true
 				}
 				if cerebrasDone && cerebrasResult.canFallback() {

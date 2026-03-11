@@ -124,6 +124,7 @@ Return exactly one of:
 - {"kind":"local_answer","text":"<short reply>","confidence":"high|medium|low"}
 - {"actions":[{"action":"shell",...},{"action":"open_file_canvas","path":"..."}]}
 - {"kind":"dialogue"}
+Optional top-level field: "ack":"<short acknowledgment>" for dialogue or command turns that may need a brief provisional reply while a richer response is still running.
 Use {"kind":"dialogue"} unless the user clearly requests a system command or canonical artifact action.
 Use {"kind":"local_answer"} for short complete replies you can answer from the provided runtime context without tools: greetings, acknowledgments, brief social turns, and simple workspace/status questions.
 Local answers must stay within 1-3 sentences.
