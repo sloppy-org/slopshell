@@ -80,11 +80,11 @@ var MCPTools = []Tool{
 	},
 	{
 		Name:        "workspace_list",
-		Description: "List workspaces, optionally filtered by sphere.",
+		Description: "List workspaces, optionally filtered by the legacy work/private top-level context parameter.",
 		Properties: map[string]ToolProperty{
 			"sphere": {
 				Type:        "string",
-				Description: "Optional workspace sphere filter.",
+				Description: "Optional legacy work/private top-level context filter.",
 				Enum:        []string{"work", "private"},
 			},
 		},
@@ -154,7 +154,7 @@ var MCPTools = []Tool{
 	},
 	{
 		Name:        "item_list",
-		Description: "List items, optionally filtered by state, workspace, sphere, or source.",
+		Description: "List items, optionally filtered by state, workspace, legacy work/private top-level context, or source.",
 		Properties: map[string]ToolProperty{
 			"state": {
 				Type:        "string",
@@ -167,7 +167,7 @@ var MCPTools = []Tool{
 			},
 			"sphere": {
 				Type:        "string",
-				Description: "Optional sphere filter.",
+				Description: "Optional legacy work/private top-level context filter.",
 				Enum:        []string{"work", "private"},
 			},
 			"source": {
@@ -219,7 +219,7 @@ var MCPTools = []Tool{
 			},
 			"sphere": {
 				Type:        "string",
-				Description: "Optional sphere override.",
+				Description: "Optional legacy work/private top-level context override.",
 				Enum:        []string{"work", "private"},
 			},
 			"visible_after": {
@@ -311,7 +311,7 @@ var MCPTools = []Tool{
 			},
 			"sphere": {
 				Type:        "string",
-				Description: "Optional sphere override.",
+				Description: "Optional legacy work/private top-level context override.",
 				Enum:        []string{"work", "private"},
 			},
 			"visible_after": {

@@ -117,9 +117,9 @@ Shared baseline:
 
 Workspace model:
 
-- meetings and long-running jobs should default to temporary workspaces
+- meetings and long-running jobs should default to ephemeral workspaces
 - each workspace keeps one active run in its main thread
-- Hub remains for ad hoc requests and run monitoring only
+- ad hoc requests and run monitoring stay workspace-independent; there is no hub entity
 
 Noise filtering remains important:
 

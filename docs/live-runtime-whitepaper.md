@@ -31,7 +31,7 @@ stacked features:
 - `Dialogue` is the assistant turn-taking path.
 - `Meeting` is the ambient room/call capture path.
 - Hotword remains a subsystem inside that same runtime.
-- Hub remains for ad hoc requests and run monitoring.
+- Ad hoc requests and run monitoring stay workspace-independent. There is no hub entity.
 
 If no artifact is displayed while Meeting is enabled, the idle surface is a
 full-screen minimal face. A black-screen idle mode remains the alternate
@@ -86,8 +86,8 @@ runtime for direct dialogue, meetings, online calls, and ambient workday help.
 - Interaction policy: `#131`
 - Memory/timeline: `#132`
 - Runtime protocol: `#133`
-- Temporary projects: `#134`
-- Hub run monitor: `#135`
+- Ephemeral workspaces: `#134`
+- Run monitor: `#135`
 - Humanoid idle surface / black mode: `#136`
 - Transcript memory/context builder: `#137`
 - Consent/privacy safeguards: `#138`
