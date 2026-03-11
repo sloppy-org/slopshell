@@ -484,53 +484,54 @@ type chatTurnOptions struct {
 	cursor      *chatCursorContext
 }
 
-func (a *App) getOrCreateAppSession(sessionID string, cwd string, profile appServerModelProfile) (*appserver.Session, bool, error) {
-	resolvedCWD, err := a.effectiveWorkspaceDirForChatSessionID(sessionID)
+func (a *App) getOrCreateAppSession(sessionID string, cwd string, profile appServerModelProfile) (*appserver.Session, string, bool, error) {
+	bindingSession, workspace, err := a.appSessionBindingForChatSessionID(sessionID)
 	if err != nil {
-		return nil, false, err
+		return nil, "", false, err
 	}
-	cwd = resolvedCWD
+	cwd = strings.TrimSpace(workspace.DirPath)
+	appSessionKey := bindingSession.ID
 	a.mu.Lock()
-	s := a.chatAppSessions[sessionID]
+	s := a.chatAppSessions[appSessionKey]
 	a.mu.Unlock()
 	if s != nil && s.IsOpen() && s.MatchesConfig(cwd, profile.Model, profile.ThreadParams) {
-		return s, true, nil
+		return s, appSessionKey, true, nil
 	}
 	if s != nil {
 		_ = s.Close()
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	var existingThreadID string
-	if sess, err := a.store.GetChatSession(sessionID); err == nil {
-		existingThreadID = strings.TrimSpace(sess.AppThreadID)
-	}
+	existingThreadID := strings.TrimSpace(bindingSession.AppThreadID)
 	var newSess *appserver.Session
 	var resumed bool
 	if existingThreadID != "" {
 		rs, ok, err := a.appServerClient.ResumeSessionWithParams(ctx, cwd, profile.Model, profile.ThreadParams, existingThreadID)
 		if err != nil {
-			return nil, false, err
+			return nil, "", false, err
 		}
 		newSess = rs
 		resumed = ok
 	} else {
 		rs, err := a.appServerClient.OpenSessionWithParams(ctx, cwd, profile.Model, profile.ThreadParams)
 		if err != nil {
-			return nil, false, err
+			return nil, "", false, err
 		}
 		newSess = rs
 	}
 	a.mu.Lock()
-	if old := a.chatAppSessions[sessionID]; old != nil {
+	if old := a.chatAppSessions[appSessionKey]; old != nil {
 		_ = old.Close()
 	}
-	a.chatAppSessions[sessionID] = newSess
+	a.chatAppSessions[appSessionKey] = newSess
 	a.mu.Unlock()
-	return newSess, resumed, nil
+	return newSess, appSessionKey, resumed, nil
 }
 
 func (a *App) closeAppSession(sessionID string) {
+	if bindingSession, _, err := a.appSessionBindingForChatSessionID(sessionID); err == nil {
+		sessionID = bindingSession.ID
+	}
 	a.mu.Lock()
 	s := a.chatAppSessions[sessionID]
 	delete(a.chatAppSessions, sessionID)

@@ -60,7 +60,7 @@ func (a *App) runAssistantTurn(sessionID string, turn dequeuedTurn) {
 	profile = a.appServerProfileForChatSession(session, profile)
 	turnStartedAt := time.Now()
 	responseMeta := newAssistantResponseMetadata(providerForAppServerProfile(profile), profile.Model, 0)
-	appSess, resumed, sessErr := a.getOrCreateAppSession(sessionID, cwd, profile)
+	appSess, bindingSessionID, resumed, sessErr := a.getOrCreateAppSession(sessionID, cwd, profile)
 	if sessErr != nil {
 		a.runAssistantTurnLegacy(sessionID, session, messages, cursorCtx, inkCtx, positionCtx, turn.outputMode, profile)
 		return
@@ -73,7 +73,7 @@ func (a *App) runAssistantTurn(sessionID string, turn dequeuedTurn) {
 		prompt = buildTurnPromptForSessionWithCompanion(sessionID, messages, canvasCtx, companionCtx, turn.outputMode, profile.Alias)
 	} else {
 		prompt = buildPromptFromHistoryForSessionWithCompanionPolicy(session.Mode, a.yoloModeEnabled(), sessionID, messages, canvasCtx, companionCtx, turn.outputMode, profile.Alias)
-		_ = a.store.UpdateChatSessionThread(sessionID, appSess.ThreadID())
+		_ = a.store.UpdateChatSessionThread(bindingSessionID, appSess.ThreadID())
 	}
 	prompt = appendChatCursorPrompt(prompt, cursorCtx)
 	prompt = appendCanvasInkPrompt(prompt, inkCtx)
@@ -374,12 +374,13 @@ func suppressLocalAssistantResponse(payloads []map[string]interface{}) bool {
 // runAssistantTurnLegacy is the single-shot fallback when persistent session
 // fails to connect. Each call creates a new WS + thread.
 func (a *App) runAssistantTurnLegacy(sessionID string, session store.ChatSession, messages []store.ChatMessage, cursorCtx *chatCursorContext, inkCtx []*chatCanvasInkEvent, positionCtx []*chatCanvasPositionEvent, outputMode string, profile appServerModelProfile) {
-	cwd, err := a.effectiveWorkspaceDirForChatSession(session)
+	bindingSession, workspace, err := a.appSessionBindingForChatSessionID(sessionID)
 	if err != nil {
 		a.finishCompanionPendingTurn(sessionID, "assistant_turn_failed")
 		a.broadcastChatEvent(sessionID, map[string]interface{}{"type": "error", "error": err.Error()})
 		return
 	}
+	cwd := workspace.DirPath
 	profile = a.appServerProfileForChatSession(session, profile)
 	turnStartedAt := time.Now()
 	responseMeta := newAssistantResponseMetadata(providerForAppServerProfile(profile), profile.Model, 0)
@@ -488,7 +489,7 @@ func (a *App) runAssistantTurnLegacy(sessionID string, session store.ChatSession
 		switch ev.Type {
 		case "thread_started":
 			if strings.TrimSpace(ev.ThreadID) != "" {
-				_ = a.store.UpdateChatSessionThread(sessionID, ev.ThreadID)
+				_ = a.store.UpdateChatSessionThread(bindingSession.ID, ev.ThreadID)
 			}
 		case "turn_started":
 			if strings.TrimSpace(ev.TurnID) != "" {

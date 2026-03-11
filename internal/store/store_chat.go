@@ -78,15 +78,6 @@ func (s *Store) resolveChatSessionWorkspace(ref string) (Workspace, error) {
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return Workspace{}, err
 	}
-	if activeProjectID, err := s.ActiveProjectID(); err != nil {
-		return Workspace{}, err
-	} else if strings.TrimSpace(activeProjectID) != "" {
-		project, err := s.GetProject(activeProjectID)
-		if err != nil {
-			return Workspace{}, err
-		}
-		return s.workspaceForProject(project)
-	}
 	return Workspace{}, sql.ErrNoRows
 }
 

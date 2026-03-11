@@ -457,6 +457,53 @@ func TestCreateActivateProjectAffectsChatSessionCreation(t *testing.T) {
 	}
 }
 
+func TestCreateChatSessionWithoutSelectionStaysOnActiveWorkspace(t *testing.T) {
+	app := newAuthedTestApp(t)
+
+	anchor, err := app.store.ActiveWorkspace()
+	if err != nil {
+		t.Fatalf("ActiveWorkspace() error: %v", err)
+	}
+	if !anchor.IsDaily {
+		t.Fatal("anchor is_daily = false, want true")
+	}
+
+	linkedDir := filepath.Join(t.TempDir(), "linked-repo")
+	if err := os.MkdirAll(linkedDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(linkedDir) error: %v", err)
+	}
+	project, err := app.store.CreateProject("linked-repo", "linked-repo", linkedDir, "linked", "", "", false)
+	if err != nil {
+		t.Fatalf("CreateProject() error: %v", err)
+	}
+	if err := app.store.SetActiveProjectID(project.ID); err != nil {
+		t.Fatalf("SetActiveProjectID() error: %v", err)
+	}
+
+	rr := doAuthedJSONRequest(t, app.Router(), http.MethodPost, "/api/chat/sessions", map[string]any{})
+	if rr.Code != http.StatusOK {
+		t.Fatalf("chat session create status = %d, want 200: %s", rr.Code, rr.Body.String())
+	}
+	var payload struct {
+		OK          bool   `json:"ok"`
+		SessionID   string `json:"session_id"`
+		WorkspaceID int64  `json:"workspace_id"`
+		ProjectID   string `json:"project_id"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !payload.OK {
+		t.Fatal("expected ok=true")
+	}
+	if payload.WorkspaceID != anchor.ID {
+		t.Fatalf("workspace_id = %d, want anchor %d", payload.WorkspaceID, anchor.ID)
+	}
+	if payload.ProjectID != "" {
+		t.Fatalf("project_id = %q, want empty daily workspace binding", payload.ProjectID)
+	}
+}
+
 func TestProjectsListRehomesActiveProjectIntoActiveSphere(t *testing.T) {
 	app := newAuthedTestApp(t)
 

@@ -337,13 +337,17 @@ func TestStoreChatSessionMessageAndThreading(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateProject() error: %v", err)
 	}
-	if err := s.SetActiveProjectID(project.ID); err != nil {
-		t.Fatalf("SetActiveProjectID() error: %v", err)
+	workspace, err := s.workspaceForProject(project)
+	if err != nil {
+		t.Fatalf("workspaceForProject() error: %v", err)
+	}
+	if err := s.SetActiveWorkspace(workspace.ID); err != nil {
+		t.Fatalf("SetActiveWorkspace() error: %v", err)
 	}
 
 	session, err := s.GetOrCreateChatSession("  ")
 	if err != nil {
-		t.Fatalf("GetOrCreateChatSession(active project) error: %v", err)
+		t.Fatalf("GetOrCreateChatSession(active workspace) error: %v", err)
 	}
 	if session.ProjectKey != project.ProjectKey {
 		t.Fatalf("project key = %q, want %q", session.ProjectKey, project.ProjectKey)
@@ -558,6 +562,25 @@ func TestStoreChatSessionsKeyToWorkspace(t *testing.T) {
 	}
 	if sessionCount != 1 {
 		t.Fatalf("chat session count for workspace %d = %d, want 1", session.WorkspaceID, sessionCount)
+	}
+}
+
+func TestGetOrCreateChatSessionBlankRefRequiresActiveWorkspace(t *testing.T) {
+	s := newTestStore(t)
+	root := filepath.Join(t.TempDir(), "workspace-default")
+	project, err := s.CreateProject("Default", root, root, "managed", "", "", true)
+	if err != nil {
+		t.Fatalf("CreateProject() error: %v", err)
+	}
+	if err := s.SetActiveProjectID(project.ID); err != nil {
+		t.Fatalf("SetActiveProjectID() error: %v", err)
+	}
+	if _, err := s.db.Exec(`UPDATE workspaces SET is_active = 0`); err != nil {
+		t.Fatalf("clear active workspace: %v", err)
+	}
+
+	if _, err := s.GetOrCreateChatSession("  "); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("GetOrCreateChatSession(blank) error = %v, want sql.ErrNoRows", err)
 	}
 }
 

@@ -1,7 +1,9 @@
 package web
 
 import (
+	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/krystophny/tabura/internal/store"
 )
@@ -96,6 +98,25 @@ func (a *App) effectiveWorkspaceDirForChatSessionID(sessionID string) (string, e
 		return "", err
 	}
 	return a.effectiveWorkspaceDirForChatSession(session)
+}
+
+func (a *App) appSessionBindingForChatSessionID(sessionID string) (store.ChatSession, store.Workspace, error) {
+	session, err := a.store.GetChatSession(sessionID)
+	if err != nil {
+		return store.ChatSession{}, store.Workspace{}, err
+	}
+	workspace, err := a.effectiveWorkspaceForChatSession(session)
+	if err != nil {
+		return store.ChatSession{}, store.Workspace{}, err
+	}
+	if strings.TrimSpace(workspace.DirPath) == "" {
+		return store.ChatSession{}, store.Workspace{}, errors.New("workspace path is required")
+	}
+	bindingSession, err := a.store.GetOrCreateChatSessionForWorkspace(workspace.ID)
+	if err != nil {
+		return store.ChatSession{}, store.Workspace{}, err
+	}
+	return bindingSession, workspace, nil
 }
 
 func (a *App) broadcastWorkspaceFocusChanged() {

@@ -185,7 +185,7 @@ func (a *App) runAssistantTurnParallel(
 	profile = a.appServerProfileForChatSession(session, profile)
 	responseMeta := newAssistantResponseMetadata(providerForAppServerProfile(profile), profile.Model, 0)
 
-	appSess, resumed, sessErr := a.getOrCreateAppSession(sessionID, cwd, profile)
+	appSess, bindingSessionID, resumed, sessErr := a.getOrCreateAppSession(sessionID, cwd, profile)
 	if sessErr != nil {
 		return false
 	}
@@ -197,7 +197,7 @@ func (a *App) runAssistantTurnParallel(
 		prompt = buildTurnPromptForSessionWithCompanion(sessionID, messages, canvasCtx, companionCtx, turn.outputMode, profile.Alias)
 	} else {
 		prompt = buildPromptFromHistoryForSessionWithCompanionPolicy(session.Mode, a.yoloModeEnabled(), sessionID, messages, canvasCtx, companionCtx, turn.outputMode, profile.Alias)
-		_ = a.store.UpdateChatSessionThread(sessionID, appSess.ThreadID())
+		_ = a.store.UpdateChatSessionThread(bindingSessionID, appSess.ThreadID())
 	}
 	prompt = appendChatCursorPrompt(prompt, cursorCtx)
 	prompt = appendCanvasInkPrompt(prompt, inkCtx)

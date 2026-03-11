@@ -1,13 +1,19 @@
 package web
 
 import (
+	"context"
+	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/gorilla/websocket"
 	"github.com/krystophny/tabura/internal/store"
 )
 
@@ -233,6 +239,161 @@ func TestIntentPromptSystemCommandsIncludeFocusActions(t *testing.T) {
 	}
 	if !strings.Contains(prompt, "clear_focus") {
 		t.Fatalf("prompt missing clear_focus: %q", prompt)
+	}
+}
+
+type appSessionStartRequest struct {
+	CWD      string
+	ThreadID string
+}
+
+func setupAppSessionBindingServer(t *testing.T) (*httptest.Server, *[]appSessionStartRequest) {
+	t.Helper()
+	var mu sync.Mutex
+	starts := make([]appSessionStartRequest, 0, 4)
+	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Fatalf("upgrade websocket: %v", err)
+		}
+		defer conn.Close()
+
+		for {
+			_, data, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+			var msg map[string]any
+			if err := json.Unmarshal(data, &msg); err != nil {
+				t.Fatalf("decode app-server message: %v", err)
+			}
+			switch strings.TrimSpace(strFromAny(msg["method"])) {
+			case "initialize":
+				_ = conn.WriteJSON(map[string]any{
+					"id":     msg["id"],
+					"result": map[string]any{"userAgent": "binding-test"},
+				})
+			case "thread/start":
+				params, _ := msg["params"].(map[string]any)
+				start := appSessionStartRequest{
+					CWD:      strings.TrimSpace(strFromAny(params["cwd"])),
+					ThreadID: strings.TrimSpace(strFromAny(params["threadId"])),
+				}
+				mu.Lock()
+				starts = append(starts, start)
+				index := len(starts)
+				mu.Unlock()
+				threadID := start.ThreadID
+				if threadID == "" {
+					threadID = "thread-new-" + strconv.Itoa(index)
+				}
+				_ = conn.WriteJSON(map[string]any{
+					"id": msg["id"],
+					"result": map[string]any{
+						"thread": map[string]any{"id": threadID},
+					},
+				})
+			}
+		}
+	}))
+	return server, &starts
+}
+
+func TestGetOrCreateAppSessionFollowsFocusedWorkspaceThreadBinding(t *testing.T) {
+	server, starts := setupAppSessionBindingServer(t)
+	defer server.Close()
+
+	app, err := New(t.TempDir(), "", "", "ws"+strings.TrimPrefix(server.URL, "http"), "", "", "", false)
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = app.Shutdown(context.Background())
+	})
+
+	anchor, err := app.ensureTodayDailyWorkspace()
+	if err != nil {
+		t.Fatalf("ensureTodayDailyWorkspace: %v", err)
+	}
+	session, err := app.store.GetOrCreateChatSessionForWorkspace(anchor.ID)
+	if err != nil {
+		t.Fatalf("GetOrCreateChatSessionForWorkspace(anchor): %v", err)
+	}
+	alphaPath := filepath.Join(t.TempDir(), "alpha")
+	betaPath := filepath.Join(t.TempDir(), "beta")
+	for _, dir := range []string{alphaPath, betaPath} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("MkdirAll(%q): %v", dir, err)
+		}
+	}
+	alpha, err := app.store.CreateWorkspace("Alpha", alphaPath)
+	if err != nil {
+		t.Fatalf("CreateWorkspace(alpha): %v", err)
+	}
+	beta, err := app.store.CreateWorkspace("Beta", betaPath)
+	if err != nil {
+		t.Fatalf("CreateWorkspace(beta): %v", err)
+	}
+	alphaSession, err := app.store.GetOrCreateChatSessionForWorkspace(alpha.ID)
+	if err != nil {
+		t.Fatalf("GetOrCreateChatSessionForWorkspace(alpha): %v", err)
+	}
+	betaSession, err := app.store.GetOrCreateChatSessionForWorkspace(beta.ID)
+	if err != nil {
+		t.Fatalf("GetOrCreateChatSessionForWorkspace(beta): %v", err)
+	}
+	if err := app.store.UpdateChatSessionThread(alphaSession.ID, "thread-alpha"); err != nil {
+		t.Fatalf("UpdateChatSessionThread(alpha): %v", err)
+	}
+	if err := app.store.UpdateChatSessionThread(betaSession.ID, "thread-beta"); err != nil {
+		t.Fatalf("UpdateChatSessionThread(beta): %v", err)
+	}
+
+	profile := appServerModelProfile{Model: "gpt-test"}
+
+	if err := app.setFocusedWorkspace(alpha.ID); err != nil {
+		t.Fatalf("setFocusedWorkspace(alpha): %v", err)
+	}
+	alphaAppSession, bindingSessionID, resumed, err := app.getOrCreateAppSession(session.ID, "", profile)
+	if err != nil {
+		t.Fatalf("getOrCreateAppSession(alpha): %v", err)
+	}
+	if !resumed {
+		t.Fatal("resumed(alpha) = false, want true")
+	}
+	if bindingSessionID != alphaSession.ID {
+		t.Fatalf("binding session id = %q, want %q", bindingSessionID, alphaSession.ID)
+	}
+	if alphaAppSession.ThreadID() != "thread-alpha" {
+		t.Fatalf("alpha thread id = %q, want %q", alphaAppSession.ThreadID(), "thread-alpha")
+	}
+
+	if err := app.setFocusedWorkspace(beta.ID); err != nil {
+		t.Fatalf("setFocusedWorkspace(beta): %v", err)
+	}
+	betaAppSession, bindingSessionID, resumed, err := app.getOrCreateAppSession(session.ID, "", profile)
+	if err != nil {
+		t.Fatalf("getOrCreateAppSession(beta): %v", err)
+	}
+	if !resumed {
+		t.Fatal("resumed(beta) = false, want true")
+	}
+	if bindingSessionID != betaSession.ID {
+		t.Fatalf("binding session id = %q, want %q", bindingSessionID, betaSession.ID)
+	}
+	if betaAppSession.ThreadID() != "thread-beta" {
+		t.Fatalf("beta thread id = %q, want %q", betaAppSession.ThreadID(), "thread-beta")
+	}
+
+	if len(*starts) != 2 {
+		t.Fatalf("thread/start calls = %d, want 2", len(*starts))
+	}
+	if (*starts)[0].CWD != alphaPath || (*starts)[0].ThreadID != "thread-alpha" {
+		t.Fatalf("first thread/start = %#v, want cwd=%q thread=%q", (*starts)[0], alphaPath, "thread-alpha")
+	}
+	if (*starts)[1].CWD != betaPath || (*starts)[1].ThreadID != "thread-beta" {
+		t.Fatalf("second thread/start = %#v, want cwd=%q thread=%q", (*starts)[1], betaPath, "thread-beta")
 	}
 }
 
