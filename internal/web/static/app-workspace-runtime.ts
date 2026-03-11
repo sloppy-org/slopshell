@@ -1,9 +1,16 @@
 import * as env from './app-env.js';
 import * as context from './app-context.js';
-
+import {
+  applyWorkspaceBusyStates,
+  applyWorkspaceFocusSnapshot,
+  normalizeWorkspaceBusyStates,
+  normalizeWorkspaceFocusSnapshot,
+  workspaceBusyBadgeText,
+  workspaceBusyBadgeTitle,
+  workspaceDisplayName,
+} from './app-workspace-status.js';
 const { marked, apiURL, wsURL, renderCanvas, clearCanvas, getLocationFromSelection, clearLineHighlight, escapeHtml, sanitizeHtml, getActiveArtifactTitle, getActiveTextEventId, getPreviousArtifactText, getUiState, setUiMode, showIndicatorMode, hideIndicator, showTextInput, hideTextInput, showOverlay, hideOverlay, updateOverlay, isOverlayVisible, isTextInputVisible, isRecording, setRecording, getInputAnchor, setInputAnchor, getAnchorFromPoint, buildContextPrefix, getLastInputPosition, setLastInputPosition, configureLiveSession, getLiveSessionSnapshot, handleLiveSessionMessage, isLiveSessionListenActive, LIVE_SESSION_HOTWORD_DEFAULT, LIVE_SESSION_MODE_DIALOGUE, LIVE_SESSION_MODE_MEETING, onLiveSessionTTSPlaybackComplete, cancelLiveSessionListen, startLiveSession, stopLiveSession, initHotword, startHotwordMonitor, stopHotwordMonitor, isHotwordActive, onHotwordDetected, setHotwordThreshold, setHotwordAudioContext, getPreRollAudio, getHotwordMicStream, initVAD, ensureVADLoaded, float32ToWav } = env;
 const { refs, state, getState, isVoiceTurn, COMPANION_VIEW_PATH_PREFIX, COMPANION_TRANSCRIPT_VIEW_PATH, COMPANION_SUMMARY_VIEW_PATH, COMPANION_REFERENCES_VIEW_PATH, MEETING_TRANSCRIPT_LABEL, MEETING_SUMMARY_LABEL, MEETING_REFERENCES_LABEL, MEETING_SUMMARY_ITEMS_PANEL_ID, CHAT_CTRL_LONG_PRESS_MS, ARTIFACT_EDIT_LONG_TAP_MS, ITEM_SIDEBAR_VIEWS, ITEM_SIDEBAR_GESTURE_CANCEL_PX, ITEM_SIDEBAR_GESTURE_COMMIT_PX, ITEM_SIDEBAR_GESTURE_LONG_PX, ITEM_SIDEBAR_DEFAULT_LATER_HOUR_UTC, ITEM_SIDEBAR_MENU_ID, DEV_UI_RELOAD_POLL_MS, ASSISTANT_ACTIVITY_POLL_MS, CHAT_WS_STALE_THRESHOLD_MS, ACTIVE_TURN_NO_ID_CLEAR_GRACE_MS, ACTIVE_TURN_ACTIVITY_CLEAR_GRACE_MS, PROJECT_CHAT_MODEL_ALIASES, PROJECT_CHAT_MODEL_REASONING_EFFORTS, TTS_SILENT_STORAGE_KEY, YOLO_MODE_STORAGE_KEY, SOMEDAY_REVIEW_NUDGE_ENABLED_STORAGE_KEY, SOMEDAY_REVIEW_NUDGE_LAST_SHOWN_STORAGE_KEY, SOMEDAY_REVIEW_NUDGE_INTERVAL_MS, ACTIVE_PROJECT_STORAGE_KEY, LAST_VIEW_STORAGE_KEY, RUNTIME_RELOAD_CONTEXT_STORAGE_KEY, SIDEBAR_IMAGE_EXTENSIONS, PANEL_MOTION_WATCH_QUERIES, VOICE_LIFECYCLE, COMPANION_IDLE_SURFACES, COMPANION_RUNTIME_STATES, TOOL_PALETTE_MODES, SPHERE_OPTIONS } = context;
-
 const showStatus = (...args) => refs.showStatus(...args);
 const updateAssistantActivityIndicator = (...args) => refs.updateAssistantActivityIndicator(...args);
 const switchProject = (...args) => refs.switchProject(...args);
@@ -46,7 +53,7 @@ const refreshItemSidebarCounts = (...args) => refs.refreshItemSidebarCounts(...a
 const isTemporaryProjectKind = (...args) => refs.isTemporaryProjectKind(...args);
 const shouldRenderAssistantHistoryInChat = (...args) => refs.shouldRenderAssistantHistoryInChat(...args);
 const hasLocalAssistantWork = (...args) => refs.hasLocalAssistantWork(...args);
-
+export { applyWorkspaceBusyStates, applyWorkspaceFocusSnapshot } from './app-workspace-status.js';
 export async function fetchProjects() {
   const resp = await fetch(apiURL('projects'), { cache: 'no-store' });
   if (!resp.ok) throw new Error(`projects list failed: HTTP ${resp.status}`);
@@ -68,14 +75,12 @@ export async function fetchProjects() {
   renderEdgeTopProjects();
   renderEdgeTopModelButtons();
 }
-
 export function projectMatchesSphere(project, sphere = state.activeSphere) {
   if (!project) return false;
   const activeSphere = normalizeActiveSphere(sphere);
   const projectSphere = String(project?.sphere || '').trim().toLowerCase();
   return !projectSphere || projectSphere === activeSphere;
 }
-
 function visibleProjectsForSphere(sphere = state.activeSphere) {
   return state.projects.filter((project) => projectMatchesSphere(project, sphere));
 }
@@ -86,155 +91,6 @@ function currentExecutionPolicy(project = activeProject()) {
   if (mode === 'plan' || mode === 'review') return 'reviewed';
   return 'default';
 }
-
-function workspaceLabelFromPath(dirPath, fallbackID = 0) {
-  const cleanPath = String(dirPath || '').trim().replace(/\/+$/, '');
-  if (cleanPath) {
-    const parts = cleanPath.split('/').filter(Boolean);
-    if (parts.length > 0) {
-      return decodeURIComponent(parts[parts.length - 1]);
-    }
-  }
-  return fallbackID > 0 ? `Workspace ${fallbackID}` : 'Workspace';
-}
-
-function normalizeWorkspaceRef(workspace) {
-  if (!workspace || typeof workspace !== 'object') return null;
-  const id = Math.max(0, Number(workspace?.id || 0) || 0);
-  const dirPath = String(workspace?.dir_path || '').trim();
-  const name = String(workspace?.name || '').trim() || workspaceLabelFromPath(dirPath, id);
-  if (!id && !name && !dirPath) return null;
-  return {
-    id,
-    name,
-    dir_path: dirPath,
-    is_daily: Boolean(workspace?.is_daily),
-    sphere: String(workspace?.sphere || '').trim().toLowerCase(),
-  };
-}
-
-function workspaceDisplayName(workspace) {
-  const normalized = normalizeWorkspaceRef(workspace);
-  return normalized?.name || 'Workspace';
-}
-
-function normalizeWorkspaceFocusSnapshot(payload) {
-  const source = payload && typeof payload === 'object' ? payload : {};
-  const anchor = normalizeWorkspaceRef(source?.anchor);
-  const focus = normalizeWorkspaceRef(source?.focus) || anchor;
-  return {
-    anchor,
-    focus,
-    explicit: Boolean(source?.explicit) && Boolean(focus),
-  };
-}
-
-function normalizeWorkspaceBusyState(runState) {
-  const source = runState && typeof runState === 'object' ? runState : {};
-  const workspaceID = Math.max(0, Number(source?.workspace_id || 0) || 0);
-  const dirPath = String(source?.dir_path || '').trim();
-  const name = String(source?.workspace_name || '').trim() || workspaceLabelFromPath(dirPath, workspaceID);
-  const activeTurns = Math.max(0, Number(source?.active_turns || 0) || 0);
-  const queuedTurns = Math.max(0, Number(source?.queued_turns || 0) || 0);
-  let status = String(source?.status || '').trim().toLowerCase();
-  if (status !== 'running' && status !== 'queued' && status !== 'idle') {
-    status = activeTurns > 0 ? 'running' : (queuedTurns > 0 ? 'queued' : 'idle');
-  }
-  return {
-    workspace_id: workspaceID,
-    workspace_name: name,
-    dir_path: dirPath,
-    is_daily: Boolean(source?.is_daily),
-    is_anchor: Boolean(source?.is_anchor),
-    is_focused: Boolean(source?.is_focused),
-    active_turns: activeTurns,
-    queued_turns: queuedTurns,
-    status,
-  };
-}
-
-function normalizeWorkspaceBusyStates(states) {
-  const source = Array.isArray(states) ? states : [];
-  return source.map((entry) => normalizeWorkspaceBusyState(entry));
-}
-
-function workspaceBusySummary(stateEntry) {
-  const stateSummary = normalizeWorkspaceBusyState(stateEntry);
-  if (stateSummary.status === 'running') {
-    const details = [];
-    if (stateSummary.active_turns > 0) {
-      details.push(`${stateSummary.active_turns} active`);
-    }
-    if (stateSummary.queued_turns > 0) {
-      details.push(`${stateSummary.queued_turns} queued`);
-    }
-    return details.length > 0 ? `running (${details.join(', ')})` : 'running';
-  }
-  if (stateSummary.status === 'queued') {
-    return stateSummary.queued_turns > 0 ? `queued (${stateSummary.queued_turns} queued)` : 'queued';
-  }
-  return 'idle';
-}
-
-function workspaceBusyLabel(stateEntry) {
-  const stateSummary = normalizeWorkspaceBusyState(stateEntry);
-  const tags = [];
-  if (stateSummary.is_daily) tags.push('daily');
-  if (stateSummary.is_anchor) tags.push('anchor');
-  if (stateSummary.is_focused && !stateSummary.is_anchor) tags.push('focus');
-  if (tags.length === 0) return stateSummary.workspace_name;
-  return `${stateSummary.workspace_name} (${tags.join(', ')})`;
-}
-
-function workspaceBusyBadgeText(states) {
-  const normalized = normalizeWorkspaceBusyStates(states);
-  const active = normalized.filter((entry) => entry.status !== 'idle');
-  if (active.length === 0) {
-    return 'Busy idle';
-  }
-  if (active.length === 1) {
-    return `Busy ${active[0].workspace_name} ${active[0].status}`;
-  }
-  return `Busy ${active.length} active`;
-}
-
-function workspaceBusyBadgeTitle(snapshot, states) {
-  const focusSnapshot = normalizeWorkspaceFocusSnapshot(snapshot);
-  const lines = [];
-  if (focusSnapshot.anchor) {
-    const anchorPath = String(focusSnapshot.anchor?.dir_path || '').trim();
-    lines.push(anchorPath
-      ? `Anchor: ${workspaceDisplayName(focusSnapshot.anchor)} (${anchorPath})`
-      : `Anchor: ${workspaceDisplayName(focusSnapshot.anchor)}`);
-  }
-  if (focusSnapshot.focus) {
-    const focusLabel = focusSnapshot.explicit
-      ? workspaceDisplayName(focusSnapshot.focus)
-      : `${workspaceDisplayName(focusSnapshot.focus)} (follows anchor)`;
-    const focusPath = String(focusSnapshot.focus?.dir_path || '').trim();
-    lines.push(focusPath ? `Focus: ${focusLabel} (${focusPath})` : `Focus: ${focusLabel}`);
-  }
-  const normalizedStates = normalizeWorkspaceBusyStates(states);
-  if (normalizedStates.length === 0) {
-    lines.push('Busy: idle');
-  } else {
-    for (const entry of normalizedStates) {
-      lines.push(`${workspaceBusyLabel(entry)}: ${workspaceBusySummary(entry)}`);
-    }
-  }
-  return lines.join('\n');
-}
-
-export function applyWorkspaceFocusSnapshot(payload) {
-  state.workspaceFocus = normalizeWorkspaceFocusSnapshot(payload);
-  renderEdgeTopModelButtons();
-}
-
-export function applyWorkspaceBusyStates(states) {
-  state.workspaceBusyStates = normalizeWorkspaceBusyStates(states);
-  renderEdgeTopModelButtons();
-}
-
 export async function refreshWorkspaceRuntimeState() {
   const [focusResp, busyResp] = await Promise.all([
     fetch(apiURL('workspace/focus'), { cache: 'no-store' }),
@@ -255,7 +111,6 @@ export async function refreshWorkspaceRuntimeState() {
     states: state.workspaceBusyStates,
   };
 }
-
 async function ensureVisibleActiveProject() {
   const current = activeProject();
   if (!current || projectMatchesSphere(current, state.activeSphere)) {
@@ -270,7 +125,6 @@ async function ensureVisibleActiveProject() {
   }
   await switchProject(fallback.id);
 }
-
 export async function setActiveSphere(nextSphere) {
   const sphere = normalizeActiveSphere(nextSphere);
   if (sphere === state.activeSphere && String(state.activeSphere || '').trim()) {
@@ -302,7 +156,6 @@ export async function setActiveSphere(nextSphere) {
     return false;
   }
 }
-
 export function normalizeProjectRunState(runState) {
   const activeTurns = Math.max(0, Number(runState?.active_turns || 0) || 0);
   const queuedTurns = Math.max(0, Number(runState?.queued_turns || 0) || 0);
@@ -318,7 +171,6 @@ export function normalizeProjectRunState(runState) {
     active_turn_id: String(runState?.active_turn_id || '').trim(),
   };
 }
-
 export function projectRunStateSummary(project) {
   const runState = normalizeProjectRunState(project?.run_state);
   if (runState.status === 'running') {
@@ -329,7 +181,6 @@ export function projectRunStateSummary(project) {
   }
   return 'idle';
 }
-
 export function upsertProject(project) {
   if (!project || !project.id) return;
   project.chat_mode = String(project.chat_mode || 'chat');
@@ -347,7 +198,6 @@ export function upsertProject(project) {
   }
   renderEdgeTopModelButtons();
 }
-
 export async function refreshCompanionState(projectID = state.activeProjectId) {
   const project = state.projects.find((item) => item.id === String(projectID || '').trim()) || null;
   if (!project) {
@@ -365,7 +215,6 @@ export async function refreshCompanionState(projectID = state.activeProjectId) {
   updateAssistantActivityIndicator();
   return payload;
 }
-
 export async function updateCompanionConfig(patch) {
   const project = activeProject();
   if (!project || !project.id) return null;
@@ -390,13 +239,11 @@ export async function updateCompanionConfig(patch) {
   updateAssistantActivityIndicator();
   return payload;
 }
-
 function normalizeLivePolicy(policy) {
   return String(policy || '').trim().toLowerCase() === LIVE_SESSION_MODE_MEETING
     ? LIVE_SESSION_MODE_MEETING
     : LIVE_SESSION_MODE_DIALOGUE;
 }
-
 export async function updateLivePolicy(policy) {
   const nextPolicy = normalizeLivePolicy(policy);
   const resp = await fetch(apiURL('live-policy'), {
@@ -414,7 +261,6 @@ export async function updateLivePolicy(policy) {
   updateAssistantActivityIndicator();
   return payload;
 }
-
 export async function toggleCompanionIdleSurfacePreference() {
   const nextSurface = state.companionIdleSurface === COMPANION_IDLE_SURFACES.BLACK
     ? COMPANION_IDLE_SURFACES.ROBOT
@@ -428,7 +274,6 @@ export async function toggleCompanionIdleSurfacePreference() {
     showStatus(`idle surface failed: ${message}`);
   }
 }
-
 export async function activateLiveSession(mode) {
   const normalized = String(mode || '').trim().toLowerCase();
   if (normalized !== LIVE_SESSION_MODE_DIALOGUE && normalized !== LIVE_SESSION_MODE_MEETING) return false;
@@ -458,7 +303,6 @@ export async function activateLiveSession(mode) {
   applyLiveSessionStateSnapshot();
   return started;
 }
-
 export async function deactivateLiveSession(options: Record<string, any> = {}) {
   const silent = Boolean(options?.silent);
   const disableMeetingConfig = Boolean(options?.disableMeetingConfig);
