@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"path/filepath"
 	"sort"
 	"testing"
@@ -292,5 +293,114 @@ INSERT INTO projects (id, name) VALUES ('proj-legacy', 'Legacy Project');
 	contextID := contextIDByNameForTest(t, s, "Legacy Project")
 	if contextID <= 0 {
 		t.Fatalf("context ID = %d, want positive", contextID)
+	}
+}
+
+func TestStorePurgesLegacyHubProjectWorkspaceAndContext(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "tabura.db")
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("sql.Open() error: %v", err)
+	}
+
+	hubPath := filepath.Join(t.TempDir(), "projects", "hub")
+	keepPath := filepath.Join(t.TempDir(), "keep")
+	legacySchema := `
+CREATE TABLE projects (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  project_key TEXT NOT NULL UNIQUE,
+  root_path TEXT NOT NULL UNIQUE,
+  kind TEXT NOT NULL DEFAULT 'managed',
+  mcp_url TEXT NOT NULL DEFAULT '',
+  canvas_session_id TEXT NOT NULL DEFAULT '',
+  chat_model TEXT NOT NULL DEFAULT '',
+  chat_model_reasoning_effort TEXT NOT NULL DEFAULT '',
+  is_default INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE TABLE app_state (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+CREATE TABLE workspaces (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  dir_path TEXT NOT NULL UNIQUE,
+  project_id TEXT,
+  sphere TEXT NOT NULL DEFAULT 'private',
+  is_active INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE contexts (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  color TEXT NOT NULL DEFAULT '',
+  parent_id INTEGER,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+INSERT INTO projects (id, name, project_key, root_path, kind, is_default, created_at, updated_at) VALUES
+  ('proj-hub', 'Hub', '__hub__', ?, 'hub', 0, 100, 100),
+  ('proj-keep', 'Keep', 'keep-key', ?, 'managed', 1, 101, 101);
+INSERT INTO app_state (key, value) VALUES ('active_project_id', 'proj-hub');
+INSERT INTO workspaces (id, name, dir_path, project_id, sphere, is_active) VALUES
+  (1, 'Hub', ?, 'proj-hub', 'private', 1),
+  (2, 'Keep', ?, 'proj-keep', 'work', 0);
+INSERT INTO contexts (id, name) VALUES
+  (1, 'Hub'),
+  (2, 'Keep');
+`
+	if _, err := db.Exec(legacySchema, hubPath, keepPath, hubPath, keepPath); err != nil {
+		_ = db.Close()
+		t.Fatalf("seed legacy schema: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close legacy db: %v", err)
+	}
+
+	s, err := New(dbPath)
+	if err != nil {
+		t.Fatalf("New() error: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = s.Close()
+	})
+
+	projects, err := s.ListProjects()
+	if err != nil {
+		t.Fatalf("ListProjects() error: %v", err)
+	}
+	if len(projects) != 1 || projects[0].ID != "proj-keep" {
+		t.Fatalf("projects after purge = %#v, want only keep project", projects)
+	}
+
+	workspaces, err := s.ListWorkspaces()
+	if err != nil {
+		t.Fatalf("ListWorkspaces() error: %v", err)
+	}
+	if len(workspaces) != 1 || workspaces[0].Name != "Keep" {
+		t.Fatalf("workspaces after purge = %#v, want only keep workspace", workspaces)
+	}
+
+	if _, err := s.GetWorkspaceByPath(hubPath); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("GetWorkspaceByPath(hub) error = %v, want sql.ErrNoRows", err)
+	}
+
+	activeProjectID, err := s.ActiveProjectID()
+	if err != nil {
+		t.Fatalf("ActiveProjectID() error: %v", err)
+	}
+	if activeProjectID != "" {
+		t.Fatalf("ActiveProjectID() = %q, want empty", activeProjectID)
+	}
+
+	var hubContextCount int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM contexts WHERE lower(name) = 'hub'`).Scan(&hubContextCount); err != nil {
+		t.Fatalf("query hub context count: %v", err)
+	}
+	if hubContextCount != 0 {
+		t.Fatalf("hub context count = %d, want 0", hubContextCount)
 	}
 }

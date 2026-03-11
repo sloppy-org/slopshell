@@ -332,7 +332,6 @@ export async function fetchItemSidebarProjects() {
     }))
     .filter((project) => project.id
       && project.name
-      && project.id !== 'hub'
       && (!project.sphere || project.sphere === normalizeActiveSphere(state.activeSphere)));
 }
 

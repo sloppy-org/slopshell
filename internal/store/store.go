@@ -291,6 +291,9 @@ CREATE TABLE IF NOT EXISTS participant_room_state (
 	if err := s.migrateLegacyProjectData(); err != nil {
 		return err
 	}
+	if err := s.purgeLegacyHubData(); err != nil {
+		return err
+	}
 	if err := s.migrateParticipantSessionWorkspaceKey(); err != nil {
 		return err
 	}
