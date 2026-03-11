@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/krystophny/tabura/internal/cerebras"
 )
 
 type mockParallelAppServerState struct {
@@ -104,6 +105,50 @@ func setupMockParallelAppServer(t *testing.T, delay time.Duration, finalMessage 
 		}
 	}))
 	return server, state
+}
+
+func setupMockCerebrasServer(t *testing.T, status int, delay time.Duration, content string) (*httptest.Server, *int) {
+	t.Helper()
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if r.Method != http.MethodPost {
+			t.Fatalf("method = %s, want POST", r.Method)
+		}
+		if strings.TrimSpace(r.URL.Path) != "/v1/chat/completions" {
+			t.Fatalf("path = %s, want /v1/chat/completions", r.URL.Path)
+		}
+		if got := strings.TrimSpace(r.Header.Get("Authorization")); got != "Bearer token-cerebras" {
+			t.Fatalf("Authorization = %q, want Bearer token-cerebras", got)
+		}
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode payload: %v", err)
+		}
+		if got := strings.TrimSpace(strFromAny(payload["reasoning_effort"])); got != cerebras.DefaultReasoningEffort {
+			t.Fatalf("reasoning_effort = %q, want %q", got, cerebras.DefaultReasoningEffort)
+		}
+		time.Sleep(delay)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		if status == http.StatusOK {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"choices": []map[string]any{
+					{
+						"message": map[string]any{
+							"content": content,
+						},
+					},
+				},
+				"usage": map[string]any{
+					"total_tokens": 64,
+				},
+			})
+			return
+		}
+		_, _ = w.Write([]byte("upstream error"))
+	}))
+	return server, &requests
 }
 
 func newParallelTestApp(t *testing.T, appServerURL string) *App {
@@ -362,5 +407,109 @@ func TestRunAssistantTurnParallelSlowSparkEmitsAcknowledgment(t *testing.T) {
 	}
 	if provisionalText != "Let me check." {
 		t.Fatalf("provisional assistant_message = %q, want %q", provisionalText, "Let me check.")
+	}
+}
+
+func TestRunAssistantTurnParallelCerebrasClaimsTurn(t *testing.T) {
+	appServer, _ := setupMockParallelAppServer(t, 250*time.Millisecond, "Spark fallback.")
+	defer appServer.Close()
+	wsURL := "ws" + strings.TrimPrefix(appServer.URL, "http")
+
+	llm := setupMockIntentLLMServer(t, http.StatusOK, `{"kind":"local_answer","text":"Possible short answer.","confidence":"medium"}`)
+	defer llm.Close()
+
+	cerebrasServer, requests := setupMockCerebrasServer(t, http.StatusOK, 20*time.Millisecond, `{"text":"Cerebras wins the turn.","confidence":"high"}`)
+	defer cerebrasServer.Close()
+
+	app := newParallelTestApp(t, wsURL)
+	app.intentLLMURL = llm.URL
+	app.cerebrasClient = cerebras.NewClient(cerebrasServer.URL, "token-cerebras", cerebras.DefaultModel, cerebras.DefaultReasoningEffort)
+	app.cerebrasClient.HTTPClient = cerebrasServer.Client()
+
+	project, err := app.ensureDefaultProjectRecord()
+	if err != nil {
+		t.Fatalf("ensureDefaultProjectRecord: %v", err)
+	}
+	session, err := app.store.GetOrCreateChatSession(project.ProjectKey)
+	if err != nil {
+		t.Fatalf("GetOrCreateChatSession: %v", err)
+	}
+	if _, err := app.store.AddChatMessage(session.ID, "user", "explain the routing policy", "explain the routing policy", "text"); err != nil {
+		t.Fatalf("AddChatMessage(user): %v", err)
+	}
+
+	app.runAssistantTurn(session.ID, dequeuedTurn{outputMode: turnOutputModeSilent})
+
+	if got := latestAssistantMessage(t, app, session.ID); got != "Cerebras wins the turn." {
+		t.Fatalf("assistant message = %q, want Cerebras final reply", got)
+	}
+	messages, err := app.store.ListChatMessages(session.ID, 10)
+	if err != nil {
+		t.Fatalf("ListChatMessages: %v", err)
+	}
+	assistant := messages[len(messages)-1]
+	if assistant.Provider != assistantProviderCerebras {
+		t.Fatalf("provider = %q, want %q", assistant.Provider, assistantProviderCerebras)
+	}
+	if assistant.ProviderModel != cerebras.DefaultModel {
+		t.Fatalf("provider_model = %q, want %q", assistant.ProviderModel, cerebras.DefaultModel)
+	}
+	if *requests != 1 {
+		t.Fatalf("cerebras requests = %d, want 1", *requests)
+	}
+}
+
+func TestRunAssistantTurnParallelQuotaExhaustedDisablesCerebrasForRestOfDay(t *testing.T) {
+	appServer, _ := setupMockParallelAppServer(t, 25*time.Millisecond, "Spark handles the turn.")
+	defer appServer.Close()
+	wsURL := "ws" + strings.TrimPrefix(appServer.URL, "http")
+
+	llm := setupMockIntentLLMServer(t, http.StatusOK, `{"kind":"local_answer","text":"Possible short answer.","confidence":"medium"}`)
+	defer llm.Close()
+
+	cerebrasServer, requests := setupMockCerebrasServer(t, http.StatusTooManyRequests, 0, "")
+	defer cerebrasServer.Close()
+
+	app := newParallelTestApp(t, wsURL)
+	app.intentLLMURL = llm.URL
+	app.cerebrasClient = cerebras.NewClient(cerebrasServer.URL, "token-cerebras", cerebras.DefaultModel, cerebras.DefaultReasoningEffort)
+	app.cerebrasClient.HTTPClient = cerebrasServer.Client()
+
+	project, err := app.ensureDefaultProjectRecord()
+	if err != nil {
+		t.Fatalf("ensureDefaultProjectRecord: %v", err)
+	}
+	session, err := app.store.GetOrCreateChatSession(project.ProjectKey)
+	if err != nil {
+		t.Fatalf("GetOrCreateChatSession: %v", err)
+	}
+	if _, err := app.store.AddChatMessage(session.ID, "user", "first turn", "first turn", "text"); err != nil {
+		t.Fatalf("AddChatMessage(user): %v", err)
+	}
+	app.runAssistantTurn(session.ID, dequeuedTurn{outputMode: turnOutputModeSilent})
+	if app.cerebrasClient.IsAvailable() {
+		t.Fatal("cerebrasClient.IsAvailable() = true, want false after 429")
+	}
+	app.closeAppSession(session.ID)
+
+	if _, err := app.store.AddChatMessage(session.ID, "user", "second turn", "second turn", "text"); err != nil {
+		t.Fatalf("AddChatMessage(user): %v", err)
+	}
+	app.runAssistantTurn(session.ID, dequeuedTurn{outputMode: turnOutputModeSilent})
+
+	if got := latestAssistantMessage(t, app, session.ID); got != "Spark handles the turn." {
+		t.Fatalf("assistant message = %q, want Spark final reply", got)
+	}
+	if *requests != 1 {
+		t.Fatalf("cerebras requests = %d, want 1 after quota disable", *requests)
+	}
+	messages, err := app.store.ListChatMessages(session.ID, 20)
+	if err != nil {
+		t.Fatalf("ListChatMessages: %v", err)
+	}
+	for _, message := range messages {
+		if strings.EqualFold(strings.TrimSpace(message.Role), "system") && strings.Contains(strings.ToLower(message.ContentPlain), "cerebras") {
+			t.Fatalf("unexpected user-visible Cerebras error: %q", message.ContentPlain)
+		}
 	}
 }

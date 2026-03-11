@@ -19,6 +19,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/krystophny/tabura/internal/appserver"
 	tabcalendar "github.com/krystophny/tabura/internal/calendar"
+	"github.com/krystophny/tabura/internal/cerebras"
 	"github.com/krystophny/tabura/internal/email"
 	"github.com/krystophny/tabura/internal/extensions"
 	"github.com/krystophny/tabura/internal/ics"
@@ -37,6 +38,7 @@ const (
 	DefaultSTTFallbackLanguage  = "en"
 	DefaultSTTPreVADThresholdDB = -58.0
 	DefaultSTTPreVADMinSpeechMS = 120
+	DefaultCerebrasSecretFile   = "cerebras-api-key"
 	SessionCookie               = "tabura_session"
 	cookieMaxAgeSec             = 60 * 60 * 24 * 365
 	DaemonPort                  = 9420
@@ -64,6 +66,8 @@ type App struct {
 	appServerURL                  string
 	appServerModel                string
 	appServerSparkReasoningEffort string
+	cerebrasClient                *cerebras.Client
+	cerebrasReasoningEffort       string
 	intentLLMURL                  string
 	intentLLMModel                string
 	intentLLMProfile              string
@@ -174,6 +178,33 @@ func New(dataDir, localProjectDir, localMCPURL, appServerURL, model, ttsURL, spa
 	} else if resolvedIntentLLMURL == "" {
 		resolvedIntentLLMURL = DefaultIntentLLMURL
 	}
+	resolvedCerebrasURL := strings.TrimSpace(os.Getenv("TABURA_CEREBRAS_URL"))
+	if strings.EqualFold(resolvedCerebrasURL, "off") {
+		resolvedCerebrasURL = ""
+	} else if resolvedCerebrasURL == "" {
+		resolvedCerebrasURL = cerebras.DefaultBaseURL
+	}
+	resolvedCerebrasAPIKey := strings.TrimSpace(os.Getenv("TABURA_CEREBRAS_API_KEY"))
+	if resolvedCerebrasAPIKey == "" {
+		resolvedCerebrasAPIKey = readOptionalSecretFile(defaultSecretPath(DefaultCerebrasSecretFile))
+	}
+	resolvedCerebrasModel := strings.TrimSpace(os.Getenv("TABURA_CEREBRAS_MODEL"))
+	if resolvedCerebrasModel == "" {
+		resolvedCerebrasModel = cerebras.DefaultModel
+	}
+	resolvedCerebrasReasoningEffort := strings.TrimSpace(os.Getenv("TABURA_CEREBRAS_REASONING_EFFORT"))
+	if resolvedCerebrasReasoningEffort == "" {
+		resolvedCerebrasReasoningEffort = cerebras.DefaultReasoningEffort
+	}
+	var cerebrasClient *cerebras.Client
+	if resolvedCerebrasURL != "" && resolvedCerebrasAPIKey != "" {
+		cerebrasClient = cerebras.NewClient(
+			resolvedCerebrasURL,
+			resolvedCerebrasAPIKey,
+			resolvedCerebrasModel,
+			resolvedCerebrasReasoningEffort,
+		)
+	}
 	resolvedIntentLLMModel := strings.TrimSpace(os.Getenv("TABURA_INTENT_LLM_MODEL"))
 	if strings.EqualFold(resolvedIntentLLMModel, "off") {
 		resolvedIntentLLMModel = ""
@@ -262,6 +293,8 @@ func New(dataDir, localProjectDir, localMCPURL, appServerURL, model, ttsURL, spa
 		appServerURL:                  appServerURL,
 		appServerModel:                resolvedModel,
 		appServerSparkReasoningEffort: resolvedSparkReasoningEffort,
+		cerebrasClient:                cerebrasClient,
+		cerebrasReasoningEffort:       resolvedCerebrasReasoningEffort,
 		intentLLMURL:                  resolvedIntentLLMURL,
 		intentLLMModel:                resolvedIntentLLMModel,
 		intentLLMProfile:              resolvedIntentLLMProfile,
@@ -353,6 +386,25 @@ func persistedDefaultChatModel(s *store.Store) string {
 
 func randomToken() string {
 	return strconv.FormatInt(time.Now().UnixNano(), 16) + "-" + strconv.FormatInt(time.Now().Unix()%99991, 16)
+}
+
+func defaultSecretPath(fileName string) string {
+	home, err := os.UserHomeDir()
+	if err != nil || strings.TrimSpace(home) == "" {
+		return ""
+	}
+	return filepath.Join(home, ".config", "tabura", "secrets", fileName)
+}
+
+func readOptionalSecretFile(path string) string {
+	if strings.TrimSpace(path) == "" {
+		return ""
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
 }
 
 func isHTTPS(r *http.Request) bool {
