@@ -29,12 +29,11 @@ func (s *Store) CreateWorkspace(name, dirPath string, sphere ...string) (Workspa
 		return Workspace{}, err
 	}
 	res, err := s.db.Exec(
-		`INSERT INTO workspaces (name, dir_path, project_id, sphere)
-		 VALUES (?, ?, ?, ?)`,
+		`INSERT INTO workspaces (name, dir_path, project_id)
+		 VALUES (?, ?, ?)`,
 		cleanName,
 		cleanPath,
 		normalizeOptionalProjectID(projectID),
-		cleanSphere,
 	)
 	if err != nil {
 		return Workspace{}, err
@@ -43,12 +42,15 @@ func (s *Store) CreateWorkspace(name, dirPath string, sphere ...string) (Workspa
 	if err != nil {
 		return Workspace{}, err
 	}
+	if err := s.syncScopedContextLink("context_workspaces", "workspace_id", id, cleanSphere); err != nil {
+		return Workspace{}, err
+	}
 	return s.GetWorkspace(id)
 }
 
 func (s *Store) GetWorkspace(id int64) (Workspace, error) {
 	return scanWorkspace(s.db.QueryRow(
-		`SELECT id, name, dir_path, project_id, sphere, is_active, mcp_url, canvas_session_id, chat_model, chat_model_reasoning_effort, created_at, updated_at
+		`SELECT id, name, dir_path, project_id, `+scopedContextSelect("context_workspaces", "workspace_id", "workspaces.id")+` AS sphere, is_active, mcp_url, canvas_session_id, chat_model, chat_model_reasoning_effort, created_at, updated_at
 		 FROM workspaces
 		 WHERE id = ?`,
 		id,
@@ -57,7 +59,7 @@ func (s *Store) GetWorkspace(id int64) (Workspace, error) {
 
 func (s *Store) GetWorkspaceByPath(dirPath string) (Workspace, error) {
 	return scanWorkspace(s.db.QueryRow(
-		`SELECT id, name, dir_path, project_id, sphere, is_active, mcp_url, canvas_session_id, chat_model, chat_model_reasoning_effort, created_at, updated_at
+		`SELECT id, name, dir_path, project_id, `+scopedContextSelect("context_workspaces", "workspace_id", "workspaces.id")+` AS sphere, is_active, mcp_url, canvas_session_id, chat_model, chat_model_reasoning_effort, created_at, updated_at
 		 FROM workspaces
 		 WHERE dir_path = ?`,
 		normalizeWorkspacePath(dirPath),
@@ -73,11 +75,11 @@ func (s *Store) ListWorkspacesForSphere(sphere string) ([]Workspace, error) {
 	if err != nil {
 		return nil, err
 	}
-	query := `SELECT id, name, dir_path, project_id, sphere, is_active, mcp_url, canvas_session_id, chat_model, chat_model_reasoning_effort, created_at, updated_at
+	query := `SELECT id, name, dir_path, project_id, ` + scopedContextSelect("context_workspaces", "workspace_id", "workspaces.id") + ` AS sphere, is_active, mcp_url, canvas_session_id, chat_model, chat_model_reasoning_effort, created_at, updated_at
 		 FROM workspaces`
 	args := []any{}
 	if cleanSphere != "" {
-		query += ` WHERE sphere = ?`
+		query += ` WHERE ` + scopedContextFilter("context_workspaces", "workspace_id", "workspaces.id")
 		args = append(args, cleanSphere)
 	}
 	rows, err := s.db.Query(
@@ -114,7 +116,7 @@ func (s *Store) ListWorkspacesForProject(projectID string) ([]Workspace, error) 
 		return nil, errors.New("project id is required")
 	}
 	rows, err := s.db.Query(
-		`SELECT id, name, dir_path, project_id, sphere, is_active, mcp_url, canvas_session_id, chat_model, chat_model_reasoning_effort, created_at, updated_at
+		`SELECT id, name, dir_path, project_id, `+scopedContextSelect("context_workspaces", "workspace_id", "workspaces.id")+` AS sphere, is_active, mcp_url, canvas_session_id, chat_model, chat_model_reasoning_effort, created_at, updated_at
 		 FROM workspaces
 		 WHERE project_id = ?
 		 ORDER BY is_active DESC, lower(name) ASC, id ASC`,
@@ -267,13 +269,7 @@ func (s *Store) SetWorkspaceSphere(id int64, sphere string) (Workspace, error) {
 	if cleanSphere == "" {
 		return Workspace{}, errors.New("workspace sphere must be work or private")
 	}
-	tx, err := s.db.Begin()
-	if err != nil {
-		return Workspace{}, err
-	}
-	defer tx.Rollback()
-
-	res, err := tx.Exec(`UPDATE workspaces SET sphere = ?, updated_at = datetime('now') WHERE id = ?`, cleanSphere, id)
+	res, err := s.db.Exec(`UPDATE workspaces SET updated_at = datetime('now') WHERE id = ?`, id)
 	if err != nil {
 		return Workspace{}, err
 	}
@@ -284,17 +280,33 @@ func (s *Store) SetWorkspaceSphere(id int64, sphere string) (Workspace, error) {
 	if affected == 0 {
 		return Workspace{}, sql.ErrNoRows
 	}
-	if _, err := tx.Exec(
-		`UPDATE items
-		 SET sphere = ?, updated_at = datetime('now')
-		 WHERE workspace_id = ?`,
-		cleanSphere,
-		id,
-	); err != nil {
+	if err := s.syncScopedContextLink("context_workspaces", "workspace_id", id, cleanSphere); err != nil {
 		return Workspace{}, err
 	}
-	if err := tx.Commit(); err != nil {
+	rows, err := s.db.Query(`SELECT id FROM items WHERE workspace_id = ?`, id)
+	if err != nil {
 		return Workspace{}, err
+	}
+	itemIDs := []int64{}
+	for rows.Next() {
+		var itemID int64
+		if err := rows.Scan(&itemID); err != nil {
+			_ = rows.Close()
+			return Workspace{}, err
+		}
+		itemIDs = append(itemIDs, itemID)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return Workspace{}, err
+	}
+	if err := rows.Close(); err != nil {
+		return Workspace{}, err
+	}
+	for _, itemID := range itemIDs {
+		if err := s.syncScopedContextLink("context_items", "item_id", itemID, cleanSphere); err != nil {
+			return Workspace{}, err
+		}
 	}
 	return s.GetWorkspace(id)
 }

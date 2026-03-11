@@ -14,6 +14,25 @@ func (s *Store) CreateContext(name string, parentID *int64) (Context, error) {
 	if parentID != nil && *parentID <= 0 {
 		return Context{}, errors.New("parent_id must be a positive integer")
 	}
+	var existingID int64
+	err := s.db.QueryRow(
+		`SELECT id
+		 FROM contexts
+		 WHERE lower(name) = lower(?)
+		   AND (
+		     (parent_id IS NULL AND ? IS NULL)
+		     OR parent_id = ?
+		   )`,
+		cleanName,
+		parentID,
+		parentID,
+	).Scan(&existingID)
+	switch {
+	case err == nil:
+		return s.GetContext(existingID)
+	case !errors.Is(err, sql.ErrNoRows):
+		return Context{}, err
+	}
 	res, err := s.db.Exec(
 		`INSERT INTO contexts (name, parent_id) VALUES (?, ?)`,
 		cleanName,

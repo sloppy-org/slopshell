@@ -55,7 +55,7 @@ func appendItemFilterClauses(parts []string, args []any, filter ItemListFilter, 
 		return `(SELECT project_id FROM workspaces WHERE id = ` + outerColumn("workspace_id") + `)`
 	}
 	if filter.Sphere != "" {
-		parts = append(parts, column("sphere")+" = ?")
+		parts = append(parts, scopedContextFilter("context_items", "item_id", outerColumn("id")))
 		args = append(args, filter.Sphere)
 	}
 	if filter.Source != "" {

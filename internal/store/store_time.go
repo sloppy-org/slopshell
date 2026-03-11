@@ -13,7 +13,6 @@ const timeEntriesTableSchema = `CREATE TABLE IF NOT EXISTS time_entries (
   id INTEGER PRIMARY KEY,
   workspace_id INTEGER REFERENCES workspaces(id) ON DELETE SET NULL,
   project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
-  sphere TEXT NOT NULL CHECK (sphere IN ('work', 'private')),
   started_at TEXT NOT NULL,
   ended_at TEXT,
   activity TEXT NOT NULL DEFAULT '',
@@ -130,7 +129,7 @@ func (s *Store) validateTimeEntryContext(workspaceID *int64, projectID *string, 
 
 func (s *Store) ActiveWorkspace() (Workspace, error) {
 	return scanWorkspace(s.db.QueryRow(
-		`SELECT id, name, dir_path, project_id, sphere, is_active, mcp_url, canvas_session_id, chat_model, chat_model_reasoning_effort, created_at, updated_at
+		`SELECT id, name, dir_path, project_id, ` + scopedContextSelect("context_workspaces", "workspace_id", "workspaces.id") + ` AS sphere, is_active, mcp_url, canvas_session_id, chat_model, chat_model_reasoning_effort, created_at, updated_at
 		 FROM workspaces
 		 WHERE is_active <> 0
 		 ORDER BY updated_at DESC, id DESC
@@ -140,7 +139,7 @@ func (s *Store) ActiveWorkspace() (Workspace, error) {
 
 func (s *Store) ActiveTimeEntry() (*TimeEntry, error) {
 	entry, err := scanTimeEntry(s.db.QueryRow(
-		`SELECT id, workspace_id, project_id, sphere, started_at, ended_at, activity, notes
+		`SELECT id, workspace_id, project_id, ` + scopedContextSelect("context_time_entries", "time_entry_id", "time_entries.id") + ` AS sphere, started_at, ended_at, activity, notes
 		 FROM time_entries
 		 WHERE ended_at IS NULL
 		 ORDER BY started_at DESC, id DESC
@@ -167,11 +166,10 @@ func (s *Store) StartTimeEntry(at time.Time, workspaceID *int64, projectID *stri
 	}
 	cleanProjectID := normalizeOptionalString(projectID)
 	res, err := s.db.Exec(
-		`INSERT INTO time_entries (workspace_id, project_id, sphere, started_at, activity, notes)
-		 VALUES (?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO time_entries (workspace_id, project_id, started_at, activity, notes)
+		 VALUES (?, ?, ?, ?, ?)`,
 		nullablePositiveID(derefInt64(workspaceID)),
 		cleanProjectID,
-		cleanSphere,
 		startedAt,
 		cleanActivity,
 		normalizeOptionalString(notes),
@@ -181,6 +179,9 @@ func (s *Store) StartTimeEntry(at time.Time, workspaceID *int64, projectID *stri
 	}
 	id, err := res.LastInsertId()
 	if err != nil {
+		return TimeEntry{}, err
+	}
+	if err := s.syncScopedContextLink("context_time_entries", "time_entry_id", id, cleanSphere); err != nil {
 		return TimeEntry{}, err
 	}
 	return s.GetTimeEntry(id)
@@ -222,7 +223,7 @@ func (s *Store) StopActiveTimeEntries(at time.Time) (int64, error) {
 
 func (s *Store) GetTimeEntry(id int64) (TimeEntry, error) {
 	return scanTimeEntry(s.db.QueryRow(
-		`SELECT id, workspace_id, project_id, sphere, started_at, ended_at, activity, notes
+		`SELECT id, workspace_id, project_id, `+scopedContextSelect("context_time_entries", "time_entry_id", "time_entries.id")+` AS sphere, started_at, ended_at, activity, notes
 		 FROM time_entries
 		 WHERE id = ?`,
 		id,
@@ -234,12 +235,12 @@ func (s *Store) ListTimeEntries(filter TimeEntryListFilter) ([]TimeEntry, error)
 	if err != nil {
 		return nil, err
 	}
-	query := `SELECT id, workspace_id, project_id, sphere, started_at, ended_at, activity, notes
+	query := `SELECT id, workspace_id, project_id, ` + scopedContextSelect("context_time_entries", "time_entry_id", "time_entries.id") + ` AS sphere, started_at, ended_at, activity, notes
 		FROM time_entries`
 	parts := make([]string, 0, 4)
 	args := make([]any, 0, 4)
 	if normalized.Sphere != "" {
-		parts = append(parts, "sphere = ?")
+		parts = append(parts, scopedContextFilter("context_time_entries", "time_entry_id", "time_entries.id"))
 		args = append(args, normalized.Sphere)
 	}
 	if normalized.ActiveOnly {

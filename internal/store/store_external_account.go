@@ -143,7 +143,7 @@ func scanExternalAccount(
 
 func (s *Store) ListExternalAccounts(sphere string) ([]ExternalAccount, error) {
 	cleanSphere := strings.TrimSpace(sphere)
-	query := `SELECT id, sphere, provider, label, config_json, enabled, created_at, updated_at
+	query := `SELECT id, ` + scopedContextSelect("context_external_accounts", "account_id", "external_accounts.id") + ` AS sphere, provider, label, config_json, enabled, created_at, updated_at
 	 FROM external_accounts`
 	args := []any{}
 	if cleanSphere != "" {
@@ -151,7 +151,7 @@ func (s *Store) ListExternalAccounts(sphere string) ([]ExternalAccount, error) {
 		if cleanSphere == "" {
 			return nil, errors.New("external account sphere is required")
 		}
-		query += ` WHERE sphere = ?`
+		query += ` WHERE ` + scopedContextFilter("context_external_accounts", "account_id", "external_accounts.id")
 		args = append(args, cleanSphere)
 	}
 	query += ` ORDER BY lower(label), id`
@@ -178,7 +178,7 @@ func (s *Store) ListExternalAccountsByProvider(provider string) ([]ExternalAccou
 		return nil, errors.New("external account provider is required")
 	}
 	rows, err := s.db.Query(
-		`SELECT id, sphere, provider, label, config_json, enabled, created_at, updated_at
+		`SELECT id, `+scopedContextSelect("context_external_accounts", "account_id", "external_accounts.id")+` AS sphere, provider, label, config_json, enabled, created_at, updated_at
 		 FROM external_accounts
 		 WHERE provider = ?
 		 ORDER BY lower(label), id`,
@@ -202,7 +202,7 @@ func (s *Store) ListExternalAccountsByProvider(provider string) ([]ExternalAccou
 
 func (s *Store) GetExternalAccount(id int64) (ExternalAccount, error) {
 	row := s.db.QueryRow(
-		`SELECT id, sphere, provider, label, config_json, enabled, created_at, updated_at
+		`SELECT id, `+scopedContextSelect("context_external_accounts", "account_id", "external_accounts.id")+` AS sphere, provider, label, config_json, enabled, created_at, updated_at
 		 FROM external_accounts
 		 WHERE id = ?`,
 		id,
@@ -228,9 +228,8 @@ func (s *Store) CreateExternalAccount(sphere, provider, label string, config map
 		return ExternalAccount{}, err
 	}
 	res, err := s.db.Exec(
-		`INSERT INTO external_accounts (sphere, provider, label, config_json, enabled)
-		 VALUES (?, ?, ?, ?, 1)`,
-		cleanSphere,
+		`INSERT INTO external_accounts (provider, label, config_json, enabled)
+		 VALUES (?, ?, ?, 1)`,
 		cleanProvider,
 		cleanLabel,
 		configJSON,
@@ -240,6 +239,9 @@ func (s *Store) CreateExternalAccount(sphere, provider, label string, config map
 	}
 	id, err := res.LastInsertId()
 	if err != nil {
+		return ExternalAccount{}, err
+	}
+	if err := s.syncScopedContextLink("context_external_accounts", "account_id", id, cleanSphere); err != nil {
 		return ExternalAccount{}, err
 	}
 	return s.GetExternalAccount(id)
@@ -290,9 +292,8 @@ func (s *Store) UpdateExternalAccount(id int64, update ExternalAccountUpdate) er
 
 	res, err := s.db.Exec(
 		`UPDATE external_accounts
-		 SET sphere = ?, provider = ?, label = ?, config_json = ?, enabled = ?, updated_at = datetime('now')
+		 SET provider = ?, label = ?, config_json = ?, enabled = ?, updated_at = datetime('now')
 		 WHERE id = ?`,
-		sphere,
 		provider,
 		label,
 		configJSON,
@@ -309,7 +310,7 @@ func (s *Store) UpdateExternalAccount(id int64, update ExternalAccountUpdate) er
 	if affected == 0 {
 		return sql.ErrNoRows
 	}
-	return nil
+	return s.syncScopedContextLink("context_external_accounts", "account_id", id, sphere)
 }
 
 func (s *Store) DeleteExternalAccount(id int64) error {

@@ -17,7 +17,6 @@ const itemsTableSchema = `CREATE TABLE IF NOT EXISTS items (
   state TEXT NOT NULL DEFAULT 'inbox' CHECK (state IN ('inbox', 'waiting', 'someday', 'done')),
   workspace_id INTEGER REFERENCES workspaces(id) ON DELETE SET NULL,
   project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
-  sphere TEXT NOT NULL DEFAULT 'private' CHECK (sphere IN ('work', 'private')),
   artifact_id INTEGER REFERENCES artifacts(id) ON DELETE SET NULL,
   actor_id INTEGER REFERENCES actors(id) ON DELETE SET NULL,
   visible_after TEXT,
@@ -38,7 +37,6 @@ CREATE TABLE IF NOT EXISTS workspaces (
   name TEXT NOT NULL,
   dir_path TEXT NOT NULL UNIQUE,
   project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
-  sphere TEXT NOT NULL DEFAULT 'private' CHECK (sphere IN ('work', 'private')),
   is_active INTEGER NOT NULL DEFAULT 0,
   mcp_url TEXT NOT NULL DEFAULT '',
   canvas_session_id TEXT NOT NULL DEFAULT '',
@@ -93,7 +91,6 @@ CREATE TABLE IF NOT EXISTS artifacts (
 );
 CREATE TABLE IF NOT EXISTS external_accounts (
   id INTEGER PRIMARY KEY,
-  sphere TEXT NOT NULL CHECK (sphere IN ('work', 'private')),
   provider TEXT NOT NULL,
   label TEXT NOT NULL,
   config_json TEXT NOT NULL DEFAULT '{}',
@@ -102,15 +99,14 @@ CREATE TABLE IF NOT EXISTS external_accounts (
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_external_accounts_identity
-  ON external_accounts(lower(sphere), lower(provider), lower(label));
+  ON external_accounts(lower(provider), lower(label));
 CREATE TABLE IF NOT EXISTS external_container_mappings (
   id INTEGER PRIMARY KEY,
   provider TEXT NOT NULL,
   container_type TEXT NOT NULL,
   container_ref TEXT NOT NULL,
   workspace_id INTEGER REFERENCES workspaces(id) ON DELETE SET NULL,
-  project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
-  sphere TEXT CHECK (sphere IN ('work', 'private'))
+  project_id TEXT REFERENCES projects(id) ON DELETE SET NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_external_container_mappings_identity
   ON external_container_mappings(lower(provider), lower(container_type), lower(container_ref));
@@ -178,6 +174,23 @@ CREATE TABLE IF NOT EXISTS workspace_watches (
 	if _, err := s.db.Exec(timeEntriesTableSchema); err != nil {
 		return err
 	}
+	if _, err := s.db.Exec(`CREATE TABLE IF NOT EXISTS context_external_accounts (
+  context_id INTEGER NOT NULL REFERENCES contexts(id) ON DELETE CASCADE,
+  account_id INTEGER NOT NULL REFERENCES external_accounts(id) ON DELETE CASCADE,
+  PRIMARY KEY (context_id, account_id)
+);
+CREATE TABLE IF NOT EXISTS context_external_container_mappings (
+  context_id INTEGER NOT NULL REFERENCES contexts(id) ON DELETE CASCADE,
+  mapping_id INTEGER NOT NULL REFERENCES external_container_mappings(id) ON DELETE CASCADE,
+  PRIMARY KEY (context_id, mapping_id)
+);
+CREATE TABLE IF NOT EXISTS context_time_entries (
+  context_id INTEGER NOT NULL REFERENCES contexts(id) ON DELETE CASCADE,
+  time_entry_id INTEGER NOT NULL REFERENCES time_entries(id) ON DELETE CASCADE,
+  PRIMARY KEY (context_id, time_entry_id)
+);`); err != nil {
+		return err
+	}
 	if err := s.migrateItemTableStateSupport(); err != nil {
 		return err
 	}
@@ -190,10 +203,7 @@ CREATE TABLE IF NOT EXISTS workspace_watches (
 	if err := s.migrateWorkspaceConfigSupport(); err != nil {
 		return err
 	}
-	if err := s.migrateWorkspaceSphereSupport(); err != nil {
-		return err
-	}
-	if err := s.migrateItemSphereSupport(); err != nil {
+	if err := s.migrateSphereToContextSupport(); err != nil {
 		return err
 	}
 	if err := s.migrateActorContactSupport(); err != nil {
@@ -489,15 +499,25 @@ func (s *Store) migrateItemTableStateSupport() error {
 	}
 	if _, err := tx.Exec(`
 INSERT INTO items (
-	id, title, state, workspace_id, project_id, sphere, artifact_id, actor_id, visible_after, follow_up_at, source, source_ref, created_at, updated_at
+	id, title, state, workspace_id, project_id, artifact_id, actor_id, visible_after, follow_up_at, source, source_ref, created_at, updated_at
 )
 SELECT
-	id, title, state, workspace_id, NULL, 'private', artifact_id, actor_id, visible_after, follow_up_at, source, source_ref, created_at, updated_at
+	id, title, state, workspace_id, NULL, artifact_id, actor_id, visible_after, follow_up_at, source, source_ref, created_at, updated_at
 FROM items_legacy
 `); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(`DROP TABLE items_legacy`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DROP TABLE IF EXISTS context_items`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`CREATE TABLE context_items (
+  context_id INTEGER NOT NULL REFERENCES contexts(id) ON DELETE CASCADE,
+  item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+  PRIMARY KEY (context_id, item_id)
+)`); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -516,15 +536,7 @@ func (s *Store) migrateItemProjectColumnSupport() error {
 }
 
 func (s *Store) migrateItemSphereSupport() error {
-	tableColumns, err := s.tableColumnSet("items")
-	if err != nil {
-		return err
-	}
-	if tableColumns["items"]["sphere"] {
-		return nil
-	}
-	_, err = s.db.Exec(`ALTER TABLE items ADD COLUMN sphere TEXT NOT NULL DEFAULT 'private' CHECK (sphere IN ('work', 'private'))`)
-	return err
+	return nil
 }
 
 func scanWorkspace(

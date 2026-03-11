@@ -31,23 +31,26 @@ func TestStoreMigratesDomainTablesOnFreshDatabase(t *testing.T) {
 		t.Fatalf("TableColumns() error: %v", err)
 	}
 	for table, want := range map[string][]string{
-		"workspaces":                  {"id", "name", "dir_path", "project_id", "sphere", "is_active", "mcp_url", "canvas_session_id", "chat_model", "chat_model_reasoning_effort", "created_at", "updated_at"},
-		"contexts":                    {"id", "name", "color", "parent_id", "created_at"},
-		"context_items":               {"context_id", "item_id"},
-		"context_artifacts":           {"context_id", "artifact_id"},
-		"context_workspaces":          {"context_id", "workspace_id"},
-		"actors":                      {"id", "name", "kind", "email", "provider", "provider_ref", "meta_json", "created_at"},
-		"artifacts":                   {"id", "kind", "ref_path", "ref_url", "title", "meta_json", "created_at", "updated_at"},
-		"external_accounts":           {"id", "sphere", "provider", "label", "config_json", "enabled", "created_at", "updated_at"},
-		"external_container_mappings": {"id", "provider", "container_type", "container_ref", "workspace_id", "project_id", "sphere"},
-		"item_artifacts":              {"item_id", "artifact_id", "role", "created_at"},
-		"workspace_artifact_links":    {"workspace_id", "artifact_id", "created_at"},
-		"external_bindings":           {"id", "account_id", "provider", "object_type", "remote_id", "item_id", "artifact_id", "container_ref", "remote_updated_at", "last_synced_at"},
-		"batch_runs":                  {"id", "workspace_id", "started_at", "finished_at", "config_json", "status"},
-		"batch_run_items":             {"batch_id", "item_id", "status", "pr_number", "pr_url", "error_msg", "started_at", "finished_at"},
-		"workspace_watches":           {"workspace_id", "config_json", "poll_interval_seconds", "enabled", "current_batch_id", "created_at", "updated_at"},
-		"items":                       {"id", "title", "state", "workspace_id", "project_id", "sphere", "artifact_id", "actor_id", "visible_after", "follow_up_at", "source", "source_ref", "review_target", "reviewer", "reviewed_at", "created_at", "updated_at"},
-		"time_entries":                {"id", "workspace_id", "project_id", "sphere", "started_at", "ended_at", "activity", "notes"},
+		"workspaces":                          {"id", "name", "dir_path", "project_id", "is_active", "mcp_url", "canvas_session_id", "chat_model", "chat_model_reasoning_effort", "created_at", "updated_at"},
+		"contexts":                            {"id", "name", "color", "parent_id", "created_at"},
+		"context_items":                       {"context_id", "item_id"},
+		"context_artifacts":                   {"context_id", "artifact_id"},
+		"context_workspaces":                  {"context_id", "workspace_id"},
+		"context_external_accounts":           {"context_id", "account_id"},
+		"context_external_container_mappings": {"context_id", "mapping_id"},
+		"context_time_entries":                {"context_id", "time_entry_id"},
+		"actors":                              {"id", "name", "kind", "email", "provider", "provider_ref", "meta_json", "created_at"},
+		"artifacts":                           {"id", "kind", "ref_path", "ref_url", "title", "meta_json", "created_at", "updated_at"},
+		"external_accounts":                   {"id", "provider", "label", "config_json", "enabled", "created_at", "updated_at"},
+		"external_container_mappings":         {"id", "provider", "container_type", "container_ref", "workspace_id", "project_id"},
+		"item_artifacts":                      {"item_id", "artifact_id", "role", "created_at"},
+		"workspace_artifact_links":            {"workspace_id", "artifact_id", "created_at"},
+		"external_bindings":                   {"id", "account_id", "provider", "object_type", "remote_id", "item_id", "artifact_id", "container_ref", "remote_updated_at", "last_synced_at"},
+		"batch_runs":                          {"id", "workspace_id", "started_at", "finished_at", "config_json", "status"},
+		"batch_run_items":                     {"batch_id", "item_id", "status", "pr_number", "pr_url", "error_msg", "started_at", "finished_at"},
+		"workspace_watches":                   {"workspace_id", "config_json", "poll_interval_seconds", "enabled", "current_batch_id", "created_at", "updated_at"},
+		"items":                               {"id", "title", "state", "workspace_id", "project_id", "artifact_id", "actor_id", "visible_after", "follow_up_at", "source", "source_ref", "review_target", "reviewer", "reviewed_at", "created_at", "updated_at"},
+		"time_entries":                        {"id", "workspace_id", "project_id", "started_at", "ended_at", "activity", "notes"},
 	} {
 		got := make(map[string]bool, len(columns[table]))
 		for _, name := range columns[table] {
@@ -133,7 +136,7 @@ CREATE TABLE chat_messages (
 	if err != nil {
 		t.Fatalf("TableColumns() error: %v", err)
 	}
-	for _, table := range []string{"workspaces", "contexts", "context_items", "context_artifacts", "context_workspaces", "actors", "artifacts", "external_accounts", "external_container_mappings", "item_artifacts", "workspace_artifact_links", "external_bindings", "batch_runs", "batch_run_items", "items", "time_entries"} {
+	for _, table := range []string{"workspaces", "contexts", "context_items", "context_artifacts", "context_workspaces", "context_external_accounts", "context_external_container_mappings", "context_time_entries", "actors", "artifacts", "external_accounts", "external_container_mappings", "item_artifacts", "workspace_artifact_links", "external_bindings", "batch_runs", "batch_run_items", "items", "time_entries"} {
 		if _, ok := columns[table]; !ok {
 			t.Fatalf("expected migrated table %s to exist", table)
 		}
@@ -212,7 +215,9 @@ func TestItemSchemaAllowsNilOptionalFields(t *testing.T) {
 		source, sourceRef                   sql.NullString
 	)
 	err = s.db.QueryRow(`
-SELECT title, workspace_id, project_id, sphere, artifact_id, actor_id, visible_after, follow_up_at, source, source_ref
+SELECT title, workspace_id, project_id,
+  `+scopedContextSelect("context_items", "item_id", "items.id")+`,
+  artifact_id, actor_id, visible_after, follow_up_at, source, source_ref
 FROM items
 WHERE id = ?
 `, id).Scan(&title, &workspaceID, &projectID, &sphere, &artifactID, &actorID, &visibleAfter, &followUpAt, &source, &sourceRef)

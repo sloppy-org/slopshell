@@ -54,18 +54,20 @@ func (s *Store) ensureWorkspaceForLegacyProject(project Project) (Workspace, err
 	}
 
 	res, err := s.db.Exec(
-		`INSERT INTO workspaces (name, dir_path, project_id, sphere)
-		 VALUES (?, ?, ?, ?)`,
+		`INSERT INTO workspaces (name, dir_path, project_id)
+		 VALUES (?, ?, ?)`,
 		workspaceNameForLegacyProject(project),
 		rootPath,
 		projectID,
-		SpherePrivate,
 	)
 	if err != nil {
 		return Workspace{}, err
 	}
 	id, err := res.LastInsertId()
 	if err != nil {
+		return Workspace{}, err
+	}
+	if err := s.syncScopedContextLink("context_workspaces", "workspace_id", id, SpherePrivate); err != nil {
 		return Workspace{}, err
 	}
 	return s.GetWorkspace(id)

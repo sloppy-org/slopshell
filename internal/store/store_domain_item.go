@@ -50,13 +50,12 @@ func (s *Store) CreateItem(title string, opts ItemOptions) (Item, error) {
 
 	res, err := tx.Exec(
 		`INSERT INTO items (
-			title, state, workspace_id, project_id, sphere, artifact_id, actor_id, visible_after, follow_up_at, source, source_ref, review_target, reviewer, reviewed_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			title, state, workspace_id, project_id, artifact_id, actor_id, visible_after, follow_up_at, source, source_ref, review_target, reviewer, reviewed_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		cleanTitle,
 		cleanState,
 		opts.WorkspaceID,
 		normalizeOptionalProjectID(opts.ProjectID),
-		itemSphere,
 		opts.ArtifactID,
 		opts.ActorID,
 		normalizeOptionalString(opts.VisibleAfter),
@@ -80,12 +79,15 @@ func (s *Store) CreateItem(title string, opts ItemOptions) (Item, error) {
 	if err := tx.Commit(); err != nil {
 		return Item{}, err
 	}
+	if err := s.syncScopedContextLink("context_items", "item_id", id, itemSphere); err != nil {
+		return Item{}, err
+	}
 	return s.GetItem(id)
 }
 
 func (s *Store) GetItem(id int64) (Item, error) {
 	return scanItem(s.db.QueryRow(
-		`SELECT id, title, state, workspace_id, project_id, sphere, artifact_id, actor_id, visible_after, follow_up_at, source, source_ref, review_target, reviewer, reviewed_at, created_at, updated_at
+		`SELECT id, title, state, workspace_id, project_id, `+scopedContextSelect("context_items", "item_id", "items.id")+` AS sphere, artifact_id, actor_id, visible_after, follow_up_at, source, source_ref, review_target, reviewer, reviewed_at, created_at, updated_at
 		 FROM items
 		 WHERE id = ?`,
 		id,
@@ -99,7 +101,7 @@ func (s *Store) GetItemBySource(source, sourceRef string) (Item, error) {
 		return Item{}, errors.New("item source and source_ref are required")
 	}
 	return scanItem(s.db.QueryRow(
-		`SELECT id, title, state, workspace_id, project_id, sphere, artifact_id, actor_id, visible_after, follow_up_at, source, source_ref, review_target, reviewer, reviewed_at, created_at, updated_at
+		`SELECT id, title, state, workspace_id, project_id, `+scopedContextSelect("context_items", "item_id", "items.id")+` AS sphere, artifact_id, actor_id, visible_after, follow_up_at, source, source_ref, review_target, reviewer, reviewed_at, created_at, updated_at
 		 FROM items
 		 WHERE source = ? AND source_ref = ?`,
 		cleanSource,
@@ -127,12 +129,11 @@ func (s *Store) UpsertItemFromSource(source, sourceRef, title string, workspaceI
 		}
 		res, err := s.db.Exec(
 			`UPDATE items
-			 SET title = ?, workspace_id = ?, project_id = ?, sphere = ?, updated_at = datetime('now')
+			 SET title = ?, workspace_id = ?, project_id = ?, updated_at = datetime('now')
 		 WHERE id = ?`,
 			cleanTitle,
 			workspaceID,
 			normalizeOptionalProjectID(existing.ProjectID),
-			itemSphere,
 			existing.ID,
 		)
 		if err != nil {
@@ -144,6 +145,9 @@ func (s *Store) UpsertItemFromSource(source, sourceRef, title string, workspaceI
 		}
 		if affected == 0 {
 			return Item{}, sql.ErrNoRows
+		}
+		if err := s.syncScopedContextLink("context_items", "item_id", existing.ID, itemSphere); err != nil {
+			return Item{}, err
 		}
 		return s.GetItem(existing.ID)
 	case !errors.Is(err, sql.ErrNoRows):
@@ -278,6 +282,7 @@ func (s *Store) UpdateItem(id int64, updates ItemUpdate) error {
 	parts := []string{}
 	args := []any{}
 	artifactUpdated := false
+	scopeUpdated := false
 	var artifactID *int64
 	targetWorkspaceID := item.WorkspaceID
 	reopenToInbox := false
@@ -321,8 +326,8 @@ func (s *Store) UpdateItem(id int64, updates ItemUpdate) error {
 		if nextSphere == "" {
 			return errors.New("item sphere must be work or private")
 		}
-		parts = append(parts, "sphere = ?")
-		args = append(args, nextSphere)
+		item.Sphere = nextSphere
+		scopeUpdated = true
 	}
 	if updates.ArtifactID != nil {
 		artifactUpdated = true
@@ -389,8 +394,8 @@ func (s *Store) UpdateItem(id int64, updates ItemUpdate) error {
 		if err != nil {
 			return err
 		}
-		parts = append(parts, "sphere = ?")
-		args = append(args, workspaceSphere)
+		item.Sphere = workspaceSphere
+		scopeUpdated = true
 	}
 	if reopenToInbox {
 		if updates.VisibleAfter == nil {
@@ -400,7 +405,7 @@ func (s *Store) UpdateItem(id int64, updates ItemUpdate) error {
 			parts = append(parts, "follow_up_at = NULL")
 		}
 	}
-	if len(parts) == 0 && !artifactUpdated {
+	if len(parts) == 0 && !artifactUpdated && !scopeUpdated {
 		return nil
 	}
 	if len(parts) > 0 {
@@ -423,6 +428,11 @@ func (s *Store) UpdateItem(id int64, updates ItemUpdate) error {
 			return err
 		}
 	}
+	if item.Sphere != "" {
+		if err := s.syncScopedContextLink("context_items", "item_id", id, item.Sphere); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -438,7 +448,7 @@ func (s *Store) SetItemSphere(id int64, sphere string) error {
 	if cleanSphere == "" {
 		return errors.New("item sphere must be work or private")
 	}
-	res, err := s.db.Exec(`UPDATE items SET sphere = ?, updated_at = datetime('now') WHERE id = ?`, cleanSphere, id)
+	res, err := s.db.Exec(`UPDATE items SET updated_at = datetime('now') WHERE id = ?`, id)
 	if err != nil {
 		return err
 	}
@@ -449,7 +459,7 @@ func (s *Store) SetItemSphere(id int64, sphere string) error {
 	if affected == 0 {
 		return sql.ErrNoRows
 	}
-	return nil
+	return s.syncScopedContextLink("context_items", "item_id", id, cleanSphere)
 }
 
 func (s *Store) ListSphereAccounts(sphere string) ([]ExternalAccount, error) {

@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"path/filepath"
+	"sort"
 	"testing"
 
 	_ "modernc.org/sqlite"
@@ -26,6 +27,40 @@ func assertContextLinkCount(t *testing.T, s *Store, table string, contextID int6
 	}
 	if count != want {
 		t.Fatalf("%s count = %d, want %d", table, count, want)
+	}
+}
+
+func assertForeignKeyTargets(t *testing.T, s *Store, table string, want ...string) {
+	t.Helper()
+	rows, err := s.db.Query(`PRAGMA foreign_key_list(` + table + `)`)
+	if err != nil {
+		t.Fatalf("PRAGMA foreign_key_list(%s): %v", table, err)
+	}
+	defer rows.Close()
+
+	targets := map[string]bool{}
+	for rows.Next() {
+		var (
+			id, seq                                     int
+			target, from, to, onUpdate, onDelete, match string
+		)
+		if err := rows.Scan(&id, &seq, &target, &from, &to, &onUpdate, &onDelete, &match); err != nil {
+			t.Fatalf("scan PRAGMA foreign_key_list(%s): %v", table, err)
+		}
+		targets[target] = true
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate PRAGMA foreign_key_list(%s): %v", table, err)
+	}
+	got := make([]string, 0, len(targets))
+	for target := range targets {
+		got = append(got, target)
+	}
+	sort.Strings(got)
+	for _, target := range want {
+		if !targets[target] {
+			t.Fatalf("%s foreign keys = %v, want target %q", table, got, target)
+		}
 	}
 }
 
@@ -201,6 +236,9 @@ INSERT INTO workspaces (id, name, dir_path, project_id, sphere, is_active) VALUE
 	if !workspace.IsActive {
 		t.Fatal("workspace is_active = false, want true")
 	}
+	assertForeignKeyTargets(t, s, "items", "workspaces")
+	assertForeignKeyTargets(t, s, "chat_sessions", "workspaces")
+	assertForeignKeyTargets(t, s, "workspace_artifact_links", "workspaces")
 
 	contextID := contextIDByNameForTest(t, s, "Existing")
 	assertContextLinkCount(t, s, "context_workspaces", contextID, 1)

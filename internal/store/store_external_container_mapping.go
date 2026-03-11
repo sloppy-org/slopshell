@@ -97,7 +97,7 @@ func (s *Store) GetContainerMapping(provider, containerType, containerRef string
 		return ExternalContainerMapping{}, errors.New("external container mapping container_ref is required")
 	}
 	return scanExternalContainerMapping(s.db.QueryRow(
-		`SELECT id, provider, container_type, container_ref, workspace_id, project_id, sphere
+		`SELECT id, provider, container_type, container_ref, workspace_id, project_id, `+scopedContextSelect("context_external_container_mappings", "mapping_id", "external_container_mappings.id")+` AS sphere
 		 FROM external_container_mappings
 		 WHERE lower(provider) = lower(?) AND lower(container_type) = lower(?) AND lower(container_ref) = lower(?)`,
 		cleanProvider,
@@ -150,27 +150,34 @@ func (s *Store) SetContainerMapping(provider, containerType, containerRef string
 
 	if _, err := s.db.Exec(
 		`INSERT INTO external_container_mappings (
-			provider, container_type, container_ref, workspace_id, project_id, sphere
-		) VALUES (?, ?, ?, ?, ?, ?)
+			provider, container_type, container_ref, workspace_id, project_id
+		) VALUES (?, ?, ?, ?, ?)
 		ON CONFLICT DO UPDATE SET
 			workspace_id = excluded.workspace_id,
-			project_id = excluded.project_id,
-			sphere = excluded.sphere`,
+			project_id = excluded.project_id`,
 		cleanProvider,
 		cleanType,
 		cleanRef,
 		nullablePositiveID(valueOrZero(workspaceID)),
 		normalizeOptionalString(normalizedProjectID),
-		normalizeOptionalString(normalizedSphere),
 	); err != nil {
 		return ExternalContainerMapping{}, err
+	}
+	if normalizedSphere != nil {
+		mapping, err := s.GetContainerMapping(cleanProvider, cleanType, cleanRef)
+		if err != nil {
+			return ExternalContainerMapping{}, err
+		}
+		if err := s.syncScopedContextLink("context_external_container_mappings", "mapping_id", mapping.ID, *normalizedSphere); err != nil {
+			return ExternalContainerMapping{}, err
+		}
 	}
 	return s.GetContainerMapping(cleanProvider, cleanType, cleanRef)
 }
 
 func (s *Store) ListContainerMappings(provider string) ([]ExternalContainerMapping, error) {
 	cleanProvider := strings.TrimSpace(provider)
-	query := `SELECT id, provider, container_type, container_ref, workspace_id, project_id, sphere
+	query := `SELECT id, provider, container_type, container_ref, workspace_id, project_id, ` + scopedContextSelect("context_external_container_mappings", "mapping_id", "external_container_mappings.id") + ` AS sphere
 		FROM external_container_mappings`
 	args := []any{}
 	if cleanProvider != "" {

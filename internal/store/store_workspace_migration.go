@@ -1,15 +1,7 @@
 package store
 
 func (s *Store) migrateWorkspaceSphereSupport() error {
-	tableColumns, err := s.tableColumnSet("workspaces")
-	if err != nil {
-		return err
-	}
-	if tableColumns["workspaces"]["sphere"] {
-		return nil
-	}
-	_, err = s.db.Exec(`ALTER TABLE workspaces ADD COLUMN sphere TEXT NOT NULL DEFAULT 'private' CHECK (sphere IN ('work', 'private'))`)
-	return err
+	return nil
 }
 
 func (s *Store) migrateWorkspaceProjectSupport() error {
