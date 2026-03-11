@@ -33,6 +33,8 @@ Runtime and chat session management:
 - `PATCH /api/runtime/preferences`
 - `POST /api/runtime/yolo`
 - `POST /api/runtime/disclaimer-ack`
+- `GET /api/live-policy`
+- `POST /api/live-policy`
 - `GET /api/plugins`
 - `POST /api/plugins/meeting-partner/decide`
 - `GET /api/extensions`
