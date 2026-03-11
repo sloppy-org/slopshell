@@ -121,6 +121,70 @@ func finalParallelCommandText(evaluation localTurnEvaluation, provisionalText st
 	return "Done."
 }
 
+func parallelCommandResponseMatchesState(evaluation localTurnEvaluation, responseText string) bool {
+	expected := normalizeParallelCommandComparisonText(evaluation.fallbackText())
+	actual := normalizeParallelCommandComparisonText(responseText)
+	if expected == "" || actual == "" {
+		return false
+	}
+	if actual == expected || strings.Contains(actual, expected) {
+		return true
+	}
+	expectedTokens := significantParallelCommandTokens(expected)
+	if len(expectedTokens) == 0 {
+		return false
+	}
+	actualTokens := significantParallelCommandTokens(actual)
+	for token := range expectedTokens {
+		if _, ok := actualTokens[token]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func normalizeParallelCommandComparisonText(raw string) string {
+	clean := strings.ToLower(strings.TrimSpace(raw))
+	if clean == "" {
+		return ""
+	}
+	replacer := strings.NewReplacer(
+		".", " ",
+		",", " ",
+		";", " ",
+		":", " ",
+		"!", " ",
+		"?", " ",
+		"(", " ",
+		")", " ",
+		"[", " ",
+		"]", " ",
+		"{", " ",
+		"}", " ",
+		"\"", " ",
+		"'", " ",
+		"`", " ",
+		"/", " ",
+		"\\", " ",
+	)
+	return strings.Join(strings.Fields(replacer.Replace(clean)), " ")
+}
+
+func significantParallelCommandTokens(raw string) map[string]struct{} {
+	stopwords := map[string]struct{}{
+		"a": {}, "an": {}, "and": {}, "at": {}, "for": {}, "in": {}, "into": {}, "of": {}, "on": {}, "the": {}, "to": {}, "with": {},
+	}
+	tokens := strings.Fields(raw)
+	out := make(map[string]struct{}, len(tokens))
+	for _, token := range tokens {
+		if _, skip := stopwords[token]; skip {
+			continue
+		}
+		out[token] = struct{}{}
+	}
+	return out
+}
+
 func (a *App) runSparkTurn(ctx context.Context, sessionID string, appSess *appserver.Session, prompt string, profile appServerModelProfile) sparkTurnResult {
 	startedAt := time.Now()
 	latestMessage := ""
@@ -341,6 +405,9 @@ func (a *App) runAssistantTurnParallel(
 	}
 	tryCommitSpark := func() bool {
 		if sparkResult.err != nil || strings.TrimSpace(sparkResult.text) == "" {
+			return false
+		}
+		if localReady && localEvaluation.isCommand() && !parallelCommandResponseMatchesState(localEvaluation, sparkResult.text) {
 			return false
 		}
 		commitFinal(sparkResult.text, newAssistantResponseMetadata(responseMeta.Provider, responseMeta.ProviderModel, sparkResult.latency), responseMeta.Provider, sparkResult.threadID)

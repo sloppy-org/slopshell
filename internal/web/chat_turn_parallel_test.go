@@ -311,6 +311,20 @@ func TestCommandParallelTurnProvisionalTextPrefersExplicitAck(t *testing.T) {
 	}
 }
 
+func TestParallelCommandResponseMatchesState(t *testing.T) {
+	evaluation := localTurnEvaluation{
+		handled:  true,
+		text:     "Focused on Focused.",
+		payloads: []map[string]interface{}{{"type": "focus_workspace"}},
+	}
+	if !parallelCommandResponseMatchesState(evaluation, "Focused on Focused.") {
+		t.Fatal("parallelCommandResponseMatchesState() = false, want true for matching command state")
+	}
+	if parallelCommandResponseMatchesState(evaluation, "I checked the repo status.") {
+		t.Fatal("parallelCommandResponseMatchesState() = true, want false for unrelated Spark response")
+	}
+}
+
 func TestRunAssistantTurnParallelLocalHighConfidenceClaimsTurn(t *testing.T) {
 	appServer, serverState := setupMockParallelAppServer(t, 200*time.Millisecond, "Spark fallback.")
 	defer appServer.Close()
@@ -402,7 +416,7 @@ func TestRunAssistantTurnParallelPrefersSparkForMediumConfidenceLocalAnswer(t *t
 	}
 }
 
-func TestRunAssistantTurnParallelCommandEmitsProvisionalThenSparkFinal(t *testing.T) {
+func TestRunAssistantTurnParallelCommandEmitsProvisionalThenFinalMessage(t *testing.T) {
 	appServer, _ := setupMockParallelAppServer(t, 75*time.Millisecond, "Focused on Focused.")
 	defer appServer.Close()
 	wsURL := "ws" + strings.TrimPrefix(appServer.URL, "http")
@@ -444,7 +458,7 @@ func TestRunAssistantTurnParallelCommandEmitsProvisionalThenSparkFinal(t *testin
 		t.Fatalf("focused workspace id = %d, want %d", focusedID, focus.ID)
 	}
 	if got := latestAssistantMessage(t, app, session.ID); got != "Focused on Focused." {
-		t.Fatalf("assistant message = %q, want Spark narration", got)
+		t.Fatalf("assistant message = %q, want command completion message", got)
 	}
 	if got := countAssistantMessages(t, app, session.ID); got != 1 {
 		t.Fatalf("assistant message count = %d, want 1", got)
@@ -454,6 +468,55 @@ func TestRunAssistantTurnParallelCommandEmitsProvisionalThenSparkFinal(t *testin
 	types := strings.Join(wsTypes(payloads), ",")
 	if !strings.Contains(types, "system_action") || !strings.Contains(types, "turn_provisional") || !strings.Contains(types, "assistant_message") {
 		t.Fatalf("websocket types = %s, want system_action, turn_provisional, assistant_message", types)
+	}
+}
+
+func TestRunAssistantTurnParallelCommandStateMismatchKeepsLocalOwner(t *testing.T) {
+	appServer, _ := setupMockParallelAppServer(t, 75*time.Millisecond, "I checked the repo status.")
+	defer appServer.Close()
+	wsURL := "ws" + strings.TrimPrefix(appServer.URL, "http")
+
+	llm := setupMockIntentLLMServer(t, http.StatusOK, `{"action":"focus_workspace","workspace":"Focused"}`)
+	defer llm.Close()
+
+	app := newParallelTestApp(t, wsURL)
+	app.intentLLMURL = llm.URL
+
+	project, err := app.ensureDefaultProjectRecord()
+	if err != nil {
+		t.Fatalf("ensureDefaultProjectRecord: %v", err)
+	}
+	focus, err := app.store.CreateWorkspace("Focused", t.TempDir())
+	if err != nil {
+		t.Fatalf("CreateWorkspace(Focused): %v", err)
+	}
+	session, err := app.store.GetOrCreateChatSession(project.ProjectKey)
+	if err != nil {
+		t.Fatalf("GetOrCreateChatSession: %v", err)
+	}
+	if _, err := app.store.AddChatMessage(session.ID, "user", "focus on focused", "focus on focused", "text"); err != nil {
+		t.Fatalf("AddChatMessage(user): %v", err)
+	}
+
+	app.runAssistantTurn(session.ID, dequeuedTurn{outputMode: turnOutputModeSilent})
+
+	focusedID, err := app.store.FocusedWorkspaceID()
+	if err != nil {
+		t.Fatalf("FocusedWorkspaceID(): %v", err)
+	}
+	if focusedID != focus.ID {
+		t.Fatalf("focused workspace id = %d, want %d", focusedID, focus.ID)
+	}
+	if got := latestAssistantMessage(t, app, session.ID); got != "Focused on Focused." {
+		t.Fatalf("assistant message = %q, want local command owner reply", got)
+	}
+	messages, err := app.store.ListChatMessages(session.ID, 10)
+	if err != nil {
+		t.Fatalf("ListChatMessages: %v", err)
+	}
+	assistant := messages[len(messages)-1]
+	if assistant.Provider != assistantProviderLocal {
+		t.Fatalf("provider = %q, want %q when Spark ignores command state", assistant.Provider, assistantProviderLocal)
 	}
 }
 
