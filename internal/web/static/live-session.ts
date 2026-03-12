@@ -11,10 +11,12 @@ const hooks = {
   canStartDialogueListen: null,
   onStateChange: null,
   onDialogueListenTimeout: null,
+  onDialogueListenError: null,
   onDialogueSpeechDetected: null,
   onDialogueListenCancelled: null,
   getAudioContext: null,
   acquireMicStream: null,
+  requestMicRefresh: null,
   onMeetingSegment: null,
   onMeetingStarted: null,
   onMeetingStopped: null,
@@ -29,6 +31,7 @@ const state = {
   dialogueListenTimer: null,
   dialogueListenSileroVAD: null,
   dialogueSessionToken: 0,
+  dialogueRetryCount: 0,
   meetingCapture: null,
   meetingSessionID: '',
 };
@@ -103,6 +106,22 @@ function nextDialogueToken() {
   return state.dialogueSessionToken;
 }
 
+function fireDialogueListenError(message) {
+  if (state.dialogueRetryCount < 1 && state.active && state.mode === LIVE_SESSION_MODE_DIALOGUE) {
+    state.dialogueRetryCount += 1;
+    closeDialogueListenWindow();
+    window.setTimeout(() => {
+      if (!state.active || state.mode !== LIVE_SESSION_MODE_DIALOGUE) return;
+      void openDialogueListenWindow();
+    }, 1500);
+    return;
+  }
+  closeDialogueListenWindow();
+  if (typeof hooks.onDialogueListenError === 'function') {
+    hooks.onDialogueListenError(message);
+  }
+}
+
 async function startSileroDialogueMonitor(stream, token) {
   try {
     const instance = await initVAD({
@@ -124,10 +143,27 @@ async function startSileroDialogueMonitor(stream, token) {
       return;
     }
 
+    if (!instance) {
+      fireDialogueListenError('speech detection unavailable (VAD failed to load — run scripts/fetch-vad-assets.sh)');
+      return;
+    }
+
     state.dialogueListenSileroVAD = instance;
-    if (instance) instance.start();
+    instance.start();
+    state.dialogueRetryCount = 0;
+    if (token === state.dialogueSessionToken && state.dialogueListenActive) {
+      state.dialogueListenTimer = window.setTimeout(() => {
+        if (token !== state.dialogueSessionToken) return;
+        onDialogueListenTimeout();
+      }, resolveDialogueListenWindowMs());
+    }
     notifyStateChange();
-  } catch (_) {}
+  } catch (err) {
+    if (token === state.dialogueSessionToken && state.dialogueListenActive) {
+      const detail = String(err?.message || err || 'unknown error');
+      fireDialogueListenError(`speech detection failed: ${detail}`);
+    }
+  }
 }
 
 async function openDialogueListenWindow() {
@@ -135,11 +171,11 @@ async function openDialogueListenWindow() {
   closeDialogueListenWindow();
   const token = nextDialogueToken();
   state.dialogueListenActive = true;
-  state.dialogueListenTimer = window.setTimeout(() => {
-    if (token !== state.dialogueSessionToken) return;
-    onDialogueListenTimeout();
-  }, resolveDialogueListenWindowMs());
   notifyStateChange();
+
+  if (typeof hooks.requestMicRefresh === 'function') {
+    hooks.requestMicRefresh();
+  }
 
   try {
     const audioCtx = typeof hooks.getAudioContext === 'function' ? hooks.getAudioContext() : null;
@@ -148,14 +184,19 @@ async function openDialogueListenWindow() {
     }
     const stream = typeof hooks.acquireMicStream === 'function' ? await hooks.acquireMicStream() : null;
     if (token !== state.dialogueSessionToken) return;
-    if (!stream || !canStartDialogueListen()) {
+    if (!stream) {
+      fireDialogueListenError('microphone unavailable — check browser permissions');
+      return;
+    }
+    if (!canStartDialogueListen()) {
       onDialogueListenTimeout();
       return;
     }
     void startSileroDialogueMonitor(stream, token);
-  } catch (_) {
+  } catch (err) {
     if (token !== state.dialogueSessionToken) return;
-    onDialogueListenTimeout();
+    const detail = String(err?.message || err || 'unknown error');
+    fireDialogueListenError(`dialogue listen failed: ${detail}`);
   }
 }
 
@@ -169,10 +210,12 @@ export function configureLiveSession(config: Record<string, any> = {}) {
   hooks.canStartDialogueListen = config.canStartDialogueListen || null;
   hooks.onStateChange = config.onStateChange || null;
   hooks.onDialogueListenTimeout = config.onDialogueListenTimeout || null;
+  hooks.onDialogueListenError = config.onDialogueListenError || null;
   hooks.onDialogueSpeechDetected = config.onDialogueSpeechDetected || null;
   hooks.onDialogueListenCancelled = config.onDialogueListenCancelled || null;
   hooks.getAudioContext = config.getAudioContext || null;
   hooks.acquireMicStream = config.acquireMicStream || null;
+  hooks.requestMicRefresh = config.requestMicRefresh || null;
   hooks.onMeetingSegment = config.onMeetingSegment || null;
   hooks.onMeetingStarted = config.onMeetingStarted || null;
   hooks.onMeetingStopped = config.onMeetingStopped || null;

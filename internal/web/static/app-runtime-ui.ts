@@ -15,6 +15,7 @@ const renderEdgeTopModelButtons = (...args) => refs.renderEdgeTopModelButtons(..
 const updateAssistantActivityIndicator = (...args) => refs.updateAssistantActivityIndicator(...args);
 const beginConversationVoiceCapture = (...args) => refs.beginConversationVoiceCapture(...args);
 const acquireMicStream = (...args) => refs.acquireMicStream(...args);
+const requestMicRefresh = (...args) => refs.requestMicRefresh(...args);
 const parseOptionalBoolean = (...args) => refs.parseOptionalBoolean(...args);
 const readYoloModePreference = (...args) => refs.readYoloModePreference(...args);
 const setYoloModeLocal = (...args) => refs.setYoloModeLocal(...args);
@@ -242,6 +243,12 @@ export function initRuntimeUi() {
       requestHotwordSync();
       updateAssistantActivityIndicator();
     },
+    onDialogueListenError: (message) => {
+      const text = String(message || 'dialogue listen failed');
+      appendPlainMessage('system', text);
+      showStatus(text);
+      updateAssistantActivityIndicator();
+    },
     onDialogueSpeechDetected: () => {
       beginConversationVoiceCapture();
     },
@@ -254,6 +261,7 @@ export function initRuntimeUi() {
     },
     getAudioContext: () => ttsAudioCtx,
     acquireMicStream,
+    requestMicRefresh,
   });
   applyLiveSessionStateSnapshot();
   state.interaction.conversation = interactionConversationMode();
@@ -846,14 +854,28 @@ export function hasVisibleCanvasArtifact() {
 }
 
 export function shouldShowCompanionIdleSurface() {
-  return Boolean(state.companionEnabled) && !state.liveSessionActive && !hasVisibleCanvasArtifact();
+  if (!state.companionEnabled) return false;
+  if (hasVisibleCanvasArtifact()) return false;
+  if (state.liveSessionActive && state.liveSessionMode !== 'dialogue') return false;
+  return true;
+}
+
+function dialogueCompanionState() {
+  if (!state.liveSessionActive || state.liveSessionMode !== 'dialogue') return '';
+  const mode = state.voiceLifecycle;
+  if (mode === VOICE_LIFECYCLE.RECORDING || mode === VOICE_LIFECYCLE.STOPPING_RECORDING) return COMPANION_RUNTIME_STATES.LISTENING;
+  if (mode === VOICE_LIFECYCLE.LISTENING) return COMPANION_RUNTIME_STATES.LISTENING;
+  if (mode === VOICE_LIFECYCLE.AWAITING_TURN || mode === VOICE_LIFECYCLE.ASSISTANT_WORKING) return COMPANION_RUNTIME_STATES.THINKING;
+  if (mode === VOICE_LIFECYCLE.TTS_PLAYING) return COMPANION_RUNTIME_STATES.TALKING;
+  return COMPANION_RUNTIME_STATES.IDLE;
 }
 
 export function updateCompanionIdleSurface() {
   const surface = companionIdleSurfaceEl();
   if (!(surface instanceof HTMLElement)) return;
   const visible = shouldShowCompanionIdleSurface();
-  const runtimeState = normalizeCompanionRuntimeState(state.companionRuntimeState);
+  const dialogueState = dialogueCompanionState();
+  const runtimeState = dialogueState || normalizeCompanionRuntimeState(state.companionRuntimeState);
   const idleSurface = normalizeCompanionIdleSurface(state.companionIdleSurface);
   const copy = companionStatusCopy(runtimeState);
   surface.dataset.state = runtimeState;

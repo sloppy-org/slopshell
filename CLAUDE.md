@@ -351,6 +351,8 @@ Current Playwright specs:
 - `tests/playwright/conversation-mode.spec.ts`
 - `tests/playwright/hotword.spec.ts`
 - `tests/playwright/hub-mode.spec.ts`
+- `tests/playwright/live-dialogue.spec.ts`
+- `tests/playwright/live-dialogue-companion.spec.ts`
 - `tests/playwright/participant-capture.spec.ts`
 - `tests/playwright/pr-review-mode.spec.ts`
 - `tests/playwright/review-mode.spec.ts`
@@ -367,6 +369,7 @@ Required services:
 
 Current E2E specs:
 - `tests/e2e/app-load.spec.ts`
+- `tests/e2e/dialogue-e2e.spec.ts`
 - `tests/e2e/stt-http.spec.ts`
 - `tests/e2e/stt-tts-roundtrip.spec.ts`
 - `tests/e2e/stt-tts-system.spec.ts`

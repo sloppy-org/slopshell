@@ -187,6 +187,15 @@ func routeProfileForRouting(route routingRoute, fallback appServerModelProfile, 
 	}
 }
 
+var currentInfoBlockedActions = map[string]bool{
+	"shell":         true,
+	"make_item":     true,
+	"snooze_item":   true,
+	"delegate_item": true,
+	"split_items":   true,
+	"capture_idea":  true,
+}
+
 func enforceRoutingPolicy(userText string, actions []*SystemAction) []*SystemAction {
 	route := classifyRoutingRoute(userText)
 	if len(actions) == 0 {
@@ -203,7 +212,7 @@ func enforceRoutingPolicy(userText string, actions []*SystemAction) []*SystemAct
 			continue
 		}
 		actionName := strings.ToLower(strings.TrimSpace(normalized.Action))
-		if route.BlockShell && actionName == "shell" {
+		if route.BlockShell && currentInfoBlockedActions[actionName] {
 			continue
 		}
 		out = append(out, normalized)

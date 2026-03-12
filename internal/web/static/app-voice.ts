@@ -13,6 +13,7 @@ const submitMessage = (...args) => refs.submitMessage(...args);
 const canSpeakTTS = (...args) => refs.canSpeakTTS(...args);
 const requestHotwordSync = (...args) => refs.requestHotwordSync(...args);
 const isDialogueLiveSession = (...args) => refs.isDialogueLiveSession(...args);
+const shouldShowCompanionIdleSurface = (...args) => refs.shouldShowCompanionIdleSurface(...args);
 const persistLastView = (...args) => refs.persistLastView(...args);
 const exitArtifactEditMode = (...args) => refs.exitArtifactEditMode(...args);
 const showVoiceCaptureNotice = (...args) => refs.showVoiceCaptureNotice(...args);
@@ -596,7 +597,9 @@ export async function beginVoiceCapture(x, y, anchor, options: Record<string, an
   setRecording(true);
   setInputAnchor(anchor || null);
   updateAssistantActivityIndicator();
-  showStatus('recording...');
+  if (!shouldShowCompanionIdleSurface()) {
+    showStatus('recording...');
+  }
   try {
     const stream = await acquireMicStream();
     if (state.chatVoiceCapture !== capture) {

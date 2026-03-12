@@ -396,6 +396,12 @@ test('silent mode with dialogue enabled does not open follow-up listen', async (
     state.ttsSilent = true;
     document.body.classList.add('silent-mode');
   });
+  // The activation listen window may still be active; wait for it to
+  // time out (1200ms) before checking the follow-up behavior.
+  await expect.poll(async () => page.evaluate(() => {
+    const indicator = document.getElementById('indicator');
+    return !indicator?.classList.contains('is-listening');
+  }), { timeout: 4_000 }).toBe(true);
   await clearLog(page);
 
   await triggerVoiceAssistantTTS(page, 'conv-silent-1');
@@ -430,4 +436,32 @@ test('dialogue listen timeout returns to pause indicator when hotword is active'
     const indicator = document.getElementById('indicator');
     return Boolean(indicator?.classList.contains('is-paused'));
   }), { timeout: 4_000 }).toBe(true);
+});
+
+test('dialogue listen shows hard error when VAD is unavailable', async ({ page }) => {
+  // Remove the VAD mock so initVAD returns null (real bundle does not exist)
+  await page.evaluate(() => {
+    (window as any).__taburaVadMock = null;
+  });
+  await setDialogueListenWindowMs(page, 10_000);
+  await setDialogueMode(page, true);
+  await clearLog(page);
+
+  await triggerVoiceAssistantTTS(page, 'vad-error-1');
+
+  // The error must surface as a visible status message, not silently fall back.
+  await expect.poll(async () => page.evaluate(() => {
+    const el = document.getElementById('status-text');
+    return el?.textContent?.includes('speech detection unavailable') ?? false;
+  }), { timeout: 5_000 }).toBe(true);
+
+  // The error must also appear as a system chat message.
+  await expect(page.locator('.chat-system').first()).toContainText('speech detection unavailable');
+
+  // The listening indicator must not stay stuck.
+  const isListening = await page.evaluate(() => {
+    const indicator = document.getElementById('indicator');
+    return Boolean(indicator?.classList.contains('is-listening'));
+  });
+  expect(isListening).toBe(false);
 });

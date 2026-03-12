@@ -74,6 +74,30 @@ func TestEnforceRoutingPolicyBlocksShellForCurrentInfo(t *testing.T) {
 	}
 }
 
+func TestEnforceRoutingPolicyBlocksItemActionsForCurrentInfo(t *testing.T) {
+	for _, actionName := range []string{"make_item", "snooze_item", "delegate_item", "split_items", "capture_idea"} {
+		t.Run(actionName, func(t *testing.T) {
+			actions := []*SystemAction{
+				{Action: actionName, Params: map[string]interface{}{"visible_after": "2026-03-13T09:00:00Z"}},
+			}
+			enforced := enforceRoutingPolicy("What will be the weather in Graz tomorrow?", actions)
+			if len(enforced) != 0 {
+				t.Fatalf("enforced length = %d, want 0 for current-info query with %s", len(enforced), actionName)
+			}
+		})
+	}
+}
+
+func TestEnforceRoutingPolicyAllowsItemActionsForNonCurrentInfo(t *testing.T) {
+	actions := []*SystemAction{
+		{Action: "snooze_item", Params: map[string]interface{}{"visible_after": "2026-03-13T09:00:00Z"}},
+	}
+	enforced := enforceRoutingPolicy("remind me to call Bob tomorrow", actions)
+	if len(enforced) != 1 {
+		t.Fatalf("enforced length = %d, want 1 for non-current-info query", len(enforced))
+	}
+}
+
 func TestRouteProfileForRoutingAppliesCodexHigh(t *testing.T) {
 	base := appServerModelProfile{
 		Alias: modelprofile.AliasSpark,
