@@ -195,8 +195,9 @@ install_macos() {
   bin_path="$REPO_ROOT/tabura"
   codex_path="$(command -v codex)"
   web_data_dir="${data_root}/web-data"
-  piper_model_dir="${data_root}/piper-tts/models"
-  piper_venv_dir="${data_root}/piper-tts/venv"
+  # Use the same paths as setup-tabura-piper-tts.sh so models are found
+  piper_model_dir="${HOME}/.local/share/tabura-piper-tts/models"
+  piper_venv_dir="${HOME}/.local/share/tabura-piper-tts/venv"
 
   mkdir -p "$plist_dst" "$web_data_dir"
 
