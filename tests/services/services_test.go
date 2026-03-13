@@ -327,7 +327,7 @@ func postJSON(url string, body interface{}, timeout time.Duration) (map[string]i
 
 func postLLMCompletion(messages []map[string]string, maxTokens int) (map[string]interface{}, error) {
 	body := map[string]interface{}{
-		"model":       "qwen3-0.6b-q4_k_m",
+		"model":       "qwen3.5-9b-q4_k_m",
 		"temperature": 0,
 		"max_tokens":  maxTokens,
 		"chat_template_kwargs": map[string]interface{}{

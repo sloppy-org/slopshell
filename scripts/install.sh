@@ -575,7 +575,7 @@ setup_local_llm() {
     fi
 
     cat <<NOTICE
-=== Local LLM (Qwen3 0.6B via llama.cpp, optional) ===
+=== Local LLM (Qwen3.5 9B GGUF via llama.cpp, optional) ===
 A local coordinator language model for Hub routing and replies.
 Runs as a local HTTP service on port 8426.
 Requires llama.cpp (llama-server binary).
@@ -597,12 +597,12 @@ NOTICE
         run_cmd chmod +x "$LLM_SETUP_SCRIPT"
     fi
 
-    local model_file="Qwen3-0.6B-Q4_K_M.gguf"
-    local model_url="https://huggingface.co/lmstudio-community/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q4_K_M.gguf?download=true"
+    local model_file="Qwen3.5-9B-Q4_K_M.gguf"
+    local model_url="https://huggingface.co/lmstudio-community/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-Q4_K_M.gguf?download=true"
     local model_path="${LLM_MODEL_DIR}/${model_file}"
     if [ -f "$model_path" ]; then
         log "LLM model already present: ${model_file}"
-    elif confirm_default_yes "Download Qwen3 0.6B model (~462 MB)?"; then
+    elif confirm_default_yes "Download Qwen3.5 9B GGUF model (~5.3 GB)?"; then
         if [ "$DRY_RUN" = "1" ]; then
             run_cmd curl -fL -o "$model_path" "$model_url"
         else
@@ -733,14 +733,14 @@ UNIT
     if [ -x "$LLM_SETUP_SCRIPT" ] && [ -z "$REUSE_LLM_URL" ]; then
         cat >"${systemd_dir}/tabura-llm.service" <<UNIT
 [Unit]
-Description=Tabura Local Coordinator LLM (Qwen3 0.6B)
+Description=Tabura Local Coordinator LLM (Qwen3.5 9B GGUF)
 After=network.target
 
 [Service]
 Type=simple
 Environment=TABURA_LLM_MODEL_DIR=${LLM_MODEL_DIR}
-Environment=TABURA_LLM_MODEL_FILE=Qwen3-0.6B-Q4_K_M.gguf
-Environment=TABURA_LLM_MODEL_URL=https://huggingface.co/lmstudio-community/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q4_K_M.gguf?download=true
+Environment=TABURA_LLM_MODEL_FILE=Qwen3.5-9B-Q4_K_M.gguf
+Environment=TABURA_LLM_MODEL_URL=https://huggingface.co/lmstudio-community/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-Q4_K_M.gguf?download=true
 Environment=LLAMA_SERVER_BIN=${LLAMA_SERVER_BIN_RESOLVED}
 ExecStart=${LLM_SETUP_SCRIPT}
 Restart=on-failure

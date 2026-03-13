@@ -1,5 +1,5 @@
 [Unit]
-Description=Tabura Local Coordinator LLM (Qwen3 0.6B)
+Description=Tabura Local Coordinator LLM (Qwen3.5 9B GGUF)
 After=network.target
 
 [Service]

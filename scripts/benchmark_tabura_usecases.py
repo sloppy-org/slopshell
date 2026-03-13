@@ -42,12 +42,6 @@ class ModelSpec:
 
 MODEL_SPECS = [
     ModelSpec(
-        key="0.6b",
-        name="Qwen3-0.6B-Q4_K_M",
-        filename="Qwen3-0.6B-Q4_K_M.gguf",
-        url="https://huggingface.co/lmstudio-community/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q4_K_M.gguf?download=true",
-    ),
-    ModelSpec(
         key="0.8b",
         name="Qwen3.5-0.8B-Q4_K_M",
         filename="Qwen3.5-0.8B-Q4_K_M.gguf",
@@ -246,10 +240,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model-dir", default=os.getenv("TABURA_LLM_MODEL_DIR", str(Path.home() / ".local/share/tabura-llm/models")))
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=18427)
-    parser.add_argument("--ctx-size", type=int, default=int(os.getenv("TABURA_LLM_CTX", "2048")))
+    parser.add_argument("--ctx-size", type=int, default=int(os.getenv("TABURA_LLM_CTX", "16384")))
     parser.add_argument("--threads", type=int, default=int(os.getenv("TABURA_LLM_THREADS", "4")))
     parser.add_argument("--ngl", type=int, default=int(os.getenv("TABURA_LLM_NGL", "99")))
-    parser.add_argument("--models", default="0.6b,0.8b,2b,4b,9b", help="Comma-separated subset: 0.6b,0.8b,2b,4b,9b")
+    parser.add_argument("--models", default="0.8b,2b,4b,9b", help="Comma-separated subset: 0.8b,2b,4b,9b")
     parser.add_argument("--skip-download", action="store_true")
     parser.add_argument("--skip-missing", action="store_true", help="Skip missing models instead of failing.")
     parser.add_argument("--warmup-runs", type=int, default=2)
@@ -757,7 +751,7 @@ def main() -> int:
     model_keys = {part.strip().lower() for part in args.models.split(",") if part.strip()}
     selected = [m for m in MODEL_SPECS if m.key in model_keys]
     if not selected:
-        raise SystemExit("No valid models selected. Expected subset of 0.6b,0.8b,2b,4b,9b.")
+        raise SystemExit("No valid models selected. Expected subset of 0.8b,2b,4b,9b.")
 
     repo_root = Path(__file__).resolve().parents[1]
     artifacts_dir = repo_root / ".tabura" / "artifacts"

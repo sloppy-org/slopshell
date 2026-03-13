@@ -90,7 +90,7 @@ Tabura runs as one Go runtime plus five local services:
 2. `tabura-codex-app-server.service` (`codex app-server`)
 3. `tabura-piper-tts.service` (Piper `/v1/audio/speech`)
 4. `tabura-stt.service` (voxtype `/v1/audio/transcriptions`)
-5. `tabura-llm.service` (Qwen3 0.6B local coordinator at `127.0.0.1:8426/v1/chat/completions`)
+5. `tabura-llm.service` (Qwen3.5 9B GGUF local coordinator at `127.0.0.1:8426/v1/chat/completions`)
 
 Voice commit still uses built-in browser VAD auto-stop, then sends audio to the local STT sidecar.
 

@@ -4,14 +4,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 MODEL_DIR="${TABURA_LLM_MODEL_DIR:-$HOME/.local/share/tabura-llm/models}"
-MODELS="${QWEN35_SMALL_MODELS:-0.6b,0.8b,2b,4b,9b}"
+MODELS="${QWEN35_SMALL_MODELS:-0.8b,2b,4b,9b}"
 
 LOG_DIR="${REPO_ROOT}/.tabura/artifacts/downloads"
 LOG_FILE="${LOG_DIR}/qwen35-small-download.log"
 UNIT_NAME="${QWEN35_DOWNLOAD_UNIT:-tabura-qwen35-download}"
 
 declare -A FILE_BY_KEY=(
-  ["0.6b"]="Qwen3-0.6B-Q4_K_M.gguf"
   ["0.8b"]="Qwen3.5-0.8B-Q4_K_M.gguf"
   ["2b"]="Qwen3.5-2B-Q4_K_M.gguf"
   ["4b"]="Qwen3.5-4B-Q4_K_M.gguf"
@@ -19,7 +18,6 @@ declare -A FILE_BY_KEY=(
 )
 
 declare -A URL_BY_KEY=(
-  ["0.6b"]="https://huggingface.co/lmstudio-community/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q4_K_M.gguf?download=true"
   ["0.8b"]="https://huggingface.co/lmstudio-community/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q4_K_M.gguf?download=true"
   ["2b"]="https://huggingface.co/lmstudio-community/Qwen3.5-2B-GGUF/resolve/main/Qwen3.5-2B-Q4_K_M.gguf?download=true"
   ["4b"]="https://huggingface.co/lmstudio-community/Qwen3.5-4B-GGUF/resolve/main/Qwen3.5-4B-Q4_K_M.gguf?download=true"
@@ -34,7 +32,7 @@ run_downloads() {
     file="${FILE_BY_KEY[$key]:-}"
     url="${URL_BY_KEY[$key]:-}"
     if [[ -z "$file" || -z "$url" ]]; then
-      echo "[skip] unknown model key: $raw (valid: 0.6b,0.8b,2b,4b,9b)"
+      echo "[skip] unknown model key: $raw (valid: 0.8b,2b,4b,9b)"
       continue
     fi
     out="$MODEL_DIR/$file"
