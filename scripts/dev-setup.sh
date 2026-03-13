@@ -20,7 +20,7 @@ Steps performed:
   1. Detect platform and architecture
   2. Build the tabura binary from source
   3. Set up Piper TTS
-  4. Reuse an existing local LLM or prepare the bundled vLLM service
+  4. Reuse an existing local LLM or prepare LM Studio + Qwen3.5 9B GGUF
   5. Check for voxtype STT
   6. Install and start service definitions
   7. Bootstrap the repo as the default project
@@ -77,7 +77,7 @@ else
 fi
 
 if [ -z "${TABURA_INTENT_LLM_URL:-}" ]; then
-    for port in 8080 8081 8426; do
+    for port in 1234 8080 8081 8426; do
         if curl -fsS --max-time 2 "http://127.0.0.1:${port}/health" >/dev/null 2>&1; then
             export TABURA_INTENT_LLM_URL="http://127.0.0.1:${port}"
             log "Detected existing local LLM at $TABURA_INTENT_LLM_URL"
@@ -86,8 +86,9 @@ if [ -z "${TABURA_INTENT_LLM_URL:-}" ]; then
     done
 fi
 
-if [ -z "${TABURA_INTENT_LLM_URL:-}" ]; then
-    command -v uv >/dev/null 2>&1 || fail "uv not found; install uv to run the bundled vLLM service"
+if [ -z "${TABURA_INTENT_LLM_URL:-}" ] && [ "${TABURA_INTENT_LLM_URL:-}" != "off" ]; then
+    log "Preparing LM Studio local runtime"
+    "$REPO_ROOT/scripts/setup-tabura-lmstudio.sh"
 fi
 
 if ! command -v voxtype >/dev/null 2>&1; then
@@ -109,7 +110,7 @@ PROJECT_DIR="$REPO_ROOT"
 log "Bootstrapping project at $PROJECT_DIR"
 "$BIN_PATH" bootstrap --project-dir "$PROJECT_DIR"
 
-EFFECTIVE_LLM_URL="${TABURA_INTENT_LLM_URL:-http://127.0.0.1:8426}"
+EFFECTIVE_LLM_URL="${TABURA_INTENT_LLM_URL:-http://127.0.0.1:1234}"
 cat <<SUMMARY
 
 === Tabura Dev Setup Complete ===
@@ -133,7 +134,7 @@ Log files:
   /tmp/tabura-web.log
   /tmp/tabura-codex-app-server.log
   /tmp/tabura-piper-tts.log
-  /tmp/tabura-vllm.log
+  /tmp/tabura-lmstudio.log
   /tmp/tabura-stt.log
 LOGS
 else
@@ -142,7 +143,8 @@ Logs:
   journalctl --user -u tabura-web.service
   journalctl --user -u tabura-codex-app-server.service
   journalctl --user -u tabura-piper-tts.service
-  journalctl --user -u tabura-vllm.service
   journalctl --user -u tabura-stt.service
+  /tmp/tabura-lmstudio-server.log
+  /tmp/tabura-lmstudio-load.log
 LOGS
 fi

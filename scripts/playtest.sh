@@ -85,13 +85,13 @@ curl -fsS --max-time 3 http://127.0.0.1:8427/healthz >/dev/null \
 
 if python3 - <<'PY' >/dev/null 2>&1
 import socket
-sock = socket.create_connection(("127.0.0.1", 8426), timeout=3)
+sock = socket.create_connection(("127.0.0.1", 1234), timeout=3)
 sock.close()
 PY
 then
-  printf 'Local intent runtime detected on :8426.\n'
+  printf 'Local intent runtime detected on :1234.\n'
 else
-  printf 'Local intent runtime not detected on :8426; continuing with live runtime defaults.\n'
+  printf 'Local intent runtime not detected on :1234; continuing with live runtime defaults.\n'
 fi
 
 python3 - <<'PY' >/dev/null 2>&1 || fail 'Codex app-server websocket not reachable on :8787'

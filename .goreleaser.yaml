@@ -32,7 +32,11 @@ archives:
       - LICENSE
       - README.md
       - scripts/piper_tts_server.py
-      - scripts/setup-local-vllm.sh
+      - scripts/setup-tabura-lmstudio.sh
+      - scripts/setup-codex-qwen-profile.sh
+      - scripts/lmstudio-cli.sh
+      - scripts/lmstudio-session.sh
+      - deploy/autostart/*.desktop
       - deploy/launchd/*.plist
 
 checksum:

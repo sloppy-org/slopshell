@@ -12,8 +12,8 @@ import (
 )
 
 const (
-	DefaultIntentLLMURL            = "http://127.0.0.1:8426"
-	DefaultIntentLLMModel          = "local"
+	DefaultIntentLLMURL            = "http://127.0.0.1:1234"
+	DefaultIntentLLMModel          = "qwen/qwen3.5-9b"
 	DefaultIntentLLMProfile        = "qwen3.5-9b"
 	DefaultIntentLLMProfileOptions = "qwen3.5-9b,qwen3.5-4b"
 	intentLLMRequestTimeout        = 900 * time.Millisecond

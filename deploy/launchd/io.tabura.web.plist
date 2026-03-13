@@ -30,7 +30,7 @@
     <key>TABURA_INTENT_LLM_URL</key>
     <string>@@TABURA_INTENT_LLM_URL@@</string>
     <key>TABURA_INTENT_LLM_MODEL</key>
-    <string>local</string>
+    <string>qwen/qwen3.5-9b</string>
     <key>TABURA_INTENT_LLM_PROFILE</key>
     <string>qwen3.5-9b</string>
     <key>TABURA_INTENT_LLM_PROFILE_OPTIONS</key>

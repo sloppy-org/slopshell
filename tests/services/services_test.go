@@ -17,26 +17,26 @@ import (
 )
 
 const (
-	llmURL       = "http://127.0.0.1:8426"
+	llmURL       = "http://127.0.0.1:1234"
 	sttURL       = "http://127.0.0.1:8427"
 	ttsURL       = "http://127.0.0.1:8424"
 	appServerURL = "ws://127.0.0.1:8787"
 )
 
 // ---------------------------------------------------------------------------
-// LLM — vLLM (port 8426)
+// LLM — LM Studio local server (port 1234)
 // ---------------------------------------------------------------------------
 
 func TestLLMHealth(t *testing.T) {
-	resp := requireServiceHealth(t, "LLM", llmURL+"/health")
-	status, _ := resp["status"].(string)
-	if status != "ok" {
-		t.Fatalf("LLM health status=%q, want ok", status)
+	resp := requireServiceJSON(t, "LLM", llmURL+"/v1/models")
+	data, _ := resp["data"].([]interface{})
+	if len(data) == 0 {
+		t.Fatal("LLM models list is empty")
 	}
 }
 
 func TestLLMChatCompletion(t *testing.T) {
-	requireServiceHealth(t, "LLM", llmURL+"/health")
+	requireServiceJSON(t, "LLM", llmURL+"/v1/models")
 	resp, err := postLLMCompletion([]map[string]string{
 		{"role": "user", "content": "Reply with the single word: hello"},
 	}, 64)
@@ -50,7 +50,7 @@ func TestLLMChatCompletion(t *testing.T) {
 }
 
 func TestLLMIntentClassification(t *testing.T) {
-	requireServiceHealth(t, "LLM", llmURL+"/health")
+	requireServiceJSON(t, "LLM", llmURL+"/v1/models")
 	systemPrompt := `Classify the user intent and return JSON only.
 Allowed actions: switch_project, switch_model, toggle_silent, toggle_conversation, cancel_work, show_status, chat.
 Return {"action":"<action>"}.`
@@ -82,7 +82,7 @@ Return {"action":"<action>"}.`
 }
 
 func TestLLMLatency(t *testing.T) {
-	requireServiceHealth(t, "LLM", llmURL+"/health")
+	requireServiceJSON(t, "LLM", llmURL+"/v1/models")
 	start := time.Now()
 	_, err := postLLMCompletion([]map[string]string{
 		{"role": "user", "content": "Say OK"},
@@ -273,6 +273,10 @@ func TestAppServerListening(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func requireServiceHealth(t *testing.T, name, url string) map[string]interface{} {
+	return requireServiceJSON(t, name, url)
+}
+
+func requireServiceJSON(t *testing.T, name, url string) map[string]interface{} {
 	t.Helper()
 	resp, err := httpGetJSON(url)
 	if err == nil {
@@ -327,7 +331,7 @@ func postJSON(url string, body interface{}, timeout time.Duration) (map[string]i
 
 func postLLMCompletion(messages []map[string]string, maxTokens int) (map[string]interface{}, error) {
 	body := map[string]interface{}{
-		"model":       "tabura-qwen-9b",
+		"model":       "qwen/qwen3.5-9b",
 		"temperature": 0,
 		"max_tokens":  maxTokens,
 		"chat_template_kwargs": map[string]interface{}{

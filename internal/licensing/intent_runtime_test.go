@@ -64,8 +64,8 @@ func TestPlaytestScriptUsesLocalIntentRuntimeProbe(t *testing.T) {
 		t.Fatal("playtest script still probes the removed classifier port 8425")
 	}
 	requireContainsAll(t, content,
-		"Local intent runtime detected on :8426.",
-		"Local intent runtime not detected on :8426; continuing with live runtime defaults.",
+		"Local intent runtime detected on :1234.",
+		"Local intent runtime not detected on :1234; continuing with live runtime defaults.",
 	)
 	if strings.Contains(content, "Intent LLM fallback") {
 		t.Fatal("playtest script still uses the deprecated intent LLM fallback wording")
@@ -84,9 +84,18 @@ func TestGoReleaserArchiveOmitsRemovedIntentClassifierFiles(t *testing.T) {
 			t.Fatalf("goreleaser still packages removed classifier artifact %q", forbidden)
 		}
 	}
-	if !strings.Contains(content, "scripts/setup-local-vllm.sh") {
-		t.Fatalf("goreleaser no longer packages the local vLLM runtime setup script:\n%s", content)
-	}
+    for _, required := range []string{
+        "scripts/setup-tabura-lmstudio.sh",
+        "scripts/lmstudio-cli.sh",
+        "scripts/lmstudio-session.sh",
+    } {
+        if !strings.Contains(content, required) {
+            t.Fatalf("goreleaser no longer packages required local runtime artifact %q:\n%s", required, content)
+        }
+    }
+    if strings.Contains(content, "scripts/setup-local-vllm.sh") {
+        t.Fatalf("goreleaser still packages removed vLLM runtime setup script:\n%s", content)
+    }
 }
 
 func TestGitignoreOmitsRemovedIntentClassifierArtifacts(t *testing.T) {

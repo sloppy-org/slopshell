@@ -9,7 +9,7 @@ Current runtime baseline:
 - `tabura-codex-app-server.service`
 - `tabura-piper-tts.service`
 - `tabura-stt.service`
-- `tabura-vllm.service`
+- `LM Studio` local server on `127.0.0.1:1234`
 
 ## Product and Behavior Specs
 

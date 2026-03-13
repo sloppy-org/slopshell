@@ -22,7 +22,7 @@ confirm_default_yes() {
 
 detect_local_llm() {
     local port url
-    for port in 8080 8081 8426; do
+    for port in 1234 8080 8081 8426; do
         url="http://127.0.0.1:${port}"
         if curl -fsS --max-time 2 "${url}/health" >/dev/null 2>&1; then
             printf '%s' "$url"
@@ -32,15 +32,28 @@ detect_local_llm() {
     return 1
 }
 
+should_manage_local_lmstudio() {
+    if [ -n "${TABURA_INTENT_LLM_URL:-}" ] && [ "${TABURA_INTENT_LLM_URL}" != "off" ]; then
+        return 1
+    fi
+    case "${REUSE_LLM_URL}" in
+        "" | "http://127.0.0.1:1234" | "http://localhost:1234") ;;
+        *) return 1 ;;
+    esac
+    [ -x "${HOME}/.lmstudio/bin/lms" ] || command -v lm-studio >/dev/null 2>&1
+}
+
 REUSE_LLM_URL=""
 MAC_BIN_PATH=""
 MAC_CODEX_PATH=""
 MAC_WEB_DATA_DIR=""
 MAC_PIPER_MODEL_DIR=""
 MAC_PIPER_VENV_DIR=""
-MAC_VLLM_ROOT=""
 MAC_EFFECTIVE_LLM_URL=""
 MAC_WEB_HOST=""
+LMSTUDIO_SESSION_SCRIPT="${REPO_ROOT}/scripts/lmstudio-session.sh"
+LINUX_AUTOSTART_DIR="${XDG_CONFIG_HOME:-${HOME}/.config}/autostart"
+LINUX_AUTOSTART_FILE="${LINUX_AUTOSTART_DIR}/tabura-lmstudio.desktop"
 
 case "$PLATFORM" in
     Linux|Darwin) ;;
@@ -49,7 +62,7 @@ esac
 
 if [ -n "${TABURA_INTENT_LLM_URL:-}" ]; then
     REUSE_LLM_URL="$TABURA_INTENT_LLM_URL"
-    log "TABURA_INTENT_LLM_URL set to ${REUSE_LLM_URL}; skipping local vLLM service"
+    log "TABURA_INTENT_LLM_URL set to ${REUSE_LLM_URL}; skipping local LM Studio setup"
 elif existing_url="$(detect_local_llm)"; then
     log "Existing local LLM detected at ${existing_url}"
     if confirm_default_yes "Reuse existing local LLM at ${existing_url}?"; then
@@ -58,10 +71,6 @@ elif existing_url="$(detect_local_llm)"; then
 fi
 
 command -v codex >/dev/null 2>&1 || fail "codex not in PATH"
-
-if [ -z "${REUSE_LLM_URL}" ] && [ "${TABURA_INTENT_LLM_URL:-}" != "off" ]; then
-    command -v uv >/dev/null 2>&1 || fail "uv not in PATH. Install uv first to run the bundled vLLM service."
-fi
 
 if ! command -v voxtype >/dev/null 2>&1; then
     if [ "$PLATFORM" = "Darwin" ]; then
@@ -78,7 +87,7 @@ fi
 install_linux() {
     local unit_src="$REPO_ROOT/deploy/systemd/user"
     local unit_dst="$HOME/.config/systemd/user"
-    local effective_llm_url="${REUSE_LLM_URL:-http://127.0.0.1:8426}"
+    local effective_llm_url="${REUSE_LLM_URL:-http://127.0.0.1:1234}"
     local web_host="${TABURA_WEB_HOST:-127.0.0.1}"
     local -a core_units=(
         tabura-codex-app-server.service
@@ -94,11 +103,6 @@ install_linux() {
     for f in "$unit_src"/*.service; do
         local base
         base="$(basename "$f")"
-        case "$base" in
-            tabura-vllm.service)
-                [ -z "$REUSE_LLM_URL" ] || continue
-                ;;
-        esac
         sed -e "s|@@REPO_ROOT@@|${REPO_ROOT}|g" \
             -e "s|@@TABURA_WEB_HOST@@|${web_host}|g" \
             -e "s|@@TABURA_INTENT_LLM_URL@@|${effective_llm_url}|g" \
@@ -116,13 +120,19 @@ install_linux() {
         >/dev/null 2>&1 || true
 
     local units=("${core_units[@]}" "${optional_units[@]}")
-    if [ -z "$REUSE_LLM_URL" ]; then
-        units+=(tabura-vllm.service)
-        core_units+=(tabura-vllm.service)
-    fi
-
     systemctl --user enable --now "${units[@]}"
     log "Enabled: ${units[*]}"
+
+    if should_manage_local_lmstudio; then
+        "${REPO_ROOT}/scripts/setup-tabura-lmstudio.sh"
+        mkdir -p "${LINUX_AUTOSTART_DIR}"
+        sed -e "s|@@LMSTUDIO_SESSION_SCRIPT@@|${LMSTUDIO_SESSION_SCRIPT}|g" \
+            "${REPO_ROOT}/deploy/autostart/tabura-lmstudio.desktop" >"${LINUX_AUTOSTART_FILE}"
+        chmod +x "${LMSTUDIO_SESSION_SCRIPT}"
+        log "Installed LM Studio autostart: ${LINUX_AUTOSTART_FILE}"
+    else
+        rm -f "${LINUX_AUTOSTART_FILE}"
+    fi
 
     sleep 3
     local failed=()
@@ -179,11 +189,10 @@ install_macos() {
     local plist_src="$REPO_ROOT/deploy/launchd"
     local plist_dst="$HOME/Library/LaunchAgents"
     local data_root="$HOME/Library/Application Support/tabura"
-    local effective_llm_url="${REUSE_LLM_URL:-http://127.0.0.1:8426}"
+    local effective_llm_url="${REUSE_LLM_URL:-http://127.0.0.1:1234}"
     local web_host="${TABURA_WEB_HOST:-127.0.0.1}"
     local piper_model_dir="$HOME/.local/share/tabura-piper-tts/models"
     local piper_venv_dir="$HOME/.local/share/tabura-piper-tts/venv"
-    local vllm_root="$HOME/.local/share/tabura-vllm"
     local web_data_dir="${data_root}/web-data"
     local bin_path codex_path
 
@@ -201,13 +210,13 @@ install_macos() {
     MAC_WEB_DATA_DIR="$web_data_dir"
     MAC_PIPER_MODEL_DIR="$piper_model_dir"
     MAC_PIPER_VENV_DIR="$piper_venv_dir"
-    MAC_VLLM_ROOT="$vllm_root"
     MAC_EFFECTIVE_LLM_URL="$effective_llm_url"
     MAC_WEB_HOST="$web_host"
 
     local agents=(codex-app-server piper-tts web)
-    if [ -z "$REUSE_LLM_URL" ]; then
-        agents+=(vllm)
+    if should_manage_local_lmstudio; then
+        agents+=(lmstudio)
+        "${REPO_ROOT}/scripts/setup-tabura-lmstudio.sh"
     fi
     if command -v voxtype >/dev/null 2>&1; then
         agents+=(stt)
@@ -227,8 +236,7 @@ install_macos() {
             -e "s|@@VENV_DIR@@|${piper_venv_dir}|g" \
             -e "s|@@SCRIPT_DIR@@|${REPO_ROOT}/scripts|g" \
             -e "s|@@PIPER_MODEL_DIR@@|${piper_model_dir}|g" \
-            -e "s|@@VLLM_SETUP_SCRIPT@@|${REPO_ROOT}/scripts/setup-local-vllm.sh|g" \
-            -e "s|@@VLLM_ROOT@@|${vllm_root}|g" \
+            -e "s|@@LMSTUDIO_SESSION_SCRIPT@@|${LMSTUDIO_SESSION_SCRIPT}|g" \
             -e "s|@@STT_SETUP_SCRIPT@@|${REPO_ROOT}/scripts/setup-voxtype-stt.sh|g" \
             -e "s|@@TABURA_INTENT_LLM_URL@@|${effective_llm_url}|g" \
             "$src" >"$dst"
@@ -272,7 +280,7 @@ activate_direct() {
                 ;;
             web)
                 TABURA_INTENT_LLM_URL="$MAC_EFFECTIVE_LLM_URL" \
-                    TABURA_INTENT_LLM_MODEL=local \
+                    TABURA_INTENT_LLM_MODEL=qwen/qwen3.5-9b \
                     TABURA_INTENT_LLM_PROFILE=qwen3.5-9b \
                     TABURA_INTENT_LLM_PROFILE_OPTIONS=qwen3.5-9b,qwen3.5-4b \
                     nohup "$MAC_BIN_PATH" server \
@@ -285,9 +293,8 @@ activate_direct() {
                     --app-server-url ws://127.0.0.1:8787 \
                     --tts-url http://127.0.0.1:8424 >"$logfile" 2>&1 &
                 ;;
-            vllm)
-                TABURA_VLLM_ROOT="$MAC_VLLM_ROOT" \
-                    nohup "$REPO_ROOT/scripts/setup-local-vllm.sh" >"$logfile" 2>&1 &
+            lmstudio)
+                nohup "$LMSTUDIO_SESSION_SCRIPT" >"$logfile" 2>&1 &
                 ;;
             stt)
                 TABURA_STT_LANGUAGE=de,en TABURA_STT_MODEL=large-v3-turbo \

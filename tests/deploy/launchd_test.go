@@ -27,9 +27,9 @@ var expectedPlists = []struct {
 		tokens: []string{"@@VENV_DIR@@", "@@SCRIPT_DIR@@", "@@PIPER_MODEL_DIR@@"},
 	},
 	{
-		file:   "io.tabura.vllm.plist",
-		label:  "io.tabura.vllm",
-		tokens: []string{"@@VLLM_SETUP_SCRIPT@@", "@@VLLM_ROOT@@"},
+		file:   "io.tabura.lmstudio.plist",
+		label:  "io.tabura.lmstudio",
+		tokens: []string{"@@LMSTUDIO_SESSION_SCRIPT@@"},
 	},
 	{
 		file:   "io.tabura.stt.plist",
@@ -150,10 +150,9 @@ func TestLaunchdTemplateTokenSubstitution(t *testing.T) {
 		"@@VENV_DIR@@":         "/tmp/venv",
 		"@@SCRIPT_DIR@@":       "/tmp/scripts",
 		"@@PIPER_MODEL_DIR@@":  "/tmp/models",
-		"@@VLLM_SETUP_SCRIPT@@":     "/tmp/setup-vllm.sh",
-		"@@VLLM_ROOT@@":             "/tmp/tabura-vllm",
+		"@@LMSTUDIO_SESSION_SCRIPT@@": "/tmp/lmstudio-session.sh",
 		"@@STT_SETUP_SCRIPT@@":      "/tmp/setup-stt.sh",
-		"@@TABURA_INTENT_LLM_URL@@": "http://127.0.0.1:8426",
+		"@@TABURA_INTENT_LLM_URL@@": "http://127.0.0.1:1234",
 	}
 
 	for _, tc := range expectedPlists {
@@ -217,8 +216,8 @@ func TestSystemdAndLaunchdServiceParity(t *testing.T) {
 
 	launchdServices := map[string]bool{
 		"codex-app-server": false,
+		"lmstudio":         false,
 		"piper-tts":        false,
-		"vllm":             false,
 		"stt":              false,
 		"web":              false,
 	}
@@ -240,6 +239,9 @@ func TestSystemdAndLaunchdServiceParity(t *testing.T) {
 	for svc, found := range launchdServices {
 		if !found {
 			t.Errorf("missing launchd template for service %q", svc)
+		}
+		if svc == "lmstudio" {
+			continue
 		}
 		systemdFile := filepath.Join(systemdDir, "tabura-"+svc+".service")
 		if _, err := os.Stat(systemdFile); os.IsNotExist(err) {

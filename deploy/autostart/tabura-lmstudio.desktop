@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Tabura LM Studio
+Comment=Start LM Studio, its local API server, and preload the Tabura model
+Exec=@@LMSTUDIO_SESSION_SCRIPT@@
+Terminal=false
+X-GNOME-Autostart-enabled=true

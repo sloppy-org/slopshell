@@ -84,13 +84,19 @@ tabura server --project-dir . --data-dir ~/.tabura-web --web-host 0.0.0.0 --web-
 
 ## Runtime Stack (Canonical)
 
-Tabura runs as one Go runtime plus five local services:
+Tabura runs as one Go runtime plus four local services and one desktop local-model app:
 
 1. `tabura-web.service` (`tabura server`)
 2. `tabura-codex-app-server.service` (`codex app-server`)
 3. `tabura-piper-tts.service` (Piper `/v1/audio/speech`)
 4. `tabura-stt.service` (voxtype `/v1/audio/transcriptions`)
-5. `tabura-vllm.service` (Qwen3.5 9B AWQ via vLLM at `127.0.0.1:8426/v1/chat/completions`)
+5. `LM Studio` desktop app with local server on `127.0.0.1:1234/v1/chat/completions`
+
+Recommended local model:
+- `qwen/qwen3.5-9b` GGUF `Q4_K_M`
+- context length `4096`
+- `Enable Thinking` disabled in the LM Studio model config
+- request-time `chat_template_kwargs.enable_thinking=false` for local intent and scan calls
 
 Voice commit still uses built-in browser VAD auto-stop, then sends audio to the local STT sidecar.
 
@@ -107,8 +113,8 @@ Why Piper remains an HTTP sidecar:
 - Codex app-server websocket: `ws://127.0.0.1:8787`
 - Piper TTS endpoint: `http://127.0.0.1:8424/v1/audio/speech`
 - Voxtype STT endpoint: `http://127.0.0.1:8427/v1/audio/transcriptions`
-- Intent LLM endpoint: `http://127.0.0.1:8426/v1/chat/completions` (`TABURA_INTENT_LLM_URL`, set `off` to disable)
-- Intent/delegator request model id: `TABURA_INTENT_LLM_MODEL` (default `local`)
+- Intent LLM endpoint: `http://127.0.0.1:1234/v1/chat/completions` (`TABURA_INTENT_LLM_URL`, set `off` to disable)
+- Intent/delegator request model id: `TABURA_INTENT_LLM_MODEL` (default `qwen/qwen3.5-9b`)
 - Intent/delegator profile selection: `TABURA_INTENT_LLM_PROFILE` (default `qwen3.5-9b`)
 - Intent/delegator profile options: `TABURA_INTENT_LLM_PROFILE_OPTIONS` (default `qwen3.5-9b,qwen3.5-4b`)
 - Local canvas session id: `local`

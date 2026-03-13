@@ -45,7 +45,7 @@ run_install_sh_dry_run() {
     make_fake_cmd "$fakebin" ffmpeg
     make_fake_cmd "$fakebin" systemctl
     make_fake_cmd "$fakebin" launchctl
-    make_fake_cmd "$fakebin" uv
+    make_fake_cmd "$fakebin" yay
 
     cat >"${fakebin}/curl" <<'SH'
 #!/usr/bin/env bash
@@ -79,7 +79,7 @@ SH
     esac
     assert_contains "$out_file" "Service mode:  ${expected_os}"
     assert_contains "$out_file" "Piper TTS"
-    assert_contains "$out_file" "Local vLLM"
+    assert_contains "$out_file" "LM Studio local runtime"
     assert_contains "$out_file" "skipping voxtype STT setup"
 
     PATH="${fakebin}:/usr/bin:/bin" \
