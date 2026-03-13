@@ -488,7 +488,7 @@ export function applyRuntimePreferences(runtime) {
     setYoloModeLocal(readYoloModePreference(), { persist: false, render: false });
   }
   const runtimeSilent = parseOptionalBoolean(runtime?.silent_mode);
-  state.ttsSilent = runtimeSilent === true;
+  setTTSSilentMode(runtimeSilent === true, { persist: false, pinPanel: false });
   state.livePolicy = String(runtime?.live_policy || state.livePolicy || LIVE_SESSION_MODE_DIALOGUE).trim().toLowerCase() === LIVE_SESSION_MODE_MEETING
     ? LIVE_SESSION_MODE_MEETING
     : LIVE_SESSION_MODE_DIALOGUE;
@@ -519,7 +519,7 @@ export async function updateRuntimePreferences(patch) {
   const payload = await resp.json();
   const silent = parseOptionalBoolean(payload?.silent_mode);
   if (silent !== null) {
-    state.ttsSilent = silent;
+    setTTSSilentMode(silent, { persist: false, pinPanel: false });
   }
   state.interaction.tool = normalizeInteractionTool(payload?.tool || state.interaction.tool || 'pointer');
   if (Object.prototype.hasOwnProperty.call(patch || {}, 'tool')) {

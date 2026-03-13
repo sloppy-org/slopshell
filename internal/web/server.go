@@ -602,6 +602,7 @@ func (a *App) handleRuntime(w http.ResponseWriter, r *http.Request) {
 		"available_reasoning_efforts": modelprofile.AvailableReasoningEffortsByAlias(),
 		"stt_url":                     a.sttURL,
 		"tts_enabled":                 a.ttsURL != "",
+		"turn_intelligence_enabled":   true,
 		"silent_mode":                 a.silentModeEnabled(),
 		"live_policy":                 a.LivePolicy().String(),
 		"tool":                        a.runtimeTool(),

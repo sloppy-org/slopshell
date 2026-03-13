@@ -208,6 +208,7 @@
       version: '0.1.8',
       started_at: '2026-03-08T14:00:00Z',
       tts_enabled: true,
+      turn_intelligence_enabled: true,
       silent_mode: false,
       live_policy: harnessParams.get('live_policy') === 'meeting' ? 'meeting' : 'dialogue',
       tool: 'pointer',
@@ -2663,6 +2664,32 @@
 
     // Mock WebSocket with STT message handling and chat events
     const _NativeWebSocket = window.WebSocket;
+    function normalizeHarnessTurnText(value) {
+      return String(value || '').replace(/\s+/g, ' ').trim();
+    }
+
+    function decideHarnessTurnAction(turnState, message) {
+      const text = normalizeHarnessTurnText(message?.text);
+      if (!text) {
+        return { type: 'turn_action', action: 'backchannel', reason: 'empty' };
+      }
+      const pendingText = normalizeHarnessTurnText(turnState?.pendingText);
+      const combinedText = normalizeHarnessTurnText([pendingText, text].filter(Boolean).join(' '));
+      const lowered = combinedText.toLowerCase();
+      if (!pendingText && message?.interrupted_assistant === true && ['ok', 'okay', 'yes', 'right', 'sure', 'thanks'].includes(lowered)) {
+        return { type: 'turn_action', action: 'backchannel', text: combinedText, reason: 'assistant_backchannel' };
+      }
+      if (/[,:;-]$/.test(combinedText) || !/[.!?]$/.test(combinedText)) {
+        const words = combinedText.split(/\s+/).filter(Boolean);
+        if (words.length <= 2 || combinedText.length < 18) {
+          turnState.pendingText = combinedText;
+          return { type: 'turn_action', action: 'continue_listening', text: combinedText, reason: 'fragment', wait_ms: 650 };
+        }
+      }
+      turnState.pendingText = '';
+      return { type: 'turn_action', action: 'finalize_user_turn', text: combinedText, reason: /[.!?]$/.test(combinedText) ? 'terminal_punctuation' : 'semantic_completion' };
+    }
+
     class MockWebSocket {
       static CONNECTING = 0;
       static OPEN = 1;
@@ -2675,6 +2702,7 @@
         this.onopen = null;
         this.onmessage = null;
         this.onclose = null;
+        this.__turnState = { pendingText: '', playing: false, playedMs: 0, speechFrames: 0 };
         // Track all WS instances for test injection
         if (!window.__mockWsSessions) window.__mockWsSessions = [];
         window.__mockWsSessions.push(this);
@@ -2687,6 +2715,72 @@
         }
         try {
           const msg = JSON.parse(String(data));
+          if (this.url.includes('/ws/turn/')) {
+            const ws = this;
+            const turnState = this.__turnState;
+            if (msg.type === 'turn_playback') {
+              turnState.playing = Boolean(msg.playing);
+              turnState.playedMs = Math.max(0, Number(msg.played_ms || 0));
+              if (!turnState.playing) {
+                turnState.speechFrames = 0;
+              }
+              window.__harnessLog.push({ type: 'turn', action: 'playback', playing: turnState.playing, played_ms: turnState.playedMs });
+            } else if (msg.type === 'turn_reset') {
+              turnState.pendingText = '';
+              turnState.speechFrames = 0;
+              window.__harnessLog.push({ type: 'turn', action: 'reset' });
+            } else if (msg.type === 'turn_listen_state') {
+              if (!msg.active) {
+                turnState.pendingText = '';
+              }
+              window.__harnessLog.push({ type: 'turn', action: 'listen_state', active: Boolean(msg.active) });
+            } else if (msg.type === 'turn_speech_start') {
+              window.__harnessLog.push({ type: 'turn', action: 'speech_start', interrupted_assistant: Boolean(msg.interrupted_assistant) });
+              if (turnState.playing || msg.interrupted_assistant) {
+                setTimeout(() => {
+                  if (ws.onmessage) {
+                    ws.onmessage({ data: JSON.stringify({
+                      type: 'turn_action',
+                      action: 'yield',
+                      reason: 'speech_start',
+                      interrupt_assistant: true,
+                      rollback_audio_ms: Math.min(350, Math.max(0, Number(turnState.playedMs || 0))),
+                    }) });
+                  }
+                }, 5);
+              }
+            } else if (msg.type === 'turn_speech_prob') {
+              const prob = Number(msg.speech_prob || 0);
+              if (turnState.playing && prob >= 0.75) {
+                turnState.speechFrames += 1;
+                if (turnState.speechFrames >= 3) {
+                  turnState.speechFrames = 0;
+                  setTimeout(() => {
+                    if (ws.onmessage) {
+                      ws.onmessage({ data: JSON.stringify({
+                        type: 'turn_action',
+                        action: 'yield',
+                        reason: 'speech_overlap',
+                        interrupt_assistant: true,
+                        rollback_audio_ms: Math.min(350, Math.max(0, Number(turnState.playedMs || 0))),
+                      }) });
+                    }
+                  }, 5);
+                }
+              } else {
+                turnState.speechFrames = 0;
+              }
+            } else if (msg.type === 'turn_transcript_segment') {
+              window.__harnessLog.push({ type: 'turn', action: 'segment', text: String(msg.text || '') });
+              const actionPayload = decideHarnessTurnAction(turnState, msg);
+              setTimeout(() => {
+                if (ws.onmessage) {
+                  ws.onmessage({ data: JSON.stringify(actionPayload) });
+                }
+              }, 5);
+            }
+            return;
+          }
           if (msg.type === 'stt_start') {
             window.__harnessLog.push({ type: 'stt', action: 'start', mime_type: msg.mime_type });
           } else if (msg.type === 'stt_stop') {

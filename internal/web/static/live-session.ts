@@ -1,4 +1,10 @@
 import { initVAD, float32ToWav } from './vad.js';
+import {
+  isTurnIntelligenceConnected,
+  sendTurnListenState,
+  sendTurnSpeechProbability,
+  sendTurnSpeechStart,
+} from './turn-client.js';
 
 export const LIVE_SESSION_MODE_DIALOGUE = 'dialogue';
 export const LIVE_SESSION_MODE_MEETING = 'meeting';
@@ -74,6 +80,7 @@ function closeDialogueListenWindow() {
   if (state.dialogueListenActive) {
     state.dialogueListenActive = false;
   }
+  sendTurnListenState(false);
   notifyStateChange();
 }
 
@@ -118,7 +125,14 @@ async function startSileroDialogueMonitor(stream, token) {
       onSpeechStart() {
         if (token !== state.dialogueSessionToken) return;
         if (!state.dialogueListenActive) return;
-        if (state.ttsBargeInMode) return;
+        if (state.ttsBargeInMode) {
+          if (isTurnIntelligenceConnected()) {
+            sendTurnSpeechStart(true);
+            return;
+          }
+          return;
+        }
+        sendTurnSpeechStart(false);
         onDialogueSpeechDetected();
       },
       onFrameProcessed(probs) {
@@ -130,6 +144,10 @@ async function startSileroDialogueMonitor(stream, token) {
         }
         const p = typeof probs === 'number' ? probs
           : (probs && typeof probs.isSpeech === 'number' ? probs.isSpeech : 0);
+        if (isTurnIntelligenceConnected()) {
+          sendTurnSpeechProbability(p, true);
+          return;
+        }
         if (p >= BARGE_IN_THRESHOLD) {
           state.bargeInConsecutive += 1;
           if (state.bargeInConsecutive >= BARGE_IN_CONSECUTIVE_FRAMES) {
@@ -175,6 +193,7 @@ async function openDialogueListenWindow() {
   closeDialogueListenWindow();
   const token = nextDialogueToken();
   state.dialogueListenActive = true;
+  sendTurnListenState(true);
   notifyStateChange();
 
   if (typeof hooks.requestMicRefresh === 'function') {
@@ -336,6 +355,7 @@ export function onDialogueSpeechDetected() {
   state.dialogueListenActive = false;
   state.ttsBargeInMode = false;
   state.bargeInConsecutive = 0;
+  sendTurnListenState(false);
   notifyStateChange();
   if (typeof hooks.onDialogueSpeechDetected === 'function') {
     hooks.onDialogueSpeechDetected();
@@ -349,6 +369,7 @@ export function resumeDialogueListen() {
     state.ttsBargeInMode = false;
     state.bargeInConsecutive = 0;
     state.dialogueListenSileroVAD.start();
+    sendTurnListenState(true);
     notifyStateChange();
     return;
   }

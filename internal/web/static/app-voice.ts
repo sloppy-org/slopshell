@@ -1,6 +1,12 @@
 import * as env from './app-env.js';
 import * as context from './app-context.js';
 import { DialogueTurnController } from './dialogue-turn-policy.js';
+import {
+  configureTurnIntelligence,
+  isTurnIntelligenceConnected,
+  resetTurnIntelligence,
+  sendTurnTranscriptSegment,
+} from './turn-client.js';
 
 const { marked, apiURL, wsURL, renderCanvas, clearCanvas, getLocationFromSelection, clearLineHighlight, escapeHtml, sanitizeHtml, getActiveArtifactTitle, getActiveTextEventId, getPreviousArtifactText, getUiState, setUiMode, showIndicatorMode, hideIndicator, showTextInput, hideTextInput, showOverlay, hideOverlay, updateOverlay, isOverlayVisible, isTextInputVisible, isRecording, setRecording, getInputAnchor, setInputAnchor, getAnchorFromPoint, buildContextPrefix, getLastInputPosition, setLastInputPosition, configureLiveSession, getLiveSessionSnapshot, handleLiveSessionMessage, isLiveSessionListenActive, LIVE_SESSION_HOTWORD_DEFAULT, LIVE_SESSION_MODE_DIALOGUE, LIVE_SESSION_MODE_MEETING, onLiveSessionTTSPlaybackComplete, cancelLiveSessionListen, resumeDialogueListen, setDialogueTTSBargeInMode, startLiveSession, stopLiveSession, initHotword, startHotwordMonitor, stopHotwordMonitor, isHotwordActive, onHotwordDetected, setHotwordThreshold, setHotwordAudioContext, getPreRollAudio, getHotwordMicStream, initVAD, ensureVADLoaded, float32ToWav } = env;
 const { refs, state, getState, isVoiceTurn, COMPANION_VIEW_PATH_PREFIX, COMPANION_TRANSCRIPT_VIEW_PATH, COMPANION_SUMMARY_VIEW_PATH, COMPANION_REFERENCES_VIEW_PATH, MEETING_TRANSCRIPT_LABEL, MEETING_SUMMARY_LABEL, MEETING_REFERENCES_LABEL, MEETING_SUMMARY_ITEMS_PANEL_ID, CHAT_CTRL_LONG_PRESS_MS, ARTIFACT_EDIT_LONG_TAP_MS, ITEM_SIDEBAR_VIEWS, ITEM_SIDEBAR_GESTURE_CANCEL_PX, ITEM_SIDEBAR_GESTURE_COMMIT_PX, ITEM_SIDEBAR_GESTURE_LONG_PX, ITEM_SIDEBAR_DEFAULT_LATER_HOUR_UTC, ITEM_SIDEBAR_MENU_ID, DEV_UI_RELOAD_POLL_MS, ASSISTANT_ACTIVITY_POLL_MS, CHAT_WS_STALE_THRESHOLD_MS, ACTIVE_TURN_NO_ID_CLEAR_GRACE_MS, ACTIVE_TURN_ACTIVITY_CLEAR_GRACE_MS, PROJECT_CHAT_MODEL_ALIASES, PROJECT_CHAT_MODEL_REASONING_EFFORTS, TTS_SILENT_STORAGE_KEY, YOLO_MODE_STORAGE_KEY, SOMEDAY_REVIEW_NUDGE_ENABLED_STORAGE_KEY, SOMEDAY_REVIEW_NUDGE_LAST_SHOWN_STORAGE_KEY, SOMEDAY_REVIEW_NUDGE_INTERVAL_MS, ACTIVE_PROJECT_STORAGE_KEY, LAST_VIEW_STORAGE_KEY, RUNTIME_RELOAD_CONTEXT_STORAGE_KEY, SIDEBAR_IMAGE_EXTENSIONS, PANEL_MOTION_WATCH_QUERIES, VOICE_LIFECYCLE, COMPANION_IDLE_SURFACES, COMPANION_RUNTIME_STATES, TOOL_PALETTE_MODES } = context;
@@ -25,6 +31,7 @@ const updateAssistantActivityIndicator = (...args) => refs.updateAssistantActivi
 const isUiReadyForStatus = (...args) => refs.isUiReadyForStatus(...args);
 const syncVoiceLifecycle = (...args) => refs.syncVoiceLifecycle(...args);
 const maybeHandleDictationTranscript = (...args) => refs.maybeHandleDictationTranscript(...args);
+const beginConversationVoiceCapture = (...args) => refs.beginConversationVoiceCapture(...args);
 
 const VOICE_VAD_AUTO_SEND_DEFAULT = true;
 const VOICE_VAD_AUTO_SEND_STORAGE_KEY = 'tabura.voiceVadAutoSend';
@@ -40,51 +47,86 @@ const VOICE_TRIGGER_SOURCE_HOTWORD = 'hotword';
 const VOICE_TRIGGER_SOURCE_DIALOGUE = 'dialogue_listen';
 const VOICE_TRIGGER_SOURCE_BARGE_IN = 'barge_in';
 
+function submitDialogueTurn(text) {
+  if (!isDialogueLiveSession()) {
+    dialogueTurnController.reset();
+    resetTurnIntelligence();
+    return;
+  }
+  showStatus('sending...');
+  state.voiceTranscriptSubmitInFlight = true;
+  state.voiceAwaitingTurn = true;
+  updateAssistantActivityIndicator();
+  void submitMessage(text, { kind: 'voice_transcript' });
+}
+
+function reopenDialogueListen(reason) {
+  if (!isDialogueLiveSession()) {
+    dialogueTurnController.reset();
+    resetTurnIntelligence();
+    return;
+  }
+  state.voiceAwaitingTurn = false;
+  setVoiceLifecycle(VOICE_LIFECYCLE.IDLE, reason);
+  updateAssistantActivityIndicator();
+  showStatus('listening...');
+  window.setTimeout(() => {
+    if (!isDialogueLiveSession()) {
+      dialogueTurnController.reset();
+      resetTurnIntelligence();
+      return;
+    }
+    resumeDialogueListen();
+  }, 0);
+}
+
+function handleTurnAction(payload: Record<string, any> = {}) {
+  if (!isDialogueLiveSession()) {
+    dialogueTurnController.reset();
+    resetTurnIntelligence();
+    return;
+  }
+  const action = String(payload?.action || '').trim().toLowerCase();
+  if (action === 'yield') {
+    const interruptedAssistant = payload?.interrupt_assistant === true;
+    if (interruptedAssistant) {
+      beginConversationVoiceCapture('barge_in');
+    }
+    return;
+  }
+  if (action === 'continue_listening') {
+    reopenDialogueListen('dialogue-turn-continue');
+    return;
+  }
+  if (action === 'backchannel') {
+    reopenDialogueListen('dialogue-turn-backchannel');
+    return;
+  }
+  if (action === 'finalize_user_turn') {
+    const text = String(payload?.text || '').trim();
+    if (text) {
+      submitDialogueTurn(text);
+    } else {
+      reopenDialogueListen('dialogue-turn-empty-finalize');
+    }
+  }
+}
+
 const dialogueTurnController = new DialogueTurnController({
   onFinalize(text) {
-    if (!isDialogueLiveSession()) {
-      dialogueTurnController.reset();
-      return;
-    }
-    showStatus('sending...');
-    state.voiceTranscriptSubmitInFlight = true;
-    state.voiceAwaitingTurn = true;
-    updateAssistantActivityIndicator();
-    void submitMessage(text, { kind: 'voice_transcript' });
+    submitDialogueTurn(text);
   },
   onContinue() {
-    if (!isDialogueLiveSession()) {
-      dialogueTurnController.reset();
-      return;
-    }
-    state.voiceAwaitingTurn = false;
-    setVoiceLifecycle(VOICE_LIFECYCLE.IDLE, 'dialogue-turn-continue');
-    updateAssistantActivityIndicator();
-    showStatus('listening...');
-    window.setTimeout(() => {
-      if (!isDialogueLiveSession()) {
-        dialogueTurnController.reset();
-        return;
-      }
-      resumeDialogueListen();
-    }, 0);
+    reopenDialogueListen('dialogue-turn-continue');
   },
   onBackchannel() {
-    if (!isDialogueLiveSession()) {
-      dialogueTurnController.reset();
-      return;
-    }
-    state.voiceAwaitingTurn = false;
-    setVoiceLifecycle(VOICE_LIFECYCLE.IDLE, 'dialogue-turn-backchannel');
-    updateAssistantActivityIndicator();
-    showStatus('listening...');
-    window.setTimeout(() => {
-      if (!isDialogueLiveSession()) {
-        dialogueTurnController.reset();
-        return;
-      }
-      resumeDialogueListen();
-    }, 0);
+    reopenDialogueListen('dialogue-turn-backchannel');
+  },
+});
+
+configureTurnIntelligence({
+  onAction(payload) {
+    handleTurnAction(payload || {});
   },
 });
 
@@ -628,6 +670,7 @@ export async function beginVoiceCapture(x, y, anchor, options: Record<string, an
   const triggerSource = normalizeVoiceTriggerSource(options?.triggerSource);
   if (triggerSource === VOICE_TRIGGER_SOURCE_MANUAL || !isDialogueLiveSession()) {
     dialogueTurnController.reset();
+    resetTurnIntelligence();
   }
   cancelLiveSessionListen();
   const interruptedAssistant = Boolean(state.ttsPlaying);
@@ -801,6 +844,11 @@ export async function stopVoiceCaptureAndSend() {
       state.voiceAwaitingTurn = false;
       setVoiceLifecycle(VOICE_LIFECYCLE.IDLE, 'dialogue-turn-segment');
       updateAssistantActivityIndicator();
+      if (isTurnIntelligenceConnected()) {
+        if (sendTurnTranscriptSegment(transcript, segmentDurationMs, Boolean(capture.interruptedAssistant))) {
+          return;
+        }
+      }
       dialogueTurnController.consume({
         text: transcript,
         durationMs: segmentDurationMs,
@@ -859,12 +907,14 @@ export async function stopVoiceCaptureAndSend() {
 
 export function resetDialogueTurnController() {
   dialogueTurnController.reset();
+  resetTurnIntelligence();
 }
 
 export function cancelChatVoiceCapture() {
   const capture = state.chatVoiceCapture;
   if (!capture) return;
   dialogueTurnController.reset();
+  resetTurnIntelligence();
   setRecording(false);
   state.voiceTranscriptSubmitInFlight = false;
   state.voiceAwaitingTurn = false;

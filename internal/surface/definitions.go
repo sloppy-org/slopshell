@@ -552,6 +552,7 @@ var WebRouteSections = []RouteSection{
 		Title: "Websocket routes",
 		Routes: []string{
 			"GET /ws/chat/{session_id}",
+			"GET /ws/turn/{session_id}",
 			"GET /ws/canvas/{session_id}",
 		},
 	},

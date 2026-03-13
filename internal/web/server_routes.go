@@ -160,6 +160,7 @@ func (a *App) Router() http.Handler {
 
 	// ws
 	r.Get("/ws/chat/{session_id}", a.handleChatWS)
+	r.Get("/ws/turn/{session_id}", a.handleTurnWS)
 	r.Get("/ws/canvas/{session_id}", a.handleCanvasWS)
 
 	// static

@@ -155,6 +155,7 @@ Canvas/files:
 
 Websocket routes:
 - `GET /ws/chat/{session_id}`
+- `GET /ws/turn/{session_id}`
 - `GET /ws/canvas/{session_id}`
 
 Participant and STT APIs:

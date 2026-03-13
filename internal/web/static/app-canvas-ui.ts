@@ -196,6 +196,9 @@ export function deriveVoiceLifecycle() {
   if (isRecording()) return VOICE_LIFECYCLE.RECORDING;
   if (state.chatVoiceCapture?.stopping) return VOICE_LIFECYCLE.STOPPING_RECORDING;
   if (state.voiceAwaitingTurn) return VOICE_LIFECYCLE.AWAITING_TURN;
+  if (state.liveSessionActive && String(state.liveSessionMode || '').trim().toLowerCase() === 'dialogue' && !canSpeakTTS()) {
+    return VOICE_LIFECYCLE.IDLE;
+  }
   if (isLiveSessionListenActive()) return VOICE_LIFECYCLE.LISTENING;
   if (hasLocalStopCapableWork()) return VOICE_LIFECYCLE.ASSISTANT_WORKING;
   if (isTTSSpeaking()) return VOICE_LIFECYCLE.TTS_PLAYING;
@@ -235,14 +238,15 @@ export function beginConversationVoiceCapture(triggerSource = 'hotword') {
 }
 
 export function currentIndicatorMode() {
-  if (shouldShowCompanionIdleSurface()) return '';
-  const uiState = getUiState();
   const mode = state.voiceLifecycle;
+  const companionVisible = shouldShowCompanionIdleSurface();
   if (mode === VOICE_LIFECYCLE.RECORDING) return 'recording';
-  if (state.requestedPositionPrompt) return 'cursor';
-  if (state.liveSessionActive && uiState.cursorPinned) return 'cursor';
   if (mode === VOICE_LIFECYCLE.LISTENING) return 'listening';
   if (isStopCapableLifecycle(mode)) return 'play';
+  if (companionVisible) return '';
+  const uiState = getUiState();
+  if (state.requestedPositionPrompt) return 'cursor';
+  if (state.liveSessionActive && uiState.cursorPinned) return 'cursor';
   if (state.liveSessionActive && state.hotwordActive) return 'paused';
   if (state.indicatorSuppressedByCanvasUpdate) return '';
   return '';

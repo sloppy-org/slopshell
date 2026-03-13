@@ -42,6 +42,20 @@ async function injectChatEvent(page: Page, payload: Record<string, unknown>) {
   }, payload);
 }
 
+async function injectTurnEvent(page: Page, payload: Record<string, unknown>) {
+  await page.evaluate((eventPayload) => {
+    const app = (window as any)._taburaApp;
+    const sessionId = String(app?.getState?.().chatSessionId || '');
+    const sessions = (window as any).__mockWsSessions || [];
+    const turnWs = sessions.find((ws: any) => typeof ws.url === 'string'
+      && ws.url.includes('/ws/turn/')
+      && (!sessionId || ws.url.includes(`/ws/turn/${sessionId}`)));
+    if (turnWs?.injectEvent) {
+      turnWs.injectEvent(eventPayload);
+    }
+  }, payload);
+}
+
 async function setDialogueListenWindowMs(page: Page, ms: number) {
   await page.evaluate((value) => {
     (window as any).__taburaConversationListenMs = value;
@@ -266,6 +280,41 @@ test('Dialogue shows listening indicator immediately and after TTS playback', as
     const s = app?.getState?.();
     return Boolean(s?.liveSessionDialogueListenActive) && String(s?.voiceLifecycle || '') === 'listening';
   })).toBe(true);
+});
+
+test('Dialogue mode follows server turn actions for continue and finalize', async ({ page }) => {
+  await setDialogueMode(page, true);
+  await clearLog(page);
+
+  await injectTurnEvent(page, {
+    type: 'turn_action',
+    action: 'continue_listening',
+    reason: 'fragment',
+  });
+
+  await expect.poll(async () => page.evaluate(() => {
+    const app = (window as any)._taburaApp;
+    const s = app?.getState?.();
+    return {
+      listenActive: Boolean(s?.liveSessionDialogueListenActive),
+      lifecycle: String(s?.voiceLifecycle || ''),
+    };
+  })).toEqual({
+    listenActive: true,
+    lifecycle: 'listening',
+  });
+
+  await injectTurnEvent(page, {
+    type: 'turn_action',
+    action: 'finalize_user_turn',
+    text: 'Server-owned transcript.',
+    reason: 'semantic_completion',
+  });
+
+  await expect.poll(async () => {
+    const log = await getLog(page);
+    return log.find((entry) => entry.type === 'message_sent')?.text || '';
+  }).toBe('Server-owned transcript.');
 });
 
 test('Dialogue off does not open listening indicator after TTS', async ({ page }) => {
