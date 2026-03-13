@@ -1,4 +1,5 @@
 import { initVAD, float32ToWav } from './vad.js';
+import { recordDialogueVoiceDiagnostic } from './app-dialogue-diagnostics.js';
 import {
   isTurnIntelligenceConnected,
   sendTurnListenState,
@@ -13,6 +14,8 @@ export const LIVE_SESSION_HOTWORD_DEFAULT = 'Alexa';
 const BARGE_IN_THRESHOLD = 0.75;
 const BARGE_IN_CONSECUTIVE_FRAMES = 3;
 const BARGE_IN_FALLBACK_GRACE_MS = 220;
+const DIALOGUE_LISTEN_FALLBACK_THRESHOLD = 0.42;
+const DIALOGUE_LISTEN_FALLBACK_FRAMES = 4;
 
 const hooks = {
   canStartDialogueListen: null,
@@ -138,6 +141,23 @@ function fireDialogueListenError(message) {
 
 async function startSileroDialogueMonitor(stream, token) {
   try {
+    let dialogueSpeechConsecutive = 0;
+    const handleDialogueSpeechDetected = (via) => {
+      if (token !== state.dialogueSessionToken) return;
+      if (!state.dialogueListenActive) return;
+      recordDialogueVoiceDiagnostic('dialogue_listen_speech_detected', {
+        via: String(via || '').trim() || 'unknown',
+        barge_in: Boolean(state.ttsBargeInMode),
+      });
+      if (state.ttsBargeInMode) {
+        if (isTurnIntelligenceConnected()) {
+          sendTurnSpeechStart(true);
+        }
+        return;
+      }
+      sendTurnSpeechStart(false);
+      onDialogueSpeechDetected();
+    };
     const instance = await initVAD({
       stream,
       positiveSpeechThreshold: 0.5,
@@ -146,28 +166,29 @@ async function startSileroDialogueMonitor(stream, token) {
       minSpeechMs: 100,
       preSpeechPadMs: 0,
       onSpeechStart() {
-        if (token !== state.dialogueSessionToken) return;
-        if (!state.dialogueListenActive) return;
-        if (state.ttsBargeInMode) {
-          if (isTurnIntelligenceConnected()) {
-            sendTurnSpeechStart(true);
-          }
-          return;
-        }
-        sendTurnSpeechStart(false);
-        onDialogueSpeechDetected();
+        dialogueSpeechConsecutive = 0;
+        handleDialogueSpeechDetected('silero_on_speech_start');
       },
       onFrameProcessed(probs) {
         if (token !== state.dialogueSessionToken) return;
         if (!state.dialogueListenActive) return;
-        if (!state.ttsBargeInMode) {
-          state.bargeInConsecutive = 0;
-          return;
-        }
         const p = typeof probs === 'number' ? probs
           : (probs && typeof probs.isSpeech === 'number' ? probs.isSpeech : 0);
         if (isTurnIntelligenceConnected()) {
-          sendTurnSpeechProbability(p, true);
+          sendTurnSpeechProbability(p, state.ttsBargeInMode);
+        }
+        if (!state.ttsBargeInMode) {
+          state.bargeInConsecutive = 0;
+          if (p >= DIALOGUE_LISTEN_FALLBACK_THRESHOLD) {
+            dialogueSpeechConsecutive += 1;
+            if (dialogueSpeechConsecutive >= DIALOGUE_LISTEN_FALLBACK_FRAMES) {
+              dialogueSpeechConsecutive = 0;
+              handleDialogueSpeechDetected('frame_probability_fallback');
+            }
+            return;
+          }
+          dialogueSpeechConsecutive = 0;
+          return;
         }
         if (!localBargeInFallbackArmed()) return;
         if (p >= BARGE_IN_THRESHOLD) {

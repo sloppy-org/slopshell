@@ -358,6 +358,54 @@ test('speech onset during dialogue listen starts recording', async ({ page }) =>
   })).toBe(true);
 });
 
+test('dialogue listen falls back to frame probabilities when speech-start callback is missed', async ({ page }) => {
+  await page.evaluate(() => {
+    (window as any).__taburaVadMock = {
+      init() { return true; },
+      create(callbacks) {
+        let running = false;
+        let timer = null;
+        return {
+          start() {
+            if (running) return;
+            running = true;
+            timer = window.setInterval(() => {
+              callbacks?.onFrameProcessed?.({ isSpeech: 0.9 });
+            }, 40);
+          },
+          pause() {
+            running = false;
+            if (timer !== null) {
+              window.clearInterval(timer);
+              timer = null;
+            }
+          },
+          destroy() {
+            running = false;
+            if (timer !== null) {
+              window.clearInterval(timer);
+              timer = null;
+            }
+          },
+        };
+      },
+    };
+  });
+
+  await setDialogueMode(page, true);
+  await clearLog(page);
+
+  await expect.poll(async () => {
+    const log = await getLog(page);
+    return log.some((entry) => entry.type === 'recorder' && entry.action === 'start');
+  }, { timeout: 5_000 }).toBe(true);
+
+  await expect.poll(async () => page.evaluate(() => {
+    const app = (window as any)._taburaApp;
+    return Boolean(app?.getState?.().chatVoiceCapture);
+  })).toBe(true);
+});
+
 test('dialogue listen stays armed without a fixed timeout', async ({ page }) => {
   await setDialogueMode(page, true);
   await page.evaluate(() => {
