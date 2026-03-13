@@ -94,7 +94,7 @@ Tabura runs as one Go runtime plus four local services and one desktop local-mod
 
 Recommended local model:
 - `qwen/qwen3.5-9b` GGUF `Q4_K_M`
-- context length `16384`
+- context length `4096`
 - `Enable Thinking` disabled in the LM Studio model config
 - request-time `chat_template_kwargs.enable_thinking=false` for local intent and scan calls
 
