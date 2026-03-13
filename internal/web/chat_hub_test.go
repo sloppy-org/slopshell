@@ -891,11 +891,11 @@ func TestProjectProfileUsesStoredAliasAndEffort(t *testing.T) {
 	}
 
 	profile := app.appServerModelProfileForProject(project)
-	if profile.Alias != modelprofile.AliasCodex {
-		t.Fatalf("project profile alias = %q, want %q", profile.Alias, modelprofile.AliasCodex)
+	if profile.Alias != modelprofile.AliasSpark {
+		t.Fatalf("project profile alias = %q, want %q", profile.Alias, modelprofile.AliasSpark)
 	}
-	if profile.Model != modelprofile.ModelForAlias(modelprofile.AliasCodex) {
-		t.Fatalf("project profile model = %q, want codex model", profile.Model)
+	if profile.Model != modelprofile.ModelForAlias(modelprofile.AliasSpark) {
+		t.Fatalf("project profile model = %q, want spark model", profile.Model)
 	}
 	if profile.ThreadParams != nil {
 		t.Fatalf("project thread params = %#v, want nil", profile.ThreadParams)

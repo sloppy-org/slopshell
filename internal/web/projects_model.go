@@ -326,7 +326,17 @@ func (a *App) updateProjectChatModel(projectID, rawModel, rawReasoningEffort str
 	if err != nil {
 		return store.Project{}, err
 	}
-	modelAlias := modelprofile.AliasCodex
+	requestedModel := strings.TrimSpace(rawModel)
+	modelAlias := modelprofile.ResolveAlias(requestedModel, "")
+	if requestedModel != "" && modelAlias == "" {
+		return store.Project{}, fmt.Errorf("unsupported model alias: %s", requestedModel)
+	}
+	if modelAlias == "" {
+		modelAlias = a.effectiveProjectChatModelAlias(project)
+	}
+	if modelAlias == "" {
+		modelAlias = modelprofile.AliasSpark
+	}
 	reasoningEffort := strings.TrimSpace(modelprofile.NormalizeReasoningEffort(modelAlias, rawReasoningEffort))
 	if reasoningEffort == "" {
 		reasoningEffort = strings.TrimSpace(modelprofile.MainThreadReasoningEffort(modelAlias))

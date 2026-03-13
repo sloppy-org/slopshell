@@ -15,8 +15,13 @@ type appServerModelProfile struct {
 }
 
 func (a *App) effectiveProjectChatModelAlias(project store.Project) string {
-	_ = project
-	return modelprofile.AliasCodex
+	if alias := modelprofile.ResolveAlias(project.ChatModel, ""); alias != "" {
+		return alias
+	}
+	if alias := modelprofile.ResolveAlias(a.appServerModel, ""); alias != "" {
+		return alias
+	}
+	return modelprofile.AliasSpark
 }
 
 func (a *App) effectiveProjectChatModelReasoningEffort(project store.Project) string {
@@ -36,7 +41,7 @@ func (a *App) appServerModelProfileForProject(project store.Project) appServerMo
 		model = strings.TrimSpace(a.appServerModel)
 	}
 	if model == "" {
-		model = modelprofile.ModelForAlias(modelprofile.AliasCodex)
+		model = modelprofile.ModelForAlias(modelprofile.AliasSpark)
 	}
 	reasoning := modelprofile.MainThreadReasoningParamsForEffort(alias, effort)
 	return appServerModelProfile{
@@ -57,14 +62,14 @@ func (a *App) appServerModelProfileForProjectKey(projectKey string) appServerMod
 	}
 	alias := modelprofile.AliasForModel(a.appServerModel)
 	if alias == "" {
-		alias = modelprofile.AliasCodex
+		alias = modelprofile.AliasSpark
 	}
 	legacyModel := modelprofile.ModelForAlias(alias)
 	if legacyModel == "" {
 		legacyModel = strings.TrimSpace(a.appServerModel)
 	}
 	if legacyModel == "" {
-		legacyModel = modelprofile.ModelForAlias(modelprofile.AliasCodex)
+		legacyModel = modelprofile.ModelForAlias(modelprofile.AliasSpark)
 	}
 	legacyReasoning := modelprofile.MainThreadReasoningParamsForEffort(alias, modelprofile.MainThreadReasoningEffort(alias))
 	return appServerModelProfile{

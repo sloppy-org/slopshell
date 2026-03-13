@@ -135,36 +135,41 @@ func classifyRoutingRoute(text string) routingRoute {
 		Domain:     domain,
 		Complexity: complexity,
 		BlockShell: currentInfo,
-		Model:      modelprofile.AliasCodex,
-		Effort:     modelprofile.ReasoningHigh,
-		Reason:     "all queries routed to codex high",
+		Reason:     "general query keeps configured project model",
 	}
 
 	switch {
 	case currentInfo:
+		route.Model = modelprofile.AliasCodex
+		route.Effort = modelprofile.ReasoningHigh
 		route.Reason = "current-info query routed to codex high; shell actions blocked"
-	case complex:
-		route.Reason = "complex query routed to codex high"
+	case coding || complex:
+		route.Model = modelprofile.AliasCodex
+		route.Effort = modelprofile.ReasoningHigh
+		route.Reason = "coding or complex query routed to codex high"
 	}
 	return route
 }
 
 func routeProfileForRouting(route routingRoute, fallback appServerModelProfile, sparkEffort string) appServerModelProfile {
-	_ = sparkEffort
 	alias := modelprofile.ResolveAlias(route.Model, fallback.Alias)
 	if alias == "" {
-		alias = modelprofile.AliasCodex
+		alias = modelprofile.AliasSpark
 	}
 	model := modelprofile.ModelForAlias(alias)
 	if model == "" {
 		model = strings.TrimSpace(fallback.Model)
 	}
 	if model == "" {
-		model = modelprofile.ModelForAlias(modelprofile.AliasCodex)
+		model = modelprofile.ModelForAlias(modelprofile.AliasSpark)
 	}
-	effort := modelprofile.NormalizeReasoningEffort(alias, route.Effort)
+	effortInput := strings.TrimSpace(route.Effort)
+	if effortInput == "" && alias == modelprofile.AliasSpark {
+		effortInput = strings.TrimSpace(sparkEffort)
+	}
+	effort := modelprofile.NormalizeReasoningEffort(alias, effortInput)
 	if effort == "" {
-		effort = modelprofile.MainThreadReasoningEffort(alias)
+		effort = modelprofile.NormalizeReasoningEffort(alias, modelprofile.MainThreadReasoningEffort(alias))
 	}
 	turnParams := modelprofile.MainThreadReasoningParamsForEffort(alias, effort)
 	return appServerModelProfile{

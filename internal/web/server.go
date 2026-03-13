@@ -141,7 +141,7 @@ type App struct {
 	startedAt      string
 }
 
-const DefaultModel = modelprofile.ModelCodex
+const DefaultModel = modelprofile.ModelSpark
 
 func New(dataDir, localProjectDir, localMCPURL, appServerURL, model, ttsURL, sparkReasoningEffort string, devRuntime bool) (*App, error) {
 	s, err := store.New(filepath.Join(dataDir, "tabura.db"))
@@ -276,7 +276,11 @@ func New(dataDir, localProjectDir, localMCPURL, appServerURL, model, ttsURL, spa
 	resolvedSTTPreVADEnabled := parseEnvBoolDefault("TABURA_STT_PREVAD_ENABLED", true)
 	resolvedSTTPreVADThresholdDB := parseEnvFloatDefault("TABURA_STT_PREVAD_THRESHOLD_DB", DefaultSTTPreVADThresholdDB)
 	resolvedSTTPreVADMinSpeechMS := parseEnvIntDefault("TABURA_STT_PREVAD_MIN_SPEECH_MS", DefaultSTTPreVADMinSpeechMS)
-	if err := s.SetAppState(appStateDefaultChatModelKey, modelprofile.AliasCodex); err != nil {
+	defaultAlias := modelprofile.ResolveAlias(resolvedModel, modelprofile.AliasSpark)
+	if defaultAlias == "" {
+		defaultAlias = modelprofile.AliasSpark
+	}
+	if err := s.SetAppState(appStateDefaultChatModelKey, defaultAlias); err != nil {
 		_ = s.Close()
 		return nil, err
 	}
@@ -752,7 +756,7 @@ func buildHookProviders(ext *extensions.Host, mgr *plugins.Manager) []plugins.Ho
 }
 
 func resolvePrimaryAppServerModel(rawModel string) string {
-	resolved := modelprofile.ResolveModel(strings.TrimSpace(rawModel), modelprofile.AliasCodex)
+	resolved := modelprofile.ResolveModel(strings.TrimSpace(rawModel), modelprofile.AliasSpark)
 	if strings.TrimSpace(resolved) == "" {
 		return DefaultModel
 	}
