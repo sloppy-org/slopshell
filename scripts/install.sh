@@ -430,9 +430,6 @@ BIN
     if [ -f "${tmpdir}/scripts/setup-local-llm.sh" ]; then
         cp "${tmpdir}/scripts/setup-local-llm.sh" "${tmpdir}/setup-local-llm.sh"
     fi
-    if [ -f "${tmpdir}/scripts/lib/llama.sh" ]; then
-        mkdir -p "${tmpdir}/scripts/lib"
-    fi
     if [ -f "${tmpdir}/scripts/setup-voxtype-stt.sh" ]; then
         cp "${tmpdir}/scripts/setup-voxtype-stt.sh" "${tmpdir}/setup-voxtype-stt.sh"
     fi
@@ -532,7 +529,11 @@ ensure_llama_server() {
     fi
     if [ "$TABURA_OS" = "darwin" ]; then
         if ! have_cmd brew; then
-            log "llama-server not found; install llama.cpp via Homebrew: brew install llama.cpp"
+            if [ -n "${TABURA_LLAMA_LAST_ERROR:-}" ] && [ "${TABURA_LLAMA_LAST_ERROR}" != "llama-server not found" ]; then
+                log "llama-server not usable: ${TABURA_LLAMA_LAST_ERROR}"
+            else
+                log "llama-server not found; install llama.cpp via Homebrew: brew install llama.cpp"
+            fi
             return 1
         fi
         if confirm_default_yes "Install llama.cpp via Homebrew?"; then

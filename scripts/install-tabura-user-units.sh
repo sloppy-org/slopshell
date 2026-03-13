@@ -84,7 +84,11 @@ elif LLAMA_SERVER_BIN_RESOLVED="$(tabura_find_llama_server)"; then
 else
   HAVE_LLAMA=0
   if [ "$PLATFORM" = "Darwin" ]; then
-    log "WARNING: llama-server not found. Install: brew install llama.cpp"
+    if [ -n "${TABURA_LLAMA_LAST_ERROR:-}" ]; then
+      log "WARNING: llama-server not usable (${TABURA_LLAMA_LAST_ERROR}). Install: brew install llama.cpp"
+    else
+      log "WARNING: llama-server not found. Install: brew install llama.cpp"
+    fi
   else
     if [ -n "${TABURA_LLAMA_LAST_ERROR:-}" ]; then
       fail "llama-server not usable: ${TABURA_LLAMA_LAST_ERROR}"

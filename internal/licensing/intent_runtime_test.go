@@ -87,6 +87,9 @@ func TestGoReleaserArchiveOmitsRemovedIntentClassifierFiles(t *testing.T) {
 	if !strings.Contains(content, "scripts/setup-local-llm.sh") {
 		t.Fatalf("goreleaser no longer packages the local runtime setup script:\n%s", content)
 	}
+	if !strings.Contains(content, "scripts/lib/llama.sh") {
+		t.Fatalf("goreleaser no longer packages the llama runtime helper:\n%s", content)
+	}
 }
 
 func TestGitignoreOmitsRemovedIntentClassifierArtifacts(t *testing.T) {
