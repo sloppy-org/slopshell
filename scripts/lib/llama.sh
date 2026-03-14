@@ -11,7 +11,7 @@ tabura_llama_prepend_library_dirs() {
     local candidate="$1"
     local candidate_dir candidate_real prefix lib_var current
     local -a dirs=()
-    local -A seen=()
+    local seen=""
 
     if [ ! -e "$candidate" ]; then
         return 0
@@ -35,10 +35,13 @@ tabura_llama_prepend_library_dirs() {
     for dir in "${dirs[@]}"; do
         [ -d "$dir" ] || continue
         dir="$(cd "$dir" && pwd)"
-        if [ -n "${seen[$dir]:-}" ]; then
-            continue
+        case ":$seen:" in
+            *":$dir:"*) continue ;;
+        esac
+        if [ -n "$seen" ]; then
+            seen="${seen}:"
         fi
-        seen["$dir"]=1
+        seen="${seen}${dir}"
         if [ -n "$new_path" ]; then
             new_path="${new_path}:"
         fi
@@ -78,7 +81,7 @@ tabura_llama_server_usable() {
 tabura_llama_server_candidates() {
     local explicit resolved prefix
     local -a candidates=()
-    local -A seen=()
+    local seen=""
 
     if [ -n "${LLAMA_SERVER_BIN:-}" ]; then
         if [ -x "$LLAMA_SERVER_BIN" ]; then
@@ -107,10 +110,13 @@ tabura_llama_server_candidates() {
     local candidate
     for candidate in "${candidates[@]}"; do
         [ -n "$candidate" ] || continue
-        if [ -n "${seen[$candidate]:-}" ]; then
-            continue
+        case ":$seen:" in
+            *":$candidate:"*) continue ;;
+        esac
+        if [ -n "$seen" ]; then
+            seen="${seen}:"
         fi
-        seen["$candidate"]=1
+        seen="${seen}${candidate}"
         printf '%s\n' "$candidate"
     done
 }

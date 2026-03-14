@@ -141,7 +141,17 @@ PROJECT_DIR="$REPO_ROOT"
 log "Bootstrapping project at $PROJECT_DIR"
 "$BIN_PATH" bootstrap --project-dir "$PROJECT_DIR"
 
-# --- Step 9: Summary ---
+# --- Step 9: Configure Codex MCP + local provider profiles ---
+
+if [ -n "${TABURA_INTENT_LLM_URL:-}" ] && [ "${TABURA_INTENT_LLM_URL}" != "off" ]; then
+    TABURA_CODEX_FAST_URL="${TABURA_INTENT_LLM_URL}/v1" \
+    TABURA_CODEX_AGENTIC_URL="${TABURA_INTENT_LLM_URL}/v1" \
+    "$REPO_ROOT/scripts/setup-codex-mcp.sh" "http://127.0.0.1:9420/mcp"
+else
+    "$REPO_ROOT/scripts/setup-codex-mcp.sh" "http://127.0.0.1:9420/mcp"
+fi
+
+# --- Step 10: Summary ---
 
 EFFECTIVE_LLM_URL="${TABURA_INTENT_LLM_URL:-http://127.0.0.1:8426}"
 cat <<SUMMARY
@@ -157,6 +167,7 @@ Endpoints:
   MCP:     http://127.0.0.1:9420/mcp
   TTS:     http://127.0.0.1:8424/v1/audio/speech
   LLM:     $EFFECTIVE_LLM_URL
+  Codex:   http://127.0.0.1:8430/v1
   STT:     http://127.0.0.1:8427/v1/audio/transcriptions
 
 SUMMARY
@@ -168,6 +179,7 @@ Log files:
   /tmp/tabura-codex-app-server.log
   /tmp/tabura-piper-tts.log
   /tmp/tabura-llm.log
+  /tmp/tabura-codex-llm.log
   /tmp/tabura-stt.log
 LOGS
 else
@@ -177,6 +189,7 @@ Logs:
   journalctl --user -u tabura-codex-app-server.service
   journalctl --user -u tabura-piper-tts.service
   journalctl --user -u tabura-llm.service
+  journalctl --user -u tabura-codex-llm.service
   journalctl --user -u tabura-stt.service
 LOGS
 fi

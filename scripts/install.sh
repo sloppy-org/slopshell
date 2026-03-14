@@ -462,6 +462,40 @@ bootstrap_project() {
     "$BIN_PATH" bootstrap --project-dir "$PROJECT_DIR" >/dev/null
 }
 
+configure_codex_cli() {
+    local staging_dir="${1:-}"
+    local script_path=""
+    local fast_url agentic_url
+
+    if [ -n "$staging_dir" ] && [ -f "${staging_dir}/scripts/setup-codex-mcp.sh" ]; then
+        script_path="${staging_dir}/scripts/setup-codex-mcp.sh"
+    elif [ -f "scripts/setup-codex-mcp.sh" ]; then
+        script_path="scripts/setup-codex-mcp.sh"
+    fi
+
+    if [ -z "$script_path" ]; then
+        log "setup-codex-mcp.sh not available; skipping Codex local provider config"
+        return
+    fi
+
+    if [ -n "$REUSE_LLM_URL" ]; then
+        fast_url="${REUSE_LLM_URL}/v1"
+        agentic_url="${REUSE_LLM_URL}/v1"
+    else
+        fast_url="http://127.0.0.1:8426/v1"
+        agentic_url="http://127.0.0.1:8430/v1"
+    fi
+
+    if [ "$DRY_RUN" = "1" ]; then
+        log "[dry-run] configure Codex MCP and local model profiles via ${script_path}"
+        return
+    fi
+
+    TABURA_CODEX_FAST_URL="$fast_url" \
+    TABURA_CODEX_AGENTIC_URL="$agentic_url" \
+    bash "$script_path" "http://127.0.0.1:9420/mcp" >/dev/null
+}
+
 piper_notice() {
     cat <<NOTICE
 === Piper TTS (GPL, runs as HTTP sidecar) ===
@@ -575,9 +609,9 @@ setup_local_llm() {
     fi
 
     cat <<NOTICE
-=== Local LLM (Qwen3.5 9B GGUF via llama.cpp, optional) ===
-A local coordinator language model for Hub routing and replies.
-Runs as a local HTTP service on port 8426.
+=== Local LLMs (llama.cpp, optional) ===
+A fast Qwen3.5 9B coordinator runs on port 8426 for Tabura routing and replies.
+A Codex-focused gpt-oss-120b runtime runs on port 8430 for local Codex agent profiles.
 Requires llama.cpp (llama-server binary).
 NOTICE
     if ! confirm_default_yes "Install local LLM service?"; then
@@ -750,6 +784,27 @@ TimeoutStopSec=15
 [Install]
 WantedBy=default.target
 UNIT
+
+        cat >"${systemd_dir}/tabura-codex-llm.service" <<UNIT
+[Unit]
+Description=Tabura Local Codex LLM (gpt-oss-120b via llama.cpp)
+After=network.target
+
+[Service]
+Type=simple
+Environment=TABURA_LLM_PRESET=codex-gpt-oss-120b
+Environment=LLAMA_SERVER_BIN=${LLAMA_SERVER_BIN_RESOLVED}
+ExecStart=${LLM_SETUP_SCRIPT}
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+
+[Install]
+WantedBy=default.target
+UNIT
+    fi
+    if [ -n "$REUSE_LLM_URL" ]; then
+        run_cmd rm -f "${systemd_dir}/tabura-llm.service" "${systemd_dir}/tabura-codex-llm.service"
     fi
 
     local effective_llm_url="${REUSE_LLM_URL:-http://127.0.0.1:8426}"
@@ -781,9 +836,15 @@ install_services_linux() {
     have_cmd systemctl || fail "systemctl is required for Linux service setup"
     write_systemd_units
     run_cmd systemctl --user daemon-reload
+    if [ -n "$REUSE_LLM_URL" ]; then
+        run_cmd systemctl --user disable --now tabura-llm.service tabura-codex-llm.service >/dev/null 2>&1 || true
+    fi
     units=(tabura-codex-app-server.service tabura-piper-tts.service tabura-web.service)
     if [ -f "${HOME}/.config/systemd/user/tabura-llm.service" ]; then
         units+=(tabura-llm.service)
+    fi
+    if [ -f "${HOME}/.config/systemd/user/tabura-codex-llm.service" ]; then
+        units+=(tabura-codex-llm.service)
     fi
     run_cmd systemctl --user enable --now "${units[@]}"
 }
@@ -829,6 +890,11 @@ write_launchd_plists() {
 
     if [ -x "$LLM_SETUP_SCRIPT" ] && [ -z "$REUSE_LLM_URL" ]; then
         substitute_launchd_template "${template_dir}/io.tabura.llm.plist" "${agent_dir}/io.tabura.llm.plist"
+        substitute_launchd_template "${template_dir}/io.tabura.codex-llm.plist" "${agent_dir}/io.tabura.codex-llm.plist"
+    else
+        run_cmd launchctl unload "${agent_dir}/io.tabura.llm.plist" >/dev/null 2>&1 || true
+        run_cmd launchctl unload "${agent_dir}/io.tabura.codex-llm.plist" >/dev/null 2>&1 || true
+        run_cmd rm -f "${agent_dir}/io.tabura.llm.plist" "${agent_dir}/io.tabura.codex-llm.plist"
     fi
 
     if [ -x "$STT_SETUP_SCRIPT" ]; then
@@ -856,6 +922,9 @@ install_services_macos() {
     fi
     if [ -f "${agent_dir}/io.tabura.llm.plist" ]; then
         load_launchd_service "${agent_dir}/io.tabura.llm.plist"
+    fi
+    if [ -f "${agent_dir}/io.tabura.codex-llm.plist" ]; then
+        load_launchd_service "${agent_dir}/io.tabura.codex-llm.plist"
     fi
     if [ -f "${agent_dir}/io.tabura.stt.plist" ]; then
         load_launchd_service "${agent_dir}/io.tabura.stt.plist"
@@ -888,6 +957,7 @@ open_browser() {
 print_summary() {
     local version="$1"
     local effective_llm_url="${REUSE_LLM_URL:-http://127.0.0.1:8426}"
+    local effective_codex_llm_url="${REUSE_LLM_URL:-http://127.0.0.1:8430}"
     cat <<SUMMARY
 
 Install complete
@@ -900,6 +970,7 @@ Install complete
   Service mode:  ${TABURA_OS}
   Web URL:       http://127.0.0.1:8420
   Intent LLM:   ${effective_llm_url}
+  Codex LLM:    ${effective_codex_llm_url}
 SUMMARY
     if [ -n "$REUSE_LLM_URL" ]; then
         log "using existing llama-server at ${REUSE_LLM_URL} (no tabura-llm service created)"
@@ -912,20 +983,21 @@ remove_linux_services() {
     if have_cmd systemctl; then
         run_cmd systemctl --user disable --now \
             tabura-web.service tabura-piper-tts.service tabura-codex-app-server.service \
-            tabura-llm.service >/dev/null 2>&1 || true
+            tabura-llm.service tabura-codex-llm.service >/dev/null 2>&1 || true
         run_cmd systemctl --user daemon-reload >/dev/null 2>&1 || true
     fi
     run_cmd rm -f \
         "${systemd_dir}/tabura-web.service" \
         "${systemd_dir}/tabura-piper-tts.service" \
         "${systemd_dir}/tabura-codex-app-server.service" \
-        "${systemd_dir}/tabura-llm.service"
+        "${systemd_dir}/tabura-llm.service" \
+        "${systemd_dir}/tabura-codex-llm.service"
 }
 
 remove_macos_services() {
     local agent_dir plist
     agent_dir="${HOME}/Library/LaunchAgents"
-    for plist in io.tabura.web io.tabura.stt io.tabura.llm io.tabura.piper-tts io.tabura.codex-app-server; do
+    for plist in io.tabura.web io.tabura.stt io.tabura.llm io.tabura.codex-llm io.tabura.piper-tts io.tabura.codex-app-server; do
         run_cmd launchctl unload "${agent_dir}/${plist}.plist" >/dev/null 2>&1 || true
     done
     run_cmd rm -f \
@@ -933,7 +1005,8 @@ remove_macos_services() {
         "${agent_dir}/io.tabura.stt.plist" \
         "${agent_dir}/io.tabura.piper-tts.plist" \
         "${agent_dir}/io.tabura.codex-app-server.plist" \
-        "${agent_dir}/io.tabura.llm.plist"
+        "${agent_dir}/io.tabura.llm.plist" \
+        "${agent_dir}/io.tabura.codex-llm.plist"
 }
 
 uninstall_flow() {
@@ -976,6 +1049,7 @@ install_flow() {
     else
         install_services_linux
     fi
+    configure_codex_cli "$tmpdir"
     open_browser
     print_summary "$installed_tag"
 }

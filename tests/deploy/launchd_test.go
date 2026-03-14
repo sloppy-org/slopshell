@@ -32,6 +32,11 @@ var expectedPlists = []struct {
 		tokens: []string{"@@LLM_SETUP_SCRIPT@@", "@@LLM_MODEL_DIR@@", "@@LLAMA_SERVER_BIN@@"},
 	},
 	{
+		file:   "io.tabura.codex-llm.plist",
+		label:  "io.tabura.codex-llm",
+		tokens: []string{"@@LLM_SETUP_SCRIPT@@", "@@LLAMA_SERVER_BIN@@"},
+	},
+	{
 		file:   "io.tabura.stt.plist",
 		label:  "io.tabura.stt",
 		tokens: []string{"@@STT_SETUP_SCRIPT@@"},
@@ -218,6 +223,7 @@ func TestSystemdAndLaunchdServiceParity(t *testing.T) {
 
 	launchdServices := map[string]bool{
 		"codex-app-server": false,
+		"codex-llm":        false,
 		"piper-tts":        false,
 		"llm":              false,
 		"stt":              false,

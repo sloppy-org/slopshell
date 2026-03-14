@@ -262,9 +262,9 @@ function Setup-LocalLlm {
         Write-Log "skipping local LLM due to TABURA_INSTALL_SKIP_LLM=1"
         return
     }
-    Write-Host "=== Local LLM (Qwen3.5 9B GGUF via llama.cpp, optional) ==="
-    Write-Host "A local coordinator language model for Hub routing and replies."
-    Write-Host "Runs as a local HTTP service on port 8426."
+    Write-Host "=== Local LLMs (llama.cpp, optional) ==="
+    Write-Host "A fast Qwen3.5 9B coordinator runs on port 8426 for Tabura routing and replies."
+    Write-Host "A Codex-focused gpt-oss-120b runtime runs on port 8430 for local Codex agent profiles."
     Write-Host "Requires llama.cpp (llama-server binary)."
 
     if (-not (Confirm-DefaultYes "Install local LLM service?")) {
@@ -309,12 +309,14 @@ function Write-TaskFiles {
 
     $llamaPath = (Get-Command llama-server -ErrorAction SilentlyContinue)
     $llmCmd = ""
+    $codexLlmCmd = ""
     if ($llamaPath) {
-        $llmCmd = '"' + $llamaPath.Source + '" -m "' + (Join-Path $LlmModelDir "Qwen3.5-9B-Q4_K_M.gguf") + '" --host 127.0.0.1 --port 8426 -c 16384 --threads 4 -ngl 99'
+        $llmCmd = '"' + $llamaPath.Source + '" -m "' + (Join-Path $LlmModelDir "Qwen3.5-9B-Q4_K_M.gguf") + '" --host 127.0.0.1 --port 8426 -c 16384 --threads 4 -ngl 99 --parallel 2 --alias qwen3.5-9b --reasoning-budget 0 --no-webui'
+        $codexLlmCmd = '"' + $llamaPath.Source + '" --gpt-oss-120b-default --host 127.0.0.1 --port 8430 -c 32768 --threads 8 -ngl auto --parallel 1 --alias gpt-oss-120b --reasoning-budget -1 --no-webui'
     }
 
     if ($DryRun.IsPresent) {
-        Write-Log "[dry-run] Register scheduled tasks tabura-web, tabura-piper-tts, tabura-codex-app-server, tabura-llm"
+        Write-Log "[dry-run] Register scheduled tasks tabura-web, tabura-piper-tts, tabura-codex-app-server, tabura-llm, tabura-codex-llm"
         return
     }
 
@@ -326,6 +328,10 @@ function Write-TaskFiles {
     if ($llmCmd) {
         schtasks /Create /SC ONLOGON /TN "tabura-llm" /TR $llmCmd /F | Out-Null
         schtasks /Run /TN "tabura-llm" | Out-Null
+    }
+    if ($codexLlmCmd) {
+        schtasks /Create /SC ONLOGON /TN "tabura-codex-llm" /TR $codexLlmCmd /F | Out-Null
+        schtasks /Run /TN "tabura-codex-llm" | Out-Null
     }
 
     schtasks /Create /SC ONLOGON /TN "tabura-web" /TR $webCmd /F | Out-Null
@@ -358,6 +364,8 @@ function Print-Summary {
     Write-Host "  Project dir:  $ProjectDir"
     Write-Host "  Piper models: $ModelDir"
     Write-Host "  Web URL:      http://127.0.0.1:8420"
+    Write-Host "  Intent LLM:   http://127.0.0.1:8426"
+    Write-Host "  Codex LLM:    http://127.0.0.1:8430"
 }
 
 function Remove-Task {
@@ -372,6 +380,7 @@ function Remove-Task {
 function Uninstall-Tabura {
     Remove-Task "tabura-web"
     Remove-Task "tabura-llm"
+    Remove-Task "tabura-codex-llm"
     Remove-Task "tabura-piper-tts"
     Remove-Task "tabura-codex-app-server"
 

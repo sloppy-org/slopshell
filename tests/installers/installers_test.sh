@@ -135,14 +135,41 @@ run_install_ps1_static_checks() {
     assert_contains "$ps1" "schtasks /Create"
     assert_contains "$ps1" "piper-tts"
     assert_contains "$ps1" "tabura-llm"
+    assert_contains "$ps1" "tabura-codex-llm"
     assert_contains "$ps1" "Setup-LocalLlm"
+    assert_contains "$ps1" "gpt-oss-120b-default"
     assert_contains "$ps1" "Print-WindowsSTTNotice"
+}
+
+run_setup_codex_mcp_checks() {
+    local tmpdir config_path
+    tmpdir="$(mktemp -d -t tabura-codex-config-test-XXXXXX)"
+    trap "rm -rf '$tmpdir'" RETURN
+
+    config_path="${tmpdir}/config.toml"
+    printf 'model = "gpt-5.4"\n' >"$config_path"
+
+    CODEX_CONFIG_PATH="$config_path" \
+    "${ROOT_DIR}/scripts/setup-codex-mcp.sh" "http://127.0.0.1:9420/mcp" >/dev/null
+
+    assert_contains "$config_path" "[mcp_servers.tabura]"
+    assert_contains "$config_path" "url = \"http://127.0.0.1:9420/mcp\""
+    assert_contains "$config_path" "[model_providers.tabura_local_agentic]"
+    assert_contains "$config_path" "base_url = \"http://127.0.0.1:8430/v1\""
+    assert_contains "$config_path" "[model_providers.tabura_local_fast]"
+    assert_contains "$config_path" "base_url = \"http://127.0.0.1:8426/v1\""
+    assert_contains "$config_path" "[profiles.tabura_local_agentic]"
+    assert_contains "$config_path" "model = \"gpt-oss-120b\""
+    assert_contains "$config_path" "[profiles.tabura_local_fast]"
+    assert_contains "$config_path" "model = \"qwen3.5-9b\""
+    assert_contains "$config_path" "wire_api = \"responses\""
 }
 
 main() {
     run_install_sh_dry_run
     run_llama_helper_checks
     run_install_ps1_static_checks
+    run_setup_codex_mcp_checks
     "${ROOT_DIR}/tests/installers/distribution_artifacts_test.sh"
     echo "installer tests passed"
 }

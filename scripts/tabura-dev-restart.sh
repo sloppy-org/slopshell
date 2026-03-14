@@ -48,6 +48,9 @@ restart_service() {
   if [[ "$(uname)" == "Darwin" ]]; then
     restart_launchd_service "$label"
   else
+    if ! systemctl --user list-unit-files "$unit" --no-legend 2>/dev/null | awk '{print $1}' | grep -Fxq "$unit"; then
+      return
+    fi
     systemctl --user restart "$unit"
   fi
 }
@@ -56,4 +59,6 @@ if [[ "$INCLUDE_PTYD" == "--include-ptyd" ]]; then
   restart_service tabura-ptyd.service io.tabura.ptyd
 fi
 restart_service tabura-codex-app-server.service io.tabura.codex-app-server
+restart_service tabura-llm.service io.tabura.llm
+restart_service tabura-codex-llm.service io.tabura.codex-llm
 restart_service tabura-web.service io.tabura.web

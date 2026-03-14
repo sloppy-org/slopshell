@@ -1,5 +1,5 @@
 [Unit]
-Description=Tabura Local Coordinator LLM (Qwen3.5 9B GGUF)
+Description=Tabura Local Codex LLM (gpt-oss-120b via llama.cpp)
 After=network.target
 
 [Service]
@@ -7,8 +7,7 @@ Type=simple
 WorkingDirectory=@@REPO_ROOT@@
 Environment=HOME=%h
 Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
-Environment=TABURA_LLM_PRESET=fast-qwen9b
-Environment=TABURA_LLM_MODEL_DIR=%h/.local/share/tabura-llm/models
+Environment=TABURA_LLM_PRESET=codex-gpt-oss-120b
 Environment=LLAMA_SERVER_BIN=@@LLAMA_SERVER_BIN@@
 ExecStart=@@REPO_ROOT@@/scripts/setup-local-llm.sh
 Restart=on-failure

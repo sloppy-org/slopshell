@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>io.tabura.llm</string>
+  <string>io.tabura.codex-llm</string>
   <key>ProgramArguments</key>
   <array>
     <string>@@LLM_SETUP_SCRIPT@@</string>
@@ -11,9 +11,7 @@
   <key>EnvironmentVariables</key>
   <dict>
     <key>TABURA_LLM_PRESET</key>
-    <string>fast-qwen9b</string>
-    <key>TABURA_LLM_MODEL_DIR</key>
-    <string>@@LLM_MODEL_DIR@@</string>
+    <string>codex-gpt-oss-120b</string>
     <key>LLAMA_SERVER_BIN</key>
     <string>@@LLAMA_SERVER_BIN@@</string>
   </dict>
@@ -22,8 +20,8 @@
   <key>KeepAlive</key>
   <true/>
   <key>StandardOutPath</key>
-  <string>/tmp/tabura-llm.log</string>
+  <string>/tmp/tabura-codex-llm.log</string>
   <key>StandardErrorPath</key>
-  <string>/tmp/tabura-llm.log</string>
+  <string>/tmp/tabura-codex-llm.log</string>
 </dict>
 </plist>

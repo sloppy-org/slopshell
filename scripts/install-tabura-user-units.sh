@@ -35,6 +35,21 @@ confirm_default_yes() {
 REUSE_LLM_URL=""
 LLAMA_SERVER_BIN_RESOLVED=""
 
+configure_codex_cli() {
+  local fast_url agentic_url
+  if [ -n "$REUSE_LLM_URL" ]; then
+    fast_url="${REUSE_LLM_URL}/v1"
+    agentic_url="${REUSE_LLM_URL}/v1"
+  else
+    fast_url="http://127.0.0.1:8426/v1"
+    agentic_url="http://127.0.0.1:8430/v1"
+  fi
+
+  TABURA_CODEX_FAST_URL="$fast_url" \
+  TABURA_CODEX_AGENTIC_URL="$agentic_url" \
+  "$REPO_ROOT/scripts/setup-codex-mcp.sh" "http://127.0.0.1:9420/mcp"
+}
+
 # --- Platform detection ---
 
 case "$PLATFORM" in
@@ -131,7 +146,7 @@ install_linux() {
   for f in "$unit_src"/*.service; do
     local base
     base="$(basename "$f")"
-    if [ "$base" = "tabura-llm.service" ] && [ -n "$REUSE_LLM_URL" ]; then
+    if { [ "$base" = "tabura-llm.service" ] || [ "$base" = "tabura-codex-llm.service" ]; } && [ -n "$REUSE_LLM_URL" ]; then
       continue
     fi
     sed -e "s|@@REPO_ROOT@@|${REPO_ROOT}|g" \
@@ -140,6 +155,9 @@ install_linux() {
         -e "s|@@TABURA_INTENT_LLM_URL@@|${effective_llm_url}|g" \
         "$f" > "$unit_dst/$base"
   done
+  if [ -n "$REUSE_LLM_URL" ]; then
+    rm -f "$unit_dst/tabura-llm.service" "$unit_dst/tabura-codex-llm.service"
+  fi
   systemctl --user daemon-reload
 
   # Disable legacy units
@@ -150,12 +168,17 @@ install_linux() {
     helpy-mcp.service \
     voxtype.service \
     >/dev/null 2>&1 || true
+  if [ -n "$REUSE_LLM_URL" ]; then
+    systemctl --user disable --now tabura-llm.service tabura-codex-llm.service >/dev/null 2>&1 || true
+  fi
 
   # Enable and start all services
   local units=("${core_units[@]}" "${optional_units[@]}")
   if [ -z "$REUSE_LLM_URL" ]; then
     units+=(tabura-llm.service)
     core_units+=(tabura-llm.service)
+    units+=(tabura-codex-llm.service)
+    optional_units+=(tabura-codex-llm.service)
   fi
 
   systemctl --user enable --now "${units[@]}"
@@ -246,11 +269,17 @@ install_macos() {
   piper_venv_dir="${HOME}/.local/share/tabura-piper-tts/venv"
 
   mkdir -p "$plist_dst" "$web_data_dir"
+  if [ -n "$REUSE_LLM_URL" ]; then
+    launchctl unload "$plist_dst/io.tabura.llm.plist" >/dev/null 2>&1 || true
+    launchctl unload "$plist_dst/io.tabura.codex-llm.plist" >/dev/null 2>&1 || true
+    rm -f "$plist_dst/io.tabura.llm.plist" "$plist_dst/io.tabura.codex-llm.plist"
+  fi
 
   # Determine which agents to install
   local agents=(codex-app-server piper-tts web)
   if [ "$HAVE_LLAMA" = "1" ] && [ -z "$REUSE_LLM_URL" ]; then
     agents+=(llm)
+    agents+=(codex-llm)
   fi
   if [ "$HAVE_VOXTYPE" = "1" ]; then
     agents+=(stt)
@@ -358,6 +387,12 @@ activate_direct() {
         nohup "$REPO_ROOT/scripts/setup-local-llm.sh" \
           >"$logfile" 2>&1 &
         ;;
+      codex-llm)
+        TABURA_LLM_PRESET=codex-gpt-oss-120b \
+        LLAMA_SERVER_BIN="$LLAMA_SERVER_BIN_RESOLVED" \
+        nohup "$REPO_ROOT/scripts/setup-local-llm.sh" \
+          >"$logfile" 2>&1 &
+        ;;
       stt)
         TABURA_STT_LANGUAGE=de,en TABURA_STT_MODEL=large-v3-turbo \
         nohup "$REPO_ROOT/scripts/setup-voxtype-stt.sh" \
@@ -393,3 +428,5 @@ if [ "$PLATFORM" = "Darwin" ]; then
 else
   install_linux
 fi
+
+configure_codex_cli
