@@ -770,7 +770,7 @@ export async function startSileroVADMonitor(capture) {
     const vadStream = capture.mediaStream.clone();
     capture._vadStream = vadStream;
 
-    const instance = await initVAD({
+      const instance = await initVAD({
       stream: vadStream,
       audioContext: capture._vadAudioContext || undefined,
       redemptionMs: isHotwordCapture ? 1400 : undefined,
@@ -780,6 +780,9 @@ export async function startSileroVADMonitor(capture) {
         emitDialogueServerDiagnostic('voice_capture_vad_speech_start', {
           trigger_source: triggerSource,
         });
+        if (state.chatVoiceCapture === capture) {
+          setVoiceLifecycle(VOICE_LIFECYCLE.LISTENING, 'voice-capture-vad-speech-start');
+        }
         if (vadState.noSpeechTimer) {
           window.clearTimeout(vadState.noSpeechTimer);
           vadState.noSpeechTimer = null;
