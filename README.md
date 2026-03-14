@@ -90,8 +90,8 @@ Tabura runs as one Go runtime plus six local services:
 2. `tabura-codex-app-server.service` (`codex app-server`)
 3. `tabura-piper-tts.service` (Piper `/v1/audio/speech`)
 4. `tabura-stt.service` (voxtype `/v1/audio/transcriptions`)
-5. `tabura-llm.service` (Qwen3.5 9B GGUF local coordinator at `127.0.0.1:8426/v1/chat/completions`)
-6. `tabura-codex-llm.service` (gpt-oss-120b llama.cpp runtime for local Codex profiles at `127.0.0.1:8430/v1/responses`)
+5. `tabura-llm.service` (Qwen3.5 9B GGUF local coordinator at `127.0.0.1:8081/v1/chat/completions`)
+6. `tabura-codex-llm.service` (gpt-oss-120b llama.cpp runtime for local Codex profiles at `127.0.0.1:8080/v1/responses`)
 
 Voice commit still uses built-in browser VAD auto-stop, then sends audio to the local STT sidecar.
 
@@ -108,8 +108,8 @@ Why Piper remains an HTTP sidecar:
 - Codex app-server websocket: `ws://127.0.0.1:8787`
 - Piper TTS endpoint: `http://127.0.0.1:8424/v1/audio/speech`
 - Voxtype STT endpoint: `http://127.0.0.1:8427/v1/audio/transcriptions`
-- Intent LLM endpoint: `http://127.0.0.1:8426/v1/chat/completions` (`TABURA_INTENT_LLM_URL`, set `off` to disable)
-- Local Codex llama.cpp endpoint: `http://127.0.0.1:8430/v1/responses`
+- Intent LLM endpoint: `http://127.0.0.1:8081/v1/chat/completions` (`TABURA_INTENT_LLM_URL`, set `off` to disable)
+- Local Codex llama.cpp endpoint: `http://127.0.0.1:8080/v1/responses`
 - Intent/delegator request model id: `TABURA_INTENT_LLM_MODEL` (default `local`)
 - Intent/delegator profile selection: `TABURA_INTENT_LLM_PROFILE` (default `qwen3.5-9b`)
 - Intent/delegator profile options: `TABURA_INTENT_LLM_PROFILE_OPTIONS` (default `qwen3.5-9b,qwen3.5-4b`)

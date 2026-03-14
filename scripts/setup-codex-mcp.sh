@@ -3,10 +3,10 @@ set -euo pipefail
 
 MCP_URL="${1:-http://127.0.0.1:9420/mcp}"
 CONFIG_PATH="${CODEX_CONFIG_PATH:-$HOME/.codex/config.toml}"
-FAST_URL="${TABURA_CODEX_FAST_URL:-http://127.0.0.1:8426/v1}"
+FAST_URL="${TABURA_CODEX_FAST_URL:-http://127.0.0.1:8081/v1}"
 FAST_MODEL="${TABURA_CODEX_FAST_MODEL:-qwen3.5-9b}"
-AGENTIC_URL="${TABURA_CODEX_AGENTIC_URL:-http://127.0.0.1:8430/v1}"
-AGENTIC_MODEL="${TABURA_CODEX_AGENTIC_MODEL:-gpt-oss-120b}"
+LOCAL_URL="${TABURA_CODEX_LOCAL_URL:-http://127.0.0.1:8080/v1}"
+LOCAL_MODEL="${TABURA_CODEX_LOCAL_MODEL:-gpt-oss-120b}"
 MCP_MARKER_BEGIN="# BEGIN TABURA MCP"
 MCP_MARKER_END="# END TABURA MCP"
 MODELS_MARKER_BEGIN="# BEGIN TABURA LOCAL MODELS"
@@ -55,23 +55,23 @@ fi
   echo "$MCP_MARKER_END"
   echo
   echo "$MODELS_MARKER_BEGIN"
-  echo "[model_providers.tabura_local_agentic]"
-  echo 'name = "Tabura llama.cpp Agentic"'
-  printf 'base_url = "%s"\n' "$AGENTIC_URL"
+  echo "[model_providers.local]"
+  echo 'name = "Local llama.cpp"'
+  printf 'base_url = "%s"\n' "$LOCAL_URL"
   echo 'wire_api = "responses"'
   echo
-  echo "[model_providers.tabura_local_fast]"
-  echo 'name = "Tabura llama.cpp Fast"'
+  echo "[model_providers.fast]"
+  echo 'name = "Fast llama.cpp"'
   printf 'base_url = "%s"\n' "$FAST_URL"
   echo 'wire_api = "responses"'
   echo
-  echo "[profiles.tabura_local_agentic]"
-  echo 'model_provider = "tabura_local_agentic"'
-  printf 'model = "%s"\n' "$AGENTIC_MODEL"
+  echo "[profiles.local]"
+  echo 'model_provider = "local"'
+  printf 'model = "%s"\n' "$LOCAL_MODEL"
   echo 'model_reasoning_effort = "high"'
   echo
-  echo "[profiles.tabura_local_fast]"
-  echo 'model_provider = "tabura_local_fast"'
+  echo "[profiles.fast]"
+  echo 'model_provider = "fast"'
   printf 'model = "%s"\n' "$FAST_MODEL"
   echo 'model_reasoning_effort = "minimal"'
   echo "$MODELS_MARKER_END"
@@ -81,4 +81,4 @@ fi
 mv "$TMP_OUT" "$CONFIG_PATH"
 echo "updated $CONFIG_PATH"
 echo "server key: mcp_servers.tabura"
-echo "profile keys: tabura_local_agentic, tabura_local_fast"
+echo "profile keys: local, fast"

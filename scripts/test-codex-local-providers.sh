@@ -3,10 +3,10 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORKDIR="${TABURA_CODEX_TEST_WORKDIR:-$ROOT_DIR}"
-FAST_URL="${TABURA_CODEX_FAST_URL:-http://127.0.0.1:8426/v1}"
+FAST_URL="${TABURA_CODEX_FAST_URL:-http://127.0.0.1:8081/v1}"
 FAST_MODEL="${TABURA_CODEX_FAST_MODEL:-qwen3.5-9b}"
-AGENTIC_URL="${TABURA_CODEX_AGENTIC_URL:-http://127.0.0.1:8430/v1}"
-AGENTIC_MODEL="${TABURA_CODEX_AGENTIC_MODEL:-gpt-oss-120b}"
+LOCAL_URL="${TABURA_CODEX_LOCAL_URL:-http://127.0.0.1:8080/v1}"
+LOCAL_MODEL="${TABURA_CODEX_LOCAL_MODEL:-gpt-oss-120b}"
 MCP_URL="${TABURA_CODEX_MCP_URL:-http://127.0.0.1:9420/mcp}"
 
 fail() {
@@ -51,7 +51,7 @@ require_cmd curl
 TMPDIR="$(mktemp -d -t tabura-codex-local-test-XXXXXX)"
 CONFIG_PATH="${TMPDIR}/config.toml"
 FAST_OUT="${TMPDIR}/fast.jsonl"
-AGENTIC_OUT="${TMPDIR}/agentic.jsonl"
+LOCAL_OUT="${TMPDIR}/local.jsonl"
 SEARCH_OUT="${TMPDIR}/search.jsonl"
 WORKDIR_ESCAPED="${WORKDIR//\\/\\\\}"
 WORKDIR_ESCAPED="${WORKDIR_ESCAPED//\"/\\\"}"
@@ -66,8 +66,8 @@ printf '\n[projects."%s"]\ntrust_level = "trusted"\n' "$WORKDIR_ESCAPED" >>"$CON
 
 TABURA_CODEX_FAST_URL="$FAST_URL" \
 TABURA_CODEX_FAST_MODEL="$FAST_MODEL" \
-TABURA_CODEX_AGENTIC_URL="$AGENTIC_URL" \
-TABURA_CODEX_AGENTIC_MODEL="$AGENTIC_MODEL" \
+TABURA_CODEX_LOCAL_URL="$LOCAL_URL" \
+TABURA_CODEX_LOCAL_MODEL="$LOCAL_MODEL" \
 CODEX_CONFIG_PATH="$CONFIG_PATH" \
 "$ROOT_DIR/scripts/setup-codex-mcp.sh" "$MCP_URL" >/dev/null
 
@@ -77,7 +77,7 @@ fi
 
 log "Testing fast profile via $FAST_URL"
 FAST_CONFIG="${TMPDIR}/fast-config.toml"
-build_active_config "tabura_local_fast" "$FAST_MODEL" "$FAST_CONFIG"
+build_active_config "fast" "$FAST_MODEL" "$FAST_CONFIG"
 run_codex "$FAST_CONFIG" exec \
   -C "$WORKDIR" \
   --skip-git-repo-check \
@@ -87,24 +87,24 @@ run_codex "$FAST_CONFIG" exec \
 
 grep -Fq '"text":"fast-ok"' "$FAST_OUT" || fail "fast profile did not return fast-ok"
 
-SEARCH_PROVIDER="tabura_local_fast"
+SEARCH_PROVIDER="fast"
 SEARCH_MODEL="$FAST_MODEL"
-if endpoint_live "$AGENTIC_URL"; then
-  log "Testing agentic profile via $AGENTIC_URL"
-  AGENTIC_CONFIG="${TMPDIR}/agentic-config.toml"
-  build_active_config "tabura_local_agentic" "$AGENTIC_MODEL" "$AGENTIC_CONFIG"
-  run_codex "$AGENTIC_CONFIG" exec \
+if endpoint_live "$LOCAL_URL"; then
+  log "Testing local profile via $LOCAL_URL"
+  LOCAL_CONFIG="${TMPDIR}/local-config.toml"
+  build_active_config "local" "$LOCAL_MODEL" "$LOCAL_CONFIG"
+  run_codex "$LOCAL_CONFIG" exec \
     -C "$WORKDIR" \
     --skip-git-repo-check \
     --color never \
     --json \
-    "Reply with exactly: agentic-ok" >"$AGENTIC_OUT"
+    "Reply with exactly: local-ok" >"$LOCAL_OUT"
 
-  grep -Fq '"text":"agentic-ok"' "$AGENTIC_OUT" || fail "agentic profile did not return agentic-ok"
-  SEARCH_PROVIDER="tabura_local_agentic"
-  SEARCH_MODEL="$AGENTIC_MODEL"
+  grep -Fq '"text":"local-ok"' "$LOCAL_OUT" || fail "local profile did not return local-ok"
+  SEARCH_PROVIDER="local"
+  SEARCH_MODEL="$LOCAL_MODEL"
 else
-  log "Agentic endpoint ${AGENTIC_URL%/v1} is not reachable; skipping direct agentic turn"
+  log "Local endpoint ${LOCAL_URL%/v1} is not reachable; skipping direct local turn"
 fi
 
 log "Testing Codex web search with provider $SEARCH_PROVIDER"

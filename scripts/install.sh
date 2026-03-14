@@ -108,7 +108,7 @@ have_cmd() {
 
 detect_llama_server() {
     local port url
-    for port in 8080 8081 8426; do
+    for port in 8080 8081 8081; do
         url="http://127.0.0.1:${port}"
         if curl -fsS --max-time 2 "${url}/health" >/dev/null 2>&1; then
             printf '%s' "$url"
@@ -482,8 +482,8 @@ configure_codex_cli() {
         fast_url="${REUSE_LLM_URL}/v1"
         agentic_url="${REUSE_LLM_URL}/v1"
     else
-        fast_url="http://127.0.0.1:8426/v1"
-        agentic_url="http://127.0.0.1:8430/v1"
+        fast_url="http://127.0.0.1:8081/v1"
+        agentic_url="http://127.0.0.1:8080/v1"
     fi
 
     if [ "$DRY_RUN" = "1" ]; then
@@ -610,8 +610,8 @@ setup_local_llm() {
 
     cat <<NOTICE
 === Local LLMs (llama.cpp, optional) ===
-A fast Qwen3.5 9B coordinator runs on port 8426 for Tabura routing and replies.
-A Codex-focused gpt-oss-120b runtime runs on port 8430 for local Codex agent profiles.
+A fast Qwen3.5 9B coordinator runs on port 8081 for Tabura routing and replies.
+A Codex-focused gpt-oss-120b runtime runs on port 8080 for local Codex agent profiles.
 Requires llama.cpp (llama-server binary).
 NOTICE
     if ! confirm_default_yes "Install local LLM service?"; then
@@ -807,7 +807,7 @@ UNIT
         run_cmd rm -f "${systemd_dir}/tabura-llm.service" "${systemd_dir}/tabura-codex-llm.service"
     fi
 
-    local effective_llm_url="${REUSE_LLM_URL:-http://127.0.0.1:8426}"
+    local effective_llm_url="${REUSE_LLM_URL:-http://127.0.0.1:8081}"
     local web_host="${TABURA_WEB_HOST:-127.0.0.1}"
 
     cat >"${systemd_dir}/tabura-web.service" <<UNIT
@@ -851,7 +851,7 @@ install_services_linux() {
 
 substitute_launchd_template() {
     local src="$1" dst="$2"
-    local effective_llm_url="${REUSE_LLM_URL:-http://127.0.0.1:8426}"
+    local effective_llm_url="${REUSE_LLM_URL:-http://127.0.0.1:8081}"
     local web_host="${TABURA_WEB_HOST:-127.0.0.1}"
     sed \
         -e "s|@@BIN_PATH@@|${BIN_PATH}|g" \
@@ -956,8 +956,8 @@ open_browser() {
 
 print_summary() {
     local version="$1"
-    local effective_llm_url="${REUSE_LLM_URL:-http://127.0.0.1:8426}"
-    local effective_codex_llm_url="${REUSE_LLM_URL:-http://127.0.0.1:8430}"
+    local effective_llm_url="${REUSE_LLM_URL:-http://127.0.0.1:8081}"
+    local effective_codex_llm_url="${REUSE_LLM_URL:-http://127.0.0.1:8080}"
     cat <<SUMMARY
 
 Install complete

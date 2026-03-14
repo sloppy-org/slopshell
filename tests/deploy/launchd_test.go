@@ -159,7 +159,7 @@ func TestLaunchdTemplateTokenSubstitution(t *testing.T) {
 		"@@LLAMA_SERVER_BIN@@":      "/tmp/llama-server",
 		"@@STT_SETUP_SCRIPT@@":      "/tmp/setup-stt.sh",
 		"@@TABURA_WEB_HOST@@":       "127.0.0.1",
-		"@@TABURA_INTENT_LLM_URL@@": "http://127.0.0.1:8426",
+		"@@TABURA_INTENT_LLM_URL@@": "http://127.0.0.1:8081",
 	}
 
 	for _, tc := range expectedPlists {

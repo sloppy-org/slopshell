@@ -89,7 +89,7 @@ fi
 # --- Step 5: LLM detection ---
 
 if [ -z "${TABURA_INTENT_LLM_URL:-}" ]; then
-    for port in 8080 8081 8426; do
+    for port in 8080 8081 8081; do
         if curl -fsS --max-time 2 "http://127.0.0.1:${port}/health" >/dev/null 2>&1; then
             export TABURA_INTENT_LLM_URL="http://127.0.0.1:${port}"
             log "Detected existing llama-server at $TABURA_INTENT_LLM_URL"
@@ -145,7 +145,7 @@ log "Bootstrapping project at $PROJECT_DIR"
 
 if [ -n "${TABURA_INTENT_LLM_URL:-}" ] && [ "${TABURA_INTENT_LLM_URL}" != "off" ]; then
     TABURA_CODEX_FAST_URL="${TABURA_INTENT_LLM_URL}/v1" \
-    TABURA_CODEX_AGENTIC_URL="${TABURA_INTENT_LLM_URL}/v1" \
+    TABURA_CODEX_LOCAL_URL="http://127.0.0.1:8080/v1" \
     "$REPO_ROOT/scripts/setup-codex-mcp.sh" "http://127.0.0.1:9420/mcp"
 else
     "$REPO_ROOT/scripts/setup-codex-mcp.sh" "http://127.0.0.1:9420/mcp"
@@ -153,7 +153,7 @@ fi
 
 # --- Step 10: Summary ---
 
-EFFECTIVE_LLM_URL="${TABURA_INTENT_LLM_URL:-http://127.0.0.1:8426}"
+EFFECTIVE_LLM_URL="${TABURA_INTENT_LLM_URL:-http://127.0.0.1:8081}"
 cat <<SUMMARY
 
 === Tabura Dev Setup Complete ===
@@ -167,7 +167,7 @@ Endpoints:
   MCP:     http://127.0.0.1:9420/mcp
   TTS:     http://127.0.0.1:8424/v1/audio/speech
   LLM:     $EFFECTIVE_LLM_URL
-  Codex:   http://127.0.0.1:8430/v1
+  Codex:   http://127.0.0.1:8080/v1
   STT:     http://127.0.0.1:8427/v1/audio/transcriptions
 
 SUMMARY

@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	DefaultIntentLLMURL            = "http://127.0.0.1:8426"
+	DefaultIntentLLMURL            = "http://127.0.0.1:8081"
 	DefaultIntentLLMModel          = "local"
 	DefaultIntentLLMProfile        = "qwen3.5-9b"
 	DefaultIntentLLMProfileOptions = "qwen3.5-9b,qwen3.5-4b"

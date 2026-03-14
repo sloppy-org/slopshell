@@ -263,8 +263,8 @@ function Setup-LocalLlm {
         return
     }
     Write-Host "=== Local LLMs (llama.cpp, optional) ==="
-    Write-Host "A fast Qwen3.5 9B coordinator runs on port 8426 for Tabura routing and replies."
-    Write-Host "A Codex-focused gpt-oss-120b runtime runs on port 8430 for local Codex agent profiles."
+    Write-Host "A fast Qwen3.5 9B coordinator runs on port 8081 for Tabura routing and replies."
+    Write-Host "A Codex-focused gpt-oss-120b runtime runs on port 8080 for local Codex agent profiles."
     Write-Host "Requires llama.cpp (llama-server binary)."
 
     if (-not (Confirm-DefaultYes "Install local LLM service?")) {
@@ -303,7 +303,7 @@ function Setup-LocalLlm {
 function Write-TaskFiles {
     param([string]$CodexPath)
 
-    $webCmd = 'set "TABURA_INTENT_LLM_URL=http://127.0.0.1:8426" && set "TABURA_INTENT_LLM_MODEL=local" && set "TABURA_INTENT_LLM_PROFILE=qwen3.5-9b" && set "TABURA_INTENT_LLM_PROFILE_OPTIONS=qwen3.5-9b,qwen3.5-4b" && "' + $BinaryPath + '" server --project-dir "' + $ProjectDir + '" --data-dir "' + $WebDataDir + '" --web-host ' + $WebHost + ' --web-port 8420 --mcp-host 127.0.0.1 --mcp-port 9420 --app-server-url ws://127.0.0.1:8787 --tts-url http://127.0.0.1:8424'
+    $webCmd = 'set "TABURA_INTENT_LLM_URL=http://127.0.0.1:8081" && set "TABURA_INTENT_LLM_MODEL=local" && set "TABURA_INTENT_LLM_PROFILE=qwen3.5-9b" && set "TABURA_INTENT_LLM_PROFILE_OPTIONS=qwen3.5-9b,qwen3.5-4b" && "' + $BinaryPath + '" server --project-dir "' + $ProjectDir + '" --data-dir "' + $WebDataDir + '" --web-host ' + $WebHost + ' --web-port 8420 --mcp-host 127.0.0.1 --mcp-port 9420 --app-server-url ws://127.0.0.1:8787 --tts-url http://127.0.0.1:8424'
     $piperCmd = 'set "PIPER_MODEL_DIR=' + $ModelDir + '" && "' + (Join-Path $PiperVenv 'Scripts\python.exe') + '" -m uvicorn piper_tts_server:app --app-dir "' + $ScriptDir + '" --host 127.0.0.1 --port 8424'
     $codexCmd = '"' + $CodexPath + '" app-server --listen ws://127.0.0.1:8787'
 
@@ -311,8 +311,8 @@ function Write-TaskFiles {
     $llmCmd = ""
     $codexLlmCmd = ""
     if ($llamaPath) {
-        $llmCmd = '"' + $llamaPath.Source + '" -m "' + (Join-Path $LlmModelDir "Qwen3.5-9B-Q4_K_M.gguf") + '" --host 127.0.0.1 --port 8426 -c 16384 --threads 4 -ngl 99 --parallel 2 --alias qwen3.5-9b --reasoning-budget 0 --no-webui'
-        $codexLlmCmd = '"' + $llamaPath.Source + '" --gpt-oss-120b-default --host 127.0.0.1 --port 8430 -c 32768 --threads 8 -ngl auto --parallel 1 --alias gpt-oss-120b --reasoning-budget -1 --no-webui'
+        $llmCmd = '"' + $llamaPath.Source + '" -m "' + (Join-Path $LlmModelDir "Qwen3.5-9B-Q4_K_M.gguf") + '" --host 127.0.0.1 --port 8081 -c 16384 --threads 4 -ngl 99 --parallel 2 --alias qwen3.5-9b --reasoning-budget 0 --no-webui'
+        $codexLlmCmd = '"' + $llamaPath.Source + '" --gpt-oss-120b-default --host 127.0.0.1 --port 8080 -c 32768 --threads 8 -ngl auto --parallel 1 --alias gpt-oss-120b --reasoning-budget -1 --no-webui'
     }
 
     if ($DryRun.IsPresent) {
@@ -364,8 +364,8 @@ function Print-Summary {
     Write-Host "  Project dir:  $ProjectDir"
     Write-Host "  Piper models: $ModelDir"
     Write-Host "  Web URL:      http://127.0.0.1:8420"
-    Write-Host "  Intent LLM:   http://127.0.0.1:8426"
-    Write-Host "  Codex LLM:    http://127.0.0.1:8430"
+    Write-Host "  Intent LLM:   http://127.0.0.1:8081"
+    Write-Host "  Codex LLM:    http://127.0.0.1:8080"
 }
 
 function Remove-Task {

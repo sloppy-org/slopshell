@@ -11,7 +11,7 @@ fail() { printf '[tabura-units] ERROR: %s\n' "$*" >&2; exit 1; }
 
 detect_llama_server() {
     local port url
-    for port in 8080 8081 8426; do
+    for port in 8080 8081 8081; do
         url="http://127.0.0.1:${port}"
         if curl -fsS --max-time 2 "${url}/health" >/dev/null 2>&1; then
             printf '%s' "$url"
@@ -41,8 +41,8 @@ configure_codex_cli() {
     fast_url="${REUSE_LLM_URL}/v1"
     agentic_url="${REUSE_LLM_URL}/v1"
   else
-    fast_url="http://127.0.0.1:8426/v1"
-    agentic_url="http://127.0.0.1:8430/v1"
+    fast_url="http://127.0.0.1:8081/v1"
+    agentic_url="http://127.0.0.1:8080/v1"
   fi
 
   TABURA_CODEX_FAST_URL="$fast_url" \
@@ -130,7 +130,7 @@ fi
 install_linux() {
   local unit_src="$REPO_ROOT/deploy/systemd/user"
   local unit_dst="$HOME/.config/systemd/user"
-  local effective_llm_url="${REUSE_LLM_URL:-http://127.0.0.1:8426}"
+  local effective_llm_url="${REUSE_LLM_URL:-http://127.0.0.1:8081}"
   local web_host="${TABURA_WEB_HOST:-127.0.0.1}"
   local -a core_units=(
     tabura-codex-app-server.service
@@ -251,7 +251,7 @@ install_macos() {
   local plist_dst="$HOME/Library/LaunchAgents"
   local data_root="$HOME/Library/Application Support/tabura"
   local bin_path codex_path web_data_dir piper_model_dir piper_venv_dir
-  local effective_llm_url="${REUSE_LLM_URL:-http://127.0.0.1:8426}"
+  local effective_llm_url="${REUSE_LLM_URL:-http://127.0.0.1:8081}"
   local web_host="${TABURA_WEB_HOST:-127.0.0.1}"
 
   [ -d "$plist_src" ] || fail "launchd templates not found: $plist_src"
