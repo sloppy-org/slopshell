@@ -236,10 +236,10 @@ export function beginConversationVoiceCapture(triggerSource = 'hotword') {
 export function currentIndicatorMode() {
   const mode = state.voiceLifecycle;
   const companionVisible = shouldShowCompanionIdleSurface();
+  if (companionVisible) return '';
   if (mode === VOICE_LIFECYCLE.RECORDING) return 'recording';
   if (mode === VOICE_LIFECYCLE.LISTENING) return 'listening';
   if (isStopCapableLifecycle(mode)) return 'play';
-  if (companionVisible) return '';
   const uiState = getUiState();
   if (state.requestedPositionPrompt) return 'cursor';
   if (state.liveSessionActive && uiState.cursorPinned) return 'cursor';
