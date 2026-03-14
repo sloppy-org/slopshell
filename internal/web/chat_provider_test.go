@@ -31,11 +31,11 @@ func TestLocalSystemActionTurnPublishesLocalProviderMetadata(t *testing.T) {
 	}
 
 	payload := waitForWSJSONMessageType(t, clientConn, 2*time.Second, "assistant_output")
-	if got := strFromAny(payload["provider"]); got != assistantProviderLocal {
-		t.Fatalf("provider = %q, want %q", got, assistantProviderLocal)
+	if got := strFromAny(payload["provider"]); got != assistantProviderFast {
+		t.Fatalf("provider = %q, want %q", got, assistantProviderFast)
 	}
-	if got := strFromAny(payload["provider_label"]); got != "Local" {
-		t.Fatalf("provider_label = %q, want Local", got)
+	if got := strFromAny(payload["provider_label"]); got != "Fast" {
+		t.Fatalf("provider_label = %q, want Fast", got)
 	}
 	if got := strFromAny(payload["provider_model"]); got != app.localAssistantModelLabel() {
 		t.Fatalf("provider_model = %q, want %q", got, app.localAssistantModelLabel())
@@ -51,8 +51,8 @@ func TestLocalSystemActionTurnPublishesLocalProviderMetadata(t *testing.T) {
 	if len(messages) != 1 {
 		t.Fatalf("message count = %d, want 1", len(messages))
 	}
-	if got := messages[0].Provider; got != assistantProviderLocal {
-		t.Fatalf("stored provider = %q, want %q", got, assistantProviderLocal)
+	if got := messages[0].Provider; got != assistantProviderFast {
+		t.Fatalf("stored provider = %q, want %q", got, assistantProviderFast)
 	}
 	if got := messages[0].ProviderModel; got != app.localAssistantModelLabel() {
 		t.Fatalf("stored provider_model = %q, want %q", got, app.localAssistantModelLabel())
@@ -103,8 +103,8 @@ func TestFinalizeAssistantResponseWithMetadataPublishesProviderMetadata(t *testi
 	if got := strFromAny(payload["provider"]); got != assistantProviderOpenAI {
 		t.Fatalf("provider = %q, want %q", got, assistantProviderOpenAI)
 	}
-	if got := strFromAny(payload["provider_label"]); got != "OpenAI" {
-		t.Fatalf("provider_label = %q, want OpenAI", got)
+	if got := strFromAny(payload["provider_label"]); got != "Spark" {
+		t.Fatalf("provider_label = %q, want Spark", got)
 	}
 	if got := strFromAny(payload["provider_model"]); got != metadata.ProviderModel {
 		t.Fatalf("provider_model = %q, want %q", got, metadata.ProviderModel)
@@ -128,6 +128,50 @@ func TestFinalizeAssistantResponseWithMetadataPublishesProviderMetadata(t *testi
 	}
 	if got := messages[0].ProviderLatency; got != metadata.ProviderLatency {
 		t.Fatalf("stored provider_latency = %d, want %d", got, metadata.ProviderLatency)
+	}
+}
+
+func TestProviderForAppServerProfileMapsAliasesToNamedResponders(t *testing.T) {
+	cases := []struct {
+		name    string
+		profile appServerModelProfile
+		want    string
+	}{
+		{name: "spark alias", profile: appServerModelProfile{Alias: "spark"}, want: assistantProviderSpark},
+		{name: "gpt alias", profile: appServerModelProfile{Alias: "gpt"}, want: assistantProviderGPT},
+		{name: "codex alias", profile: appServerModelProfile{Alias: "codex"}, want: assistantProviderCodex},
+		{name: "spark model", profile: appServerModelProfile{Model: "gpt-5.3-codex-spark"}, want: assistantProviderSpark},
+		{name: "gpt model", profile: appServerModelProfile{Model: "gpt-5.2"}, want: assistantProviderGPT},
+		{name: "codex model", profile: appServerModelProfile{Model: "gpt-5.3-codex"}, want: assistantProviderCodex},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := providerForAppServerProfile(tc.profile); got != tc.want {
+				t.Fatalf("providerForAppServerProfile() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestAssistantProviderDisplayLabelPrefersSpecificResponderName(t *testing.T) {
+	cases := []struct {
+		name     string
+		provider string
+		model    string
+		want     string
+	}{
+		{name: "fast local model", provider: assistantProviderFast, model: "qwen3.5-9b", want: "Fast"},
+		{name: "generic local infers fast", provider: assistantProviderLocal, model: "qwen3.5-9b", want: "Fast"},
+		{name: "spark from generic openai", provider: assistantProviderOpenAI, model: "gpt-5.3-codex-spark", want: "Spark"},
+		{name: "gpt from generic openai", provider: assistantProviderOpenAI, model: "gpt-5.2", want: "GPT"},
+		{name: "codex from generic openai", provider: assistantProviderOpenAI, model: "gpt-5.3-codex", want: "Codex"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := assistantProviderDisplayLabel(tc.provider, tc.model); got != tc.want {
+				t.Fatalf("assistantProviderDisplayLabel() = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 

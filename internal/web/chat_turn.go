@@ -348,7 +348,7 @@ func (a *App) tryRunLocalSystemActionTurn(sessionID string, session store.ChatSe
 		runID,
 		"",
 		outputMode,
-		newAssistantResponseMetadata(assistantProviderLocal, a.localAssistantModelLabel(), time.Since(turnStartedAt)),
+		newAssistantResponseMetadata(a.localAssistantProvider(), a.localAssistantModelLabel(), time.Since(turnStartedAt)),
 	)
 	return true
 }

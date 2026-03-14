@@ -10,9 +10,13 @@ import (
 
 const (
 	assistantProviderLocal    = "local"
+	assistantProviderFast     = "fast"
 	assistantProviderCerebras = "cerebras"
 	assistantProviderGoogle   = "google"
 	assistantProviderOpenAI   = "openai"
+	assistantProviderSpark    = "spark"
+	assistantProviderGPT      = "gpt"
+	assistantProviderCodex    = "codex"
 )
 
 type assistantResponseMetadata struct {
@@ -37,29 +41,90 @@ func normalizeAssistantProvider(raw string) string {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case assistantProviderLocal:
 		return assistantProviderLocal
+	case assistantProviderFast:
+		return assistantProviderFast
 	case assistantProviderCerebras:
 		return assistantProviderCerebras
 	case assistantProviderGoogle:
 		return assistantProviderGoogle
 	case assistantProviderOpenAI:
 		return assistantProviderOpenAI
+	case assistantProviderSpark:
+		return assistantProviderSpark
+	case assistantProviderGPT:
+		return assistantProviderGPT
+	case assistantProviderCodex:
+		return assistantProviderCodex
 	default:
 		return ""
 	}
 }
 
-func assistantProviderDisplayLabel(provider string) string {
-	switch normalizeAssistantProvider(provider) {
+func assistantProviderDisplayLabel(provider, model string) string {
+	switch assistantProviderBadgeKey(provider, model) {
 	case assistantProviderLocal:
 		return "Local"
+	case assistantProviderFast:
+		return "Fast"
 	case assistantProviderCerebras:
 		return "Cerebras"
 	case assistantProviderGoogle:
 		return "Google"
+	case assistantProviderSpark:
+		return "Spark"
+	case assistantProviderGPT:
+		return "GPT"
+	case assistantProviderCodex:
+		return "Codex"
 	case assistantProviderOpenAI:
 		return "OpenAI"
 	default:
 		return "Assistant"
+	}
+}
+
+func assistantProviderBadgeKey(provider, model string) string {
+	normalizedProvider := normalizeAssistantProvider(provider)
+	switch normalizedProvider {
+	case assistantProviderSpark, assistantProviderGPT, assistantProviderCodex, assistantProviderCerebras, assistantProviderGoogle, assistantProviderFast:
+		return normalizedProvider
+	case assistantProviderLocal:
+		if inferred := inferLocalAssistantProvider(model); inferred != "" {
+			return inferred
+		}
+		return assistantProviderLocal
+	case assistantProviderOpenAI:
+		if alias := modelprofile.ResolveAlias(model, ""); alias != "" {
+			return alias
+		}
+		return assistantProviderOpenAI
+	case "":
+		if alias := modelprofile.ResolveAlias(model, ""); alias != "" {
+			return alias
+		}
+		if inferred := inferLocalAssistantProvider(model); inferred != "" {
+			return inferred
+		}
+		return ""
+	default:
+		return normalizedProvider
+	}
+}
+
+func inferLocalAssistantProvider(model string) string {
+	lower := strings.ToLower(strings.TrimSpace(model))
+	if lower == "" {
+		return assistantProviderFast
+	}
+	switch {
+	case strings.Contains(lower, "fast"),
+		strings.Contains(lower, "9b"),
+		strings.Contains(lower, "4b"),
+		strings.Contains(lower, "mini"),
+		strings.Contains(lower, "small"):
+		return assistantProviderFast
+	default:
+		return assistantProviderLocal
 	}
 }
 
@@ -71,18 +136,29 @@ func (m assistantResponseMetadata) storeOptions() []store.ChatMessageOption {
 
 func (m assistantResponseMetadata) applyToPayload(payload map[string]interface{}) {
 	payload["provider"] = m.Provider
-	payload["provider_label"] = assistantProviderDisplayLabel(m.Provider)
+	payload["provider_label"] = assistantProviderDisplayLabel(m.Provider, m.ProviderModel)
 	payload["provider_model"] = m.ProviderModel
 	payload["provider_latency_ms"] = m.ProviderLatency
 }
 
 func providerForAppServerProfile(profile appServerModelProfile) string {
 	switch modelprofile.ResolveAlias(profile.Alias, profile.Model) {
-	case modelprofile.AliasCodex, modelprofile.AliasGPT, modelprofile.AliasSpark:
-		return assistantProviderOpenAI
+	case modelprofile.AliasCodex:
+		return assistantProviderCodex
+	case modelprofile.AliasGPT:
+		return assistantProviderGPT
+	case modelprofile.AliasSpark:
+		return assistantProviderSpark
 	default:
 		return ""
 	}
+}
+
+func (a *App) localAssistantProvider() string {
+	if a == nil {
+		return assistantProviderFast
+	}
+	return inferLocalAssistantProvider(a.localAssistantModelLabel())
 }
 
 func (a *App) localAssistantModelLabel() string {

@@ -411,8 +411,8 @@ func TestRunAssistantTurnParallelPrefersSparkForMediumConfidenceLocalAnswer(t *t
 		t.Fatalf("ListChatMessages: %v", err)
 	}
 	assistant := messages[len(messages)-1]
-	if assistant.Provider != assistantProviderOpenAI {
-		t.Fatalf("provider = %q, want %q", assistant.Provider, assistantProviderOpenAI)
+	if assistant.Provider != assistantProviderSpark {
+		t.Fatalf("provider = %q, want %q", assistant.Provider, assistantProviderSpark)
 	}
 }
 
@@ -515,8 +515,8 @@ func TestRunAssistantTurnParallelCommandStateMismatchKeepsLocalOwner(t *testing.
 		t.Fatalf("ListChatMessages: %v", err)
 	}
 	assistant := messages[len(messages)-1]
-	if assistant.Provider != assistantProviderLocal {
-		t.Fatalf("provider = %q, want %q when Spark ignores command state", assistant.Provider, assistantProviderLocal)
+	if assistant.Provider != assistantProviderFast {
+		t.Fatalf("provider = %q, want %q when Spark ignores command state", assistant.Provider, assistantProviderFast)
 	}
 }
 

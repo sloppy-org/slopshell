@@ -43,7 +43,7 @@ func (a *App) emitTurnStage(sessionID, eventType, turnID, source, text string) {
 	}
 	if cleanSource := normalizeAssistantProvider(source); cleanSource != "" {
 		payload["source"] = cleanSource
-		payload["source_label"] = assistantProviderDisplayLabel(cleanSource)
+		payload["source_label"] = assistantProviderDisplayLabel(cleanSource, "")
 	}
 	if cleanText := strings.TrimSpace(text); cleanText != "" {
 		payload["text"] = cleanText
@@ -365,7 +365,7 @@ func (a *App) runAssistantTurnParallel(
 	sparkDone := false
 	sparkResult := sparkTurnResult{}
 
-	localMetadata := newAssistantResponseMetadata(assistantProviderLocal, a.localAssistantModelLabel(), 0)
+	localMetadata := newAssistantResponseMetadata(a.localAssistantProvider(), a.localAssistantModelLabel(), 0)
 	cerebrasMetadata := newAssistantResponseMetadata(assistantProviderCerebras, a.cerebrasModelLabel(), 0)
 	geminiMetadata := newAssistantResponseMetadata(assistantProviderGoogle, a.geminiModelLabel(), 0)
 	commitFinal := func(text string, metadata assistantResponseMetadata, source string, threadID string) {

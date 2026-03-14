@@ -276,20 +276,57 @@ export function resolveApprovalRequestCard(requestID, decision) {
 
 function normalizeAssistantProvider(provider) {
   const value = String(provider || '').trim().toLowerCase();
-  if (value === 'local' || value === 'cerebras' || value === 'google' || value === 'openai') return value;
+  if (
+    value === 'local'
+    || value === 'fast'
+    || value === 'cerebras'
+    || value === 'google'
+    || value === 'openai'
+    || value === 'spark'
+    || value === 'gpt'
+    || value === 'codex'
+  ) return value;
   return '';
 }
 
-function assistantProviderLabel(provider, explicitLabel = '') {
+function providerAliasFromModel(provider, model) {
+  const normalizedProvider = normalizeAssistantProvider(provider);
+  const normalizedModel = String(model || '').trim().toLowerCase();
+  if (normalizedProvider === 'openai' || !normalizedProvider) {
+    if (normalizedModel.includes('spark')) return 'spark';
+    if (normalizedModel.includes('codex')) return 'codex';
+    if (normalizedModel.includes('gpt')) return 'gpt';
+  }
+  if (normalizedProvider === 'local' || !normalizedProvider) {
+    if (
+      normalizedModel.includes('fast')
+      || normalizedModel.includes('9b')
+      || normalizedModel.includes('4b')
+      || normalizedModel.includes('mini')
+      || normalizedModel.includes('small')
+    ) return 'fast';
+  }
+  return normalizedProvider;
+}
+
+function assistantProviderLabel(provider, explicitLabel = '', providerModel = '') {
   const label = String(explicitLabel || '').trim();
   if (label) return label;
-  switch (normalizeAssistantProvider(provider)) {
+  switch (providerAliasFromModel(provider, providerModel)) {
     case 'local':
       return 'Local';
+    case 'fast':
+      return 'Fast';
     case 'cerebras':
       return 'Cerebras';
     case 'google':
       return 'Google';
+    case 'spark':
+      return 'Spark';
+    case 'gpt':
+      return 'GPT';
+    case 'codex':
+      return 'Codex';
     case 'openai':
       return 'OpenAI';
     default:
@@ -304,11 +341,11 @@ function setAssistantRowProvider(row, options: Record<string, any> = {}) {
   const label = row.querySelector('.chat-assistant-label');
   if (!(label instanceof HTMLElement)) return;
   const provider = normalizeAssistantProvider(options.provider);
-  const display = assistantProviderLabel(provider, options.providerLabel);
+  const model = String(options.providerModel || '').trim();
+  const display = assistantProviderLabel(provider, options.providerLabel, model);
   label.textContent = display;
   label.dataset.provider = provider || 'assistant';
   row.dataset.provider = provider;
-  const model = String(options.providerModel || '').trim();
   if (model) {
     label.title = model;
   } else {
