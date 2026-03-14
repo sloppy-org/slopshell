@@ -781,7 +781,9 @@ export async function startSileroVADMonitor(capture) {
           trigger_source: triggerSource,
         });
         if (state.chatVoiceCapture === capture) {
+          capture.speechDetected = true;
           setVoiceLifecycle(VOICE_LIFECYCLE.LISTENING, 'voice-capture-vad-speech-start');
+          updateAssistantActivityIndicator();
         }
         if (vadState.noSpeechTimer) {
           window.clearTimeout(vadState.noSpeechTimer);
@@ -942,6 +944,7 @@ export async function beginVoiceCapture(x, y, anchor, options: Record<string, an
     recorderChunkCount: 0,
     recorderChunkBytes: 0,
     startedAtMs: Date.now(),
+    speechDetected: false,
   };
   emitDialogueServerDiagnostic('voice_capture_begin', {
     trigger_source: triggerSource,
@@ -1046,7 +1049,7 @@ export async function stopVoiceCaptureAndSend() {
   capture.stopping = true;
   setRecording(false);
   setVoiceLifecycle(VOICE_LIFECYCLE.STOPPING_RECORDING, 'voice-capture-stop-send');
-  state.voiceAwaitingTurn = true;
+  state.voiceAwaitingTurn = false;
   setVoiceLifecycle(VOICE_LIFECYCLE.LISTENING, 'voice-stt-start');
   state.indicatorSuppressedByCanvasUpdate = false;
   updateAssistantActivityIndicator();
@@ -1151,6 +1154,7 @@ export async function stopVoiceCaptureAndSend() {
     state.dialogueSpeechRecognizedAt = Date.now();
     recordDialogueSTTResult(triggerSource, transcript.length, segmentDurationMs, Boolean(capture.interruptedAssistant));
     if (isDialogueAutoCapture) {
+      state.voiceAwaitingTurn = true;
       setVoiceLifecycle(VOICE_LIFECYCLE.AWAITING_TURN, 'dialogue-turn-segment');
       updateAssistantActivityIndicator();
       if (isTurnIntelligenceConnected()) {
@@ -1173,6 +1177,8 @@ export async function stopVoiceCaptureAndSend() {
       setVoiceLifecycle(VOICE_LIFECYCLE.IDLE, 'dictation-transcript-finished');
     } else {
       dialogueTurnController.reset();
+      state.voiceAwaitingTurn = true;
+      setVoiceLifecycle(VOICE_LIFECYCLE.AWAITING_TURN, 'voice-transcript-submit');
       showStatus('sending...');
       state.voiceTranscriptSubmitInFlight = true;
       void submitMessage(transcript, { kind: 'voice_transcript' });

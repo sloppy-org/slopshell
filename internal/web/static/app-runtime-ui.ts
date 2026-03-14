@@ -764,8 +764,8 @@ export function shouldShowCompanionIdleSurface() {
 
 function dialogueCompanionState() {
   if (!state.liveSessionActive || state.liveSessionMode !== 'dialogue') return '';
-  const mode = state.voiceLifecycle;
-  if (mode === VOICE_LIFECYCLE.RECORDING || mode === VOICE_LIFECYCLE.STOPPING_RECORDING) {
+  const capture = state.chatVoiceCapture;
+  if (capture && (capture.speechDetected === true || capture.stopping === true)) {
     return COMPANION_RUNTIME_STATES.LISTENING;
   }
   if (state.ttsPlaying) return COMPANION_RUNTIME_STATES.TALKING;
@@ -773,7 +773,6 @@ function dialogueCompanionState() {
   if (Number(state.dialogueSpeechRecognizedAt) > 0 && (Date.now() - Number(state.dialogueSpeechRecognizedAt)) < 1800) {
     return COMPANION_RUNTIME_STATES.THINKING;
   }
-  if (mode === VOICE_LIFECYCLE.LISTENING) return COMPANION_RUNTIME_STATES.LISTENING;
   return COMPANION_RUNTIME_STATES.IDLE;
 }
 
