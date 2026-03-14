@@ -19,10 +19,8 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/krystophny/tabura/internal/appserver"
 	tabcalendar "github.com/krystophny/tabura/internal/calendar"
-	"github.com/krystophny/tabura/internal/cerebras"
 	"github.com/krystophny/tabura/internal/email"
 	"github.com/krystophny/tabura/internal/extensions"
-	"github.com/krystophny/tabura/internal/gemini"
 	"github.com/krystophny/tabura/internal/ics"
 	"github.com/krystophny/tabura/internal/modelprofile"
 	"github.com/krystophny/tabura/internal/plugins"
@@ -39,8 +37,6 @@ const (
 	DefaultSTTFallbackLanguage   = "en"
 	DefaultSTTPreVADThresholdDB  = -58.0
 	DefaultSTTPreVADMinSpeechMS  = 120
-	DefaultCerebrasSecretFile    = "cerebras-api-key"
-	DefaultGeminiSecretFile      = "gemini-api-key"
 	SessionCookie                = "tabura_session"
 	cookieMaxAgeSec              = 60 * 60 * 24 * 365
 	DaemonPort                   = 9420
@@ -70,9 +66,6 @@ type App struct {
 	appServerURL                  string
 	appServerModel                string
 	appServerSparkReasoningEffort string
-	cerebrasClient                *cerebras.Client
-	cerebrasReasoningEffort       string
-	geminiClient                  *gemini.Client
 	intentLLMURL                  string
 	intentLLMModel                string
 	intentLLMProfile              string
@@ -183,55 +176,6 @@ func New(dataDir, localProjectDir, localMCPURL, appServerURL, model, ttsURL, spa
 	} else if resolvedIntentLLMURL == "" {
 		resolvedIntentLLMURL = DefaultIntentLLMURL
 	}
-	resolvedCerebrasURL := strings.TrimSpace(os.Getenv("TABURA_CEREBRAS_URL"))
-	if strings.EqualFold(resolvedCerebrasURL, "off") {
-		resolvedCerebrasURL = ""
-	} else if resolvedCerebrasURL == "" {
-		resolvedCerebrasURL = cerebras.DefaultBaseURL
-	}
-	resolvedCerebrasAPIKey := strings.TrimSpace(os.Getenv("TABURA_CEREBRAS_API_KEY"))
-	if resolvedCerebrasAPIKey == "" {
-		resolvedCerebrasAPIKey = readOptionalSecretFile(defaultSecretPath(DefaultCerebrasSecretFile))
-	}
-	resolvedCerebrasModel := strings.TrimSpace(os.Getenv("TABURA_CEREBRAS_MODEL"))
-	if resolvedCerebrasModel == "" {
-		resolvedCerebrasModel = cerebras.DefaultModel
-	}
-	resolvedCerebrasReasoningEffort := strings.TrimSpace(os.Getenv("TABURA_CEREBRAS_REASONING_EFFORT"))
-	if resolvedCerebrasReasoningEffort == "" {
-		resolvedCerebrasReasoningEffort = cerebras.DefaultReasoningEffort
-	}
-	var cerebrasClient *cerebras.Client
-	if resolvedCerebrasURL != "" && resolvedCerebrasAPIKey != "" {
-		cerebrasClient = cerebras.NewClient(
-			resolvedCerebrasURL,
-			resolvedCerebrasAPIKey,
-			resolvedCerebrasModel,
-			resolvedCerebrasReasoningEffort,
-		)
-	}
-	resolvedGeminiURL := strings.TrimSpace(os.Getenv("TABURA_GEMINI_URL"))
-	if strings.EqualFold(resolvedGeminiURL, "off") {
-		resolvedGeminiURL = ""
-	} else if resolvedGeminiURL == "" {
-		resolvedGeminiURL = gemini.DefaultBaseURL
-	}
-	resolvedGeminiAPIKey := strings.TrimSpace(os.Getenv("TABURA_GEMINI_API_KEY"))
-	if resolvedGeminiAPIKey == "" {
-		resolvedGeminiAPIKey = readOptionalSecretFile(defaultSecretPath(DefaultGeminiSecretFile))
-	}
-	resolvedGeminiModel := strings.TrimSpace(os.Getenv("TABURA_GEMINI_MODEL"))
-	if resolvedGeminiModel == "" {
-		resolvedGeminiModel = gemini.DefaultModel
-	}
-	var geminiClient *gemini.Client
-	if resolvedGeminiURL != "" && resolvedGeminiAPIKey != "" {
-		geminiClient = gemini.NewClient(
-			resolvedGeminiURL,
-			resolvedGeminiAPIKey,
-			resolvedGeminiModel,
-		)
-	}
 	resolvedIntentLLMModel := strings.TrimSpace(os.Getenv("TABURA_INTENT_LLM_MODEL"))
 	if strings.EqualFold(resolvedIntentLLMModel, "off") {
 		resolvedIntentLLMModel = ""
@@ -324,9 +268,6 @@ func New(dataDir, localProjectDir, localMCPURL, appServerURL, model, ttsURL, spa
 		appServerURL:                  appServerURL,
 		appServerModel:                resolvedModel,
 		appServerSparkReasoningEffort: resolvedSparkReasoningEffort,
-		cerebrasClient:                cerebrasClient,
-		cerebrasReasoningEffort:       resolvedCerebrasReasoningEffort,
-		geminiClient:                  geminiClient,
 		intentLLMURL:                  resolvedIntentLLMURL,
 		intentLLMModel:                resolvedIntentLLMModel,
 		intentLLMProfile:              resolvedIntentLLMProfile,
@@ -757,7 +698,7 @@ func buildHookProviders(ext *extensions.Host, mgr *plugins.Manager) []plugins.Ho
 
 func resolvePrimaryAppServerModel(rawModel string) string {
 	resolved := modelprofile.ResolveModel(strings.TrimSpace(rawModel), modelprofile.AliasSpark)
-	if strings.TrimSpace(resolved) == "" {
+	if strings.TrimSpace(resolved) == "" || modelprofile.AliasForModel(resolved) != modelprofile.AliasSpark {
 		return DefaultModel
 	}
 	return resolved

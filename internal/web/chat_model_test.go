@@ -9,7 +9,7 @@ import (
 
 func TestEffectiveProjectChatModelFallsBackToSpark(t *testing.T) {
 	app := newAuthedTestApp(t)
-	app.appServerModel = modelprofile.ModelCodex
+	app.appServerModel = modelprofile.ModelSpark
 
 	project := store.Project{}
 	if got := app.effectiveProjectChatModelAlias(project); got != modelprofile.AliasSpark {
@@ -56,7 +56,7 @@ func TestAppServerModelProfileForProjectUsesStoredAliasAndNormalizesReasoning(t 
 
 func TestAppServerModelProfileForProjectKeyFallsBackWhenProjectMissing(t *testing.T) {
 	app := newAuthedTestApp(t)
-	app.appServerModel = modelprofile.ModelCodex
+	app.appServerModel = modelprofile.ModelSpark
 
 	profile := app.appServerModelProfileForProjectKey("missing-project")
 	if profile.Alias != modelprofile.AliasSpark {

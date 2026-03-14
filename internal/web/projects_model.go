@@ -331,6 +331,9 @@ func (a *App) updateProjectChatModel(projectID, rawModel, rawReasoningEffort str
 	if requestedModel != "" && modelAlias == "" {
 		return store.Project{}, fmt.Errorf("unsupported model alias: %s", requestedModel)
 	}
+	if modelAlias != "" && modelAlias != modelprofile.AliasSpark {
+		return store.Project{}, fmt.Errorf("persistent project model switching is disabled; spark is the only default dialogue model")
+	}
 	if modelAlias == "" {
 		modelAlias = a.effectiveProjectChatModelAlias(project)
 	}

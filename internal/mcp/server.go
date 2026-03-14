@@ -3,7 +3,6 @@ package mcp
 import (
 	"bufio"
 	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,8 +10,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
-	"time"
 
 	"github.com/krystophny/tabura/internal/appserver"
 	"github.com/krystophny/tabura/internal/canvas"
@@ -20,23 +17,12 @@ import (
 )
 
 const (
-	ServerName             = "tabura"
-	ServerVersion          = "0.2.1-dev"
-	LatestProtocolVersion  = "2025-03-26"
-	defaultProducerMCPURL  = "http://127.0.0.1:8090/mcp"
-	handoffKindFile        = "file"
-	delegateDefaultTimeout = 3600 * time.Second
-
-	delegateStatusRunning   = "running"
-	delegateStatusCompleted = "completed"
-	delegateStatusFailed    = "failed"
-	delegateStatusCanceled  = "canceled"
-
-	delegateStatusDefaultMaxEvents = 20
-	delegateStatusHardMaxEvents    = 100
-	delegateEventHistoryLimit      = 256
-	delegateFinishedJobRetention   = 24 * time.Hour
-	tempArtifactsDirRel            = ".tabura/artifacts/tmp"
+	ServerName            = "tabura"
+	ServerVersion         = "0.2.1-dev"
+	LatestProtocolVersion = "2025-03-26"
+	defaultProducerMCPURL = "http://127.0.0.1:8090/mcp"
+	handoffKindFile       = "file"
+	tempArtifactsDirRel   = ".tabura/artifacts/tmp"
 )
 
 var supportedProtocolVersions = map[string]struct{}{
@@ -53,9 +39,6 @@ type Server struct {
 	adapter         *canvas.Adapter
 	appServerClient *appserver.Client
 	store           *store.Store
-
-	delegateMu   sync.Mutex
-	delegateJobs map[string]*delegateJob
 }
 
 type handoffEnvelope struct {
@@ -65,33 +48,6 @@ type handoffEnvelope struct {
 	CreatedAt   string                 `json:"created_at"`
 	Meta        map[string]interface{} `json:"meta"`
 	Payload     map[string]interface{} `json:"payload"`
-}
-
-type delegateJob struct {
-	ID              string
-	Status          string
-	Model           string
-	ReasoningEffort string
-	CWD             string
-	TimeoutSeconds  int
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
-	FinishedAt      time.Time
-	ThreadID        string
-	TurnID          string
-	Message         string
-	FilesChanged    []string
-	Error           string
-	Events          []delegateProgressEvent
-	NextSeq         int64
-	Cancel          context.CancelFunc
-}
-
-type delegateProgressEvent struct {
-	Seq  int64
-	At   time.Time
-	Type string
-	Text string
 }
 
 func NewServer(adapter *canvas.Adapter, appServerClient ...*appserver.Client) *Server {
@@ -107,7 +63,6 @@ func NewServerWithStore(adapter *canvas.Adapter, st *store.Store, appServerClien
 		adapter:         adapter,
 		appServerClient: client,
 		store:           st,
-		delegateJobs:    make(map[string]*delegateJob),
 	}
 }
 
@@ -270,16 +225,6 @@ func (s *Server) callTool(name string, args map[string]interface{}) (map[string]
 		return s.actorList(args)
 	case "actor_create":
 		return s.actorCreate(args)
-	case "delegate_to_model":
-		return s.delegateToModel(args)
-	case "delegate_to_model_status":
-		return s.delegateToModelStatus(args)
-	case "delegate_to_model_cancel":
-		return s.delegateToModelCancel(args)
-	case "delegate_to_model_active_count":
-		return s.delegateToModelActiveCount(args)
-	case "delegate_to_model_cancel_all":
-		return s.delegateToModelCancelAll(args)
 	default:
 		return nil, errors.New("unknown tool: " + name)
 	}

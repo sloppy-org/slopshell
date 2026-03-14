@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/krystophny/tabura/internal/modelprofile"
 )
 
 func normalizeProjectKind(kind string) string {
@@ -39,7 +41,11 @@ func normalizeProjectName(name string) string {
 }
 
 func normalizeProjectChatModel(model string) string {
-	return strings.ToLower(strings.TrimSpace(model))
+	alias := modelprofile.ResolveAlias(model, modelprofile.AliasSpark)
+	if alias == "" {
+		return modelprofile.AliasSpark
+	}
+	return alias
 }
 
 func normalizeProjectChatModelReasoningEffort(effort string) string {

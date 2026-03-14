@@ -8,6 +8,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/gorilla/websocket"
 )
 
 const testAuthToken = "token-test"
@@ -85,4 +88,35 @@ func decodeJSONDataResponse(t *testing.T, rr *httptest.ResponseRecorder) map[str
 		t.Fatalf("response data payload = %#v", payload)
 	}
 	return data
+}
+
+func collectWSJSONTypesUntil(t *testing.T, clientConn *websocket.Conn, timeout time.Duration, terminalType string) []map[string]interface{} {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	var out []map[string]interface{}
+	for time.Now().Before(deadline) {
+		if err := clientConn.SetReadDeadline(time.Now().Add(250 * time.Millisecond)); err != nil {
+			t.Fatalf("SetReadDeadline: %v", err)
+		}
+		mt, data, err := clientConn.ReadMessage()
+		if err != nil {
+			if netErr, ok := err.(interface{ Timeout() bool }); ok && netErr.Timeout() {
+				continue
+			}
+			t.Fatalf("ReadMessage: %v", err)
+		}
+		if mt != websocket.TextMessage {
+			continue
+		}
+		var payload map[string]interface{}
+		if err := json.Unmarshal(data, &payload); err != nil {
+			continue
+		}
+		out = append(out, payload)
+		if strings.TrimSpace(strFromAny(payload["type"])) == terminalType {
+			return out
+		}
+	}
+	t.Fatalf("timeout waiting for websocket message type %q", terminalType)
+	return nil
 }

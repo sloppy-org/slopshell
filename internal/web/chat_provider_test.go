@@ -139,10 +139,8 @@ func TestProviderForAppServerProfileMapsAliasesToNamedResponders(t *testing.T) {
 	}{
 		{name: "spark alias", profile: appServerModelProfile{Alias: "spark"}, want: assistantProviderSpark},
 		{name: "gpt alias", profile: appServerModelProfile{Alias: "gpt"}, want: assistantProviderGPT},
-		{name: "codex alias", profile: appServerModelProfile{Alias: "codex"}, want: assistantProviderCodex},
 		{name: "spark model", profile: appServerModelProfile{Model: "gpt-5.3-codex-spark"}, want: assistantProviderSpark},
-		{name: "gpt model", profile: appServerModelProfile{Model: "gpt-5.2"}, want: assistantProviderGPT},
-		{name: "codex model", profile: appServerModelProfile{Model: "gpt-5.3-codex"}, want: assistantProviderCodex},
+		{name: "gpt model", profile: appServerModelProfile{Model: "gpt-5.4"}, want: assistantProviderGPT},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -163,8 +161,7 @@ func TestAssistantProviderDisplayLabelPrefersSpecificResponderName(t *testing.T)
 		{name: "fast local model", provider: assistantProviderFast, model: "qwen3.5-9b", want: "Fast"},
 		{name: "generic local infers fast", provider: assistantProviderLocal, model: "qwen3.5-9b", want: "Fast"},
 		{name: "spark from generic openai", provider: assistantProviderOpenAI, model: "gpt-5.3-codex-spark", want: "Spark"},
-		{name: "gpt from generic openai", provider: assistantProviderOpenAI, model: "gpt-5.2", want: "GPT"},
-		{name: "codex from generic openai", provider: assistantProviderOpenAI, model: "gpt-5.3-codex", want: "Codex"},
+		{name: "gpt from generic openai", provider: assistantProviderOpenAI, model: "gpt-5.4", want: "GPT"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -192,7 +189,7 @@ func TestChatSessionHistoryIncludesProviderMetadata(t *testing.T) {
 		"History reply.",
 		"History reply.",
 		"markdown",
-		store.WithProviderMetadata(assistantProviderOpenAI, "gpt-5.3-codex", 123),
+		store.WithProviderMetadata(assistantProviderOpenAI, "gpt-5.4", 123),
 	); err != nil {
 		t.Fatalf("AddChatMessage: %v", err)
 	}
@@ -213,8 +210,8 @@ func TestChatSessionHistoryIncludesProviderMetadata(t *testing.T) {
 	if got := strFromAny(msg["provider"]); got != assistantProviderOpenAI {
 		t.Fatalf("history provider = %q, want %q", got, assistantProviderOpenAI)
 	}
-	if got := strFromAny(msg["provider_model"]); got != "gpt-5.3-codex" {
-		t.Fatalf("history provider_model = %q, want gpt-5.3-codex", got)
+	if got := strFromAny(msg["provider_model"]); got != "gpt-5.4" {
+		t.Fatalf("history provider_model = %q, want gpt-5.4", got)
 	}
 	if got := intFromAny(msg["provider_latency_ms"], -1); got != 123 {
 		t.Fatalf("history provider_latency_ms = %d, want 123", got)

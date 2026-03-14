@@ -29,9 +29,7 @@ func (a *App) runAssistantTurn(sessionID string, turn dequeuedTurn) {
 	positionCtx := a.chatCanvasPositions.consume(sessionID)
 	cursorCtx := turn.cursor
 	userText := queuedUserMessage(messages, turn.messageID)
-	if a.runAssistantTurnParallel(sessionID, session, messages, userText, cursorCtx, inkCtx, positionCtx, turn) {
-		return
-	}
+	requestedTurnAlias := explicitTurnModelAlias(userText)
 	if turn.localOnly || a.appServerClient == nil {
 		if a.tryRunLocalSystemActionTurn(sessionID, session, userText, cursorCtx, turn.captureMode, turn.outputMode, turn.localOnly) {
 			return
@@ -51,20 +49,22 @@ func (a *App) runAssistantTurn(sessionID string, turn dequeuedTurn) {
 		a.broadcastChatEvent(sessionID, map[string]interface{}{"type": "error", "error": err.Error()})
 		return
 	}
-	profile := a.appServerModelProfileForProjectKey(session.ProjectKey)
+	baseProfile := a.appServerModelProfileForProjectKey(session.ProjectKey)
+	turnProfile := baseProfile
 	if strings.TrimSpace(userText) != "" {
-		profile = routeProfileForRouting(
-			classifyRoutingRoute(userText),
-			profile,
+		turnProfile = routeProfileForRouting(
+			requestedTurnAlias,
+			baseProfile,
 			a.appServerSparkReasoningEffort,
 		)
 	}
-	profile = a.appServerProfileForChatSession(session, profile)
+	baseProfile = a.appServerProfileForChatSession(session, baseProfile)
+	turnProfile = a.appServerProfileForChatSession(session, turnProfile)
 	turnStartedAt := time.Now()
-	responseMeta := newAssistantResponseMetadata(providerForAppServerProfile(profile), profile.Model, 0)
-	appSess, bindingSessionID, resumed, sessErr := a.getOrCreateAppSession(sessionID, cwd, profile)
+	responseMeta := newAssistantResponseMetadata(providerForAppServerProfile(turnProfile), turnProfile.Model, 0)
+	appSess, bindingSessionID, resumed, sessErr := a.getOrCreateAppSession(sessionID, cwd, baseProfile)
 	if sessErr != nil {
-		a.runAssistantTurnLegacy(sessionID, session, messages, cursorCtx, inkCtx, positionCtx, turn.outputMode, profile)
+		a.runAssistantTurnLegacy(sessionID, session, messages, cursorCtx, inkCtx, positionCtx, turn.outputMode, baseProfile, turnProfile)
 		return
 	}
 
@@ -72,9 +72,9 @@ func (a *App) runAssistantTurn(sessionID string, turn dequeuedTurn) {
 	companionCtx := a.loadCompanionPromptContext(session.ProjectKey)
 	var prompt string
 	if resumed {
-		prompt = buildTurnPromptForSessionWithCompanion(sessionID, messages, canvasCtx, companionCtx, turn.outputMode, profile.Alias)
+		prompt = buildTurnPromptForSessionWithCompanion(sessionID, messages, canvasCtx, companionCtx, turn.outputMode, turnProfile.Alias)
 	} else {
-		prompt = buildPromptFromHistoryForSessionWithCompanionPolicy(session.Mode, a.yoloModeEnabled(), sessionID, messages, canvasCtx, companionCtx, turn.outputMode, profile.Alias)
+		prompt = buildPromptFromHistoryForSessionWithCompanionPolicy(session.Mode, a.yoloModeEnabled(), sessionID, messages, canvasCtx, companionCtx, turn.outputMode, turnProfile.Alias)
 		_ = a.store.UpdateChatSessionThread(bindingSessionID, appSess.ThreadID())
 	}
 	prompt = appendChatCursorPrompt(prompt, cursorCtx)
@@ -163,7 +163,7 @@ func (a *App) runAssistantTurn(sessionID string, turn dequeuedTurn) {
 		persistedAssistantFormat = candidateFormat
 	}
 
-	appResp, err := appSess.SendTurnWithParams(ctx, prompt, profile.Model, profile.TurnParams, func(ev appserver.StreamEvent) {
+	appResp, err := appSess.SendTurnWithParams(ctx, prompt, turnProfile.Model, turnProfile.TurnParams, func(ev appserver.StreamEvent) {
 		payload := map[string]interface{}{
 			"type":        ev.Type,
 			"thread_id":   ev.ThreadID,
@@ -389,7 +389,7 @@ func (a *App) broadcastSystemActionEvent(sessionID string, actionPayload map[str
 
 // runAssistantTurnLegacy is the single-shot fallback when persistent session
 // fails to connect. Each call creates a new WS + thread.
-func (a *App) runAssistantTurnLegacy(sessionID string, session store.ChatSession, messages []store.ChatMessage, cursorCtx *chatCursorContext, inkCtx []*chatCanvasInkEvent, positionCtx []*chatCanvasPositionEvent, outputMode string, profile appServerModelProfile) {
+func (a *App) runAssistantTurnLegacy(sessionID string, session store.ChatSession, messages []store.ChatMessage, cursorCtx *chatCursorContext, inkCtx []*chatCanvasInkEvent, positionCtx []*chatCanvasPositionEvent, outputMode string, baseProfile appServerModelProfile, turnProfile appServerModelProfile) {
 	bindingSession, workspace, err := a.appSessionBindingForChatSessionID(sessionID)
 	if err != nil {
 		a.finishCompanionPendingTurn(sessionID, "assistant_turn_failed")
@@ -397,11 +397,10 @@ func (a *App) runAssistantTurnLegacy(sessionID string, session store.ChatSession
 		return
 	}
 	cwd := workspace.DirPath
-	profile = a.appServerProfileForChatSession(session, profile)
 	turnStartedAt := time.Now()
-	responseMeta := newAssistantResponseMetadata(providerForAppServerProfile(profile), profile.Model, 0)
+	responseMeta := newAssistantResponseMetadata(providerForAppServerProfile(turnProfile), turnProfile.Model, 0)
 	canvasCtx := a.resolveCanvasContext(session.ProjectKey)
-	prompt := buildPromptFromHistoryForSessionWithPolicy(session.Mode, a.yoloModeEnabled(), sessionID, messages, canvasCtx, outputMode, profile.Alias)
+	prompt := buildPromptFromHistoryForSessionWithPolicy(session.Mode, a.yoloModeEnabled(), sessionID, messages, canvasCtx, outputMode, turnProfile.Alias)
 	prompt = appendChatCursorPrompt(prompt, cursorCtx)
 	prompt = appendCanvasInkPrompt(prompt, inkCtx)
 	prompt = appendCanvasPositionPrompt(prompt, positionCtx)
@@ -490,10 +489,10 @@ func (a *App) runAssistantTurnLegacy(sessionID string, session store.ChatSession
 	appResp, err := a.appServerClient.SendPromptStream(ctx, appserver.PromptRequest{
 		CWD:          cwd,
 		Prompt:       prompt,
-		Model:        profile.Model,
-		TurnModel:    profile.Model,
-		ThreadParams: profile.ThreadParams,
-		TurnParams:   profile.TurnParams,
+		Model:        baseProfile.Model,
+		TurnModel:    turnProfile.Model,
+		ThreadParams: baseProfile.ThreadParams,
+		TurnParams:   turnProfile.TurnParams,
 	}, func(ev appserver.StreamEvent) {
 		payload := map[string]interface{}{
 			"type":        ev.Type,

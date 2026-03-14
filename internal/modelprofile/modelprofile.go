@@ -4,12 +4,10 @@ import "strings"
 
 const (
 	AliasSpark = "spark"
-	AliasCodex = "codex"
 	AliasGPT   = "gpt"
 
 	ModelSpark = "gpt-5.3-codex-spark"
-	ModelCodex = "gpt-5.3-codex"
-	ModelGPT   = "gpt-5.2"
+	ModelGPT   = "gpt-5.4"
 
 	ReasoningNone      = "none"
 	ReasoningMinimal   = "minimal"
@@ -23,28 +21,25 @@ const legacyReasoningExtraHigh = "extra_high"
 
 var aliasToModel = map[string]string{
 	AliasSpark: ModelSpark,
-	AliasCodex: ModelCodex,
 	AliasGPT:   ModelGPT,
 }
 
 var modelToAlias = map[string]string{
 	strings.ToLower(ModelSpark): AliasSpark,
-	strings.ToLower(ModelCodex): AliasCodex,
 	strings.ToLower(ModelGPT):   AliasGPT,
 }
 
 var modelReasoningEfforts = map[string][]string{
 	AliasSpark: {ReasoningLow, ReasoningMedium, ReasoningHigh, ReasoningExtraHigh},
-	AliasCodex: {ReasoningLow, ReasoningMedium, ReasoningHigh, ReasoningExtraHigh},
 	AliasGPT:   {ReasoningLow, ReasoningMedium, ReasoningHigh, ReasoningExtraHigh},
 }
 
 func SupportedAliases() []string {
-	return []string{AliasCodex, AliasGPT, AliasSpark}
+	return []string{AliasSpark, AliasGPT}
 }
 
 func SupportedModels() []string {
-	return []string{ModelSpark, ModelCodex, ModelGPT}
+	return []string{ModelSpark, ModelGPT}
 }
 
 func NormalizeAlias(raw string) string {
@@ -108,7 +103,7 @@ func MainThreadReasoningEffort(alias string) string {
 	switch NormalizeAlias(alias) {
 	case AliasSpark:
 		return ReasoningLow
-	case AliasCodex, AliasGPT:
+	case AliasGPT:
 		return ReasoningHigh
 	default:
 		return ReasoningLow
@@ -179,21 +174,4 @@ func MainThreadReasoningParams(alias string) map[string]interface{} {
 func ModelSystemHints(alias string) string {
 	_ = alias
 	return ""
-}
-
-func DelegateReasoningParams(model string) map[string]interface{} {
-	trimmed := strings.TrimSpace(model)
-	if trimmed == "" {
-		return nil
-	}
-	if alias := AliasForModel(trimmed); alias != "" {
-		if alias == AliasSpark {
-			return nil
-		}
-		return ReasoningParamsForEffort(ReasoningHigh)
-	}
-	if strings.Contains(strings.ToLower(trimmed), "spark") {
-		return nil
-	}
-	return ReasoningParamsForEffort(ReasoningHigh)
 }

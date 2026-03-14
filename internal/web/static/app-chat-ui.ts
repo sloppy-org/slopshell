@@ -279,12 +279,9 @@ function normalizeAssistantProvider(provider) {
   if (
     value === 'local'
     || value === 'fast'
-    || value === 'cerebras'
-    || value === 'google'
     || value === 'openai'
     || value === 'spark'
     || value === 'gpt'
-    || value === 'codex'
   ) return value;
   return '';
 }
@@ -294,7 +291,6 @@ function providerAliasFromModel(provider, model) {
   const normalizedModel = String(model || '').trim().toLowerCase();
   if (normalizedProvider === 'openai' || !normalizedProvider) {
     if (normalizedModel.includes('spark')) return 'spark';
-    if (normalizedModel.includes('codex')) return 'codex';
     if (normalizedModel.includes('gpt')) return 'gpt';
   }
   if (normalizedProvider === 'local' || !normalizedProvider) {
@@ -317,16 +313,10 @@ function assistantProviderLabel(provider, explicitLabel = '', providerModel = ''
       return 'Local';
     case 'fast':
       return 'Fast';
-    case 'cerebras':
-      return 'Cerebras';
-    case 'google':
-      return 'Google';
     case 'spark':
       return 'Spark';
     case 'gpt':
       return 'GPT';
-    case 'codex':
-      return 'Codex';
     case 'openai':
       return 'OpenAI';
     default:

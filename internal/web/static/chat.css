@@ -92,12 +92,12 @@
   color: #4b5563;
 }
 
-.chat-assistant-label[data-provider="cerebras"] {
+.chat-assistant-label[data-provider="spark"] {
   color: #1d4ed8;
 }
 
-.chat-assistant-label[data-provider="google"] {
-  color: #c2410c;
+.chat-assistant-label[data-provider="gpt"] {
+  color: #7c3aed;
 }
 
 .chat-assistant-label[data-provider="openai"] {

@@ -1,158 +1,23 @@
 package web
 
 import (
+	"regexp"
 	"strings"
-	"unicode"
 
 	"github.com/krystophny/tabura/internal/modelprofile"
 )
 
-const (
-	routingDomainGeneral     = "general"
-	routingDomainCoding      = "coding"
-	routingDomainCurrentInfo = "current_info"
-)
+var explicitGPTTurnPattern = regexp.MustCompile(`(?i)\b(?:use|delegate|ask|let|have|run|solve|handle|do|switch)\b.{0,24}\b(?:gpt(?:[- ]?5(?:\.\d+)?)?)\b|\bwith\s+gpt(?:[- ]?5(?:\.\d+)?)?\b`)
 
-const (
-	routingComplexitySimple  = "simple"
-	routingComplexityComplex = "complex"
-)
-
-type routingRoute struct {
-	Domain     string
-	Complexity string
-	Model      string
-	Effort     string
-	Reason     string
-	BlockShell bool
+func explicitTurnModelAlias(text string) string {
+	if explicitGPTTurnPattern.MatchString(strings.TrimSpace(text)) {
+		return modelprofile.AliasGPT
+	}
+	return ""
 }
 
-func isCurrentInfoQuery(text string) bool {
-	lower := strings.ToLower(strings.TrimSpace(text))
-	if lower == "" {
-		return false
-	}
-	strongSignals := []string{
-		"weather", "forecast", "temperature", "rain", "snow", "wind",
-		"wetter", "vorhersage", "temperatur", "regen", "schnee",
-		"web search", "search the web", "search web", "search online", "look up online",
-		"google", "bing", "duckduckgo",
-		"breaking news", "headlines", "news today", "latest news",
-		"stock price", "crypto price", "exchange rate", "market price",
-		"schedule today", "game schedule", "match schedule", "standings",
-	}
-	for _, token := range strongSignals {
-		if strings.Contains(lower, token) {
-			return true
-		}
-	}
-	latestCompanions := []string{
-		"news", "price", "weather", "forecast", "release", "version", "update", "today",
-		"schedule", "score", "results", "market", "exchange rate",
-	}
-	if strings.Contains(lower, "latest") || strings.Contains(lower, "current") {
-		for _, token := range latestCompanions {
-			if strings.Contains(lower, token) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func isCodingQuery(text string) bool {
-	lower := strings.ToLower(strings.TrimSpace(text))
-	if lower == "" {
-		return false
-	}
-	codingSignals := []string{
-		"code", "coding", "bug", "debug", "compile", "build", "test", "repo", "repository",
-		"function", "api", "library", "framework", "pull request", "pr ", "commit",
-		"refactor", "stack trace", "timeout", "exception", "fix",
-		"go ", "golang", "python", "javascript", "typescript", "rust", "java", "c++",
-	}
-	for _, token := range codingSignals {
-		if strings.Contains(lower, token) {
-			return true
-		}
-	}
-	return false
-}
-
-func isComplexQuery(text string) bool {
-	trimmed := strings.TrimSpace(text)
-	if trimmed == "" {
-		return false
-	}
-	complexSignals := []string{
-		"analyze", "analysis", "compare", "tradeoff", "architecture", "design",
-		"deep dive", "step by step", "comprehensive", "investigate", "root cause",
-		"overhaul", "multi-step", "research", "detailed plan",
-	}
-	lower := strings.ToLower(trimmed)
-	for _, token := range complexSignals {
-		if strings.Contains(lower, token) {
-			return true
-		}
-	}
-	words := 0
-	inWord := false
-	for _, r := range trimmed {
-		if unicode.IsSpace(r) {
-			if inWord {
-				words++
-			}
-			inWord = false
-			continue
-		}
-		inWord = true
-	}
-	if inWord {
-		words++
-	}
-	return words >= 28
-}
-
-func classifyRoutingRoute(text string) routingRoute {
-	coding := isCodingQuery(text)
-	currentInfo := isCurrentInfoQuery(text)
-	complex := isComplexQuery(text)
-
-	domain := routingDomainGeneral
-	if coding {
-		domain = routingDomainCoding
-	}
-	if currentInfo {
-		domain = routingDomainCurrentInfo
-	}
-
-	complexity := routingComplexitySimple
-	if complex {
-		complexity = routingComplexityComplex
-	}
-
-	route := routingRoute{
-		Domain:     domain,
-		Complexity: complexity,
-		BlockShell: currentInfo,
-		Reason:     "default dialogue uses spark profile",
-	}
-
-	switch {
-	case complex:
-		route.Model = modelprofile.AliasGPT
-		route.Effort = modelprofile.ReasoningHigh
-		route.Reason = "complex query delegated to gpt high"
-	case currentInfo:
-		route.Reason = "current-info query keeps spark profile; shell actions blocked"
-	case coding:
-		route.Reason = "coding query keeps spark profile unless complex"
-	}
-	return route
-}
-
-func routeProfileForRouting(route routingRoute, fallback appServerModelProfile, sparkEffort string) appServerModelProfile {
-	alias := modelprofile.ResolveAlias(route.Model, modelprofile.AliasSpark)
+func routeProfileForRouting(requestedAlias string, fallback appServerModelProfile, sparkEffort string) appServerModelProfile {
+	alias := modelprofile.ResolveAlias(requestedAlias, modelprofile.AliasSpark)
 	if alias == "" {
 		alias = modelprofile.AliasSpark
 	}
@@ -160,52 +25,31 @@ func routeProfileForRouting(route routingRoute, fallback appServerModelProfile, 
 	if model == "" {
 		model = modelprofile.ModelForAlias(modelprofile.AliasSpark)
 	}
-	effortInput := strings.TrimSpace(route.Effort)
+	effortInput := ""
 	if effortInput == "" && alias == modelprofile.AliasSpark {
 		effortInput = strings.TrimSpace(sparkEffort)
 	}
 	effort := modelprofile.NormalizeReasoningEffort(alias, effortInput)
 	if effort == "" {
-		effort = modelprofile.NormalizeReasoningEffort(alias, modelprofile.MainThreadReasoningEffort(alias))
+		effort = strings.TrimSpace(modelprofile.MainThreadReasoningEffort(alias))
 	}
-	turnParams := modelprofile.MainThreadReasoningParamsForEffort(alias, effort)
 	return appServerModelProfile{
 		Alias:        alias,
 		Model:        model,
 		ThreadParams: fallback.ThreadParams,
-		TurnParams:   turnParams,
+		TurnParams:   modelprofile.MainThreadReasoningParamsForEffort(alias, effort),
 	}
-}
-
-var currentInfoBlockedActions = map[string]bool{
-	"shell":         true,
-	"make_item":     true,
-	"snooze_item":   true,
-	"delegate_item": true,
-	"split_items":   true,
-	"capture_idea":  true,
 }
 
 func enforceRoutingPolicy(userText string, actions []*SystemAction) []*SystemAction {
-	route := classifyRoutingRoute(userText)
 	if len(actions) == 0 {
 		return nil
 	}
-
 	out := make([]*SystemAction, 0, len(actions))
 	for _, action := range actions {
-		if action == nil {
-			continue
+		if normalized := normalizeSystemActionForExecution(action, userText); normalized != nil {
+			out = append(out, normalized)
 		}
-		normalized := normalizeSystemActionForExecution(action, userText)
-		if normalized == nil {
-			continue
-		}
-		actionName := strings.ToLower(strings.TrimSpace(normalized.Action))
-		if route.BlockShell && currentInfoBlockedActions[actionName] {
-			continue
-		}
-		out = append(out, normalized)
 	}
 	return out
 }
