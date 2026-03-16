@@ -1,0 +1,141 @@
+#canvas-text.mail-triage-canvas {
+  padding: 1.25rem;
+}
+
+.mail-triage-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+.mail-triage-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.mail-triage-header-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.mail-triage-kicker {
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #6b7280;
+}
+
+.mail-triage-header h1 {
+  margin: 0;
+  font-size: 1.65rem;
+  line-height: 1.1;
+}
+
+.mail-triage-detail {
+  font-size: 0.92rem;
+  color: #6b7280;
+}
+
+.mail-triage-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.mail-triage-meta,
+.mail-triage-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.mail-triage-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  background: #f3f4f6;
+  color: #374151;
+  padding: 0.35rem 0.7rem;
+  font-size: 0.85rem;
+}
+
+.mail-triage-subject {
+  margin: 0;
+  font-size: 1.25rem;
+  line-height: 1.25;
+}
+
+.mail-triage-snippet {
+  color: #4b5563;
+  font-size: 0.98rem;
+  line-height: 1.45;
+}
+
+.mail-triage-message {
+  margin: 0;
+  padding: 1rem 1.05rem;
+  border-radius: 18px;
+  border: 1px solid #e5e7eb;
+  background: #fcfcfd;
+  color: #111827;
+  white-space: pre-wrap;
+  font: 0.95rem/1.52 "Iosevka", "JetBrains Mono", monospace;
+  max-height: min(52vh, 760px);
+  overflow: auto;
+}
+
+.mail-triage-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.mail-triage-action {
+  min-width: 8.5rem;
+  font-weight: 600;
+}
+
+.mail-triage-action-keep,
+.mail-triage-action-rescue {
+  background: #e8f0ff;
+}
+
+.mail-triage-action-archive {
+  background: #f5f3e9;
+}
+
+.mail-triage-action-trash {
+  background: #fde8e8;
+}
+
+.mail-triage-empty {
+  border-radius: 20px;
+  border: 1px dashed #d1d5db;
+  padding: 2rem 1.25rem;
+  text-align: center;
+  color: #6b7280;
+}
+
+@media (max-width: 767px) {
+  #canvas-text.mail-triage-canvas {
+    padding: 0.9rem;
+  }
+
+  .mail-triage-header {
+    flex-direction: column;
+  }
+
+  .mail-triage-actions {
+    flex-direction: column;
+  }
+
+  .mail-triage-action {
+    width: 100%;
+  }
+}

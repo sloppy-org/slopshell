@@ -51,6 +51,8 @@ const normalizeProjectChatModelAlias = (...args) => refs.normalizeProjectChatMod
 const renderToolPalette = (...args) => refs.renderToolPalette(...args);
 const loadItemSidebarView = (...args) => refs.loadItemSidebarView(...args);
 const refreshItemSidebarCounts = (...args) => refs.refreshItemSidebarCounts(...args);
+const openInboxMailTriage = (...args) => refs.openInboxMailTriage(...args);
+const openJunkMailTriage = (...args) => refs.openJunkMailTriage(...args);
 const isTemporaryProjectKind = (...args) => refs.isTemporaryProjectKind(...args);
 const shouldRenderAssistantHistoryInChat = (...args) => refs.shouldRenderAssistantHistoryInChat(...args);
 const hasLocalAssistantWork = (...args) => refs.hasLocalAssistantWork(...args);
@@ -515,6 +517,27 @@ export function renderEdgeTopModelButtons() {
     });
     actions.appendChild(silentButton);
   }
+
+  const triageBusy = state.mailTriage?.loading || state.mailTriage?.submitting;
+  const inboxTriageButton = document.createElement('button');
+  inboxTriageButton.type = 'button';
+  inboxTriageButton.className = 'edge-project-btn edge-mail-triage-btn';
+  inboxTriageButton.textContent = 'Inbox Triage';
+  inboxTriageButton.disabled = triageBusy;
+  inboxTriageButton.addEventListener('click', () => {
+    void openInboxMailTriage();
+  });
+  actions.appendChild(inboxTriageButton);
+
+  const junkTriageButton = document.createElement('button');
+  junkTriageButton.type = 'button';
+  junkTriageButton.className = 'edge-project-btn edge-mail-triage-btn';
+  junkTriageButton.textContent = 'Junk Audit';
+  junkTriageButton.disabled = triageBusy;
+  junkTriageButton.addEventListener('click', () => {
+    void openJunkMailTriage();
+  });
+  actions.appendChild(junkTriageButton);
 
   shell.appendChild(summary);
   shell.appendChild(actions);

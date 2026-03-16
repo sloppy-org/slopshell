@@ -98,3 +98,24 @@ func TestBuildUserPromptIncludesFlagged(t *testing.T) {
 		t.Fatalf("prompt missing flagged state: %q", prompt)
 	}
 }
+
+func TestBuildUserPromptIncludesRecentManualExamples(t *testing.T) {
+	prompt := buildUserPrompt(Message{
+		ID:      "m4",
+		Subject: "Suspicious invite",
+		Examples: []Example{
+			{
+				Action:  "trash",
+				Folder:  "Junk-E-Mail",
+				Sender:  "spam@example.com",
+				Subject: "Win a prize",
+			},
+		},
+	})
+	if !strings.Contains(prompt, "Recent reviewed examples from this mailbox:") {
+		t.Fatalf("prompt missing examples header: %q", prompt)
+	}
+	if !strings.Contains(prompt, "action=trash; folder=Junk-E-Mail; from=spam@example.com; subject=Win a prize") {
+		t.Fatalf("prompt missing example detail: %q", prompt)
+	}
+}

@@ -2,6 +2,7 @@ import { AnnotationLayer, GlobalWorkerOptions, TextLayer, getDocument } from './
 import { apiURL } from './paths.js';
 import { renderTextArtifact, sanitizeHtml } from './canvas-content.js';
 import { openMailDraftArtifact, renderMailDraftArtifact } from './app-mail-drafts.js';
+import { renderMailTriageArtifact } from './app-mail-triage.js';
 import { buildEmailThreadHTML } from './app-item-sidebar-artifacts.js';
 import {
   renderCanvasApprovalActions,
@@ -841,6 +842,7 @@ export function renderCanvas(event) {
     e.text.style.display = '';
     e.text.classList.add('is-active');
     e.text.classList.remove('mail-draft-canvas');
+    e.text.classList.remove('mail-triage-canvas');
     delete e.text.dataset.approvalRequestId;
     clearTextInteractionHandlers();
     activeTextEventId = event.event_id;
@@ -877,6 +879,7 @@ export function renderCanvas(event) {
     hideAll();
     e.text.style.display = '';
     e.text.classList.add('is-active');
+    e.text.classList.remove('mail-triage-canvas');
     clearTextInteractionHandlers();
     activeTextEventId = null;
     activePdfEvent = null;
@@ -886,10 +889,25 @@ export function renderCanvas(event) {
     previousArtifactTitle = activeArtifactTitle;
     renderMailDraftArtifact(e.text, event);
     dispatchCanvasRendered(event);
+  } else if (event.kind === 'email_triage') {
+    hideAll();
+    e.text.style.display = '';
+    e.text.classList.add('is-active');
+    e.text.classList.remove('mail-draft-canvas');
+    clearTextInteractionHandlers();
+    activeTextEventId = null;
+    activePdfEvent = null;
+    activeArtifactTitle = event.title || '';
+    previousArtifactText = '';
+    previousBlockTexts = [];
+    previousArtifactTitle = activeArtifactTitle;
+    renderMailTriageArtifact(e.text, event);
+    dispatchCanvasRendered(event);
   } else if (event.kind === 'image_artifact') {
     clearTextInteractionHandlers();
     hideAll();
     e.text.classList.remove('mail-draft-canvas');
+    e.text.classList.remove('mail-triage-canvas');
     e.image.style.display = '';
     e.image.classList.add('is-active');
     const state = (window._taburaApp || {}).getState ? window._taburaApp.getState() : {};
@@ -904,6 +922,7 @@ export function renderCanvas(event) {
     clearTextInteractionHandlers();
     hideAll();
     e.text.classList.remove('mail-draft-canvas');
+    e.text.classList.remove('mail-triage-canvas');
     e.pdf.style.display = '';
     e.pdf.classList.add('is-active');
     void renderPdfSurface(event);
@@ -921,6 +940,7 @@ export function clearCanvas() {
   hideAll();
   const e = getEls();
   if (e.text) e.text.classList.remove('mail-draft-canvas');
+  if (e.text) e.text.classList.remove('mail-triage-canvas');
   if (e.text) delete e.text.dataset.approvalRequestId;
   cancelPdfRender({ destroyDocument: true });
   activeTextEventId = null;

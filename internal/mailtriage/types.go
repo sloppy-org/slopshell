@@ -44,6 +44,14 @@ type Message struct {
 	IsRead         bool      `json:"is_read,omitempty"`
 	IsFlagged      bool      `json:"is_flagged,omitempty"`
 	ReceivedAt     time.Time `json:"received_at,omitempty"`
+	Examples       []Example `json:"examples,omitempty"`
+}
+
+type Example struct {
+	Sender  string `json:"sender,omitempty"`
+	Subject string `json:"subject,omitempty"`
+	Folder  string `json:"folder,omitempty"`
+	Action  string `json:"action,omitempty"`
 }
 
 type Decision struct {

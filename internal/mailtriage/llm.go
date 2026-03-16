@@ -160,6 +160,22 @@ func buildUserPrompt(message Message) string {
 	fmt.Fprintf(&b, "Has attachments: %t\n", message.HasAttachments)
 	fmt.Fprintf(&b, "Is read: %t\n", message.IsRead)
 	fmt.Fprintf(&b, "Is flagged: %t\n", message.IsFlagged)
+	if len(message.Examples) > 0 {
+		fmt.Fprintf(&b, "Recent reviewed examples from this mailbox:\n")
+		for i, example := range message.Examples {
+			if i >= 8 {
+				break
+			}
+			fmt.Fprintf(
+				&b,
+				"- action=%s; folder=%s; from=%s; subject=%s\n",
+				strings.TrimSpace(example.Action),
+				strings.TrimSpace(example.Folder),
+				strings.TrimSpace(example.Sender),
+				strings.TrimSpace(example.Subject),
+			)
+		}
+	}
 	return strings.TrimSpace(b.String())
 }
 

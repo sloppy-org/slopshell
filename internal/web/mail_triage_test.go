@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -108,7 +109,23 @@ func (f *fakeMailTriageProvider) DeleteServerFilter(_ context.Context, id string
 }
 
 func TestMailTriagePreviewClassifiesAndAutoApplies(t *testing.T) {
+	var prompt string
 	llm := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		var payload struct {
+			Messages []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("Decode() error: %v", err)
+		}
+		for _, message := range payload.Messages {
+			if message.Role == "user" {
+				prompt = message.Content
+			}
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"action\":\"archive\",\"archive_label\":\"simons24\",\"confidence\":0.97,\"reason\":\"reference only\"}"}}]}`))
 	}))
@@ -135,6 +152,17 @@ func TestMailTriagePreviewClassifiesAndAutoApplies(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateExternalAccount() error: %v", err)
 	}
+	if _, err := app.store.CreateMailTriageReview(store.MailTriageReviewInput{
+		AccountID: account.ID,
+		Provider:  account.Provider,
+		MessageID: "old-1",
+		Folder:    "Junk-E-Mail",
+		Subject:   "Win a prize",
+		Sender:    "spam@example.com",
+		Action:    "trash",
+	}); err != nil {
+		t.Fatalf("CreateMailTriageReview() error: %v", err)
+	}
 
 	rr := doAuthedJSONRequest(t, app.Router(), http.MethodPost, "/api/external-accounts/"+itoa(account.ID)+"/mail-triage/preview", map[string]any{
 		"phase":            "auto_apply",
@@ -156,6 +184,12 @@ func TestMailTriagePreviewClassifiesAndAutoApplies(t *testing.T) {
 	}
 	if len(provider.movedFolders) != 1 || provider.movedFolders[0] != "Archive/simons24" {
 		t.Fatalf("movedFolders = %#v, want Archive/simons24", provider.movedFolders)
+	}
+	if !strings.Contains(prompt, "Recent reviewed examples from this mailbox:") {
+		t.Fatalf("prompt missing manual examples: %q", prompt)
+	}
+	if !strings.Contains(prompt, "action=trash; folder=Junk-E-Mail; from=spam@example.com; subject=Win a prize") {
+		t.Fatalf("prompt missing expected example: %q", prompt)
 	}
 }
 

@@ -72,6 +72,8 @@ func (a *App) Router() http.Handler {
 	r.Delete("/api/external-accounts/{account_id}/mail-rules/{rule_id}", a.handleMailRuleDelete)
 	r.Post("/api/external-accounts/{account_id}/mail-triage/preview", a.handleMailTriagePreview)
 	r.Post("/api/external-accounts/{account_id}/mail-triage/apply", a.handleMailTriageApply)
+	r.Get("/api/external-accounts/{account_id}/mail-triage/manual/reviews", a.handleMailTriageManualReviewsList)
+	r.Post("/api/external-accounts/{account_id}/mail-triage/manual/reviews", a.handleMailTriageManualReviewCreate)
 	r.Get("/api/external-accounts/{account_id}/mail-server-filters", a.handleMailServerFiltersList)
 	r.Post("/api/external-accounts/{account_id}/mail-server-filters", a.handleMailServerFilterUpsert)
 	r.Put("/api/external-accounts/{account_id}/mail-server-filters/{filter_id}", a.handleMailServerFilterUpsert)
