@@ -1,6 +1,7 @@
 package email
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -42,10 +43,15 @@ func TestNewGmailWithFilesLoadsAccountToken(t *testing.T) {
 	if client.tokenPath != tokenPath {
 		t.Fatalf("tokenPath = %q, want %q", client.tokenPath, tokenPath)
 	}
-	if client.token == nil {
-		t.Fatal("expected token to be loaded from custom token path")
+	tokenSource, err := client.getTokenSource(context.Background())
+	if err != nil {
+		t.Fatalf("getTokenSource() error: %v", err)
 	}
-	if client.token.AccessToken != "access-token" {
-		t.Fatalf("access token = %q, want access-token", client.token.AccessToken)
+	tokenValue, err := tokenSource.Token()
+	if err != nil {
+		t.Fatalf("Token() error: %v", err)
+	}
+	if tokenValue.AccessToken != "access-token" {
+		t.Fatalf("access token = %q, want access-token", tokenValue.AccessToken)
 	}
 }

@@ -199,6 +199,8 @@ Defined in `internal/surface/definitions.go` and used by `internal/mcp/server.go
 - `artifact_list`
 - `actor_list`
 - `actor_create`
+- `calendar_list`
+- `calendar_events`
 
 ## Stability Statement
 

@@ -330,7 +330,7 @@ func (a *App) collectExchangeEWSEvents(ctx context.Context, req calendarActionRe
 }
 
 func (a *App) collectGoogleCalendarEvents(ctx context.Context, req calendarActionRequest, activeSphere string, timeMin, timeMax time.Time) ([]calendarEventEntry, []string, error) {
-	accounts, err := a.store.ListExternalAccountsByProvider(store.ExternalProviderGoogleCalendar)
+	accounts, err := tabcalendar.GoogleCalendarAccounts(a.store)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -350,7 +350,7 @@ func (a *App) collectGoogleCalendarEvents(ctx context.Context, req calendarActio
 		warnings []string
 	)
 	for _, cal := range calendars {
-		providerSphere := a.resolveCalendarSphere(store.ExternalProviderGoogleCalendar, cal.ID, cal.Name, activeSphere, accounts)
+		providerSphere := tabcalendar.ResolveCalendarSphere(a.store, store.ExternalProviderGoogleCalendar, cal.ID, cal.Name, activeSphere, accounts)
 		calEvents, eventErr := reader.GetEvents(ctx, tabcalendar.GetEventsOptions{
 			CalendarID: cal.ID,
 			TimeMin:    timeMin,
@@ -401,7 +401,7 @@ func (a *App) collectICSEvents(req calendarActionRequest, activeSphere string, t
 		warnings []string
 	)
 	for _, cal := range reader.ListCalendars() {
-		providerSphere := a.resolveCalendarSphere(store.ExternalProviderICS, cal.ID, cal.Name, activeSphere, accounts)
+		providerSphere := tabcalendar.ResolveCalendarSphere(a.store, store.ExternalProviderICS, cal.ID, cal.Name, activeSphere, accounts)
 		calEvents, eventErr := reader.GetEvents(cal.Name, timeMin, timeMax)
 		if eventErr != nil {
 			warnings = append(warnings, fmt.Sprintf("ICS calendar %q failed: %v", cal.Name, eventErr))
@@ -426,40 +426,6 @@ func (a *App) collectICSEvents(req calendarActionRequest, activeSphere string, t
 		}
 	}
 	return events, warnings, nil
-}
-
-func (a *App) resolveCalendarSphere(provider, calendarID, calendarName, fallback string, accounts []store.ExternalAccount) string {
-	for _, ref := range []string{calendarID, calendarName} {
-		if strings.TrimSpace(ref) == "" {
-			continue
-		}
-		mapping, err := a.store.GetContainerMapping(provider, "calendar", ref)
-		if err != nil {
-			continue
-		}
-		if mapping.Sphere != nil && strings.TrimSpace(*mapping.Sphere) != "" {
-			return strings.TrimSpace(*mapping.Sphere)
-		}
-		if mapping.WorkspaceID != nil {
-			workspace, workspaceErr := a.store.GetWorkspace(*mapping.WorkspaceID)
-			if workspaceErr == nil && strings.TrimSpace(workspace.Sphere) != "" {
-				return workspace.Sphere
-			}
-		}
-	}
-	for _, account := range accounts {
-		if strings.EqualFold(strings.TrimSpace(account.AccountName), strings.TrimSpace(calendarName)) ||
-			strings.EqualFold(strings.TrimSpace(account.AccountName), strings.TrimSpace(calendarID)) {
-			return account.Sphere
-		}
-	}
-	if len(accounts) == 1 && strings.TrimSpace(accounts[0].Sphere) != "" {
-		return accounts[0].Sphere
-	}
-	if strings.TrimSpace(fallback) != "" {
-		return fallback
-	}
-	return store.SpherePrivate
 }
 
 func (a *App) collectCalendarDeadlines(req calendarActionRequest) ([]calendarDeadlineEntry, error) {

@@ -3,6 +3,7 @@ package mcp
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,7 +13,9 @@ import (
 	"strings"
 
 	"github.com/krystophny/tabura/internal/appserver"
+	tabcalendar "github.com/krystophny/tabura/internal/calendar"
 	"github.com/krystophny/tabura/internal/canvas"
+	"github.com/krystophny/tabura/internal/providerdata"
 	"github.com/krystophny/tabura/internal/store"
 )
 
@@ -36,9 +39,15 @@ type RPCError struct {
 }
 
 type Server struct {
-	adapter         *canvas.Adapter
-	appServerClient *appserver.Client
-	store           *store.Store
+	adapter                 *canvas.Adapter
+	appServerClient         *appserver.Client
+	store                   *store.Store
+	newGoogleCalendarReader func(context.Context) (googleCalendarReader, error)
+}
+
+type googleCalendarReader interface {
+	ListCalendars(ctx context.Context) ([]providerdata.Calendar, error)
+	GetEvents(ctx context.Context, opts tabcalendar.GetEventsOptions) ([]providerdata.Event, error)
 }
 
 type handoffEnvelope struct {
@@ -63,6 +72,9 @@ func NewServerWithStore(adapter *canvas.Adapter, st *store.Store, appServerClien
 		adapter:         adapter,
 		appServerClient: client,
 		store:           st,
+		newGoogleCalendarReader: func(ctx context.Context) (googleCalendarReader, error) {
+			return tabcalendar.New(ctx)
+		},
 	}
 }
 
@@ -225,6 +237,10 @@ func (s *Server) callTool(name string, args map[string]interface{}) (map[string]
 		return s.actorList(args)
 	case "actor_create":
 		return s.actorCreate(args)
+	case "calendar_list":
+		return s.calendarList(args)
+	case "calendar_events":
+		return s.calendarEvents(args)
 	default:
 		return nil, errors.New("unknown tool: " + name)
 	}

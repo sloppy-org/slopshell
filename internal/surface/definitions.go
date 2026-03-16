@@ -386,6 +386,32 @@ var MCPTools = []Tool{
 			},
 		},
 	},
+	{
+		Name:        "calendar_list",
+		Description: "List Google calendars available through Tabura's shared Google auth.",
+	},
+	{
+		Name:        "calendar_events",
+		Description: "List upcoming Google Calendar events with optional calendar, query, day-window, and limit filters.",
+		Properties: map[string]ToolProperty{
+			"calendar_id": {
+				Type:        "string",
+				Description: "Optional Google Calendar id. When omitted, events from all calendars are returned.",
+			},
+			"days": {
+				Type:        "integer",
+				Description: "Optional number of days forward from now to include. Defaults to 30.",
+			},
+			"limit": {
+				Type:        "integer",
+				Description: "Optional maximum number of events to return. Defaults to 100.",
+			},
+			"query": {
+				Type:        "string",
+				Description: "Optional free-text search query applied by Google Calendar.",
+			},
+		},
+	},
 }
 
 var MCPDaemonRoutes = []string{

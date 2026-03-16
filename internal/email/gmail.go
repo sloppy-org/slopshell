@@ -3,48 +3,31 @@ package email
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"net/mail"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/krystophny/tabura/internal/googleauth"
 	"github.com/krystophny/tabura/internal/providerdata"
 	"golang.org/x/oauth2"
-	"golang.org/x/oauth2/google"
 	"google.golang.org/api/gmail/v1"
 	"google.golang.org/api/option"
-	people "google.golang.org/api/people/v1"
 )
 
-var gmailScopes = []string{
-	gmail.GmailModifyScope,
-	people.ContactsReadonlyScope,
-}
+var gmailScopes = append([]string(nil), googleauth.DefaultScopes...)
 
 func configDir() string {
 	return defaultTaburaConfigDir()
 }
 
-func credentialsFile() string {
-	return filepath.Join(configDir(), "gmail_credentials.json")
-}
-
-func tokenFile() string {
-	return filepath.Join(configDir(), "gmail_token.json")
-}
-
 // GmailClient provides access to Gmail API with rate limiting.
 type GmailClient struct {
 	rateLimiter     *RateLimiter
-	config          *oauth2.Config
-	token           *oauth2.Token
+	auth            *googleauth.Session
 	credentialsPath string
 	tokenPath       string
-	mu              sync.Mutex
 }
 
 // Compile-time check that GmailClient implements EmailProvider.
@@ -61,85 +44,31 @@ func NewGmail() (*GmailClient, error) {
 
 // NewGmailWithFiles creates a Gmail client with explicit credential and token paths.
 func NewGmailWithFiles(credentialsPath, tokenPath string) (*GmailClient, error) {
-	if strings.TrimSpace(credentialsPath) == "" {
-		credentialsPath = credentialsFile()
-	}
-	if strings.TrimSpace(tokenPath) == "" {
-		tokenPath = tokenFile()
-	}
-
-	credBytes, err := os.ReadFile(credentialsPath)
+	auth, err := googleauth.New(credentialsPath, tokenPath, gmailScopes)
 	if err != nil {
-		return nil, fmt.Errorf("configure Gmail credentials at %s first: %w", credentialsPath, err)
+		return nil, err
 	}
-
-	config, err := google.ConfigFromJSON(credBytes, gmailScopes...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse credentials: %w", err)
-	}
-
 	client := &GmailClient{
 		rateLimiter:     NewRateLimiter(15000),
-		config:          config,
-		credentialsPath: credentialsPath,
-		tokenPath:       tokenPath,
+		auth:            auth,
+		credentialsPath: auth.CredentialsPath(),
+		tokenPath:       auth.TokenPath(),
 	}
-
-	// Try to load existing token
-	if tokenBytes, err := os.ReadFile(tokenPath); err == nil {
-		var token oauth2.Token
-		if json.Unmarshal(tokenBytes, &token) == nil {
-			client.token = &token
-		}
-	}
-
 	return client, nil
 }
 
 // GetAuthURL returns the URL for OAuth authorization.
 func (c *GmailClient) GetAuthURL() string {
-	return c.config.AuthCodeURL("state-token", oauth2.AccessTypeOffline)
+	return c.auth.GetAuthURL()
 }
 
 // ExchangeCode exchanges an authorization code for a token.
 func (c *GmailClient) ExchangeCode(ctx context.Context, code string) error {
-	token, err := c.config.Exchange(ctx, code)
-	if err != nil {
-		return fmt.Errorf("failed to exchange code: %w", err)
-	}
-
-	c.token = token
-
-	// Save token
-	if err := os.MkdirAll(filepath.Dir(c.tokenPath), 0o755); err != nil {
-		return err
-	}
-	tokenBytes, _ := json.MarshalIndent(token, "", "  ")
-	return os.WriteFile(c.tokenPath, tokenBytes, 0o600)
+	return c.auth.ExchangeCode(ctx, code)
 }
 
 func (c *GmailClient) getTokenSource(ctx context.Context) (oauth2.TokenSource, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if c.token == nil {
-		return nil, fmt.Errorf("gmail is not authenticated; token file %s is missing", c.tokenPath)
-	}
-
-	tokenSource := c.config.TokenSource(ctx, c.token)
-	newToken, err := tokenSource.Token()
-	if err != nil {
-		return nil, fmt.Errorf("failed to refresh token: %w", err)
-	}
-
-	if newToken.AccessToken != c.token.AccessToken {
-		c.token = newToken
-		tokenBytes, _ := json.MarshalIndent(newToken, "", "  ")
-		_ = os.MkdirAll(filepath.Dir(c.tokenPath), 0o755)
-		_ = os.WriteFile(c.tokenPath, tokenBytes, 0o600)
-	}
-
-	return tokenSource, nil
+	return c.auth.TokenSource(ctx)
 }
 
 func (c *GmailClient) getService(ctx context.Context) (*gmail.Service, error) {

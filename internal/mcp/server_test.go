@@ -143,12 +143,15 @@ func TestToolDefinitionsEmitsProperties(t *testing.T) {
 	defs := toolDefinitions()
 	var tempCreateDef map[string]interface{}
 	var tempRemoveDef map[string]interface{}
+	var calendarEventsDef map[string]interface{}
 	for _, d := range defs {
 		switch d["name"] {
 		case "temp_file_create":
 			tempCreateDef = d
 		case "temp_file_remove":
 			tempRemoveDef = d
+		case "calendar_events":
+			calendarEventsDef = d
 		}
 	}
 	if tempCreateDef == nil {
@@ -156,6 +159,9 @@ func TestToolDefinitionsEmitsProperties(t *testing.T) {
 	}
 	if tempRemoveDef == nil {
 		t.Fatal("temp_file_remove not found in tool definitions")
+	}
+	if calendarEventsDef == nil {
+		t.Fatal("calendar_events not found in tool definitions")
 	}
 	tempCreateSchema, _ := tempCreateDef["inputSchema"].(map[string]interface{})
 	tempCreateProps, _ := tempCreateSchema["properties"].(map[string]interface{})
@@ -166,6 +172,11 @@ func TestToolDefinitionsEmitsProperties(t *testing.T) {
 	tempRemoveProps, _ := tempRemoveSchema["properties"].(map[string]interface{})
 	if tempRemoveProps["path"] == nil {
 		t.Fatalf("temp_file_remove missing path property: %#v", tempRemoveProps)
+	}
+	calendarSchema, _ := calendarEventsDef["inputSchema"].(map[string]interface{})
+	calendarProps, _ := calendarSchema["properties"].(map[string]interface{})
+	if calendarProps["calendar_id"] == nil || calendarProps["days"] == nil || calendarProps["limit"] == nil || calendarProps["query"] == nil {
+		t.Fatalf("calendar_events missing expected properties: %#v", calendarProps)
 	}
 }
 
