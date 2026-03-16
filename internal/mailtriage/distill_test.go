@@ -7,8 +7,8 @@ import (
 
 func TestDistillReviewedExamplesBuildsBoundedSummary(t *testing.T) {
 	training := DistillReviewedExamples([]ReviewedExample{
-		{Sender: "Alice <alice@example.com>", Subject: "Timesheet", Folder: "Posteingang", Action: "keep"},
-		{Sender: "Alice <alice@example.com>", Subject: "FuEL follow-up", Folder: "Posteingang", Action: "keep"},
+		{Sender: "Alice <alice@example.com>", Subject: "Timesheet", Folder: "Posteingang", Action: "inbox"},
+		{Sender: "Alice <alice@example.com>", Subject: "FuEL follow-up", Folder: "Posteingang", Action: "inbox"},
 		{Sender: "List <list@example.com>", Subject: "Weekly digest", Folder: "Posteingang", Action: "cc"},
 		{Sender: "Bob <bob@example.com>", Subject: "Scam 1", Folder: "Junk-E-Mail", Action: "trash"},
 		{Sender: "Carol <carol@example.com>", Subject: "Scam 2", Folder: "Junk-E-Mail", Action: "trash"},
@@ -25,13 +25,13 @@ func TestDistillReviewedExamplesBuildsBoundedSummary(t *testing.T) {
 		t.Fatalf("PolicySummary len = %d, want <= %d", len(training.PolicySummary), maxPolicySummaryLines)
 	}
 	joined := strings.Join(training.PolicySummary, "\n")
-	if !strings.Contains(joined, "Manual review distribution: keep=2, cc=1, archive=1, trash=3") {
+	if !strings.Contains(joined, "Manual review distribution: inbox=2, cc=1, archive=1, trash=3") {
 		t.Fatalf("summary missing action distribution: %q", joined)
 	}
 	if !strings.Contains(joined, "Folder rule: Junk-E-Mail usually -> trash") {
 		t.Fatalf("summary missing folder rule: %q", joined)
 	}
-	if !strings.Contains(joined, "Sender rule: alice@example.com usually -> keep") {
+	if !strings.Contains(joined, "Sender rule: alice@example.com usually -> inbox") {
 		t.Fatalf("summary missing sender rule: %q", joined)
 	}
 	if len(training.Examples) == 0 {

@@ -29,12 +29,10 @@ type MailTriageReviewInput struct {
 
 func normalizeMailTriageReviewAction(raw string) string {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case "keep":
-		return "keep"
+	case "inbox":
+		return "inbox"
 	case "cc":
 		return "cc"
-	case "rescue":
-		return "rescue"
 	case "archive":
 		return "archive"
 	case "trash":
@@ -58,7 +56,7 @@ func (s *Store) CreateMailTriageReview(input MailTriageReviewInput) (MailTriageR
 	}
 	action := normalizeMailTriageReviewAction(input.Action)
 	if action == "" {
-		return MailTriageReview{}, errors.New("action must be keep, cc, rescue, archive, or trash")
+		return MailTriageReview{}, errors.New("action must be inbox, cc, archive, or trash")
 	}
 	result, err := s.db.Exec(`INSERT INTO mail_triage_reviews (
 	  account_id, provider, message_id, folder, subject, sender, action

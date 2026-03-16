@@ -209,7 +209,7 @@ export const state = {
     loading: false,
     submitting: false,
     completed: 0,
-    decisions: { keep: 0, cc: 0, rescue: 0, archive: 0, trash: 0 },
+    decisions: { inbox: 0, cc: 0, archive: 0, trash: 0 },
     currentMessage: null,
     prefetchedMessage: null,
     prefetchedMessageID: '',

@@ -22,7 +22,7 @@ function resetMailTriageState() {
     loading: false,
     submitting: false,
     completed: 0,
-    decisions: { keep: 0, cc: 0, rescue: 0, archive: 0, trash: 0 },
+    decisions: { inbox: 0, cc: 0, archive: 0, trash: 0 },
     currentMessage: null,
     prefetchedMessage: null,
     prefetchedMessageID: '',
@@ -60,11 +60,6 @@ function folderForMailTriageMode(account, mode) {
 
 function filterForMailTriageMode(mode) {
   return String(mode || '').trim().toLowerCase() === 'junk' ? '[SUSPICIOUS MESSAGE]' : '';
-}
-
-function manualActionLabel() {
-  const normalized = String(state.mailTriage.folder || '').trim().toLowerCase();
-  return normalized === 'junk-e-mail' || normalized === 'junk' ? 'Rescue' : 'Keep';
 }
 
 function triageTitleForFolder(folder) {
@@ -215,7 +210,7 @@ export async function openMailTriageMode(options = {}) {
       loading: false,
       submitting: false,
       completed: 0,
-      decisions: { keep: 0, cc: 0, rescue: 0, archive: 0, trash: 0 },
+      decisions: { inbox: 0, cc: 0, archive: 0, trash: 0 },
       currentMessage: null,
       prefetchedMessage: null,
       prefetchedMessageID: '',
@@ -290,7 +285,7 @@ export async function submitMailTriageDecision(action) {
 function mailTriageShortcutActionForKey(key) {
   switch (String(key || '').trim()) {
     case 'ArrowLeft':
-      return manualActionLabel().toLowerCase() === 'rescue' ? 'rescue' : 'keep';
+      return 'inbox';
     case 'ArrowUp':
       return 'cc';
     case 'ArrowDown':
@@ -362,7 +357,7 @@ export function renderMailTriageArtifact(root, event) {
   const queueLength = Array.isArray(triage.queue) ? triage.queue.length : 0;
   const index = Number(triage.index || 0);
   const progressText = queueLength > 0 && index < queueLength ? `${index + 1} / ${queueLength}` : `${Math.min(index, queueLength)} / ${queueLength}`;
-  detail.textContent = [progressText, String(triage.filterText || '').trim() ? `filter ${triage.filterText}` : '', `stored reviews ${Number(triage.lastReviewId || 0) > 0 ? 'on' : 'pending'}`, 'left keep/rescue • up cc • down archive • right trash']
+  detail.textContent = [progressText, String(triage.filterText || '').trim() ? `filter ${triage.filterText}` : '', `stored reviews ${Number(triage.lastReviewId || 0) > 0 ? 'on' : 'pending'}`, 'left inbox • up cc • down archive • right trash']
     .filter(Boolean)
     .join(' • ');
   headerCopy.appendChild(detail);
@@ -427,9 +422,8 @@ export function renderMailTriageArtifact(root, event) {
 
     const actions = document.createElement('div');
     actions.className = 'mail-triage-actions';
-    const primaryAction = manualActionLabel();
     [
-      [primaryAction, primaryAction.toLowerCase() === 'rescue' ? 'rescue' : 'keep'],
+      ['Inbox', 'inbox'],
       ['CC', 'cc'],
       ['Archive', 'archive'],
       ['Trash', 'trash'],
@@ -450,9 +444,8 @@ export function renderMailTriageArtifact(root, event) {
   const footer = document.createElement('div');
   footer.className = 'mail-triage-footer';
   const counts = triage.decisions || {};
-  footer.appendChild(triageDecisionBadge('Keep', Number(counts.keep || 0)));
+  footer.appendChild(triageDecisionBadge('Inbox', Number(counts.inbox || 0)));
   footer.appendChild(triageDecisionBadge('CC', Number(counts.cc || 0)));
-  footer.appendChild(triageDecisionBadge('Rescue', Number(counts.rescue || 0)));
   footer.appendChild(triageDecisionBadge('Archive', Number(counts.archive || 0)));
   footer.appendChild(triageDecisionBadge('Trash', Number(counts.trash || 0)));
   body.appendChild(footer);

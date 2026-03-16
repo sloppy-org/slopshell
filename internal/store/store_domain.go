@@ -172,7 +172,7 @@ CREATE TABLE IF NOT EXISTS mail_triage_reviews (
   folder TEXT NOT NULL DEFAULT '',
   subject TEXT NOT NULL DEFAULT '',
   sender TEXT NOT NULL DEFAULT '',
-  action TEXT NOT NULL CHECK (action IN ('keep', 'cc', 'rescue', 'archive', 'trash')),
+  action TEXT NOT NULL CHECK (action IN ('inbox', 'cc', 'archive', 'trash')),
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_mail_triage_reviews_account_created
@@ -234,9 +234,16 @@ CREATE TABLE IF NOT EXISTS context_time_entries (
 }
 
 func (s *Store) migrateMailTriageReviewActionSupport() error {
-	containsCC, err := s.tableDefinitionContains("mail_triage_reviews", "'cc'")
-	if err != nil || containsCC {
+	containsInbox, err := s.tableDefinitionContains("mail_triage_reviews", "'inbox'")
+	if err != nil {
 		return err
+	}
+	containsKeep, err := s.tableDefinitionContains("mail_triage_reviews", "'keep'")
+	if err != nil {
+		return err
+	}
+	if containsInbox && !containsKeep {
+		return nil
 	}
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -254,13 +261,18 @@ func (s *Store) migrateMailTriageReviewActionSupport() error {
   folder TEXT NOT NULL DEFAULT '',
   subject TEXT NOT NULL DEFAULT '',
   sender TEXT NOT NULL DEFAULT '',
-  action TEXT NOT NULL CHECK (action IN ('keep', 'cc', 'rescue', 'archive', 'trash')),
+  action TEXT NOT NULL CHECK (action IN ('inbox', 'cc', 'archive', 'trash')),
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 )`); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(`INSERT INTO mail_triage_reviews (id, account_id, provider, message_id, folder, subject, sender, action, created_at)
-SELECT id, account_id, provider, message_id, folder, subject, sender, action, created_at
+SELECT id, account_id, provider, message_id, folder, subject, sender,
+CASE
+  WHEN lower(action) IN ('keep', 'rescue') THEN 'inbox'
+  ELSE action
+END,
+created_at
 FROM mail_triage_reviews_legacy_action`); err != nil {
 		return err
 	}

@@ -23,7 +23,7 @@ func TestCreateAndListMailTriageReviews(t *testing.T) {
 		Folder:    "Posteingang",
 		Subject:   "One",
 		Sender:    "alice@example.com",
-		Action:    "keep",
+		Action:    "inbox",
 	})
 	if err != nil {
 		t.Fatalf("CreateMailTriageReview(first) error: %v", err)
@@ -69,7 +69,7 @@ func TestCreateAndListMailTriageReviews(t *testing.T) {
 	if reviews[1].MessageID != "m2" || reviews[1].Action != "trash" {
 		t.Fatalf("reviews[1] = %#v", reviews[1])
 	}
-	if reviews[2].MessageID != "m1" || reviews[2].Action != "keep" {
+	if reviews[2].MessageID != "m1" || reviews[2].Action != "inbox" {
 		t.Fatalf("reviews[2] = %#v", reviews[2])
 	}
 

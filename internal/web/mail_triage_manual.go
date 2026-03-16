@@ -17,12 +17,10 @@ type mailTriageManualReviewRequest struct {
 
 func normalizeMailTriageManualAction(raw string) string {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case "keep":
-		return "keep"
+	case "inbox":
+		return "inbox"
 	case "cc":
 		return "cc"
-	case "rescue":
-		return "rescue"
 	case "archive":
 		return "archive"
 	case "trash":
@@ -108,7 +106,7 @@ func (a *App) handleMailTriageManualReviewCreate(w http.ResponseWriter, r *http.
 	}
 	action := normalizeMailTriageManualAction(req.Action)
 	if action == "" {
-		writeAPIError(w, http.StatusBadRequest, "action must be keep, cc, rescue, archive, or trash")
+		writeAPIError(w, http.StatusBadRequest, "action must be inbox, cc, archive, or trash")
 		return
 	}
 	messageID := strings.TrimSpace(req.MessageID)
@@ -125,15 +123,17 @@ func (a *App) handleMailTriageManualReviewCreate(w http.ResponseWriter, r *http.
 	appliedAction := ""
 	succeeded := 1
 	switch action {
+	case "inbox":
+		appliedAction = "inbox"
+		if !mailTriageFolderImpliesInbox(strings.TrimSpace(req.Folder)) {
+			succeeded, err = provider.MoveToInbox(r.Context(), []string{messageID})
+		}
 	case "cc":
 		appliedAction = "cc"
 		err = applyMailTriageAction(r.Context(), account, provider, mailtriage.ActionCC, "", []string{messageID})
 		if err == nil {
 			succeeded = 1
 		}
-	case "rescue":
-		appliedAction = "move_to_inbox"
-		succeeded, err = provider.MoveToInbox(r.Context(), []string{messageID})
 	case "archive":
 		appliedAction = "archive"
 		succeeded, err = provider.Archive(r.Context(), []string{messageID})
@@ -166,4 +166,13 @@ func (a *App) handleMailTriageManualReviewCreate(w http.ResponseWriter, r *http.
 		"applied_action": appliedAction,
 		"succeeded":      succeeded,
 	})
+}
+
+func mailTriageFolderImpliesInbox(folder string) bool {
+	switch strings.ToLower(strings.TrimSpace(folder)) {
+	case "inbox", "posteingang":
+		return true
+	default:
+		return false
+	}
 }

@@ -30,22 +30,22 @@ func TestMailTriageManualReviewCreateStoresDecisionAndAppliesAction(t *testing.T
 	keepRR := doAuthedJSONRequest(t, app.Router(), http.MethodPost, "/api/external-accounts/"+itoa(account.ID)+"/mail-triage/manual/reviews", map[string]any{
 		"message_id": "m1",
 		"folder":     "Posteingang",
-		"action":     "keep",
+		"action":     "inbox",
 	})
 	if keepRR.Code != http.StatusOK {
-		t.Fatalf("keep status = %d body=%s", keepRR.Code, keepRR.Body.String())
+		t.Fatalf("inbox status = %d body=%s", keepRR.Code, keepRR.Body.String())
 	}
 	if len(provider.inboxed) != 0 || len(provider.archived) != 0 || len(provider.trashed) != 0 {
-		t.Fatalf("keep unexpectedly moved mail: inboxed=%#v archived=%#v trashed=%#v", provider.inboxed, provider.archived, provider.trashed)
+		t.Fatalf("inbox unexpectedly moved mail: inboxed=%#v archived=%#v trashed=%#v", provider.inboxed, provider.archived, provider.trashed)
 	}
 
-	rescueRR := doAuthedJSONRequest(t, app.Router(), http.MethodPost, "/api/external-accounts/"+itoa(account.ID)+"/mail-triage/manual/reviews", map[string]any{
+	inboxFromJunkRR := doAuthedJSONRequest(t, app.Router(), http.MethodPost, "/api/external-accounts/"+itoa(account.ID)+"/mail-triage/manual/reviews", map[string]any{
 		"message_id": "m2",
 		"folder":     "Junk-E-Mail",
-		"action":     "rescue",
+		"action":     "inbox",
 	})
-	if rescueRR.Code != http.StatusOK {
-		t.Fatalf("rescue status = %d body=%s", rescueRR.Code, rescueRR.Body.String())
+	if inboxFromJunkRR.Code != http.StatusOK {
+		t.Fatalf("junk->inbox status = %d body=%s", inboxFromJunkRR.Code, inboxFromJunkRR.Body.String())
 	}
 	if len(provider.inboxed) != 1 || provider.inboxed[0] != "m2" {
 		t.Fatalf("inboxed = %#v, want [m2]", provider.inboxed)
@@ -70,7 +70,7 @@ func TestMailTriageManualReviewCreateStoresDecisionAndAppliesAction(t *testing.T
 	if len(reviews) != 3 {
 		t.Fatalf("reviews len = %d, want 3", len(reviews))
 	}
-	if reviews[0].Action != "cc" || reviews[1].Action != "rescue" || reviews[2].Action != "keep" {
+	if reviews[0].Action != "cc" || reviews[1].Action != "inbox" || reviews[2].Action != "inbox" {
 		t.Fatalf("reviews = %#v", reviews)
 	}
 }
@@ -88,7 +88,7 @@ func TestMailTriageManualReviewsListReturnsRecentReviews(t *testing.T) {
 		Folder:    "Posteingang",
 		Subject:   "Hello",
 		Sender:    "alice@example.com",
-		Action:    "keep",
+		Action:    "inbox",
 	}); err != nil {
 		t.Fatalf("CreateMailTriageReview() error: %v", err)
 	}

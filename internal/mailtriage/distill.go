@@ -27,7 +27,7 @@ func DistillReviewedExamples(reviews []ReviewedExample) DistilledTraining {
 	training := DistilledTraining{
 		ReviewCount: len(clean),
 	}
-	actionCounts := make(map[string]int, 5)
+	actionCounts := make(map[string]int, 4)
 	folderCounts := make(map[string]map[string]int)
 	senderCounts := make(map[string]map[string]int)
 	domainCounts := make(map[string]map[string]int)
@@ -79,7 +79,7 @@ func incrementNestedCount(m map[string]map[string]int, key, action string) {
 }
 
 func overallActionSummary(actionCounts map[string]int) string {
-	order := []string{"keep", "cc", "rescue", "archive", "trash"}
+	order := []string{"inbox", "cc", "archive", "trash"}
 	parts := make([]string, 0, len(order))
 	for _, action := range order {
 		if count := actionCounts[action]; count > 0 {
@@ -154,7 +154,7 @@ func representativeExamples(reviews []ReviewedExample, limit int) []Example {
 	for _, review := range reviews {
 		byAction[review.Action] = append(byAction[review.Action], review)
 	}
-	order := []string{"keep", "cc", "rescue", "archive", "trash"}
+	order := []string{"inbox", "cc", "archive", "trash"}
 	out := make([]Example, 0, min(limit, len(order)))
 	for _, action := range order {
 		candidates := byAction[action]
