@@ -38,8 +38,9 @@ func (p *fakeMailProvider) ListMessages(_ context.Context, opts email.SearchOpti
 	return append([]string(nil), p.listIDs...), nil
 }
 
-func (p *fakeMailProvider) ListMessagesPage(_ context.Context, _ email.SearchOptions, _ string) (email.MessagePage, error) {
-	p.lastPage = "seen"
+func (p *fakeMailProvider) ListMessagesPage(_ context.Context, opts email.SearchOptions, pageToken string) (email.MessagePage, error) {
+	p.lastOpts = opts
+	p.lastPage = pageToken
 	return email.MessagePage{IDs: append([]string(nil), p.pageIDs...), NextPageToken: p.nextPage}, nil
 }
 
@@ -177,6 +178,39 @@ func TestMailAPIListsMessagesAndGetsMessage(t *testing.T) {
 	message, _ := getData["message"].(map[string]any)
 	if message["ID"] != "m2" {
 		t.Fatalf("message id = %#v", message["ID"])
+	}
+}
+
+func TestMailAPIListsMessagesUsesPagingFromFirstPage(t *testing.T) {
+	app := newAuthedTestApp(t)
+	account, err := app.store.CreateExternalAccount(store.SphereWork, store.ExternalProviderGmail, "Work Gmail", map[string]any{})
+	if err != nil {
+		t.Fatalf("CreateExternalAccount: %v", err)
+	}
+	now := time.Date(2026, time.March, 16, 12, 0, 0, 0, time.UTC)
+	provider := &fakeMailProvider{
+		listIDs:   []string{"legacy-list-id"},
+		pageIDs:   []string{"m2"},
+		nextPage:  "next-1",
+		messages:  map[string]*providerdata.EmailMessage{"m2": {ID: "m2", Subject: "Paged", Date: now}},
+	}
+	app.newEmailProvider = func(context.Context, store.ExternalAccount) (email.EmailProvider, error) {
+		return provider, nil
+	}
+
+	rr := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/external-accounts/"+itoaMail(account.ID)+"/mail/messages?limit=25", nil)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rr.Code, rr.Body.String())
+	}
+	if provider.lastPage != "" {
+		t.Fatalf("lastPage = %q, want empty first-page token", provider.lastPage)
+	}
+	if provider.lastOpts.MaxResults != 25 {
+		t.Fatalf("MaxResults = %d, want 25", provider.lastOpts.MaxResults)
+	}
+	data := decodeJSONDataResponse(t, rr)
+	if got := data["next_page_token"]; got != "next-1" {
+		t.Fatalf("next_page_token = %#v", got)
 	}
 }
 

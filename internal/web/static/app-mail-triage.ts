@@ -62,6 +62,16 @@ function filterForMailTriageMode(mode) {
   return String(mode || '').trim().toLowerCase() === 'junk' ? '[SUSPICIOUS MESSAGE]' : '';
 }
 
+function summarizeMailTriageQueueMessage(message) {
+  return {
+    id: String(message?.ID || '').trim(),
+    subject: String(message?.Subject || '').trim(),
+    sender: String(message?.Sender || '').trim(),
+    labels: Array.isArray(message?.Labels) ? message.Labels.slice() : [],
+    date: String(message?.Date || '').trim(),
+  };
+}
+
 function triageTitleForFolder(folder) {
   const normalized = String(folder || '').trim().toLowerCase();
   if (normalized === 'junk-e-mail' || normalized === 'junk') {
@@ -163,6 +173,48 @@ async function loadCurrentMailTriageMessage() {
   return false;
 }
 
+async function loadMailTriageQueue(accountID, folder, filterText, limit) {
+  const reviewsPayload = await mailTriageFetchJSON(`external-accounts/${encodeURIComponent(String(accountID))}/mail-triage/manual/reviews?limit=1&folder=${encodeURIComponent(folder)}`);
+  const reviewedMessageIDs = new Set(
+    Array.isArray(reviewsPayload?.reviewed_message_ids)
+      ? reviewsPayload.reviewed_message_ids.map((value) => String(value || '').trim()).filter(Boolean)
+      : [],
+  );
+  const queuedMessageIDs = new Set();
+  const queue = [];
+  let pageToken = '';
+  let pagesFetched = 0;
+  while (queue.length < limit && pagesFetched < 50) {
+    const query = new URLSearchParams({ folder, limit: String(limit) });
+    if (filterText) {
+      query.set('text', filterText);
+    }
+    if (pageToken) {
+      query.set('page_token', pageToken);
+    }
+    const listPayload = await mailTriageFetchJSON(`external-accounts/${encodeURIComponent(String(accountID))}/mail/messages?${query.toString()}`);
+    const messages = Array.isArray(listPayload?.messages) ? listPayload.messages : [];
+    for (const message of messages) {
+      const entry = summarizeMailTriageQueueMessage(message);
+      if (!entry.id || reviewedMessageIDs.has(entry.id) || queuedMessageIDs.has(entry.id)) {
+        continue;
+      }
+      queue.push(entry);
+      queuedMessageIDs.add(entry.id);
+      if (queue.length >= limit) {
+        break;
+      }
+    }
+    const nextPageToken = String(listPayload?.next_page_token || '').trim();
+    pagesFetched += 1;
+    if (!nextPageToken || nextPageToken === pageToken) {
+      break;
+    }
+    pageToken = nextPageToken;
+  }
+  return queue;
+}
+
 export async function openMailTriageMode(options = {}) {
   const mode = String(options?.mode || 'inbox').trim().toLowerCase();
   const limitValue = Number(options?.limit || MAIL_TRIAGE_DEFAULT_LIMIT);
@@ -178,26 +230,7 @@ export async function openMailTriageMode(options = {}) {
     }
     const folder = folderForMailTriageMode(account, mode);
     const filterText = filterForMailTriageMode(mode);
-    const query = new URLSearchParams({ folder, limit: String(limit) });
-    if (filterText) {
-      query.set('text', filterText);
-    }
-    const [listPayload, reviewsPayload] = await Promise.all([
-      mailTriageFetchJSON(`external-accounts/${encodeURIComponent(String(account.id))}/mail/messages?${query.toString()}`),
-      mailTriageFetchJSON(`external-accounts/${encodeURIComponent(String(account.id))}/mail-triage/manual/reviews?limit=1&folder=${encodeURIComponent(folder)}`),
-    ]);
-    const reviewedMessageIDs = new Set(
-      Array.isArray(reviewsPayload?.reviewed_message_ids)
-        ? reviewsPayload.reviewed_message_ids.map((value) => String(value || '').trim()).filter(Boolean)
-        : [],
-    );
-    const queue = Array.isArray(listPayload?.messages) ? listPayload.messages.map((message) => ({
-      id: String(message?.ID || '').trim(),
-      subject: String(message?.Subject || '').trim(),
-      sender: String(message?.Sender || '').trim(),
-      labels: Array.isArray(message?.Labels) ? message.Labels.slice() : [],
-      date: String(message?.Date || '').trim(),
-    })).filter((message) => message.id && !reviewedMessageIDs.has(message.id)) : [];
+    const queue = await loadMailTriageQueue(account.id, folder, filterText, limit);
     Object.assign(state.mailTriage, {
       active: true,
       accountId: Number(account.id || 0),

@@ -187,14 +187,14 @@ func isMailAPIRequestError(err error) bool {
 }
 
 func (a *App) mailMessageIDsForRequest(ctx context.Context, provider email.EmailProvider, opts email.SearchOptions, pageToken string) ([]string, string, error) {
-	if strings.TrimSpace(pageToken) != "" {
-		if pager, ok := provider.(email.MessagePageProvider); ok {
-			page, err := pager.ListMessagesPage(ctx, opts, pageToken)
-			if err != nil {
-				return nil, "", err
-			}
-			return page.IDs, strings.TrimSpace(page.NextPageToken), nil
+	if pager, ok := provider.(email.MessagePageProvider); ok {
+		page, err := pager.ListMessagesPage(ctx, opts, pageToken)
+		if err != nil {
+			return nil, "", err
 		}
+		return page.IDs, strings.TrimSpace(page.NextPageToken), nil
+	}
+	if strings.TrimSpace(pageToken) != "" {
 		return nil, "", errBadRequest("page_token is not supported for this provider")
 	}
 	ids, err := provider.ListMessages(ctx, opts)
