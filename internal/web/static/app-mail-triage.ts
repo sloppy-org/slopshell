@@ -27,6 +27,9 @@ function resetMailTriageState() {
     prefetchedMessage: null,
     prefetchedMessageID: '',
     lastReviewId: 0,
+    lastReviewAction: '',
+    lastReviewMessage: null,
+    undoing: false,
   });
   mailTriageMessageCache.clear();
 }
@@ -78,6 +81,15 @@ function triageTitleForFolder(folder) {
     return 'Junk Audit';
   }
   return 'Inbox Triage';
+}
+
+function mailTriageFolderMatches(folder, labels) {
+  const target = String(folder || '').trim().toLowerCase();
+  if (!target) {
+    return false;
+  }
+  const list = Array.isArray(labels) ? labels : [];
+  return list.some((label) => String(label || '').trim().toLowerCase() === target);
 }
 
 function triageEventFromState() {
@@ -215,6 +227,62 @@ async function loadMailTriageQueue(accountID, folder, filterText, limit) {
   return queue;
 }
 
+async function findMailTriageMessageBySubjectAndSender(folder, subject, sender) {
+  const cleanSubject = String(subject || '').trim();
+  if (!cleanSubject || !state.mailTriage.accountId) {
+    return null;
+  }
+  const query = new URLSearchParams({
+    folder: String(folder || '').trim(),
+    subject: cleanSubject,
+    limit: '25',
+  });
+  const listPayload = await mailTriageFetchJSON(`external-accounts/${encodeURIComponent(String(state.mailTriage.accountId))}/mail/messages?${query.toString()}`);
+  const messages = Array.isArray(listPayload?.messages) ? listPayload.messages : [];
+  const cleanSender = String(sender || '').trim().toLowerCase();
+  const match = messages.find((message) => {
+    const messageSender = String(message?.Sender || '').trim().toLowerCase();
+    if (!cleanSender) {
+      return true;
+    }
+    return messageSender === cleanSender || messageSender.includes(cleanSender) || cleanSender.includes(messageSender);
+  }) || messages[0];
+  const matchID = String(match?.ID || '').trim();
+  if (!matchID) {
+    return null;
+  }
+  return fetchMailTriageMessage(matchID);
+}
+
+async function resolveUndoRestoredMessage(payload) {
+  const directMessage = payload?.message || null;
+  const directID = String(directMessage?.ID || '').trim();
+  const directLabels = Array.isArray(directMessage?.Labels) ? directMessage.Labels : [];
+  if (directID && mailTriageFolderMatches(String(state.mailTriage.folder || '').trim(), directLabels)) {
+    return directMessage;
+  }
+  if (directID) {
+    try {
+      return await fetchMailTriageMessage(directID);
+    } catch (_) {}
+  }
+  const fallbackMessage = directMessage || state.mailTriage.lastReviewMessage || null;
+  try {
+    const found = await findMailTriageMessageBySubjectAndSender(
+      String(state.mailTriage.folder || '').trim(),
+      String(fallbackMessage?.Subject || '').trim(),
+      String(fallbackMessage?.Sender || '').trim(),
+    );
+    if (found) {
+      return found;
+    }
+  } catch (_) {}
+  if (directID) {
+    return directMessage;
+  }
+  return null;
+}
+
 export async function openMailTriageMode(options = {}) {
   const mode = String(options?.mode || 'inbox').trim().toLowerCase();
   const limitValue = Number(options?.limit || MAIL_TRIAGE_DEFAULT_LIMIT);
@@ -282,6 +350,16 @@ function recordDecisionLocally(action) {
   state.mailTriage.completed = Number(state.mailTriage.completed || 0) + 1;
 }
 
+function undoDecisionLocally(action) {
+  const key = String(action || '').trim().toLowerCase();
+  const next = { ...(state.mailTriage.decisions || {}) };
+  if (Object.prototype.hasOwnProperty.call(next, key)) {
+    next[key] = Math.max(0, Number(next[key] || 0) - 1);
+  }
+  state.mailTriage.decisions = next;
+  state.mailTriage.completed = Math.max(0, Number(state.mailTriage.completed || 0) - 1);
+}
+
 export async function submitMailTriageDecision(action) {
   const normalized = String(action || '').trim().toLowerCase();
   const message = state.mailTriage.currentMessage;
@@ -302,6 +380,8 @@ export async function submitMailTriageDecision(action) {
     });
     recordDecisionLocally(normalized);
     state.mailTriage.lastReviewId = Number(payload?.review?.id || 0);
+    state.mailTriage.lastReviewAction = normalized;
+    state.mailTriage.lastReviewMessage = message;
     state.mailTriage.index += 1;
     state.mailTriage.currentMessage = null;
     state.mailTriage.submitting = false;
@@ -311,6 +391,47 @@ export async function submitMailTriageDecision(action) {
     state.mailTriage.submitting = false;
     rerenderMailTriage();
     showStatus(`triage action failed: ${String(err?.message || err || 'unknown error')}`);
+    return false;
+  }
+}
+
+export async function undoLastMailTriageDecision() {
+  const reviewID = Number(state.mailTriage.lastReviewId || 0);
+  if (state.mailTriage.undoing || state.mailTriage.submitting || !state.mailTriage.accountId || reviewID <= 0) {
+    return false;
+  }
+  state.mailTriage.undoing = true;
+  rerenderMailTriage();
+  try {
+    const payload = await mailTriageFetchJSON(`external-accounts/${encodeURIComponent(String(state.mailTriage.accountId))}/mail-triage/manual/reviews/${encodeURIComponent(String(reviewID))}/undo`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    undoDecisionLocally(state.mailTriage.lastReviewAction);
+    state.mailTriage.lastReviewId = 0;
+    state.mailTriage.lastReviewAction = '';
+    state.mailTriage.undoing = false;
+    const restoredMessage = await resolveUndoRestoredMessage(payload);
+    state.mailTriage.lastReviewMessage = null;
+    if (restoredMessage?.ID) {
+      const restoredEntry = summarizeMailTriageQueueMessage(restoredMessage);
+      state.mailTriage.queue = (Array.isArray(state.mailTriage.queue) ? state.mailTriage.queue : []).filter((entry) => String(entry?.id || '').trim() !== restoredEntry.id);
+      state.mailTriage.queue.splice(Math.min(Math.max(0, Number(state.mailTriage.index || 0)), state.mailTriage.queue.length), 0, restoredEntry);
+      state.mailTriage.currentMessage = restoredMessage;
+      state.mailTriage.prefetchedMessage = null;
+      state.mailTriage.prefetchedMessageID = '';
+      mailTriageMessageCache.set(restoredEntry.id, Promise.resolve(restoredMessage));
+      rerenderMailTriage();
+      queueNextPrefetch();
+    } else {
+      rerenderMailTriage();
+    }
+    showStatus('last triage action undone');
+    return true;
+  } catch (err) {
+    state.mailTriage.undoing = false;
+    rerenderMailTriage();
+    showStatus(`triage undo failed: ${String(err?.message || err || 'unknown error')}`);
     return false;
   }
 }
@@ -405,6 +526,16 @@ export function renderMailTriageArtifact(root, event) {
     applyCanvasArtifactEvent({ kind: 'clear_canvas' });
   });
   header.appendChild(closeButton);
+
+  const undoButton = document.createElement('button');
+  undoButton.type = 'button';
+  undoButton.className = 'edge-btn mail-triage-undo';
+  undoButton.textContent = triage.undoing ? 'Undoing...' : 'Undo Last';
+  undoButton.disabled = Boolean(triage.undoing || triage.submitting || Number(triage.lastReviewId || 0) <= 0);
+  undoButton.addEventListener('click', () => {
+    void undoLastMailTriageDecision();
+  });
+  header.appendChild(undoButton);
   shell.appendChild(header);
 
   const body = document.createElement('div');

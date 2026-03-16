@@ -171,3 +171,11 @@ LIMIT ?`, accountID, cleanFolder, cleanFolder, limit)
 	}
 	return ids, rows.Err()
 }
+
+func (s *Store) DeleteMailTriageReview(id int64) error {
+	if id <= 0 {
+		return errors.New("id is required")
+	}
+	_, err := s.db.Exec(`DELETE FROM mail_triage_reviews WHERE id = ?`, id)
+	return err
+}

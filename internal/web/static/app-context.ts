@@ -214,6 +214,9 @@ export const state = {
     prefetchedMessage: null,
     prefetchedMessageID: '',
     lastReviewId: 0,
+    lastReviewAction: '',
+    lastReviewMessage: null,
+    undoing: false,
   },
   reasoningEffortsByAlias: {
     spark: ['low', 'medium', 'high', 'xhigh'],

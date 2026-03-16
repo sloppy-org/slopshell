@@ -16,6 +16,7 @@ import (
 
 type fakeMailTriageProvider struct {
 	messageIDs    []string
+	messageIDsByFolder map[string][]string
 	messages      map[string]*providerdata.EmailMessage
 	filters       []email.ServerFilter
 	movedFolders  []string
@@ -23,13 +24,20 @@ type fakeMailTriageProvider struct {
 	trashed       []string
 	archived      []string
 	inboxed       []string
+	lastListOpts  email.SearchOptions
 }
 
 func (f *fakeMailTriageProvider) ListLabels(context.Context) ([]providerdata.Label, error) {
 	return nil, nil
 }
 
-func (f *fakeMailTriageProvider) ListMessages(context.Context, email.SearchOptions) ([]string, error) {
+func (f *fakeMailTriageProvider) ListMessages(_ context.Context, opts email.SearchOptions) ([]string, error) {
+	f.lastListOpts = opts
+	if len(f.messageIDsByFolder) > 0 {
+		if ids, ok := f.messageIDsByFolder[strings.TrimSpace(opts.Folder)]; ok {
+			return append([]string(nil), ids...), nil
+		}
+	}
 	return append([]string(nil), f.messageIDs...), nil
 }
 

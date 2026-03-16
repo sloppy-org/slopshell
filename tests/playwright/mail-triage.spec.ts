@@ -61,6 +61,26 @@ test('manual mail triage advances through messages and records review actions', 
     });
   });
 
+  await page.route('**/mail/messages/m1-restored*', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ok: true,
+        data: {
+          message: {
+            ID: 'm1-restored',
+            Subject: 'Undo me',
+            Sender: 'alice@example.com',
+            Labels: ['Posteingang'],
+            Snippet: 'Restored snippet',
+            BodyText: 'Restored body',
+            Date: '2026-03-16T10:00:00Z',
+          },
+        },
+      }),
+    });
+  });
+
   await page.route('**/api/external-accounts/2/mail/messages/m2', async (route) => {
     await route.fulfill({
       contentType: 'application/json',
@@ -352,4 +372,139 @@ test('junk audit continues past a fully reviewed first page', async ({ page }) =
   await expect(page.locator('#canvas-text')).toContainText('Possible false positive');
   await expect(page.locator('#canvas-text')).toContainText('Junk second page body');
   await expect(page.locator('#canvas-text')).toContainText('Junk Audit');
+});
+
+test('manual mail triage can undo the last applied review', async ({ page }) => {
+  const reviewBodies: Array<Record<string, unknown>> = [];
+
+  await page.route('**/api/mail/accounts', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ok: true,
+        data: {
+          accounts: [
+            { id: 2, sphere: 'work', provider: 'exchange_ews', label: 'TU Graz Exchange', account_name: 'TU Graz Exchange' },
+          ],
+        },
+      }),
+    });
+  });
+
+  await page.route('**/api/external-accounts/2/mail/messages?*', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ok: true,
+        data: {
+          messages: [
+            { ID: 'm1', Subject: 'Undo me', Sender: 'alice@example.com', Labels: ['Posteingang'], Date: '2026-03-16T10:00:00Z' },
+          ],
+        },
+      }),
+    });
+  });
+
+  await page.route('**/api/external-accounts/2/mail/messages/m1', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ok: true,
+        data: {
+          message: {
+            ID: 'm1',
+            Subject: 'Undo me',
+            Sender: 'alice@example.com',
+            Labels: ['Posteingang'],
+            Snippet: 'Original snippet',
+            BodyText: 'Original body',
+            Date: '2026-03-16T10:00:00Z',
+          },
+        },
+      }),
+    });
+  });
+
+  await page.route('**/api/external-accounts/2/mail-triage/manual/reviews/41/undo', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ok: true,
+        data: {
+          succeeded: 1,
+          review: { id: 41 },
+          message: {
+            ID: 'm1-restored',
+            Subject: 'Undo me',
+            Sender: 'alice@example.com',
+            Labels: ['Posteingang'],
+            Snippet: 'Restored snippet',
+            BodyText: 'Restored body',
+            Date: '2026-03-16T10:00:00Z',
+          },
+        },
+      }),
+    });
+  });
+
+  await page.route('**/api/external-accounts/2/mail-triage/manual/reviews*', async (route) => {
+    if (route.request().method() === 'GET') {
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ok: true,
+          data: {
+            reviews: [],
+            count: 0,
+            reviewed_message_ids: [],
+            distilled: { review_count: 0, policy_summary: [], examples: [] },
+          },
+        }),
+      });
+      return;
+    }
+    if (route.request().method() === 'POST') {
+      reviewBodies.push(JSON.parse(route.request().postData() || '{}'));
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ok: true,
+          data: {
+            review: { id: 41 },
+            succeeded: 1,
+          },
+        }),
+      });
+      return;
+    }
+  });
+
+  await waitReady(page);
+
+  await page.evaluate(async () => {
+    const mod = await import('../../internal/web/static/app-mail-triage.js');
+    await mod.openInboxMailTriage();
+  });
+
+  await expect(page.locator('#canvas-text')).toContainText('Undo me');
+  await page.keyboard.press('ArrowRight');
+
+  await expect.poll(() => reviewBodies.length).toBe(1);
+  await expect(page.locator('#canvas-text')).toContainText('Manual triage complete for this batch.');
+
+  await page.evaluate(async () => {
+    const mod = await import('../../internal/web/static/app-mail-triage.js');
+    await mod.undoLastMailTriageDecision();
+  });
+
+  await expect(page.locator('#canvas-text')).toContainText('Undo me');
+  await expect(page.locator('#canvas-text')).toContainText('Restored body');
+  await page.keyboard.press('ArrowUp');
+
+  await expect.poll(() => reviewBodies.length).toBe(2);
+  expect(reviewBodies[1]).toMatchObject({
+    message_id: 'm1-restored',
+    folder: 'Posteingang',
+    action: 'cc',
+  });
 });
