@@ -143,3 +143,17 @@ func TestBuildUserPromptIncludesDistilledManualPolicy(t *testing.T) {
 		t.Fatalf("prompt missing example detail: %q", prompt)
 	}
 }
+
+func TestDefaultSystemPromptSeparatesCCAndArchiveSemantics(t *testing.T) {
+	prompt := DefaultSystemPrompt
+	for _, snippet := range []string{
+		"cc: not inbox-worthy; worth a skimmed read for information if the user has time, and no action is needed.",
+		"archive: not inbox-worthy; keep only for later reference, with no skimmed read expected.",
+		"Prefer cc instead of archive for newsletters, webinars, and FYI list traffic that is worth a skimmed read.",
+		"Prefer archive instead of cc when the mail should be kept only as reference and does not merit a skimmed read.",
+	} {
+		if !strings.Contains(prompt, snippet) {
+			t.Fatalf("DefaultSystemPrompt missing %q", snippet)
+		}
+	}
+}

@@ -18,8 +18,8 @@ Return strict JSON with shape:
 
 Semantics:
 - inbox: the user should look at this or act on it.
-- cc: semantic carbon copy; useful to skim, but no action is needed.
-- archive: keep for later reference, but do not keep visible.
+- cc: not inbox-worthy; worth a skimmed read for information if the user has time, and no action is needed.
+- archive: not inbox-worthy; keep only for later reference, with no skimmed read expected.
 - trash: clearly useless, spam, or safe to discard.
 
 Rules:
@@ -31,7 +31,8 @@ Rules:
 - Treat folder-aware manual-review policy as authoritative when it is provided.
 - In particular: trash reviewed from junk means confirmed spam/junk; trash reviewed from inbox means discardable but not necessarily spam.
 - Prefer inbox for direct human mail from collaborators, admins, or teaching/research contacts when action or attention may still be needed.
-- Prefer cc instead of archive for newsletters, webinars, and FYI list traffic that is useful to skim but not actionable.
+- Prefer cc instead of archive for newsletters, webinars, and FYI list traffic that is worth a skimmed read.
+- Prefer archive instead of cc when the mail should be kept only as reference and does not merit a skimmed read.
 - If a message is already in junk/spam but is still research-adjacent (for example journals, conferences, plasma physics, acoustics, machine learning, physics), prefer archive over trash unless it is obviously scammy.
 - Compare the message against the distilled manual policy before choosing an action.
 - Confidence is 0.0 to 1.0.
