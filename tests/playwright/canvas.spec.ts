@@ -782,42 +782,43 @@ test.describe('canvas - edge panels', () => {
     await waitReady(page);
   });
 
-  test('mouse near right edge reveals diagnostics panel', async ({ page }) => {
+  test('mouse hover near right edge does not reveal diagnostics panel', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 720 });
 
     const edgeRight = page.locator('#edge-right');
-    // Initially not active
     const initialClasses = await edgeRight.getAttribute('class');
     expect(initialClasses).not.toContain('edge-active');
 
-    // Move mouse to right edge
     await page.mouse.move(1275, 360);
     await page.waitForTimeout(100);
 
-    await expect(edgeRight).toHaveClass(/edge-active/);
+    const classes = await edgeRight.getAttribute('class');
+    expect(classes).not.toContain('edge-active');
+    expect(classes).not.toContain('edge-pinned');
   });
 
-  test('mouse near top edge reveals projects panel', async ({ page }) => {
-    await page.setViewportSize({ width: 1280, height: 720 });
-
-    const edgeTop = page.locator('#edge-top');
-    // Move mouse to top edge
-    await page.mouse.move(640, 5);
-    await page.waitForTimeout(100);
-
-    await expect(edgeTop).toHaveClass(/edge-active/);
-  });
-
-  test('top projects panel hides after the cursor leaves it', async ({ page }) => {
+  test('mouse hover near top edge does not reveal projects panel', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 720 });
 
     const edgeTop = page.locator('#edge-top');
     await page.mouse.move(640, 5);
     await page.waitForTimeout(100);
-    await expect(edgeTop).toHaveClass(/edge-active/);
 
-    await page.mouse.move(640, 360);
-    await page.waitForTimeout(350);
+    const classes = await edgeTop.getAttribute('class');
+    expect(classes).not.toContain('edge-active');
+    expect(classes).not.toContain('edge-pinned');
+  });
+
+  test('desktop click on top edge strip toggles the top panel', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 720 });
+
+    const edgeTop = page.locator('#edge-top');
+    await page.locator('#edge-top-tap').click();
+    await page.waitForTimeout(100);
+    await expect(edgeTop).toHaveClass(/edge-pinned/);
+
+    await page.locator('#edge-top-tap').click();
+    await page.waitForTimeout(100);
 
     const classes = await edgeTop.getAttribute('class');
     expect(classes).not.toContain('edge-active');
@@ -827,18 +828,13 @@ test.describe('canvas - edge panels', () => {
   test('Escape closes edge panels', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 720 });
 
-    // Open right panel
-    await page.mouse.move(1275, 360);
-    await page.waitForTimeout(100);
     const edgeRight = page.locator('#edge-right');
-    await expect(edgeRight).toHaveClass(/edge-active/);
-
-    // Click to pin
-    await page.mouse.click(1275, 360);
+    await page.evaluate(() => {
+      document.getElementById('edge-right-tap')?.click();
+    });
     await page.waitForTimeout(100);
     await expect(edgeRight).toHaveClass(/edge-pinned/);
 
-    // Escape closes
     await page.keyboard.press('Escape');
     await page.waitForTimeout(100);
     const classes = await edgeRight.getAttribute('class');
@@ -857,8 +853,9 @@ test.describe('canvas - edge panels', () => {
     await page.keyboard.press('Enter');
     await page.waitForTimeout(300);
 
-    // Open right panel
-    await page.mouse.move(1275, 360);
+    await page.evaluate(() => {
+      document.getElementById('edge-right-tap')?.click();
+    });
     await page.waitForTimeout(200);
 
     const chatHistory = page.locator('#chat-history');
