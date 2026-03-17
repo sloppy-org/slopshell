@@ -242,6 +242,13 @@ type FindItemsResult struct {
 	IncludesLastPage bool
 }
 
+type SyncItemsResult struct {
+	SyncState        string
+	ItemIDs          []string
+	DeletedItemIDs   []string
+	IncludesLastItem bool
+}
+
 type DraftMessage struct {
 	Subject    string
 	MIME       []byte
@@ -423,6 +430,44 @@ func (c *Client) FindMessages(ctx context.Context, folderID string, offset, max 
 	return out, nil
 }
 
+func (c *Client) SyncFolderItems(ctx context.Context, folderID, syncState string, maxChanges int) (SyncItemsResult, error) {
+	if strings.TrimSpace(folderID) == "" {
+		folderID = "inbox"
+	}
+	if maxChanges <= 0 {
+		maxChanges = c.cfg.BatchSize
+	}
+	body := `<m:SyncFolderItems><m:ItemShape><t:BaseShape>IdOnly</t:BaseShape></m:ItemShape><m:SyncFolderId>` +
+		folderIDXML(folderID) +
+		`</m:SyncFolderId>`
+	if clean := strings.TrimSpace(syncState); clean != "" {
+		body += `<m:SyncState>` + xmlEscapeText(clean) + `</m:SyncState>`
+	}
+	body += `<m:MaxChangesReturned>` + strconv.Itoa(maxChanges) + `</m:MaxChangesReturned></m:SyncFolderItems>`
+	var resp syncFolderItemsEnvelope
+	if err := c.call(ctx, "SyncFolderItems", body, &resp); err != nil {
+		return SyncItemsResult{}, err
+	}
+	msg := resp.Body.SyncFolderItemsResponse.ResponseMessages.Message
+	out := SyncItemsResult{
+		SyncState:        strings.TrimSpace(msg.SyncState),
+		IncludesLastItem: msg.IncludesLastItemInRange,
+	}
+	for _, change := range msg.Changes.Values {
+		itemID := strings.TrimSpace(change.ResolveItemID())
+		if itemID == "" {
+			continue
+		}
+		switch strings.ToLower(strings.TrimSpace(change.XMLName.Local)) {
+		case "delete":
+			out.DeletedItemIDs = append(out.DeletedItemIDs, itemID)
+		default:
+			out.ItemIDs = append(out.ItemIDs, itemID)
+		}
+	}
+	return out, nil
+}
+
 func (c *Client) GetMessages(ctx context.Context, ids []string) ([]Message, error) {
 	return c.getMessages(ctx, ids, true)
 }
@@ -447,7 +492,12 @@ func (c *Client) getMessages(ctx context.Context, ids []string, includeBody bool
 			return nil, err
 		}
 		for _, raw := range resp.Body.GetItemResponse.ResponseMessages.Message.Items.Values {
-			out = append(out, raw.toMessage())
+			message := raw.toMessage()
+			if !includeBody {
+				message.Body = ""
+				message.BodyType = ""
+			}
+			out = append(out, message)
 		}
 	}
 	return out, nil
@@ -914,37 +964,7 @@ func (c *Client) getStreamingEvents(ctx context.Context, subscriptionID string, 
 func getItemBody(ids []string, includeBody bool) string {
 	var b strings.Builder
 	b.WriteString(`<m:GetItem><m:ItemShape>`)
-	if includeBody {
-		b.WriteString(`<t:BaseShape>AllProperties</t:BaseShape><t:BodyType>Text</t:BodyType>`)
-	} else {
-		b.WriteString(`<t:BaseShape>IdOnly</t:BaseShape><t:AdditionalProperties>`)
-		for _, field := range []string{
-			"item:ItemId",
-			"item:Subject",
-			"item:DateTimeReceived",
-			"item:DateTimeSent",
-			"item:DateTimeCreated",
-			"item:ParentFolderId",
-			"item:ConversationId",
-			"item:DisplayTo",
-			"item:DisplayCc",
-			"item:HasAttachments",
-			"item:WebClientReadFormQueryString",
-			"item:InternetMessageId",
-			"item:ConversationTopic",
-			"item:Flag",
-			"message:From",
-			"message:Sender",
-			"message:ToRecipients",
-			"message:CcRecipients",
-			"message:IsRead",
-		} {
-			b.WriteString(`<t:FieldURI FieldURI="`)
-			b.WriteString(xmlEscapeAttr(field))
-			b.WriteString(`" />`)
-		}
-		b.WriteString(`</t:AdditionalProperties>`)
-	}
+	b.WriteString(`<t:BaseShape>AllProperties</t:BaseShape><t:BodyType>Text</t:BodyType>`)
 	b.WriteString(`</m:ItemShape><m:ItemIds>`)
 	for _, id := range ids {
 		b.WriteString(`<t:ItemId Id="`)
@@ -1383,6 +1403,38 @@ type getItemEnvelope struct {
 			} `xml:"ResponseMessages"`
 		} `xml:"GetItemResponse"`
 	} `xml:"Body"`
+}
+
+type syncFolderItemsEnvelope struct {
+	Body struct {
+		SyncFolderItemsResponse struct {
+			ResponseMessages struct {
+				Message struct {
+					ResponseCode            string `xml:"ResponseCode"`
+					SyncState               string `xml:"SyncState"`
+					IncludesLastItemInRange bool   `xml:"IncludesLastItemInRange"`
+					Changes                 struct {
+						Values []syncChangeXML `xml:",any"`
+					} `xml:"Changes"`
+				} `xml:"SyncFolderItemsResponseMessage"`
+			} `xml:"ResponseMessages"`
+		} `xml:"SyncFolderItemsResponse"`
+	} `xml:"Body"`
+}
+
+type syncChangeXML struct {
+	XMLName xml.Name `xml:""`
+	Message struct {
+		ItemID folderIDXMLNode `xml:"ItemId"`
+	} `xml:"Message"`
+	ItemID folderIDXMLNode `xml:"ItemId"`
+}
+
+func (c syncChangeXML) ResolveItemID() string {
+	if clean := strings.TrimSpace(c.Message.ItemID.ID); clean != "" {
+		return clean
+	}
+	return strings.TrimSpace(c.ItemID.ID)
 }
 
 type itemXML struct {

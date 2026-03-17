@@ -52,6 +52,17 @@ type MessagePageProvider interface {
 	ListMessagesPage(ctx context.Context, opts SearchOptions, pageToken string) (MessagePage, error)
 }
 
+type FolderIncrementalSyncResult struct {
+	Cursor     string
+	IDs        []string
+	DeletedIDs []string
+	More       bool
+}
+
+type FolderIncrementalSyncProvider interface {
+	SyncFolderChanges(ctx context.Context, folder, cursor string, maxChanges int) (FolderIncrementalSyncResult, error)
+}
+
 type MessageActionCapabilities struct {
 	Provider              string `json:"provider,omitempty"`
 	SupportsOpen          bool   `json:"supports_open"`

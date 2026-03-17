@@ -22,7 +22,14 @@ const (
 	emailSyncDefaultMaxResults = 200
 	emailBindingObjectType     = "email"
 	emailContainerRepairBatch  = 200
+	emailInboxSyncStateKey     = "inbox_sync"
 )
+
+type emailInboxSyncState struct {
+	Cursor  string `json:"cursor,omitempty"`
+	HasMore bool   `json:"has_more,omitempty"`
+	Enabled bool   `json:"enabled,omitempty"`
+}
 
 type emailSyncProvider interface {
 	ListMessages(context.Context, email.SearchOptions) ([]string, error)
@@ -125,6 +132,62 @@ func decodeEmailSyncAccountConfig(account store.ExternalAccount) (emailSyncAccou
 	}
 	cfg.FollowUpRules = filteredRules
 	return cfg, nil
+}
+
+func decodeEmailInboxSyncState(account store.ExternalAccount) (emailInboxSyncState, error) {
+	var state emailInboxSyncState
+	raw := strings.TrimSpace(account.ConfigJSON)
+	if raw == "" || raw == "{}" {
+		return state, nil
+	}
+	var config map[string]any
+	if err := json.Unmarshal([]byte(raw), &config); err != nil {
+		return state, err
+	}
+	payload, ok := config[emailInboxSyncStateKey]
+	if !ok || payload == nil {
+		return state, nil
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return state, err
+	}
+	if err := json.Unmarshal(data, &state); err != nil {
+		return state, err
+	}
+	state.Cursor = strings.TrimSpace(state.Cursor)
+	return state, nil
+}
+
+func (a *App) updateEmailInboxSyncState(account *store.ExternalAccount, state emailInboxSyncState) error {
+	if a == nil || a.store == nil || account == nil {
+		return nil
+	}
+	var config map[string]any
+	raw := strings.TrimSpace(account.ConfigJSON)
+	if raw != "" && raw != "{}" {
+		if err := json.Unmarshal([]byte(raw), &config); err != nil {
+			return err
+		}
+	}
+	if config == nil {
+		config = map[string]any{}
+	}
+	state.Cursor = strings.TrimSpace(state.Cursor)
+	config[emailInboxSyncStateKey] = map[string]any{
+		"cursor":   state.Cursor,
+		"has_more": state.HasMore,
+		"enabled":  state.Enabled,
+	}
+	if err := a.store.UpdateExternalAccount(account.ID, store.ExternalAccountUpdate{Config: config}); err != nil {
+		return err
+	}
+	updated, err := a.store.GetExternalAccount(account.ID)
+	if err != nil {
+		return err
+	}
+	*account = updated
+	return nil
 }
 
 func emailSyncConfigDir() string {
@@ -430,12 +493,13 @@ func emailMessageBody(message *providerdata.EmailMessage) string {
 
 func emailArtifactMetaJSON(message *providerdata.EmailMessage, senderActor *store.Actor) (string, error) {
 	payload := map[string]any{
-		"thread_id":  strings.TrimSpace(message.ThreadID),
-		"subject":    strings.TrimSpace(message.Subject),
-		"sender":     strings.TrimSpace(message.Sender),
-		"recipients": append([]string(nil), message.Recipients...),
-		"labels":     append([]string(nil), message.Labels...),
-		"is_read":    message.IsRead,
+		"thread_id":           strings.TrimSpace(message.ThreadID),
+		"internet_message_id": strings.TrimSpace(message.InternetMessageID),
+		"subject":             strings.TrimSpace(message.Subject),
+		"sender":              strings.TrimSpace(message.Sender),
+		"recipients":          append([]string(nil), message.Recipients...),
+		"labels":              append([]string(nil), message.Labels...),
+		"is_read":             message.IsRead,
 	}
 	if !message.Date.IsZero() {
 		payload["date"] = message.Date.UTC().Format(time.RFC3339)
@@ -591,6 +655,79 @@ func (a *App) reconcileEmailFollowUpBindings(account store.ExternalAccount, foll
 	return nil
 }
 
+func (a *App) applyEmailInboxDeletions(account store.ExternalAccount, deletedIDs []string) error {
+	if a == nil || a.store == nil || len(deletedIDs) == 0 {
+		return nil
+	}
+	for _, messageID := range deletedIDs {
+		clean := strings.TrimSpace(messageID)
+		if clean == "" {
+			continue
+		}
+		binding, err := a.store.GetBindingByRemote(account.ID, account.Provider, emailBindingObjectType, clean)
+		if err != nil {
+			if errorsIsNoRows(err) {
+				continue
+			}
+			return err
+		}
+		if binding.ItemID == nil {
+			continue
+		}
+		item, err := a.store.GetItem(*binding.ItemID)
+		if err != nil {
+			if errorsIsNoRows(err) {
+				continue
+			}
+			return err
+		}
+		if item.State == store.ItemStateDone {
+			continue
+		}
+		if err := a.store.UpdateItemState(item.ID, store.ItemStateDone); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (a *App) syncEmailIncrementalInbox(ctx context.Context, account *store.ExternalAccount, provider emailSyncProvider, seen map[string]struct{}) ([]string, error) {
+	incremental, ok := provider.(email.FolderIncrementalSyncProvider)
+	if !ok || account == nil || account.Provider != store.ExternalProviderExchangeEWS {
+		return nil, nil
+	}
+	state, err := decodeEmailInboxSyncState(*account)
+	if err != nil {
+		return nil, err
+	}
+	result, err := incremental.SyncFolderChanges(ctx, "INBOX", state.Cursor, 200)
+	if err != nil {
+		return nil, err
+	}
+	state.Cursor = strings.TrimSpace(result.Cursor)
+	state.HasMore = result.More
+	state.Enabled = true
+	if err := a.updateEmailInboxSyncState(account, state); err != nil {
+		return nil, err
+	}
+	if err := a.applyEmailInboxDeletions(*account, result.DeletedIDs); err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(result.IDs))
+	for _, id := range result.IDs {
+		clean := strings.TrimSpace(id)
+		if clean == "" {
+			continue
+		}
+		if _, exists := seen[clean]; exists {
+			continue
+		}
+		seen[clean] = struct{}{}
+		ids = append(ids, clean)
+	}
+	return ids, nil
+}
+
 func (a *App) syncEmailAccountWithProvider(ctx context.Context, account store.ExternalAccount, provider emailSyncProvider) (emailSyncResult, error) {
 	cfg, err := decodeEmailSyncAccountConfig(account)
 	if err != nil {
@@ -629,12 +766,21 @@ func (a *App) syncEmailAccountWithProvider(ctx context.Context, account store.Ex
 	}
 	collectEmailMessageIDs(messageIDs, containerRepairIDs)
 
-	since := emailSyncSince(time.Now().UTC(), latestRemoteUpdatedAt, cfg)
-	recentIDs, err := provider.ListMessages(ctx, email.DefaultSearchOptions().WithSince(since).WithMaxResults(emailSyncMaxResults(cfg)))
+	accountState := account
+	incrementalIDs, err := a.syncEmailIncrementalInbox(ctx, &accountState, provider, messageIDs)
 	if err != nil {
 		return emailSyncResult{}, err
 	}
-	collectEmailMessageIDs(messageIDs, recentIDs)
+	account = accountState
+	collectEmailMessageIDs(messageIDs, incrementalIDs)
+	if account.Provider != store.ExternalProviderExchangeEWS {
+		since := emailSyncSince(time.Now().UTC(), latestRemoteUpdatedAt, cfg)
+		recentIDs, err := provider.ListMessages(ctx, email.DefaultSearchOptions().WithSince(since).WithMaxResults(emailSyncMaxResults(cfg)))
+		if err != nil {
+			return emailSyncResult{}, err
+		}
+		collectEmailMessageIDs(messageIDs, recentIDs)
+	}
 	if len(messageIDs) == 0 {
 		sink := tabsync.NewStoreSink(a.store)
 		backfillResult, _, err := a.syncEmailHistoryBackfill(ctx, &account, provider, cfg, sink, mappings, followUpIDs, messageIDs)

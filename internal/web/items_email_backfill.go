@@ -278,8 +278,16 @@ func (a *App) emailContainerRepairPending(account store.ExternalAccount) bool {
 	return len(bindings) > 0
 }
 
+func (a *App) emailInboxSyncPending(account store.ExternalAccount) bool {
+	state, err := decodeEmailInboxSyncState(account)
+	if err != nil {
+		return false
+	}
+	return state.Enabled && state.HasMore
+}
+
 func (a *App) emailSourceContinuation(_ context.Context, account store.ExternalAccount) (time.Duration, bool) {
-	if a.emailHistoryPending(account) || a.emailContainerRepairPending(account) {
+	if a.emailHistoryPending(account) || a.emailContainerRepairPending(account) || a.emailInboxSyncPending(account) {
 		return emailHistoryContinueDelay, true
 	}
 	return 0, false

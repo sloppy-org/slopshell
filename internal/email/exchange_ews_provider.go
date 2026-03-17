@@ -34,6 +34,7 @@ var _ DraftProvider = (*ExchangeEWSMailProvider)(nil)
 var _ MessagePageProvider = (*ExchangeEWSMailProvider)(nil)
 var _ NamedFolderProvider = (*ExchangeEWSMailProvider)(nil)
 var _ ServerFilterProvider = (*ExchangeEWSMailProvider)(nil)
+var _ FolderIncrementalSyncProvider = (*ExchangeEWSMailProvider)(nil)
 
 func ExchangeEWSConfigFromMap(label string, config map[string]any) (ExchangeEWSConfig, error) {
 	cfg := ExchangeEWSConfig{Label: strings.TrimSpace(label)}
@@ -224,6 +225,29 @@ func (p *ExchangeEWSMailProvider) ListMessagesPage(ctx context.Context, opts Sea
 	return out, nil
 }
 
+func (p *ExchangeEWSMailProvider) SyncFolderChanges(ctx context.Context, folder, cursor string, maxChanges int) (FolderIncrementalSyncResult, error) {
+	if p == nil || p.client == nil {
+		return FolderIncrementalSyncResult{}, fmt.Errorf("exchange ews provider is not configured")
+	}
+	folderID, err := p.resolveFolderRef(ctx, folder)
+	if err != nil {
+		return FolderIncrementalSyncResult{}, err
+	}
+	if maxChanges <= 0 {
+		maxChanges = 200
+	}
+	result, err := p.client.SyncFolderItems(ctx, folderID, cursor, maxChanges)
+	if err != nil {
+		return FolderIncrementalSyncResult{}, err
+	}
+	return FolderIncrementalSyncResult{
+		Cursor:     strings.TrimSpace(result.SyncState),
+		IDs:        append([]string(nil), result.ItemIDs...),
+		DeletedIDs: append([]string(nil), result.DeletedItemIDs...),
+		More:       !result.IncludesLastItem,
+	}, nil
+}
+
 func (p *ExchangeEWSMailProvider) GetMessage(ctx context.Context, messageID, format string) (*providerdata.EmailMessage, error) {
 	messages, err := p.getMessagesWithFormat(ctx, []string{messageID}, format)
 	if err != nil {
@@ -241,13 +265,14 @@ func (p *ExchangeEWSMailProvider) GetMessage(ctx context.Context, messageID, for
 }
 
 func (p *ExchangeEWSMailProvider) GetMessages(ctx context.Context, messageIDs []string, format string) ([]*providerdata.EmailMessage, error) {
+	requested := compactMessageIDs(messageIDs)
 	messages, err := p.getMessagesWithFormat(ctx, messageIDs, format)
 	if err != nil {
 		if !exchangeEWSMissingItemError(err) {
 			return nil, err
 		}
-		messages = make([]ews.Message, 0, len(messageIDs))
-		for _, messageID := range compactMessageIDs(messageIDs) {
+		messages = make([]ews.Message, 0, len(requested))
+		for _, messageID := range requested {
 			single, singleErr := p.getMessagesWithFormat(ctx, []string{messageID}, format)
 			if singleErr != nil {
 				if exchangeEWSMissingItemError(singleErr) {
@@ -263,10 +288,21 @@ func (p *ExchangeEWSMailProvider) GetMessages(ctx context.Context, messageIDs []
 		return nil, err
 	}
 	folderIndex := exchangeEWSFolderIndex(folders)
-	out := make([]*providerdata.EmailMessage, 0, len(messages))
+	decodedByID := make(map[string]*providerdata.EmailMessage, len(messages))
 	for _, message := range messages {
 		decoded := decodeExchangeEWSMessage(message, folderIndex, format)
-		out = append(out, &decoded)
+		id := strings.TrimSpace(decoded.ID)
+		if id == "" {
+			continue
+		}
+		decodedCopy := decoded
+		decodedByID[id] = &decodedCopy
+	}
+	out := make([]*providerdata.EmailMessage, 0, len(requested))
+	for _, messageID := range requested {
+		if decoded, ok := decodedByID[strings.TrimSpace(messageID)]; ok {
+			out = append(out, decoded)
+		}
 	}
 	return out, nil
 }
@@ -1038,18 +1074,19 @@ func decodeExchangeEWSMessage(message ews.Message, folders map[string]ews.Folder
 		bodyPtr = &body
 	}
 	return providerdata.EmailMessage{
-		ID:          strings.TrimSpace(message.ID),
-		ThreadID:    strings.TrimSpace(message.ConversationID),
-		Subject:     strings.TrimSpace(message.Subject),
-		Sender:      sender,
-		Recipients:  recipients,
-		Date:        message.ReceivedAt,
-		Snippet:     snippetFromBody(message.Body),
-		Labels:      exchangeEWSFolderLabels(message.ParentFolderID, folders),
-		IsRead:      message.IsRead,
-		IsFlagged:   strings.EqualFold(strings.TrimSpace(message.FlagStatus), "Flagged"),
-		BodyText:    bodyPtr,
-		Attachments: attachments,
+		ID:                strings.TrimSpace(message.ID),
+		ThreadID:          strings.TrimSpace(message.ConversationID),
+		InternetMessageID: strings.TrimSpace(message.InternetMessageID),
+		Subject:           strings.TrimSpace(message.Subject),
+		Sender:            sender,
+		Recipients:        recipients,
+		Date:              message.ReceivedAt,
+		Snippet:           snippetFromBody(message.Body),
+		Labels:            exchangeEWSFolderLabels(message.ParentFolderID, folders),
+		IsRead:            message.IsRead,
+		IsFlagged:         strings.EqualFold(strings.TrimSpace(message.FlagStatus), "Flagged"),
+		BodyText:          bodyPtr,
+		Attachments:       attachments,
 	}
 }
 

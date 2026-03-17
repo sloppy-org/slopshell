@@ -16,10 +16,12 @@ import (
 type fakeEmailSyncProvider struct {
 	listFunc         func(email.SearchOptions) ([]string, error)
 	listPageFunc     func(email.SearchOptions, string) (email.MessagePage, error)
+	incrementalFunc  func(string, string, int) (email.FolderIncrementalSyncResult, error)
 	messages         map[string]*providerdata.EmailMessage
 	contacts         []providerdata.Contact
 	labels           []providerdata.Label
 	listCalls        []email.SearchOptions
+	incrementalCalls []string
 	archiveCalls     [][]string
 	moveToInboxCalls [][]string
 }
@@ -48,6 +50,14 @@ func (f *fakeEmailSyncProvider) ListMessagesPage(_ context.Context, opts email.S
 		return email.MessagePage{}, nil
 	}
 	return f.listPageFunc(opts, pageToken)
+}
+
+func (f *fakeEmailSyncProvider) SyncFolderChanges(_ context.Context, folder, cursor string, maxChanges int) (email.FolderIncrementalSyncResult, error) {
+	f.incrementalCalls = append(f.incrementalCalls, strings.TrimSpace(folder)+"|"+strings.TrimSpace(cursor))
+	if f.incrementalFunc == nil {
+		return email.FolderIncrementalSyncResult{}, nil
+	}
+	return f.incrementalFunc(folder, cursor, maxChanges)
 }
 
 func (f *fakeEmailSyncProvider) ListLabels(_ context.Context) ([]providerdata.Label, error) {
@@ -273,6 +283,117 @@ func TestSourceSyncRunnerPollsGmailAndIMAPAccounts(t *testing.T) {
 	}
 	if got := int64FromAny(gmailMeta["sender_actor_id"]); got != gmailActor.ID {
 		t.Fatalf("gmail sender_actor_id = %d, want %d", got, gmailActor.ID)
+	}
+}
+
+func TestSyncEmailAccountWithProviderUsesExchangeEWSIncrementalInboxSync(t *testing.T) {
+	app := newAuthedTestApp(t)
+	account, err := app.store.CreateExternalAccount(store.SphereWork, store.ExternalProviderExchangeEWS, "TU Graz Exchange", map[string]any{})
+	if err != nil {
+		t.Fatalf("CreateExternalAccount(exchange_ews) error: %v", err)
+	}
+
+	title := "Old inbox mail"
+	artifact, err := app.store.CreateArtifact(store.ArtifactKindEmail, nil, nil, &title, nil)
+	if err != nil {
+		t.Fatalf("CreateArtifact() error: %v", err)
+	}
+	item, err := app.store.CreateItem("Old inbox mail", store.ItemOptions{State: store.ItemStateInbox})
+	if err != nil {
+		t.Fatalf("CreateItem() error: %v", err)
+	}
+	containerRef := "Posteingang"
+	if _, err := app.store.UpsertExternalBinding(store.ExternalBinding{
+		AccountID:    account.ID,
+		Provider:     account.Provider,
+		ObjectType:   emailBindingObjectType,
+		RemoteID:     "gone-1",
+		ArtifactID:   &artifact.ID,
+		ItemID:       &item.ID,
+		ContainerRef: &containerRef,
+	}); err != nil {
+		t.Fatalf("UpsertExternalBinding(gone-1) error: %v", err)
+	}
+
+	provider := &fakeEmailSyncProvider{
+		listFunc: func(email.SearchOptions) ([]string, error) {
+			t.Fatal("legacy recent-mail list path should not be used for exchange_ews")
+			return nil, nil
+		},
+		listPageFunc: func(opts email.SearchOptions, pageToken string) (email.MessagePage, error) {
+			if strings.EqualFold(strings.TrimSpace(opts.Folder), "INBOX") || strings.EqualFold(strings.TrimSpace(opts.Folder), "Posteingang") {
+				return email.MessagePage{IDs: []string{"ews-1", "gone-1"}}, nil
+			}
+			return email.MessagePage{}, nil
+		},
+		incrementalFunc: func(folder, cursor string, maxChanges int) (email.FolderIncrementalSyncResult, error) {
+			if !strings.EqualFold(strings.TrimSpace(folder), "INBOX") {
+				t.Fatalf("incremental folder = %q, want INBOX", folder)
+			}
+			if cursor != "" {
+				t.Fatalf("incremental cursor = %q, want empty", cursor)
+			}
+			if maxChanges <= 0 {
+				t.Fatalf("maxChanges = %d, want positive", maxChanges)
+			}
+			return email.FolderIncrementalSyncResult{
+				Cursor:     "sync-state-1",
+				IDs:        []string{"ews-1"},
+				DeletedIDs: []string{"gone-1"},
+				More:       true,
+			}, nil
+		},
+		messages: map[string]*providerdata.EmailMessage{
+			"ews-1": {
+				ID:                "ews-1",
+				ThreadID:          "thread-1",
+				InternetMessageID: "<ews-1@example.test>",
+				Subject:           "Fresh inbox mail",
+				Sender:            "Ada <ada@example.com>",
+				Recipients:        []string{"ert@example.com"},
+				Date:              time.Date(2026, time.March, 17, 15, 0, 0, 0, time.UTC),
+				Labels:            []string{"Posteingang", "INBOX"},
+			},
+		},
+	}
+
+	result, err := app.syncEmailAccountWithProvider(context.Background(), account, provider)
+	if err != nil {
+		t.Fatalf("syncEmailAccountWithProvider() error: %v", err)
+	}
+	if result.MessageCount != 1 {
+		t.Fatalf("MessageCount = %d, want 1", result.MessageCount)
+	}
+	if len(provider.incrementalCalls) != 1 {
+		t.Fatalf("incrementalCalls = %v, want 1 call", provider.incrementalCalls)
+	}
+
+	updatedAccount, err := app.store.GetExternalAccount(account.ID)
+	if err != nil {
+		t.Fatalf("GetExternalAccount() error: %v", err)
+	}
+	state, err := decodeEmailInboxSyncState(updatedAccount)
+	if err != nil {
+		t.Fatalf("decodeEmailInboxSyncState() error: %v", err)
+	}
+	if state.Cursor != "sync-state-1" || !state.HasMore || !state.Enabled {
+		t.Fatalf("inbox sync state = %+v, want enabled cursor sync-state-1 has_more", state)
+	}
+
+	updatedItem, err := app.store.GetItem(item.ID)
+	if err != nil {
+		t.Fatalf("GetItem(gone) error: %v", err)
+	}
+	if updatedItem.State != store.ItemStateDone {
+		t.Fatalf("gone item state = %q, want done", updatedItem.State)
+	}
+
+	freshItem, err := app.store.GetItemBySource(store.ExternalProviderExchangeEWS, "message:ews-1")
+	if err != nil {
+		t.Fatalf("GetItemBySource(ews-1) error: %v", err)
+	}
+	if freshItem.State != store.ItemStateInbox {
+		t.Fatalf("fresh item state = %q, want inbox", freshItem.State)
 	}
 }
 
@@ -767,23 +888,29 @@ func TestSyncExchangeEWSAccountRemoteMoveToInboxUpdatesContainerAndCreatesItem(t
 	}
 
 	inInbox := false
-	includeRecent := true
+	includeCC := true
 	provider := &fakeEmailSyncProvider{
+		labels: []providerdata.Label{
+			{ID: "INBOX", Name: "Posteingang"},
+			{ID: "CC", Name: "CC"},
+		},
 		listFunc: func(opts email.SearchOptions) ([]string, error) {
-			switch {
-			case opts.Folder == "INBOX":
-				if inInbox {
-					return []string{"ews-move-in"}, nil
-				}
-				return nil, nil
-			case !opts.Since.IsZero():
-				if includeRecent {
-					return []string{"ews-move-in"}, nil
-				}
-				return nil, nil
-			default:
-				return nil, nil
+			if opts.Folder == "INBOX" && inInbox {
+				return []string{"ews-move-in"}, nil
 			}
+			return nil, nil
+		},
+		listPageFunc: func(opts email.SearchOptions, pageToken string) (email.MessagePage, error) {
+			if pageToken != "" || opts.Folder != "CC" || !includeCC {
+				return email.MessagePage{}, nil
+			}
+			return email.MessagePage{IDs: []string{"ews-move-in"}}, nil
+		},
+		incrementalFunc: func(folder, _ string, _ int) (email.FolderIncrementalSyncResult, error) {
+			if folder == "INBOX" && inInbox {
+				return email.FolderIncrementalSyncResult{IDs: []string{"ews-move-in"}}, nil
+			}
+			return email.FolderIncrementalSyncResult{}, nil
 		},
 		messages: map[string]*providerdata.EmailMessage{
 			"ews-move-in": {
@@ -816,7 +943,7 @@ func TestSyncExchangeEWSAccountRemoteMoveToInboxUpdatesContainerAndCreatesItem(t
 	}
 
 	inInbox = true
-	includeRecent = false
+	includeCC = false
 	provider.messages["ews-move-in"].Labels = []string{"Posteingang", "INBOX"}
 
 	if _, err := app.syncEmailAccount(context.Background(), account); err != nil {
@@ -854,23 +981,25 @@ func TestSyncExchangeEWSAccountRemoteMoveOutOfInboxUpdatesContainerAndClosesItem
 	}
 
 	inInbox := true
-	includeRecent := true
 	provider := &fakeEmailSyncProvider{
+		labels: []providerdata.Label{
+			{ID: "INBOX", Name: "Posteingang"},
+			{ID: "CC", Name: "CC"},
+		},
 		listFunc: func(opts email.SearchOptions) ([]string, error) {
-			switch {
-			case opts.Folder == "INBOX":
-				if inInbox {
-					return []string{"ews-move-out"}, nil
-				}
-				return nil, nil
-			case !opts.Since.IsZero():
-				if includeRecent {
-					return []string{"ews-move-out"}, nil
-				}
-				return nil, nil
-			default:
-				return nil, nil
+			if opts.Folder == "INBOX" && inInbox {
+				return []string{"ews-move-out"}, nil
 			}
+			return nil, nil
+		},
+		incrementalFunc: func(folder, _ string, _ int) (email.FolderIncrementalSyncResult, error) {
+			if folder != "INBOX" {
+				return email.FolderIncrementalSyncResult{}, nil
+			}
+			if inInbox {
+				return email.FolderIncrementalSyncResult{IDs: []string{"ews-move-out"}}, nil
+			}
+			return email.FolderIncrementalSyncResult{DeletedIDs: []string{"ews-move-out"}}, nil
 		},
 		messages: map[string]*providerdata.EmailMessage{
 			"ews-move-out": {
@@ -900,7 +1029,6 @@ func TestSyncExchangeEWSAccountRemoteMoveOutOfInboxUpdatesContainerAndClosesItem
 	}
 
 	inInbox = false
-	includeRecent = false
 	provider.messages["ews-move-out"].Labels = []string{"CC"}
 	app.emailRefreshes.add(account.ID, "ews-move-out")
 
@@ -938,20 +1066,22 @@ func TestSyncExchangeEWSAccountRepairsMissingContainerRefWithoutRecentSignals(t 
 		t.Fatalf("CreateExternalAccount() error: %v", err)
 	}
 
-	includeRecent := true
+	includeHistory := true
 	provider := &fakeEmailSyncProvider{
+		labels: []providerdata.Label{
+			{ID: "CC", Name: "CC"},
+		},
 		listFunc: func(opts email.SearchOptions) ([]string, error) {
-			switch {
-			case opts.Folder == "INBOX":
-				return nil, nil
-			case !opts.Since.IsZero():
-				if includeRecent {
-					return []string{"ews-repair-null"}, nil
-				}
-				return nil, nil
-			default:
+			if opts.Folder == "INBOX" {
 				return nil, nil
 			}
+			return nil, nil
+		},
+		listPageFunc: func(opts email.SearchOptions, pageToken string) (email.MessagePage, error) {
+			if pageToken != "" || opts.Folder != "CC" || !includeHistory {
+				return email.MessagePage{}, nil
+			}
+			return email.MessagePage{IDs: []string{"ews-repair-null"}}, nil
 		},
 		messages: map[string]*providerdata.EmailMessage{
 			"ews-repair-null": {
@@ -980,7 +1110,7 @@ func TestSyncExchangeEWSAccountRepairsMissingContainerRefWithoutRecentSignals(t 
 		t.Fatalf("first binding container_ref = %v, want nil", binding.ContainerRef)
 	}
 
-	includeRecent = false
+	includeHistory = false
 	provider.messages["ews-repair-null"].Labels = []string{"CC"}
 
 	if _, err := app.syncEmailAccount(context.Background(), account); err != nil {

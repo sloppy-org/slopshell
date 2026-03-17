@@ -3,19 +3,20 @@ package providerdata
 import "time"
 
 type EmailMessage struct {
-	ID          string
-	ThreadID    string
-	Subject     string
-	Sender      string
-	Recipients  []string
-	Date        time.Time
-	Snippet     string
-	Labels      []string
-	IsRead      bool
-	IsFlagged   bool
-	BodyText    *string
-	BodyHTML    *string
-	Attachments []Attachment
+	ID                string
+	ThreadID          string
+	InternetMessageID string
+	Subject           string
+	Sender            string
+	Recipients        []string
+	Date              time.Time
+	Snippet           string
+	Labels            []string
+	IsRead            bool
+	IsFlagged         bool
+	BodyText          *string
+	BodyHTML          *string
+	Attachments       []Attachment
 }
 
 type Attachment struct {
