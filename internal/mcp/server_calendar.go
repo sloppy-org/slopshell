@@ -145,6 +145,55 @@ func (s *Server) calendarEvents(args map[string]interface{}) (map[string]interfa
 	}, nil
 }
 
+func (s *Server) calendarEventCreate(args map[string]interface{}) (map[string]interface{}, error) {
+	st, err := s.requireStore()
+	if err != nil {
+		return nil, err
+	}
+	accounts, err := tabcalendar.GoogleCalendarAccounts(st)
+	if err != nil {
+		return nil, err
+	}
+	if len(accounts) == 0 {
+		return nil, fmt.Errorf("no Google Calendar accounts are configured")
+	}
+	if s.newGoogleCalendarReader == nil {
+		return nil, fmt.Errorf("google calendar writer is unavailable")
+	}
+	reader, err := s.newGoogleCalendarReader(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	calendars, err := reader.ListCalendars(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	target, err := tabcalendar.SelectCalendar(
+		calendars,
+		st,
+		accounts,
+		strArg(args, "calendar_id"),
+		strArg(args, "sphere"),
+	)
+	if err != nil {
+		return nil, err
+	}
+	createOpts, err := calendarCreateOptionsFromArgs(args, target.ID)
+	if err != nil {
+		return nil, err
+	}
+	event, err := reader.CreateEvent(context.Background(), createOpts)
+	if err != nil {
+		return nil, err
+	}
+	sphere := tabcalendar.ResolveCalendarSphere(st, store.ExternalProviderGoogleCalendar, target.ID, target.Name, strArg(args, "sphere"), accounts)
+	return map[string]interface{}{
+		"provider": store.ExternalProviderGoogleCalendar,
+		"created":  true,
+		"event":    eventPayload(event, target.Name, sphere),
+	}, nil
+}
+
 func eventPayload(event providerdata.Event, calendarName, sphere string) map[string]interface{} {
 	return map[string]interface{}{
 		"id":            event.ID,
@@ -168,4 +217,131 @@ func eventPayload(event providerdata.Event, calendarName, sphere string) map[str
 func strFromAny(v any) string {
 	s, _ := v.(string)
 	return strings.TrimSpace(s)
+}
+
+func calendarCreateOptionsFromArgs(args map[string]interface{}, calendarID string) (tabcalendar.CreateEventOptions, error) {
+	summary := strings.TrimSpace(strArg(args, "summary"))
+	if summary == "" {
+		summary = strings.TrimSpace(strArg(args, "title"))
+	}
+	if summary == "" {
+		return tabcalendar.CreateEventOptions{}, fmt.Errorf("summary is required")
+	}
+	allDay := boolArg(args, "all_day")
+	start, startRaw, err := parseCalendarToolTimeArg(args, "start")
+	if err != nil {
+		return tabcalendar.CreateEventOptions{}, err
+	}
+	if startRaw != "" && calendarTimeLooksDateOnly(startRaw) {
+		allDay = true
+	}
+	end, endRaw, err := parseCalendarToolOptionalTimeArg(args, "end")
+	if err != nil {
+		return tabcalendar.CreateEventOptions{}, err
+	}
+	durationMinutes := intArg(args, "duration_minutes", 0)
+	if end.IsZero() {
+		if durationMinutes <= 0 {
+			if allDay {
+				durationMinutes = 24 * 60
+			} else {
+				durationMinutes = 60
+			}
+		}
+		end = start.Add(time.Duration(durationMinutes) * time.Minute)
+	} else if endRaw != "" && calendarTimeLooksDateOnly(endRaw) {
+		allDay = true
+	}
+	if !end.After(start) {
+		return tabcalendar.CreateEventOptions{}, fmt.Errorf("end must be after start")
+	}
+	return tabcalendar.CreateEventOptions{
+		CalendarID:  calendarID,
+		Summary:     summary,
+		Description: strings.TrimSpace(strArg(args, "description")),
+		Location:    strings.TrimSpace(strArg(args, "location")),
+		Start:       start,
+		End:         end,
+		AllDay:      allDay,
+		Attendees:   stringListArg(args, "attendees"),
+	}, nil
+}
+
+func parseCalendarToolTimeArg(args map[string]interface{}, key string) (time.Time, string, error) {
+	raw := strings.TrimSpace(strArg(args, key))
+	if raw == "" {
+		return time.Time{}, "", fmt.Errorf("%s is required", key)
+	}
+	parsed, err := parseCalendarToolTime(raw)
+	if err != nil {
+		return time.Time{}, raw, fmt.Errorf("%s must be RFC3339, YYYY-MM-DDTHH:MM, YYYY-MM-DD HH:MM, or YYYY-MM-DD", key)
+	}
+	return parsed, raw, nil
+}
+
+func parseCalendarToolOptionalTimeArg(args map[string]interface{}, key string) (time.Time, string, error) {
+	raw := strings.TrimSpace(strArg(args, key))
+	if raw == "" {
+		return time.Time{}, "", nil
+	}
+	parsed, err := parseCalendarToolTime(raw)
+	if err != nil {
+		return time.Time{}, raw, fmt.Errorf("%s must be RFC3339, YYYY-MM-DDTHH:MM, YYYY-MM-DD HH:MM, or YYYY-MM-DD", key)
+	}
+	return parsed, raw, nil
+}
+
+func parseCalendarToolTime(raw string) (time.Time, error) {
+	for _, layout := range []string{time.RFC3339, "2006-01-02T15:04", "2006-01-02 15:04", "2006-01-02"} {
+		if layout == "2006-01-02" || layout == "2006-01-02T15:04" || layout == "2006-01-02 15:04" {
+			if parsed, err := time.ParseInLocation(layout, raw, time.Local); err == nil {
+				return parsed, nil
+			}
+			continue
+		}
+		if parsed, err := time.Parse(layout, raw); err == nil {
+			return parsed, nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("invalid time %q", raw)
+}
+
+func calendarTimeLooksDateOnly(raw string) bool {
+	return len(strings.TrimSpace(raw)) == len("2006-01-02") && strings.Count(raw, "-") == 2
+}
+
+func stringListArg(args map[string]interface{}, key string) []string {
+	value, ok := args[key]
+	if !ok {
+		return nil
+	}
+	switch typed := value.(type) {
+	case []string:
+		out := make([]string, 0, len(typed))
+		for _, item := range typed {
+			if clean := strings.TrimSpace(item); clean != "" {
+				out = append(out, clean)
+			}
+		}
+		return out
+	case []interface{}:
+		out := make([]string, 0, len(typed))
+		for _, item := range typed {
+			if clean := strings.TrimSpace(fmt.Sprint(item)); clean != "" && clean != "<nil>" {
+				out = append(out, clean)
+			}
+		}
+		return out
+	case string:
+		parts := strings.Split(typed, ",")
+		out := make([]string, 0, len(parts))
+		for _, part := range parts {
+			if clean := strings.TrimSpace(part); clean != "" {
+				out = append(out, clean)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
 }

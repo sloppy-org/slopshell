@@ -50,6 +50,7 @@ type Server struct {
 type googleCalendarReader interface {
 	ListCalendars(ctx context.Context) ([]providerdata.Calendar, error)
 	GetEvents(ctx context.Context, opts tabcalendar.GetEventsOptions) ([]providerdata.Event, error)
+	CreateEvent(ctx context.Context, opts tabcalendar.CreateEventOptions) (providerdata.Event, error)
 }
 
 type handoffEnvelope struct {
@@ -243,6 +244,8 @@ func (s *Server) callTool(name string, args map[string]interface{}) (map[string]
 		return s.calendarList(args)
 	case "calendar_events":
 		return s.calendarEvents(args)
+	case "calendar_event_create":
+		return s.calendarEventCreate(args)
 	case "mail_account_list":
 		return s.mailAccountList(args)
 	case "mail_label_list":

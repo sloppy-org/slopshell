@@ -53,15 +53,19 @@ var deterministicFastPaths = []deterministicFastPathParser{
 		Spec: deterministicFastPathSpec{
 			Name:     "calendar",
 			Route:    "text",
-			Actions:  []string{"show_calendar"},
-			Triggers: []string{"show calendar"},
+			Actions:  []string{"show_calendar", "create_calendar_event"},
+			Triggers: []string{"show calendar", "create calendar event"},
 		},
 		Parse: func(text string, ctx deterministicFastPathContext) *deterministicFastPathMatch {
 			action := parseInlineCalendarIntent(text, ctx.Now)
 			if action == nil {
 				return nil
 			}
-			return fastPathSingleAction("calendar", action, fixedFastPathFailure(calendarActionFailurePrefix(action.Action)))
+			failurePrefix := calendarActionFailurePrefix(action.Action)
+			if action.Action == "create_calendar_event" {
+				failurePrefix = calendarCreateActionFailurePrefix(action.Action)
+			}
+			return fastPathSingleAction("calendar", action, fixedFastPathFailure(failurePrefix))
 		},
 	},
 	{

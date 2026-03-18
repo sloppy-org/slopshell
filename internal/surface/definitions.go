@@ -413,6 +413,54 @@ var MCPTools = []Tool{
 		},
 	},
 	{
+		Name:        "calendar_event_create",
+		Description: "Create a Google Calendar event.",
+		Required:    []string{"summary", "start"},
+		Properties: map[string]ToolProperty{
+			"calendar_id": {
+				Type:        "string",
+				Description: "Optional Google Calendar id or name. When omitted, Tabura chooses the best matching calendar.",
+			},
+			"sphere": {
+				Type:        "string",
+				Description: "Optional preferred sphere used when selecting a default calendar.",
+				Enum:        []string{"work", "private"},
+			},
+			"summary": {
+				Type:        "string",
+				Description: "Event title.",
+			},
+			"start": {
+				Type:        "string",
+				Description: "Start time as RFC3339, local YYYY-MM-DDTHH:MM, or YYYY-MM-DD for all-day events.",
+			},
+			"end": {
+				Type:        "string",
+				Description: "Optional end time in the same format as start.",
+			},
+			"duration_minutes": {
+				Type:        "integer",
+				Description: "Optional duration in minutes when end is omitted. Defaults to 60 for timed events.",
+			},
+			"description": {
+				Type:        "string",
+				Description: "Optional event description.",
+			},
+			"location": {
+				Type:        "string",
+				Description: "Optional event location.",
+			},
+			"attendees": {
+				Type:        "array",
+				Description: "Optional attendee email addresses.",
+			},
+			"all_day": {
+				Type:        "boolean",
+				Description: "Create an all-day event. If true and end is omitted, the event spans one day.",
+			},
+		},
+	},
+	{
 		Name:        "mail_account_list",
 		Description: "List enabled email accounts available through Tabura.",
 		Properties: map[string]ToolProperty{
