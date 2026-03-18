@@ -165,7 +165,7 @@ func (a *App) zoteroProjectHintFromTags(tags []string) *string {
 		if err != nil {
 			continue
 		}
-		workspaceID := project.ID
+		workspaceID := projectIDString(project.ID)
 		return &workspaceID
 	}
 	return nil

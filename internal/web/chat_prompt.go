@@ -26,7 +26,7 @@ func (a *App) cwdForWorkspacePath(workspacePath string) string {
 	}
 	if key != "" {
 		if project, err := a.store.GetProjectByWorkspacePath(key); err == nil {
-			if workspaces, workspaceErr := a.store.ListWorkspacesForProject(project.ID); workspaceErr == nil {
+			if workspaces, workspaceErr := a.store.ListWorkspacesForProject(projectIDString(project.ID)); workspaceErr == nil {
 				for _, workspace := range workspaces {
 					if dirPath := strings.TrimSpace(workspace.DirPath); dirPath != "" {
 						return dirPath

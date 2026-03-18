@@ -54,8 +54,8 @@ func TestProjectCompanionTranscriptAPIAndExports(t *testing.T) {
 	if err := json.Unmarshal(rr.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("decode transcript payload: %v", err)
 	}
-	if payload.WorkspaceID != project.ID {
-		t.Fatalf("workspace_id = %q, want %q", payload.WorkspaceID, project.ID)
+	if payload.WorkspaceID != projectIDString(project.ID) {
+		t.Fatalf("workspace_id = %q, want %q", payload.WorkspaceID, projectIDString(project.ID))
 	}
 	if payload.Session == nil || payload.Session.ID != session.ID {
 		t.Fatalf("selected session = %#v, want %q", payload.Session, session.ID)

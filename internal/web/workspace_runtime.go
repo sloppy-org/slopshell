@@ -97,6 +97,10 @@ type projectActivityItem struct {
 	ReviewPending bool            `json:"review_pending"`
 }
 
+func projectIDString(id int64) string {
+	return strconv.FormatInt(id, 10)
+}
+
 func normalizeProjectKindInput(kind, path string) string {
 	cleanKind := strings.ToLower(strings.TrimSpace(kind))
 	switch cleanKind {
@@ -289,11 +293,11 @@ func (a *App) ensureDefaultProjectRecord() (store.Project, error) {
 				mcpURL = strings.TrimSpace(a.localMCPURL)
 			}
 			if strings.TrimSpace(existing.Name) != targetName {
-				_ = a.store.UpdateProjectLocation(existing.ID, targetName, existing.WorkspacePath, existing.RootPath, existing.Kind)
+				_ = a.store.UpdateProjectLocation(projectIDString(existing.ID), targetName, existing.WorkspacePath, existing.RootPath, existing.Kind)
 			}
 			if canvasID != strings.TrimSpace(existing.CanvasSessionID) || mcpURL != strings.TrimSpace(existing.MCPURL) || strings.TrimSpace(existing.Name) != targetName {
-				_ = a.store.UpdateProjectRuntime(existing.ID, mcpURL, canvasID)
-				if refreshed, refreshErr := a.store.GetProject(existing.ID); refreshErr == nil {
+				_ = a.store.UpdateProjectRuntime(projectIDString(existing.ID), mcpURL, canvasID)
+				if refreshed, refreshErr := a.store.GetProject(projectIDString(existing.ID)); refreshErr == nil {
 					existing = refreshed
 				}
 			}
@@ -314,8 +318,8 @@ func (a *App) ensureDefaultProjectRecord() (store.Project, error) {
 		}
 		canvasID := a.canvasSessionIDForProject(project)
 		if canvasID != strings.TrimSpace(project.CanvasSessionID) {
-			if err := a.store.UpdateProjectRuntime(project.ID, strings.TrimSpace(project.MCPURL), canvasID); err == nil {
-				if refreshed, refreshErr := a.store.GetProject(project.ID); refreshErr == nil {
+			if err := a.store.UpdateProjectRuntime(projectIDString(project.ID), strings.TrimSpace(project.MCPURL), canvasID); err == nil {
+				if refreshed, refreshErr := a.store.GetProject(projectIDString(project.ID)); refreshErr == nil {
 					project = refreshed
 				}
 			}
@@ -351,8 +355,8 @@ func (a *App) ensureDefaultProjectRecord() (store.Project, error) {
 	if existing, err := a.store.GetProjectByWorkspacePath(workspacePath); err == nil {
 		targetName := defaultProjectNameForPath(absRoot)
 		if strings.TrimSpace(existing.Name) != targetName {
-			_ = a.store.UpdateProjectLocation(existing.ID, targetName, existing.WorkspacePath, existing.RootPath, existing.Kind)
-			if refreshed, refreshErr := a.store.GetProject(existing.ID); refreshErr == nil {
+			_ = a.store.UpdateProjectLocation(projectIDString(existing.ID), targetName, existing.WorkspacePath, existing.RootPath, existing.Kind)
+			if refreshed, refreshErr := a.store.GetProject(projectIDString(existing.ID)); refreshErr == nil {
 				existing = refreshed
 			}
 		}
@@ -363,8 +367,8 @@ func (a *App) ensureDefaultProjectRecord() (store.Project, error) {
 	if existing, err := a.store.GetProjectByRootPath(absRoot); err == nil {
 		targetName := defaultProjectNameForPath(absRoot)
 		if strings.TrimSpace(existing.Name) != targetName {
-			_ = a.store.UpdateProjectLocation(existing.ID, targetName, existing.WorkspacePath, existing.RootPath, existing.Kind)
-			if refreshed, refreshErr := a.store.GetProject(existing.ID); refreshErr == nil {
+			_ = a.store.UpdateProjectLocation(projectIDString(existing.ID), targetName, existing.WorkspacePath, existing.RootPath, existing.Kind)
+			if refreshed, refreshErr := a.store.GetProject(projectIDString(existing.ID)); refreshErr == nil {
 				existing = refreshed
 			}
 		}
@@ -391,17 +395,16 @@ func (a *App) ensureDefaultProjectRecord() (store.Project, error) {
 		return store.Project{}, err
 	}
 	if _, activeErr := a.store.ActiveWorkspace(); isNoRows(activeErr) {
-		if err := a.store.SetActiveWorkspaceID(created.ID); err != nil {
+		if err := a.store.SetActiveWorkspaceID(projectIDString(created.ID)); err != nil {
 			return store.Project{}, err
 		}
-		workspaceID, parseErr := strconv.ParseInt(strings.TrimSpace(created.ID), 10, 64)
-		if parseErr != nil || workspaceID <= 0 {
-			return store.Project{}, parseErr
+		if created.ID <= 0 {
+			return store.Project{}, errors.New("invalid workspace id")
 		}
-		if err := a.store.SetActiveWorkspace(workspaceID); err != nil {
+		if err := a.store.SetActiveWorkspace(created.ID); err != nil {
 			return store.Project{}, err
 		}
-		created, err = a.store.GetProject(created.ID)
+		created, err = a.store.GetProject(projectIDString(created.ID))
 		if err != nil {
 			return store.Project{}, err
 		}
@@ -426,7 +429,7 @@ func (a *App) listProjectsWithDefault() ([]store.Project, store.Project, error) 
 			break
 		}
 	}
-	if strings.TrimSpace(defaultProject.ID) == "" {
+	if defaultProject.ID == 0 {
 		defaultProject = projects[0]
 	}
 	return projects, defaultProject, nil
@@ -445,8 +448,8 @@ func (a *App) chooseActiveProject(projects []store.Project, defaultProject store
 			activeSphere = cleanSphere
 		}
 		for _, project := range projects {
-			if project.ID == fmt.Sprintf("%d", workspace.ID) {
-				if err := a.store.SetActiveWorkspaceID(project.ID); err != nil {
+			if project.ID == workspace.ID {
+				if err := a.store.SetActiveWorkspaceID(projectIDString(project.ID)); err != nil {
 					return store.Project{}, err
 				}
 				return project, nil
@@ -461,7 +464,7 @@ func (a *App) chooseActiveProject(projects []store.Project, defaultProject store
 	}
 	if activeID != "" {
 		for _, project := range projects {
-			if project.ID != activeID {
+			if projectIDString(project.ID) != activeID {
 				continue
 			}
 			rank, err := a.projectSelectionRank(project, activeSphere)
@@ -493,10 +496,10 @@ func (a *App) chooseActiveProject(projects []store.Project, defaultProject store
 	fallback := defaultProject
 	if bestIndex >= 0 {
 		fallback = projects[bestIndex]
-	} else if strings.TrimSpace(fallback.ID) == "" {
+	} else if fallback.ID == 0 {
 		fallback = projects[0]
 	}
-	if err := a.store.SetActiveWorkspaceID(fallback.ID); err != nil {
+	if err := a.store.SetActiveWorkspaceID(projectIDString(fallback.ID)); err != nil {
 		return store.Project{}, err
 	}
 	return fallback, nil
@@ -531,8 +534,8 @@ func (a *App) handleProjectsList(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, map[string]interface{}{
 		"ok":                   true,
-		"default_workspace_id": defaultProject.ID,
-		"active_workspace_id":  activeProject.ID,
+		"default_workspace_id": projectIDString(defaultProject.ID),
+		"active_workspace_id":  projectIDString(activeProject.ID),
 		"workspaces":           items,
 	})
 }

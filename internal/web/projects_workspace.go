@@ -11,7 +11,7 @@ import (
 
 func (a *App) workspaceForProject(project store.Project) (*store.Workspace, error) {
 	rootPath := filepath.Clean(strings.TrimSpace(project.RootPath))
-	workspaces, err := a.store.ListWorkspacesForProject(project.ID)
+	workspaces, err := a.store.ListWorkspacesForProject(projectIDString(project.ID))
 	if err != nil {
 		return nil, err
 	}
@@ -103,7 +103,7 @@ func (a *App) ensureStartupProjectWithWorkspace() error {
 			}
 			a.closeAllAppSessions()
 		}
-		if err := a.store.SetActiveWorkspaceID(project.ID); err != nil {
+		if err := a.store.SetActiveWorkspaceID(projectIDString(project.ID)); err != nil {
 			return err
 		}
 		return nil

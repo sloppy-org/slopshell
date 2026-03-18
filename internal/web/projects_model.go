@@ -28,7 +28,7 @@ func (a *App) canvasSessionIDForProject(project store.Project) string {
 	if project.IsDefault {
 		return LocalSessionID
 	}
-	return project.ID
+	return projectIDString(project.ID)
 }
 
 func (a *App) buildProjectAPIModel(project store.Project) (projectAPIModel, error) {
@@ -44,7 +44,7 @@ func (a *App) buildProjectAPIModel(project store.Project) (projectAPIModel, erro
 	effort := strings.TrimSpace(modelprofile.NormalizeReasoningEffort(alias, project.ChatModelReasoningEffort))
 	unread, reviewPending := a.projectUnreadState(project, session)
 	return projectAPIModel{
-		ID:                       project.ID,
+		ID:                       projectIDString(project.ID),
 		Name:                     project.Name,
 		Kind:                     project.Kind,
 		RootPath:                 project.RootPath,
@@ -106,7 +106,7 @@ func (a *App) buildProjectActivityItem(project store.Project) (projectActivityIt
 	}
 	unread, reviewPending := a.projectUnreadState(project, session)
 	return projectActivityItem{
-		WorkspaceID:   project.ID,
+		WorkspaceID:   projectIDString(project.ID),
 		WorkspacePath: project.WorkspacePath,
 		Name:          project.Name,
 		Kind:          project.Kind,
@@ -120,21 +120,24 @@ func (a *App) buildProjectActivityItem(project store.Project) (projectActivityIt
 
 func (a *App) projectUnreadState(project store.Project, session store.ChatSession) (bool, bool) {
 	lastSeenAt, lastCanvasChangeAt, lastReviewSubmitAt := a.projectAttention.snapshot(project.WorkspacePath)
-	dbSeenAt := project.LastOpenedAt * int64(time.Second)
+	var dbSeenAt int64
+	if t, err := time.Parse("2006-01-02 15:04:05", project.UpdatedAt); err == nil {
+		dbSeenAt = t.UnixNano()
+	}
 	if lastSeenAt < dbSeenAt {
 		lastSeenAt = dbSeenAt
 	}
 	reviewPending := strings.EqualFold(session.Mode, "review") && lastCanvasChangeAt > lastReviewSubmitAt
 	unread := lastCanvasChangeAt > lastSeenAt || reviewPending
 	activeWorkspaceID, err := a.store.ActiveWorkspaceID()
-	if err == nil && strings.TrimSpace(activeWorkspaceID) == project.ID && !reviewPending {
+	if err == nil && strings.TrimSpace(activeWorkspaceID) == projectIDString(project.ID) && !reviewPending {
 		unread = false
 	}
 	return unread, reviewPending
 }
 
 func (a *App) markProjectSeen(project store.Project) error {
-	if err := a.store.TouchProject(project.ID); err != nil {
+	if err := a.store.TouchProject(projectIDString(project.ID)); err != nil {
 		return err
 	}
 	a.projectAttention.markSeen(project.WorkspacePath, time.Now().UnixNano())
@@ -143,7 +146,7 @@ func (a *App) markProjectSeen(project store.Project) error {
 
 func (a *App) markProjectReviewSubmitted(project store.Project) error {
 	now := time.Now().UnixNano()
-	if err := a.store.TouchProject(project.ID); err != nil {
+	if err := a.store.TouchProject(projectIDString(project.ID)); err != nil {
 		return err
 	}
 	a.projectAttention.markSeen(project.WorkspacePath, now)
@@ -163,7 +166,7 @@ func (a *App) markProjectOutput(workspacePath string) {
 		return
 	}
 	activeWorkspaceID, err := a.store.ActiveWorkspaceID()
-	if err != nil || strings.TrimSpace(activeWorkspaceID) != project.ID {
+	if err != nil || strings.TrimSpace(activeWorkspaceID) != projectIDString(project.ID) {
 		return
 	}
 	session, err := a.store.GetOrCreateChatSession(project.WorkspacePath)
@@ -280,7 +283,7 @@ func (a *App) activateProject(workspaceID string) (store.Project, error) {
 	if err := a.ensureProjectCanvasReady(project); err != nil {
 		return store.Project{}, err
 	}
-	if err := a.store.SetActiveWorkspaceID(project.ID); err != nil {
+	if err := a.store.SetActiveWorkspaceID(projectIDString(project.ID)); err != nil {
 		return store.Project{}, err
 	}
 	if _, err := a.ensureWorkspaceForProject(project, true); err != nil {
@@ -292,7 +295,7 @@ func (a *App) activateProject(workspaceID string) (store.Project, error) {
 	if _, _, err := a.syncTimeTrackingContext("project_switch"); err != nil {
 		return store.Project{}, err
 	}
-	return a.store.GetProject(project.ID)
+	return a.store.GetProject(projectIDString(project.ID))
 }
 
 func (a *App) handleProjectActivate(w http.ResponseWriter, r *http.Request) {
@@ -320,7 +323,7 @@ func (a *App) handleProjectActivate(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, map[string]interface{}{
 		"ok":                  true,
-		"active_workspace_id": project.ID,
+		"active_workspace_id": projectIDString(project.ID),
 		"active_sphere":       a.runtimeActiveSphere(),
 		"workspace":           item,
 		"project":             item,
@@ -350,14 +353,14 @@ func (a *App) updateProjectChatModel(workspaceID, rawModel, rawReasoningEffort s
 	if reasoningEffort == "" {
 		reasoningEffort = strings.TrimSpace(modelprofile.MainThreadReasoningEffort(modelAlias))
 	}
-	if err := a.store.UpdateProjectChatModel(project.ID, modelAlias); err != nil {
+	if err := a.store.UpdateProjectChatModel(projectIDString(project.ID), modelAlias); err != nil {
 		return store.Project{}, err
 	}
-	if err := a.store.UpdateProjectChatModelReasoningEffort(project.ID, reasoningEffort); err != nil {
+	if err := a.store.UpdateProjectChatModelReasoningEffort(projectIDString(project.ID), reasoningEffort); err != nil {
 		return store.Project{}, err
 	}
 	_ = a.store.SetAppState(appStateDefaultChatModelKey, modelAlias)
-	updated, err := a.store.GetProject(project.ID)
+	updated, err := a.store.GetProject(projectIDString(project.ID))
 	if err != nil {
 		return store.Project{}, err
 	}
@@ -459,7 +462,7 @@ func (a *App) handleProjectContext(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	project, err = a.activateProject(project.ID)
+	project, err = a.activateProject(projectIDString(project.ID))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -471,7 +474,7 @@ func (a *App) handleProjectContext(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, map[string]interface{}{
 		"ok":                  true,
-		"active_workspace_id": project.ID,
+		"active_workspace_id": projectIDString(project.ID),
 		"workspace":           item,
 		"project":             item,
 	})

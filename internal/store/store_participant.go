@@ -74,7 +74,6 @@ func scanParticipantSession(scanner interface{ Scan(...any) error }) (Participan
 		return ParticipantSession{}, err
 	}
 	out.WorkspacePath = strings.TrimSpace(out.WorkspacePath)
-	out.WorkspacePath = out.WorkspacePath
 	out.ConfigJSON = strings.TrimSpace(out.ConfigJSON)
 	return out, nil
 }
@@ -99,12 +98,8 @@ func (s *Store) resolveParticipantSessionWorkspace(ref string) (Workspace, error
 	} else if workspaceID != nil {
 		return s.GetWorkspace(*workspaceID)
 	}
-	if project, err := s.GetProjectByWorkspacePath(cleanRef); err == nil {
-		workspaceID, parseErr := parseWorkspaceIDString(project.ID)
-		if parseErr != nil {
-			return Workspace{}, parseErr
-		}
-		return s.GetWorkspace(workspaceID)
+	if workspace, err := s.GetProjectByWorkspacePath(cleanRef); err == nil {
+		return workspace, nil
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return Workspace{}, err
 	}

@@ -181,10 +181,10 @@ func (a *App) createProject(req projectCreateRequest) (store.Project, bool, erro
 		return store.Project{}, false, err
 	}
 	if hasSource {
-		if err := a.inheritProjectSettings(created.ID, sourceProject); err != nil {
+		if err := a.inheritProjectSettings(projectIDString(created.ID), sourceProject); err != nil {
 			return store.Project{}, false, err
 		}
-		refreshed, refreshErr := a.store.GetProject(created.ID)
+		refreshed, refreshErr := a.store.GetProject(projectIDString(created.ID))
 		if refreshErr != nil {
 			return store.Project{}, false, refreshErr
 		}
@@ -288,10 +288,10 @@ func (a *App) persistTemporaryProject(workspaceID string, req temporaryProjectPe
 	if _, err := a.store.UpdateWorkspaceLocation(workspace.ID, targetName, targetPath); err != nil {
 		return store.Project{}, err
 	}
-	if err := a.store.UpdateProjectLocation(project.ID, targetName, targetPath, targetPath, "managed"); err != nil {
+	if err := a.store.UpdateProjectLocation(projectIDString(project.ID), targetName, targetPath, targetPath, "managed"); err != nil {
 		return store.Project{}, err
 	}
-	return a.activateProject(project.ID)
+	return a.activateProject(projectIDString(project.ID))
 }
 
 func (a *App) temporaryProjectDiscardRoot(project store.Project) string {
@@ -305,7 +305,7 @@ func (a *App) temporaryProjectDiscardRoot(project store.Project) string {
 
 func (a *App) fallbackProjectAfterDiscard(discardedWorkspaceID string) (store.Project, error) {
 	defaultProject, err := a.ensureDefaultProjectRecord()
-	if err == nil && defaultProject.ID != strings.TrimSpace(discardedWorkspaceID) {
+	if err == nil && projectIDString(defaultProject.ID) != strings.TrimSpace(discardedWorkspaceID) {
 		return defaultProject, nil
 	}
 	projects, err := a.store.ListProjects()
@@ -313,7 +313,7 @@ func (a *App) fallbackProjectAfterDiscard(discardedWorkspaceID string) (store.Pr
 		return store.Project{}, err
 	}
 	for _, project := range projects {
-		if project.ID != strings.TrimSpace(discardedWorkspaceID) {
+		if projectIDString(project.ID) != strings.TrimSpace(discardedWorkspaceID) {
 			return project, nil
 		}
 	}
@@ -328,7 +328,7 @@ func (a *App) discardTemporaryProject(workspaceID string) (store.Project, error)
 	if !isTemporaryProject(project) {
 		return store.Project{}, errors.New("project is not temporary")
 	}
-	workspaces, err := a.store.ListWorkspacesForProject(project.ID)
+	workspaces, err := a.store.ListWorkspacesForProject(projectIDString(project.ID))
 	if err != nil {
 		return store.Project{}, err
 	}
@@ -347,8 +347,8 @@ func (a *App) discardTemporaryProject(workspaceID string) (store.Project, error)
 		return store.Project{}, workspaceErr
 	}
 	discardRoot := a.temporaryProjectDiscardRoot(project)
-	fallback, fallbackErr := a.fallbackProjectAfterDiscard(project.ID)
-	if err := a.store.DeleteProject(project.ID); err != nil {
+	fallback, fallbackErr := a.fallbackProjectAfterDiscard(projectIDString(project.ID))
+	if err := a.store.DeleteProject(projectIDString(project.ID)); err != nil {
 		return store.Project{}, err
 	}
 	for _, workspace := range workspaces {
@@ -364,7 +364,7 @@ func (a *App) discardTemporaryProject(workspaceID string) (store.Project, error)
 	if fallbackErr != nil {
 		return store.Project{}, fallbackErr
 	}
-	return a.activateProject(fallback.ID)
+	return a.activateProject(projectIDString(fallback.ID))
 }
 
 func (a *App) handleProjectCreate(w http.ResponseWriter, r *http.Request) {
@@ -386,7 +386,7 @@ func (a *App) handleProjectCreate(w http.ResponseWriter, r *http.Request) {
 		activate = *req.Activate
 	}
 	if activate {
-		if project, err = a.activateProject(project.ID); err != nil {
+		if project, err = a.activateProject(projectIDString(project.ID)); err != nil {
 			http.Error(w, err.Error(), http.StatusBadGateway)
 			return
 		}
@@ -468,7 +468,7 @@ func (a *App) handleTemporaryProjectDiscard(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, map[string]interface{}{
 		"ok":                  true,
 		"discarded_workspace": workspaceID,
-		"active_workspace_id": activeProject.ID,
+		"active_workspace_id": projectIDString(activeProject.ID),
 		"active_workspace":    item,
 		"active_project":      item,
 	})

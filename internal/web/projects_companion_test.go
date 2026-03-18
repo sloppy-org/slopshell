@@ -111,8 +111,8 @@ func TestProjectCompanionConfigPutAndState(t *testing.T) {
 	if err := json.Unmarshal(rrState.Body.Bytes(), &state); err != nil {
 		t.Fatalf("decode companion state: %v", err)
 	}
-	if state.WorkspaceID != project.ID {
-		t.Fatalf("workspace_id = %q, want %q", state.WorkspaceID, project.ID)
+	if state.WorkspaceID != projectIDString(project.ID) {
+		t.Fatalf("workspace_id = %q, want %q", state.WorkspaceID, projectIDString(project.ID))
 	}
 	if state.WorkspacePath != project.WorkspacePath {
 		t.Fatalf("workspace_path = %q, want %q", state.WorkspacePath, project.WorkspacePath)

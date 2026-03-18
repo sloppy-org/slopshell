@@ -7,7 +7,7 @@ import (
 )
 
 const (
-	maxPolicySummaryLines = 8
+	maxPolicySummaryLines = 14
 	maxTrainingExamples   = 4
 )
 
@@ -51,6 +51,7 @@ func DistillReviewedExamples(reviews []ReviewedExample) DistilledTraining {
 		}
 	}
 	training.PolicySummary = append(training.PolicySummary, overallActionSummary(actionCounts))
+	training.PolicySummary = append(training.PolicySummary, summarizeActionVsCCSemantics(actionCounts)...)
 	training.PolicySummary = append(training.PolicySummary, summarizeFolderActionSemantics(folderKindCounts)...)
 	training.PolicySummary = append(training.PolicySummary, summarizeRules("Folder", collectDominantRules(folderCounts, 3, 0.75), 2)...)
 	training.PolicySummary = append(training.PolicySummary, summarizeRules("Sender", collectDominantRules(senderCounts, 2, 0.85), 3)...)
@@ -64,6 +65,20 @@ func DistillReviewedExamples(reviews []ReviewedExample) DistilledTraining {
 	training.Examples = representativeExamples(clean, maxTrainingExamples)
 	training.Model = trainModel(clean, report.DeterministicRules)
 	return training
+}
+
+func summarizeActionVsCCSemantics(actionCounts map[string]int) []string {
+	lines := []string{}
+	if actionCounts["inbox"] > 0 {
+		lines = append(lines, "Primary decision boundary: inbox means action or deliberate attention is likely required from the user.")
+	}
+	if actionCounts["cc"] > 0 {
+		lines = append(lines, "Primary decision boundary: cc means no action is required from the user, but the message is still worth a skim.")
+	}
+	if actionCounts["archive"] > 0 {
+		lines = append(lines, "Primary decision boundary: archive means no action is required and the message is not worth a skim, but should remain searchable.")
+	}
+	return lines
 }
 
 func normalizeReviewedExamples(reviews []ReviewedExample) []ReviewedExample {

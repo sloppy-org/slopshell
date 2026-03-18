@@ -286,8 +286,8 @@ func TestNewAppPrefersLocalProjectWorkspaceOnStartup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ActiveWorkspaceID() error: %v", err)
 	}
-	if activeWorkspaceID != project.ID {
-		t.Fatalf("active project id = %q, want %q", activeWorkspaceID, project.ID)
+	if activeWorkspaceID != projectIDString(project.ID) {
+		t.Fatalf("active project id = %q, want %q", activeWorkspaceID, projectIDString(project.ID))
 	}
 	workspace, err = app.resolveChatSessionTarget("", nil)
 	if err != nil {
@@ -392,7 +392,7 @@ func TestProjectsListPrefersLastUsedWorkspaceProject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ensureDefaultProjectRecord() error: %v", err)
 	}
-	if err := app.store.SetActiveWorkspaceID(defaultProject.ID); err != nil {
+	if err := app.store.SetActiveWorkspaceID(projectIDString(defaultProject.ID)); err != nil {
 		t.Fatalf("SetActiveWorkspaceID(default) error: %v", err)
 	}
 	if err := app.setActiveWorkspaceTracked(alphaWorkspace.ID, "workspace_switch"); err != nil {
@@ -410,8 +410,8 @@ func TestProjectsListPrefersLastUsedWorkspaceProject(t *testing.T) {
 	if err := json.Unmarshal(rr.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if payload.ActiveWorkspaceID != betaProject.ID {
-		t.Fatalf("active_workspace_id = %q, want %q", payload.ActiveWorkspaceID, betaProject.ID)
+	if payload.ActiveWorkspaceID != projectIDString(betaProject.ID) {
+		t.Fatalf("active_workspace_id = %q, want %q", payload.ActiveWorkspaceID, projectIDString(betaProject.ID))
 	}
 }
 
@@ -527,7 +527,7 @@ func TestCreateChatSessionWithoutSelectionStaysOnActiveWorkspace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateProject() error: %v", err)
 	}
-	if err := app.store.SetActiveWorkspaceID(project.ID); err != nil {
+	if err := app.store.SetActiveWorkspaceID(projectIDString(project.ID)); err != nil {
 		t.Fatalf("SetActiveWorkspaceID() error: %v", err)
 	}
 
@@ -582,7 +582,7 @@ func TestProjectsListRehomesActiveProjectIntoActiveSphere(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateProject(work) error: %v", err)
 	}
-	if err := app.store.SetActiveWorkspaceID(workProject.ID); err != nil {
+	if err := app.store.SetActiveWorkspaceID(projectIDString(workProject.ID)); err != nil {
 		t.Fatalf("SetActiveWorkspaceID(work) error: %v", err)
 	}
 	if err := app.store.SetActiveSphere(store.SpherePrivate); err != nil {
@@ -597,15 +597,15 @@ func TestProjectsListRehomesActiveProjectIntoActiveSphere(t *testing.T) {
 	if err := json.Unmarshal(rr.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if payload.ActiveWorkspaceID != privateProject.ID {
-		t.Fatalf("active_workspace_id = %q, want %q", payload.ActiveWorkspaceID, privateProject.ID)
+	if payload.ActiveWorkspaceID != projectIDString(privateProject.ID) {
+		t.Fatalf("active_workspace_id = %q, want %q", payload.ActiveWorkspaceID, projectIDString(privateProject.ID))
 	}
 	activeWorkspaceID, err := app.store.ActiveWorkspaceID()
 	if err != nil {
 		t.Fatalf("ActiveWorkspaceID() error: %v", err)
 	}
-	if activeWorkspaceID != privateProject.ID {
-		t.Fatalf("stored active project = %q, want %q", activeWorkspaceID, privateProject.ID)
+	if activeWorkspaceID != projectIDString(privateProject.ID) {
+		t.Fatalf("stored active workspace = %q, want %q", activeWorkspaceID, projectIDString(privateProject.ID))
 	}
 }
 
@@ -635,7 +635,7 @@ func TestProjectActivateUpdatesActiveSphere(t *testing.T) {
 		t,
 		app.Router(),
 		http.MethodPost,
-		"/api/runtime/workspaces/"+project.ID+"/activate",
+		"/api/runtime/workspaces/"+projectIDString(project.ID)+"/activate",
 		map[string]any{},
 	)
 	if rr.Code != http.StatusOK {
@@ -652,7 +652,7 @@ func TestProjectActivateUpdatesActiveSphere(t *testing.T) {
 	if !payload.OK {
 		t.Fatal("expected ok=true")
 	}
-	if payload.ActiveWorkspaceID != project.ID {
+	if payload.ActiveWorkspaceID != projectIDString(project.ID) {
 		t.Fatalf("active_workspace_id = %q, want %q", payload.ActiveWorkspaceID, project.ID)
 	}
 	if payload.ActiveSphere != store.SphereWork {
@@ -796,7 +796,7 @@ func TestProjectsListMatchesStoredProjects(t *testing.T) {
 	}
 	storedByID := make(map[string]store.Project, len(storedProjects))
 	for _, project := range storedProjects {
-		storedByID[project.ID] = project
+		storedByID[projectIDString(project.ID)] = project
 	}
 	for _, project := range payload.Projects {
 		stored, ok := storedByID[project.ID]
@@ -833,7 +833,7 @@ func TestProjectsListIncludesRunState(t *testing.T) {
 		t.Fatalf("decode response: %v", err)
 	}
 	for _, item := range payload.Projects {
-		if item.ID != project.ID {
+		if item.ID != projectIDString(project.ID) {
 			continue
 		}
 		if item.RunState.ActiveTurns != 1 {
@@ -843,7 +843,7 @@ func TestProjectsListIncludesRunState(t *testing.T) {
 			t.Fatalf("queued_turns = %d, want 2", item.RunState.QueuedTurns)
 		}
 		if !item.RunState.IsWorking {
-			t.Fatalf("expected project to be working")
+			t.Fatalf("expected workspace to be working")
 		}
 		if item.RunState.Status != "running" {
 			t.Fatalf("status = %q, want running", item.RunState.Status)
@@ -853,7 +853,7 @@ func TestProjectsListIncludesRunState(t *testing.T) {
 		}
 		return
 	}
-	t.Fatalf("expected project %q in list response", project.ID)
+	t.Fatalf("expected workspace %d in list response", project.ID)
 }
 
 func TestProjectsActivityListsPerProjectRunState(t *testing.T) {
@@ -879,7 +879,7 @@ func TestProjectsActivityListsPerProjectRunState(t *testing.T) {
 		t.Fatalf("decode activity response: %v", err)
 	}
 	for _, item := range payload.Projects {
-		if item.WorkspaceID != project.ID {
+		if item.WorkspaceID != projectIDString(project.ID) {
 			continue
 		}
 		if item.ChatSessionID != session.ID {
@@ -892,14 +892,14 @@ func TestProjectsActivityListsPerProjectRunState(t *testing.T) {
 			t.Fatalf("queued_turns = %d, want 3", item.RunState.QueuedTurns)
 		}
 		if !item.RunState.IsWorking {
-			t.Fatalf("expected project to be working")
+			t.Fatalf("expected workspace to be working")
 		}
 		if item.RunState.Status != "queued" {
 			t.Fatalf("status = %q, want queued", item.RunState.Status)
 		}
 		return
 	}
-	t.Fatalf("expected project %q in activity response", project.ID)
+	t.Fatalf("expected workspace %d in activity response", project.ID)
 }
 
 func TestProjectsActivityUnreadClearsOnActivate(t *testing.T) {
@@ -946,7 +946,7 @@ func TestProjectsActivityUnreadClearsOnActivate(t *testing.T) {
 	initial := findActivity()
 	foundUnread := false
 	for _, item := range initial.Projects {
-		if item.WorkspaceID != project.ID {
+		if item.WorkspaceID != projectIDString(project.ID) {
 			continue
 		}
 		foundUnread = true
@@ -965,7 +965,7 @@ func TestProjectsActivityUnreadClearsOnActivate(t *testing.T) {
 		t,
 		app.Router(),
 		http.MethodPost,
-		"/api/runtime/workspaces/"+project.ID+"/activate",
+		"/api/runtime/workspaces/"+projectIDString(project.ID)+"/activate",
 		map[string]any{},
 	)
 	if rrActivate.Code != http.StatusOK {
@@ -974,7 +974,7 @@ func TestProjectsActivityUnreadClearsOnActivate(t *testing.T) {
 
 	afterActivate := findActivity()
 	for _, item := range afterActivate.Projects {
-		if item.WorkspaceID != project.ID {
+		if item.WorkspaceID != projectIDString(project.ID) {
 			continue
 		}
 		if item.Unread {
@@ -985,7 +985,7 @@ func TestProjectsActivityUnreadClearsOnActivate(t *testing.T) {
 		}
 		return
 	}
-	t.Fatalf("expected project %q in activity response after activation", project.ID)
+	t.Fatalf("expected workspace %d in activity response after activation", project.ID)
 }
 
 func TestProjectChatModelUpdateAllowsDefaultProject(t *testing.T) {
@@ -999,7 +999,7 @@ func TestProjectChatModelUpdateAllowsDefaultProject(t *testing.T) {
 		t,
 		app.Router(),
 		http.MethodPost,
-		"/api/runtime/workspaces/"+project.ID+"/chat-model",
+		"/api/runtime/workspaces/"+projectIDString(project.ID)+"/chat-model",
 		map[string]any{"model": "gpt"},
 	)
 	if rr.Code != http.StatusBadRequest {
@@ -1207,13 +1207,13 @@ func TestTemporaryProjectCreationCopiesSourceSettingsAndPersist(t *testing.T) {
 	if err != nil {
 		t.Fatalf("default project: %v", err)
 	}
-	if err := app.store.UpdateProjectChatModel(source.ID, "gpt"); err != nil {
+	if err := app.store.UpdateProjectChatModel(projectIDString(source.ID), "gpt"); err != nil {
 		t.Fatalf("UpdateProjectChatModel() error: %v", err)
 	}
-	if err := app.store.UpdateProjectChatModelReasoningEffort(source.ID, "xhigh"); err != nil {
+	if err := app.store.UpdateProjectChatModelReasoningEffort(projectIDString(source.ID), "xhigh"); err != nil {
 		t.Fatalf("UpdateProjectChatModelReasoningEffort() error: %v", err)
 	}
-	if err := app.store.UpdateProjectCompanionConfig(source.ID, `{"companion_enabled":true,"idle_surface":"black"}`); err != nil {
+	if err := app.store.UpdateProjectCompanionConfig(projectIDString(source.ID), `{"companion_enabled":true,"idle_surface":"black"}`); err != nil {
 		t.Fatalf("UpdateProjectCompanionConfig() error: %v", err)
 	}
 
@@ -1436,8 +1436,8 @@ func TestTemporaryProjectDiscardRemovesProjectDataAndFallsBackToDefaultProject(t
 	if !discardPayload.OK {
 		t.Fatalf("expected discard ok=true")
 	}
-	if discardPayload.ActiveWorkspaceID != defaultProject.ID {
-		t.Fatalf("active_workspace_id = %q, want %q", discardPayload.ActiveWorkspaceID, defaultProject.ID)
+	if discardPayload.ActiveWorkspaceID != projectIDString(defaultProject.ID) {
+		t.Fatalf("active_workspace_id = %q, want %q", discardPayload.ActiveWorkspaceID, projectIDString(defaultProject.ID))
 	}
 	if discardPayload.ActiveProject.Kind != defaultProject.Kind {
 		t.Fatalf("active project kind = %q, want %q", discardPayload.ActiveProject.Kind, defaultProject.Kind)

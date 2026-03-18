@@ -427,10 +427,10 @@ func (a *App) persistMailDraft(project store.Project, account store.ExternalAcco
 	if err != nil {
 		return mailDraftPayload{}, err
 	}
-	workspaceID, err := strconv.ParseInt(strings.TrimSpace(project.ID), 10, 64)
-	if err != nil || workspaceID <= 0 {
+	if project.ID <= 0 {
 		return mailDraftPayload{}, errors.New("workspace id is invalid")
 	}
+	workspaceID := project.ID
 	source := account.Provider
 	sourceRef := strings.TrimSpace(remote.ID)
 	item, err := a.store.CreateItem(title, store.ItemOptions{

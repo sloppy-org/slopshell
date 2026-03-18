@@ -185,9 +185,9 @@ func TestMailDraftReplyAPI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateArtifact() error: %v", err)
 	}
-	workspaceID, err := strconv.ParseInt(project.ID, 10, 64)
-	if err != nil || workspaceID <= 0 {
-		t.Fatalf("invalid workspace id %q", project.ID)
+	workspaceID := project.ID
+	if workspaceID <= 0 {
+		t.Fatalf("invalid workspace id %d", project.ID)
 	}
 	source := store.ExternalProviderGmail
 	sourceRef := "remote-1"
@@ -646,7 +646,7 @@ func mustCreateProject(t *testing.T, app *App) store.Project {
 	if err != nil {
 		t.Fatalf("CreateProject() error: %v", err)
 	}
-	if err := app.store.SetActiveWorkspaceID(project.ID); err != nil {
+	if err := app.store.SetActiveWorkspaceID(projectIDString(project.ID)); err != nil {
 		t.Fatalf("SetActiveWorkspaceID() error: %v", err)
 	}
 	return project

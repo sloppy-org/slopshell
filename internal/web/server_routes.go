@@ -62,6 +62,8 @@ func (a *App) Router() http.Handler {
 	r.Get("/api/mail/drafts/{artifact_id}", a.handleMailDraftGet)
 	r.Put("/api/mail/drafts/{artifact_id}", a.handleMailDraftUpdate)
 	r.Post("/api/mail/drafts/{artifact_id}/send", a.handleMailDraftSend)
+	r.Post("/api/mail/drafts/{artifact_id}/polish", a.handleMailDraftPolish)
+	r.Post("/api/text/polish", a.handleTextPolish)
 	r.Get("/api/external-accounts/{account_id}/mail/labels", a.handleMailLabelList)
 	r.Get("/api/external-accounts/{account_id}/mail/messages", a.handleMailMessageList)
 	r.Get("/api/external-accounts/{account_id}/mail/messages/{message_id}", a.handleMailMessageGet)

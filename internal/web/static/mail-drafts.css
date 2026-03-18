@@ -277,6 +277,21 @@
   }
 }
 
+.mail-draft-body.polishing {
+  border-color: var(--accent-dim, #94a3b8);
+  animation: polish-pulse 1.2s ease-in-out infinite;
+}
+
+.mail-draft-body.polished {
+  transition: background-color 0.3s ease;
+  background-color: rgba(16, 185, 129, 0.06);
+}
+
+@keyframes polish-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.85; }
+}
+
 @media (max-width: 760px) {
   .mail-draft-header {
     flex-direction: column;

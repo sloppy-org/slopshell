@@ -203,7 +203,7 @@ func meetingPayloadProject(workspace store.Workspace, project *store.Project) (s
 	workspaceID := ""
 	workspacePath := strings.TrimSpace(workspace.DirPath)
 	if project != nil {
-		workspaceID = project.ID
+		workspaceID = projectIDString(project.ID)
 		workspacePath = strings.TrimSpace(project.WorkspacePath)
 	}
 	return workspaceID, workspacePath

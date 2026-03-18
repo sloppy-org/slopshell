@@ -524,7 +524,7 @@ func TestPrivacyParticipantConfigNeverStoresAudioPersistence(t *testing.T) {
 		t.Fatalf("save config: %v", err)
 	}
 
-	reloadedProject, err := app.store.GetProject(project.ID)
+	reloadedProject, err := app.store.GetProject(projectIDString(project.ID))
 	if err != nil {
 		t.Fatalf("GetProject: %v", err)
 	}

@@ -600,7 +600,7 @@ func (a *App) handleWorkspaceCompanionTranscript(w http.ResponseWriter, r *http.
 	workspaceID := ""
 	workspacePath := a.companionKeyForWorkspace(workspace)
 	if project != nil {
-		workspaceID = project.ID
+		workspaceID = projectIDString(project.ID)
 	}
 	query := strings.TrimSpace(r.URL.Query().Get("q"))
 	fromTS, toTS := parseProjectTranscriptWindow(r)
@@ -643,7 +643,7 @@ func (a *App) handleWorkspaceCompanionSummary(w http.ResponseWriter, r *http.Req
 	workspaceID := ""
 	workspacePath := a.companionKeyForWorkspace(workspace)
 	if project != nil {
-		workspaceID = project.ID
+		workspaceID = projectIDString(project.ID)
 	}
 	summaryText := ""
 	updatedAt := int64(0)
@@ -688,7 +688,7 @@ func (a *App) handleWorkspaceCompanionReferences(w http.ResponseWriter, r *http.
 	workspaceID := ""
 	workspacePath := a.companionKeyForWorkspace(workspace)
 	if project != nil {
-		workspaceID = project.ID
+		workspaceID = projectIDString(project.ID)
 	}
 	entities := []string{}
 	topics := []any{}

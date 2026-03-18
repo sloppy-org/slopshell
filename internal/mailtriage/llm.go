@@ -23,6 +23,8 @@ Semantics:
 - trash: clearly useless, spam, or safe to discard.
 
 Rules:
+- Decide inbox vs cc by answering this first: does the email likely require action, follow-up, or deliberate attention from the user? If yes, prefer inbox.
+- If no action is required from the user, prefer cc over inbox when the message is still worth a skim.
 - When unsure between inbox and anything else, choose inbox.
 - When unsure between archive and trash, choose archive.
 - Use archive_label only for clear project/reference buckets.
@@ -31,6 +33,7 @@ Rules:
 - Treat folder-aware manual-review policy as authoritative when it is provided.
 - In particular: trash reviewed from junk means confirmed spam/junk; trash reviewed from inbox means discardable but not necessarily spam.
 - Prefer inbox for direct human mail from collaborators, admins, or teaching/research contacts when action or attention may still be needed.
+- For inbox vs cc, action-needed matters more than sender prestige or generic importance.
 - Prefer cc instead of archive for newsletters, webinars, and FYI list traffic that is worth a skimmed read.
 - Prefer archive instead of cc when the mail should be kept only as reference and does not merit a skimmed read.
 - If a message is already in junk/spam but is still research-adjacent (for example journals, conferences, plasma physics, acoustics, machine learning, physics), prefer archive over trash unless it is obviously scammy.

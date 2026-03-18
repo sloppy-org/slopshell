@@ -22,7 +22,7 @@ func TestTimeEntriesTrackProjectWorkspaceAndSphereSwitches(t *testing.T) {
 		t.Fatalf("CreateWorkspace() error: %v", err)
 	}
 
-	rrProject := doAuthedJSONRequest(t, app.Router(), http.MethodPost, "/api/runtime/workspaces/"+project.ID+"/activate", nil)
+	rrProject := doAuthedJSONRequest(t, app.Router(), http.MethodPost, "/api/runtime/workspaces/"+projectIDString(project.ID)+"/activate", nil)
 	if rrProject.Code != http.StatusOK {
 		t.Fatalf("project activate status = %d, want 200: %s", rrProject.Code, rrProject.Body.String())
 	}

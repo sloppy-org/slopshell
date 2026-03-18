@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"strconv"
 	"testing"
 
 	"github.com/krystophny/tabura/internal/store"
@@ -119,8 +118,8 @@ func TestClassifyAndExecuteSystemActionItemReassignment(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetItem(reassigned project) error: %v", err)
 	}
-	if updatedItem.WorkspaceID == nil || strconv.FormatInt(*updatedItem.WorkspaceID, 10) != taburaProject.ID {
-		t.Fatalf("workspace_id = %v, want %q", updatedItem.WorkspaceID, taburaProject.ID)
+	if updatedItem.WorkspaceID == nil || *updatedItem.WorkspaceID != taburaProject.ID {
+		t.Fatalf("workspace_id = %v, want %d", updatedItem.WorkspaceID, taburaProject.ID)
 	}
 
 	message, _, handled = app.classifyAndExecuteSystemAction(context.Background(), session.ID, session, "remove workspace from this item")

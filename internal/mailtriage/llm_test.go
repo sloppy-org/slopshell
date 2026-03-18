@@ -161,6 +161,9 @@ func TestDefaultSystemPromptSeparatesCCAndArchiveSemantics(t *testing.T) {
 	for _, snippet := range []string{
 		"cc: not inbox-worthy; worth a skimmed read for information if the user has time, and no action is needed.",
 		"archive: not inbox-worthy; keep only for later reference, with no skimmed read expected.",
+		"Decide inbox vs cc by answering this first: does the email likely require action, follow-up, or deliberate attention from the user? If yes, prefer inbox.",
+		"If no action is required from the user, prefer cc over inbox when the message is still worth a skim.",
+		"For inbox vs cc, action-needed matters more than sender prestige or generic importance.",
 		"Prefer cc instead of archive for newsletters, webinars, and FYI list traffic that is worth a skimmed read.",
 		"Prefer archive instead of cc when the mail should be kept only as reference and does not merit a skimmed read.",
 	} {

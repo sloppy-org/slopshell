@@ -33,6 +33,12 @@ func TestDistillReviewedExamplesBuildsBoundedSummary(t *testing.T) {
 	if !strings.Contains(joined, "Manual review distribution: inbox=3, cc=1, archive=1, trash=7") {
 		t.Fatalf("summary missing action distribution: %q", joined)
 	}
+	if !strings.Contains(joined, "Primary decision boundary: inbox means action or deliberate attention is likely required from the user.") {
+		t.Fatalf("summary missing inbox action boundary: %q", joined)
+	}
+	if !strings.Contains(joined, "Primary decision boundary: cc means no action is required from the user, but the message is still worth a skim.") {
+		t.Fatalf("summary missing cc action boundary: %q", joined)
+	}
 	if !strings.Contains(joined, "Semantics: trash reviewed from junk means confirmed junk/spam.") {
 		t.Fatalf("summary missing junk-trash semantics: %q", joined)
 	}

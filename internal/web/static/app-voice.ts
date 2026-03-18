@@ -63,6 +63,8 @@ const isUiReadyForStatus = (...args) => refs.isUiReadyForStatus(...args);
 const syncVoiceLifecycle = (...args) => refs.syncVoiceLifecycle(...args);
 const maybeHandleDictationTranscript = (...args) => refs.maybeHandleDictationTranscript(...args);
 const beginConversationVoiceCapture = (...args) => refs.beginConversationVoiceCapture(...args);
+const isVoiceMailActive = () => Boolean(refs.isVoiceMailActive?.());
+const handleVoiceMailTranscript = (...args) => refs.handleVoiceMailTranscript(...args);
 
 const VOICE_VAD_NO_SPEECH_MS = 4000;
 const VOICE_VAD_MAX_RECORDING_HARD_MS = 240000;
@@ -842,7 +844,12 @@ export async function stopVoiceCaptureAndSend() {
       });
       return;
     }
-    if (await maybeHandleDictationTranscript(transcript)) {
+    if (isVoiceMailActive()) {
+      await handleVoiceMailTranscript(transcript);
+      dialogueTurnController.reset();
+      state.voiceAwaitingTurn = false;
+      setVoiceLifecycle(VOICE_LIFECYCLE.IDLE, 'voice-mail-transcript-finished');
+    } else if (await maybeHandleDictationTranscript(transcript)) {
       dialogueTurnController.reset();
       state.voiceAwaitingTurn = false;
       setVoiceLifecycle(VOICE_LIFECYCLE.IDLE, 'dictation-transcript-finished');

@@ -1,5 +1,6 @@
 import * as env from './app-env.js';
 import * as context from './app-context.js';
+import { mailAuthoringUsesVoice, startVoiceMailMode, onMailDraftBodyTap } from './app-mail-voice.js';
 
 const { apiURL } = env;
 const { refs, state } = context;
@@ -134,36 +135,30 @@ export async function replyToSidebarItem(item) {
   }
 }
 
-function mailAuthoringUsesDictation() {
-  return String(state.interaction?.tool || '').trim().toLowerCase() === 'prompt'
-    && String(state.interaction?.surface || '').trim().toLowerCase() === 'annotate';
-}
-
 function mailReplyArtifactTitle(item) {
   return String(item?.artifact_title || item?.title || '').trim();
 }
 
 export async function launchNewMailAuthoring() {
-  if (!mailAuthoringUsesDictation()) {
+  if (!mailAuthoringUsesVoice()) {
     return createNewMailDraft();
   }
-  return startDictationMode({
-    prompt: 'take a letter',
-    targetKind: 'email_draft',
-    successText: 'email draft dictation ready',
-  });
+  const ok = await createNewMailDraft();
+  if (ok && state.mailDraft?.artifactId > 0) {
+    startVoiceMailMode(state.mailDraft.artifactId);
+  }
+  return ok;
 }
 
 export async function launchReplyAuthoring(item) {
-  if (!mailAuthoringUsesDictation()) {
+  if (!mailAuthoringUsesVoice()) {
     return replyToSidebarItem(item);
   }
-  return startDictationMode({
-    prompt: 'draft a reply',
-    targetKind: 'email_reply',
-    artifactTitle: mailReplyArtifactTitle(item),
-    successText: 'email reply dictation ready',
-  });
+  const ok = await replyToSidebarItem(item);
+  if (ok && state.mailDraft?.artifactId > 0) {
+    startVoiceMailMode(state.mailDraft.artifactId);
+  }
+  return ok;
 }
 
 export async function replyAllToSidebarItem(item) {
@@ -183,15 +178,14 @@ export async function replyAllToSidebarItem(item) {
 }
 
 export async function launchReplyAllAuthoring(item) {
-  if (!mailAuthoringUsesDictation()) {
+  if (!mailAuthoringUsesVoice()) {
     return replyAllToSidebarItem(item);
   }
-  return startDictationMode({
-    prompt: 'draft a reply to all',
-    targetKind: 'email_reply_all',
-    artifactTitle: mailReplyArtifactTitle(item),
-    successText: 'email reply all dictation ready',
-  });
+  const ok = await replyAllToSidebarItem(item);
+  if (ok && state.mailDraft?.artifactId > 0) {
+    startVoiceMailMode(state.mailDraft.artifactId);
+  }
+  return ok;
 }
 
 export async function forwardSidebarItem(item) {
@@ -211,15 +205,14 @@ export async function forwardSidebarItem(item) {
 }
 
 export async function launchForwardAuthoring(item) {
-  if (!mailAuthoringUsesDictation()) {
+  if (!mailAuthoringUsesVoice()) {
     return forwardSidebarItem(item);
   }
-  return startDictationMode({
-    prompt: 'forward this message',
-    targetKind: 'email_forward',
-    artifactTitle: mailReplyArtifactTitle(item),
-    successText: 'email forward dictation ready',
-  });
+  const ok = await forwardSidebarItem(item);
+  if (ok && state.mailDraft?.artifactId > 0) {
+    startVoiceMailMode(state.mailDraft.artifactId);
+  }
+  return ok;
 }
 
 export async function openMailDraftArtifact(artifactID) {
@@ -262,7 +255,7 @@ async function saveActiveMailDraft(options: Record<string, any> = {}) {
   }
 }
 
-function scheduleMailDraftSave() {
+export function scheduleMailDraftSave() {
   clearMailDraftTimer();
   state.mailDraft.saveTimer = window.setTimeout(() => {
     state.mailDraft.saveTimer = null;
@@ -441,6 +434,7 @@ export function renderMailDraftArtifact(root, event) {
   body.value = String(draft?.body || '');
   body.placeholder = 'Write the message here.';
   body.addEventListener('input', scheduleMailDraftSave);
+  body.addEventListener('pointerdown', (ev) => onMailDraftBodyTap(ev));
   bodyRow.appendChild(body);
   letter.appendChild(letterLabel);
   letter.appendChild(bodyRow);

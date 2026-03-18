@@ -194,7 +194,7 @@ func (a *App) handleScanUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	meta := scanArtifactMeta{
 		Status:      "uploaded",
-		WorkspaceID: project.ID,
+		WorkspaceID: projectIDString(project.ID),
 		Summary:     strings.TrimSpace(result.Summary),
 		SummaryPath: summaryPath,
 		ScanPath:    relImagePath,
@@ -228,7 +228,7 @@ func (a *App) handleScanUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeAPIData(w, http.StatusCreated, map[string]any{
-		"workspace_id":  project.ID,
+		"workspace_id":  projectIDString(project.ID),
 		"item_id":       itemIDValue(item),
 		"artifact_id":   artifactIDValue(artifact),
 		"scan_artifact": scanArtifact,
@@ -298,7 +298,7 @@ func (a *App) handleScanConfirm(w http.ResponseWriter, r *http.Request) {
 	}
 	reviewMeta := scanArtifactMeta{
 		Status:           "confirmed",
-		WorkspaceID:      project.ID,
+		WorkspaceID:      projectIDString(project.ID),
 		ItemID:           itemIDValue(item),
 		SourceArtifactID: artifactIDValue(artifact),
 		Summary:          strings.TrimSpace(meta.Summary),
@@ -343,7 +343,7 @@ func (a *App) handleScanConfirm(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeAPIData(w, http.StatusCreated, map[string]any{
-		"workspace_id":     project.ID,
+		"workspace_id":     projectIDString(project.ID),
 		"item_id":          itemIDValue(item),
 		"artifact_id":      artifactIDValue(artifact),
 		"scan_artifact_id": scanArtifact.ID,
@@ -619,7 +619,7 @@ func buildScanUploadSummary(project store.Project, item *store.Item, artifact *s
 	lines := []string{
 		"# Scan Import",
 		"",
-		fmt.Sprintf("- Project: `%s`", project.ID),
+		fmt.Sprintf("- Project: `%s`", projectIDString(project.ID)),
 		fmt.Sprintf("- Scan image: `%s`", imagePath),
 	}
 	if item != nil {
@@ -657,7 +657,7 @@ func buildScanConfirmSummary(project store.Project, item *store.Item, artifact *
 	lines := []string{
 		"# Reviewed Scan Annotations",
 		"",
-		fmt.Sprintf("- Project: `%s`", project.ID),
+		fmt.Sprintf("- Project: `%s`", projectIDString(project.ID)),
 	}
 	if item != nil {
 		lines = append(lines, fmt.Sprintf("- Item: `%s`", item.Title))

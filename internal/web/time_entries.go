@@ -223,7 +223,7 @@ func (a *App) summarizeTimeEntries(filter store.TimeEntryListFilter, groupBy str
 			break
 		}
 	}
-	if strings.TrimSpace(preferred.ID) == "" {
+	if preferred.ID == 0 {
 		activeProjectID, activeErr := a.store.ActiveWorkspaceID()
 		if activeErr == nil && strings.TrimSpace(activeProjectID) != "" {
 			if project, getErr := a.store.GetProject(activeProjectID); getErr == nil {
@@ -231,15 +231,15 @@ func (a *App) summarizeTimeEntries(filter store.TimeEntryListFilter, groupBy str
 			}
 		}
 	}
-	if strings.TrimSpace(preferred.ID) == "" && len(projects) > 0 {
+	if preferred.ID == 0 && len(projects) > 0 {
 		preferred = projects[0]
 	}
-	if strings.TrimSpace(preferred.ID) == "" {
+	if preferred.ID == 0 {
 		return workspaceSummary, nil
 	}
 	rowsByProject := map[string]*store.TimeEntrySummary{}
 	for _, row := range workspaceSummary {
-		key := strings.TrimSpace(preferred.ID)
+		key := projectIDString(preferred.ID)
 		label := strings.TrimSpace(preferred.Name)
 		current := rowsByProject[key]
 		if current == nil {

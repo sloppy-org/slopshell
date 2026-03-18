@@ -34,11 +34,10 @@ func newAuthedTestApp(t *testing.T) *App {
 
 func runtimeWorkspaceIDInt64(t *testing.T, project store.Project) int64 {
 	t.Helper()
-	id, err := strconv.ParseInt(strings.TrimSpace(project.ID), 10, 64)
-	if err != nil || id <= 0 {
-		t.Fatalf("invalid workspace id %q", project.ID)
+	if project.ID <= 0 {
+		t.Fatalf("invalid workspace id %d", project.ID)
 	}
-	return id
+	return project.ID
 }
 
 func runtimeWorkspaceIDInt64FromString(t *testing.T, raw string) int64 {

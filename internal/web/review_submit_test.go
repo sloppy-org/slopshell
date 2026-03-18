@@ -126,7 +126,7 @@ func TestReviewSubmitClearsReviewPendingUnread(t *testing.T) {
 		t.Helper()
 		payload := readActivity()
 		for _, item := range payload.Projects {
-			if item.WorkspaceID != project.ID {
+			if item.WorkspaceID != projectIDString(project.ID) {
 				continue
 			}
 			if item.ChatMode != "review" {
@@ -140,7 +140,7 @@ func TestReviewSubmitClearsReviewPendingUnread(t *testing.T) {
 			}
 			return
 		}
-		t.Fatalf("expected project %q in activity response", project.ID)
+		t.Fatalf("expected project %q in activity response", projectIDString(project.ID))
 	}
 
 	assertState(true, true)
@@ -149,7 +149,7 @@ func TestReviewSubmitClearsReviewPendingUnread(t *testing.T) {
 		t,
 		app.Router(),
 		http.MethodPost,
-		"/api/runtime/workspaces/"+project.ID+"/activate",
+		"/api/runtime/workspaces/"+projectIDString(project.ID)+"/activate",
 		map[string]any{},
 	)
 	if rrActivate.Code != http.StatusOK {

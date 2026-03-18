@@ -213,7 +213,7 @@ func (a *App) handleProjectWelcome(w http.ResponseWriter, r *http.Request) {
 	sections := a.buildProjectWelcomeSections(project)
 	writeJSON(w, projectWelcomeResponse{
 		OK:          true,
-		WorkspaceID: project.ID,
+		WorkspaceID: projectIDString(project.ID),
 		Project:     item,
 		Scope:       "project",
 		Title:       strings.TrimSpace(project.Name),

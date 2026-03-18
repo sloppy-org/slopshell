@@ -146,18 +146,6 @@ func (a *App) loadCompanionConfig(target any) companionConfig {
 		if typed != nil {
 			raw = strings.TrimSpace(typed.CompanionConfigJSON)
 		}
-	case store.Project:
-		workspace, err := a.ensureWorkspaceForProject(typed, false)
-		if err == nil {
-			raw = strings.TrimSpace(workspace.CompanionConfigJSON)
-		}
-	case *store.Project:
-		if typed != nil {
-			workspace, err := a.ensureWorkspaceForProject(*typed, false)
-			if err == nil {
-				raw = strings.TrimSpace(workspace.CompanionConfigJSON)
-			}
-		}
 	}
 	if raw == "" {
 		return cfg
@@ -192,21 +180,6 @@ func (a *App) saveCompanionConfig(target any, cfg companionConfig) error {
 				return 0, err
 			}
 			workspace, err := a.ensureWorkspaceForProject(project, false)
-			if err != nil {
-				return 0, err
-			}
-			return workspace.ID, nil
-		case store.Project:
-			workspace, err := a.ensureWorkspaceForProject(typed, false)
-			if err != nil {
-				return 0, err
-			}
-			return workspace.ID, nil
-		case *store.Project:
-			if typed == nil {
-				return 0, errors.New("project is required")
-			}
-			workspace, err := a.ensureWorkspaceForProject(*typed, false)
 			if err != nil {
 				return 0, err
 			}
@@ -419,7 +392,7 @@ func (a *App) handleWorkspaceCompanionState(w http.ResponseWriter, r *http.Reque
 	companionKey := a.companionKeyForWorkspace(workspace)
 	workspaceID := ""
 	if project != nil {
-		workspaceID = project.ID
+		workspaceID = projectIDString(project.ID)
 	}
 	runtime := a.currentCompanionRuntimeState(companionKey, cfg)
 	gate := a.loadCompanionDirectedSpeechGate(cfg, gateSession)

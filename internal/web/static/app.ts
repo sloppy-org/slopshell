@@ -22,6 +22,7 @@ import * as bugReportModule from './app-bug-report.js';
 import * as annotationsModule from './app-annotations.js';
 import * as dictationModule from './app-dictation.js';
 import * as mailDraftsModule from './app-mail-drafts.js';
+import * as mailVoiceModule from './app-mail-voice.js';
 import * as mailTriageModule from './app-mail-triage.js';
 import * as initModule from './app-init.js';
 import * as startupModule from './app-startup.js';
@@ -50,6 +51,7 @@ setAppRefs({
   ...annotationsModule,
   ...dictationModule,
   ...mailDraftsModule,
+  ...mailVoiceModule,
   ...mailTriageModule,
   ...initModule,
   ...startupModule,

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
-	"strconv"
 	"strings"
 
 	"github.com/krystophny/tabura/internal/store"
@@ -132,10 +131,10 @@ func (a *App) executeItemReassignmentAction(session store.ChatSession, action *S
 		if err != nil {
 			return "", nil, err
 		}
-		workspaceID, err := strconv.ParseInt(strings.TrimSpace(project.ID), 10, 64)
-		if err != nil || workspaceID <= 0 {
-			return "", nil, fmt.Errorf("invalid project id: %s", strings.TrimSpace(project.ID))
+		if project.ID <= 0 {
+			return "", nil, fmt.Errorf("invalid project id: %d", project.ID)
 		}
+		workspaceID := project.ID
 		warning, err := a.itemWorkspaceChangeWarning(item, &workspaceID)
 		if err != nil {
 			return "", nil, err

@@ -121,7 +121,8 @@ export function setPrReviewDrawerOpen(open) {
     || Boolean(state.activeWorkspaceId)
     || state.liveSessionActive
     || state.liveSessionMode === LIVE_SESSION_MODE_DIALOGUE
-    || state.liveSessionMode === LIVE_SESSION_MODE_MEETING;
+    || state.liveSessionMode === LIVE_SESSION_MODE_MEETING
+    || state.itemSidebarItems.length > 0;
   const shouldOpen = Boolean(open) && canShowSidebar;
   state.prReviewDrawerOpen = shouldOpen;
   document.body.classList.toggle('file-sidebar-open', shouldOpen);
@@ -136,7 +137,8 @@ export function setFileSidebarAvailability() {
     || Boolean(state.activeWorkspaceId)
     || state.liveSessionActive
     || state.liveSessionMode === LIVE_SESSION_MODE_DIALOGUE
-    || state.liveSessionMode === LIVE_SESSION_MODE_MEETING;
+    || state.liveSessionMode === LIVE_SESSION_MODE_MEETING
+    || state.itemSidebarItems.length > 0;
   document.body.classList.toggle('file-sidebar-enabled', enabled);
   if (!enabled) {
     setPrReviewDrawerOpen(false);

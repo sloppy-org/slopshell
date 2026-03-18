@@ -168,7 +168,7 @@ func TestStoreProjectCompanionConfigPersistsAcrossReopen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateProject() error: %v", err)
 	}
-	if err := s.UpdateProjectCompanionConfig(project.ID, `{"companion_enabled":false,"language":"de","idle_surface":"black"}`); err != nil {
+	if err := s.UpdateProjectCompanionConfig(workspaceIDString(project.ID), `{"companion_enabled":false,"language":"de","idle_surface":"black"}`); err != nil {
 		t.Fatalf("UpdateProjectCompanionConfig() error: %v", err)
 	}
 	if err := s.Close(); err != nil {
@@ -182,7 +182,7 @@ func TestStoreProjectCompanionConfigPersistsAcrossReopen(t *testing.T) {
 	defer func() {
 		_ = reopened.Close()
 	}()
-	got, err := reopened.GetProject(project.ID)
+	got, err := reopened.GetProject(workspaceIDString(project.ID))
 	if err != nil {
 		t.Fatalf("GetProject() after reopen error: %v", err)
 	}
@@ -201,11 +201,7 @@ func TestStoreChatSessionMessageAndThreading(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateProject() error: %v", err)
 	}
-	workspace, err := s.workspaceForProject(project)
-	if err != nil {
-		t.Fatalf("workspaceForProject() error: %v", err)
-	}
-	if err := s.SetActiveWorkspace(workspace.ID); err != nil {
+	if err := s.SetActiveWorkspace(project.ID); err != nil {
 		t.Fatalf("SetActiveWorkspace() error: %v", err)
 	}
 
@@ -436,7 +432,7 @@ func TestGetOrCreateChatSessionBlankRefRequiresActiveWorkspace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateProject() error: %v", err)
 	}
-	if err := s.SetActiveWorkspaceID(project.ID); err != nil {
+	if err := s.SetActiveWorkspaceID(workspaceIDString(project.ID)); err != nil {
 		t.Fatalf("SetActiveWorkspaceID() error: %v", err)
 	}
 	if _, err := s.db.Exec(`UPDATE workspaces SET is_active = 0`); err != nil {
@@ -542,7 +538,7 @@ func TestStoreDeleteProjectRemovesAssociatedSessions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateProject() error: %v", err)
 	}
-	if err := s.SetActiveWorkspaceID(project.ID); err != nil {
+	if err := s.SetActiveWorkspaceID(workspaceIDString(project.ID)); err != nil {
 		t.Fatalf("SetActiveWorkspaceID() error: %v", err)
 	}
 	chatSession, err := s.GetOrCreateChatSession(project.WorkspacePath)
@@ -575,10 +571,10 @@ func TestStoreDeleteProjectRemovesAssociatedSessions(t *testing.T) {
 		t.Fatalf("UpsertParticipantRoomState() error: %v", err)
 	}
 
-	if err := s.DeleteProject(project.ID); err != nil {
+	if err := s.DeleteProject(workspaceIDString(project.ID)); err != nil {
 		t.Fatalf("DeleteProject() error: %v", err)
 	}
-	if _, err := s.GetProject(project.ID); !errors.Is(err, sql.ErrNoRows) {
+	if _, err := s.GetProject(workspaceIDString(project.ID)); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("GetProject(deleted) error = %v, want sql.ErrNoRows", err)
 	}
 	if _, err := s.GetChatSession(chatSession.ID); !errors.Is(err, sql.ErrNoRows) {

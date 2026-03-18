@@ -304,7 +304,7 @@ func TestSwitchModelActionIsUnsupported(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ensure default project: %v", err)
 	}
-	if _, err := app.activateProject(project.ID); err != nil {
+	if _, err := app.activateProject(projectIDString(project.ID)); err != nil {
 		t.Fatalf("activate project: %v", err)
 	}
 	session, err := app.chatSessionForProject(project)
@@ -865,13 +865,13 @@ func TestProjectProfileUsesStoredAliasAndEffort(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ensure default project: %v", err)
 	}
-	if err := app.store.UpdateProjectChatModel(project.ID, modelprofile.AliasSpark); err != nil {
+	if err := app.store.UpdateProjectChatModel(projectIDString(project.ID), modelprofile.AliasSpark); err != nil {
 		t.Fatalf("UpdateProjectChatModel() error: %v", err)
 	}
-	if err := app.store.UpdateProjectChatModelReasoningEffort(project.ID, modelprofile.ReasoningLow); err != nil {
+	if err := app.store.UpdateProjectChatModelReasoningEffort(projectIDString(project.ID), modelprofile.ReasoningLow); err != nil {
 		t.Fatalf("UpdateProjectChatModelReasoningEffort() error: %v", err)
 	}
-	project, err = app.store.GetProject(project.ID)
+	project, err = app.store.GetProject(projectIDString(project.ID))
 	if err != nil {
 		t.Fatalf("reload project: %v", err)
 	}
