@@ -35,6 +35,7 @@ import {
 export {
   acquireMicStream,
   openPrintView,
+  parseOptionalBoolean,
   releaseMicStream,
   requestMicRefresh,
 } from './app-voice-audio.js';

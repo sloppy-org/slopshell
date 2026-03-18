@@ -315,7 +315,7 @@ export function releaseMicStream({ force = false } = {}) {
   invalidateCachedMicStream({ stopTracks: true });
 }
 
-function parseOptionalBoolean(value) {
+export function parseOptionalBoolean(value) {
   if (typeof value === 'boolean') return value;
   const normalized = String(value || '').trim().toLowerCase();
   if (!normalized) return null;
