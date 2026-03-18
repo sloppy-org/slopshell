@@ -10,9 +10,6 @@ import (
 )
 
 func (a *App) handleGoogleAuthStart(w http.ResponseWriter, r *http.Request) {
-	if !a.requireAuth(w, r) {
-		return
-	}
 	session, err := googleauth.New("", "", googleauth.DefaultScopes)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
