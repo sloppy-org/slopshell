@@ -13,8 +13,13 @@ const normalizeActiveSphere = (...args) => refs.normalizeActiveSphere(...args);
 const readSomedayReviewNudgeLastShownAt = (...args) => refs.readSomedayReviewNudgeLastShownAt(...args);
 const persistSomedayReviewNudgeLastShownAt = (...args) => refs.persistSomedayReviewNudgeLastShownAt(...args);
 
-function appendSphereQuery(path, _sphere = state.activeSphere, _allSpheres = false) {
-  return String(path || '');
+function appendSphereQuery(path, sphere = state.activeSphere, allSpheres = false) {
+  if (allSpheres) {
+    return String(path || '');
+  }
+  const cleanSphere = normalizeActiveSphere(sphere);
+  const separator = String(path || '').includes('?') ? '&' : '?';
+  return `${path}${separator}sphere=${encodeURIComponent(cleanSphere)}`;
 }
 
 export function defaultItemSidebarCounts() {
