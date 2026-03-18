@@ -36,9 +36,9 @@ case "$PROFILE_PRESET" in
     HOST="$(default_if_empty "$HOST" "127.0.0.1")"
     PORT="$(default_if_empty "$PORT" "8081")"
     THREADS="$(default_if_empty "$THREADS" "4")"
-    CTX_SIZE="$(default_if_empty "$CTX_SIZE" "16384")"
+    CTX_SIZE="$(default_if_empty "$CTX_SIZE" "32768")"
     NGL="$(default_if_empty "$NGL" "99")"
-    PARALLEL="$(default_if_empty "$PARALLEL" "2")"
+    PARALLEL="$(default_if_empty "$PARALLEL" "1")"
     ALIAS="$(default_if_empty "$ALIAS" "qwen3.5-9b")"
     REASONING_BUDGET="$(default_if_empty "$REASONING_BUDGET" "0")"
     ;;
