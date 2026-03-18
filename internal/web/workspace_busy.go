@@ -33,7 +33,7 @@ func (a *App) allWorkspaceBusyStates() ([]workspaceBusyState, error) {
 	}
 	states := make([]workspaceBusyState, 0, len(workspaces))
 	for _, workspace := range workspaces {
-		runState := workspaceRunState{}
+		runState := workspaceRunState{Status: "idle"}
 		sessionID := ""
 		session, err := a.store.GetChatSessionByWorkspaceID(workspace.ID)
 		switch {

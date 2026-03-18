@@ -26,9 +26,9 @@ func TestParseInlineWorkspaceIntentRecognizesBusyStateQuery(t *testing.T) {
 
 func TestWorkspaceBusyListIncludesAnchorFocusAndRunState(t *testing.T) {
 	app := newAuthedTestApp(t)
-	anchor, err := app.ensureTodayDailyWorkspace()
+	anchor, err := app.ensureDefaultWorkspace()
 	if err != nil {
-		t.Fatalf("ensureTodayDailyWorkspace: %v", err)
+		t.Fatalf("ensureDefaultWorkspace: %v", err)
 	}
 	alpha, err := app.store.CreateWorkspace("Alpha", t.TempDir())
 	if err != nil {
@@ -84,9 +84,9 @@ func TestWorkspaceBusyListIncludesAnchorFocusAndRunState(t *testing.T) {
 
 func TestEvaluateLocalTurnAnswersWhatsRunning(t *testing.T) {
 	app := newAuthedTestApp(t)
-	anchor, err := app.ensureTodayDailyWorkspace()
+	anchor, err := app.ensureDefaultWorkspace()
 	if err != nil {
-		t.Fatalf("ensureTodayDailyWorkspace: %v", err)
+		t.Fatalf("ensureDefaultWorkspace: %v", err)
 	}
 	alpha, err := app.store.CreateWorkspace("Alpha", t.TempDir())
 	if err != nil {
@@ -118,16 +118,16 @@ func TestEvaluateLocalTurnAnswersWhatsRunning(t *testing.T) {
 	if !strings.Contains(evaluation.text, "Alpha (focus): running (1 active)") {
 		t.Fatalf("busy-state answer missing focused workspace summary: %q", evaluation.text)
 	}
-	if !strings.Contains(strings.ToLower(evaluation.text), "daily, anchor") {
-		t.Fatalf("busy-state answer missing daily anchor summary: %q", evaluation.text)
+	if !strings.Contains(strings.ToLower(evaluation.text), "anchor") {
+		t.Fatalf("busy-state answer missing anchor summary: %q", evaluation.text)
 	}
 }
 
 func TestWorkspaceBusyChangedBroadcastsOnRunStateChange(t *testing.T) {
 	app := newAuthedTestApp(t)
-	anchor, err := app.ensureTodayDailyWorkspace()
+	anchor, err := app.ensureDefaultWorkspace()
 	if err != nil {
-		t.Fatalf("ensureTodayDailyWorkspace: %v", err)
+		t.Fatalf("ensureDefaultWorkspace: %v", err)
 	}
 	alpha, err := app.store.CreateWorkspace("Alpha", t.TempDir())
 	if err != nil {

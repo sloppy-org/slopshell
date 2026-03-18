@@ -468,6 +468,5 @@ func (a *App) handleTemporaryWorkspaceDiscard(w http.ResponseWriter, r *http.Req
 		"discarded_workspace": workspaceID,
 		"active_workspace_id": workspaceIDStr(activeProject.ID),
 		"active_workspace":    item,
-		"active_project":      item,
 	})
 }

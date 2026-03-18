@@ -158,7 +158,7 @@ func TestReviewSubmitClearsReviewPendingUnread(t *testing.T) {
 	assertState(true, true)
 
 	rrSubmit := doAuthedJSONRequest(t, app.Router(), http.MethodPost, "/api/review/submit", map[string]any{
-		"workspace_id":   project.ID,
+		"workspace_id":   workspaceIDStr(project.ID),
 		"artifact_kind":  "text",
 		"artifact_title": "README.md",
 		"artifact_path":  "README.md",

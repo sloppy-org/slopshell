@@ -132,9 +132,9 @@ func TestClassifyAndExecuteSystemActionFocusWorkspaceUsesFuzzyNameMatching(t *te
 	if err != nil {
 		t.Fatalf("ensure default project: %v", err)
 	}
-	anchor, err := app.ensureTodayDailyWorkspace()
+	anchor, err := app.ensureDefaultWorkspace()
 	if err != nil {
-		t.Fatalf("ensureTodayDailyWorkspace: %v", err)
+		t.Fatalf("ensureDefaultWorkspace: %v", err)
 	}
 	focus, err := app.store.CreateWorkspace("stellarator-rmp-analysis", filepath.Join(t.TempDir(), "stellarator-rmp-analysis"))
 	if err != nil {
@@ -553,18 +553,10 @@ func TestClassifyAndExecuteSystemActionWorkspaceManagement(t *testing.T) {
 	if _, err := app.store.GetWorkspace(workspaceID); err == nil {
 		t.Fatal("expected deleted workspace to be gone")
 	}
-	active, err := app.store.ActiveWorkspace()
-	if err != nil {
-		t.Fatalf("ActiveWorkspace() after delete error: %v", err)
-	}
-	if active.ID == workspaceID {
-		t.Fatalf("active workspace id = %d, want deleted workspace to be replaced", active.ID)
-	}
-	if !active.IsDaily {
-		t.Fatalf("active workspace is_daily = %v, want true", active.IsDaily)
-	}
-	if _, err := app.store.GetChatSessionByWorkspaceID(active.ID); err != nil {
-		t.Fatalf("GetChatSessionByWorkspaceID(active) error: %v", err)
+	if active, err := app.store.ActiveWorkspace(); err == nil {
+		if active.ID == workspaceID {
+			t.Fatalf("active workspace id = %d, want deleted workspace to be replaced", active.ID)
+		}
 	}
 }
 

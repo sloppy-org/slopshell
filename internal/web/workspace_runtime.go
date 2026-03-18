@@ -350,26 +350,14 @@ func (a *App) ensureDefaultWorkspace() (store.Workspace, error) {
 	}
 	workspacePath := absRoot
 	if existing, err := a.store.GetWorkspaceByStoredPath(workspacePath); err == nil {
-		targetName := defaultWorkspaceNameForPath(absRoot)
-		if strings.TrimSpace(existing.Name) != targetName {
-			_ = a.store.UpdateWorkspaceLocation2(workspaceIDStr(existing.ID), targetName, existing.WorkspacePath, existing.RootPath, existing.Kind)
-			if refreshed, refreshErr := a.store.GetEnrichedWorkspace(workspaceIDStr(existing.ID)); refreshErr == nil {
-				existing = refreshed
-			}
-		}
-		return existing, nil
+		_ = a.store.SetActiveWorkspace(existing.ID)
+		return a.store.GetWorkspace(existing.ID)
 	} else if !isNoRows(err) {
 		return store.Workspace{}, err
 	}
 	if existing, err := a.store.GetWorkspaceByRootPath(absRoot); err == nil {
-		targetName := defaultWorkspaceNameForPath(absRoot)
-		if strings.TrimSpace(existing.Name) != targetName {
-			_ = a.store.UpdateWorkspaceLocation2(workspaceIDStr(existing.ID), targetName, existing.WorkspacePath, existing.RootPath, existing.Kind)
-			if refreshed, refreshErr := a.store.GetEnrichedWorkspace(workspaceIDStr(existing.ID)); refreshErr == nil {
-				existing = refreshed
-			}
-		}
-		return existing, nil
+		_ = a.store.SetActiveWorkspace(existing.ID)
+		return a.store.GetWorkspace(existing.ID)
 	} else if !isNoRows(err) {
 		return store.Workspace{}, err
 	}

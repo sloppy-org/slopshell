@@ -27,17 +27,11 @@ func (a *App) anchorWorkspace() (store.Workspace, error) {
 	workspace, err := a.store.ActiveWorkspace()
 	switch {
 	case err == nil:
-		if strings.TrimSpace(a.localProjectDir) != "" {
-			return workspace, nil
-		}
-		if workspace.IsDaily && workspaceDailyDate(workspace) != dailyWorkspaceDate(a.runtimeNow()) {
-			return a.ensureTodayDailyWorkspace()
-		}
 		return workspace, nil
 	case !isNoRows(err):
 		return store.Workspace{}, err
 	default:
-		return a.ensureTodayDailyWorkspace()
+		return a.ensureDefaultWorkspace()
 	}
 }
 

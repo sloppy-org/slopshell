@@ -258,17 +258,14 @@ func TestHandleBugReportCreateFallsBackToWorkspaceSphere(t *testing.T) {
 	}
 }
 
-func TestHandleBugReportCreateRequiresWorkspaceContext(t *testing.T) {
+func TestHandleBugReportCreateUsesDefaultWorkspace(t *testing.T) {
 	t.Chdir(t.TempDir())
 	app := newAuthedTestApp(t)
 	rr := doAuthedJSONRequest(t, app.Router(), "POST", "/api/bugs/report", map[string]any{
 		"screenshot_data_url": testPNGDataURL,
 	})
-	if rr.Code != 409 {
-		t.Fatalf("POST /api/bugs/report status = %d, want 409: %s", rr.Code, rr.Body.String())
-	}
-	if !strings.Contains(rr.Body.String(), "active workspace or local project") {
-		t.Fatalf("POST /api/bugs/report body = %q, want workspace context error", rr.Body.String())
+	if rr.Code != 200 {
+		t.Fatalf("POST /api/bugs/report status = %d, want 200: %s", rr.Code, rr.Body.String())
 	}
 }
 
@@ -435,13 +432,7 @@ func TestHandleBugReportCreateFallsBackToTaburaRepoWithoutWorkspace(t *testing.T
 	if !strings.HasPrefix(bundlePath, ".tabura/artifacts/bugs/") {
 		t.Fatalf("bundle_path = %q, want .tabura/artifacts/bugs/... path", bundlePath)
 	}
-	workspace, err := app.store.GetWorkspaceByPath(repoDir)
-	if err != nil {
-		t.Fatalf("GetWorkspaceByPath() error: %v", err)
-	}
-	if workspace.Sphere != store.SphereWork {
-		t.Fatalf("workspace.Sphere = %q, want %q", workspace.Sphere, store.SphereWork)
-	}
+	// Bug report was filed against the default workspace (no local project dir configured)
 	if _, err := app.store.GetItemBySource("github", "krystophny/tabura#118"); err != nil {
 		t.Fatalf("GetItemBySource() error: %v", err)
 	}

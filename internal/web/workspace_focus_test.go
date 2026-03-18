@@ -20,9 +20,9 @@ import (
 func TestWorkspaceFocusAPI(t *testing.T) {
 	app := newAuthedTestApp(t)
 
-	anchor, err := app.ensureTodayDailyWorkspace()
+	anchor, err := app.ensureDefaultWorkspace()
 	if err != nil {
-		t.Fatalf("ensureTodayDailyWorkspace: %v", err)
+		t.Fatalf("ensureDefaultWorkspace: %v", err)
 	}
 	focusPath := filepath.Join(t.TempDir(), "plasma")
 	if err := os.MkdirAll(focusPath, 0o755); err != nil {
@@ -66,9 +66,9 @@ func TestWorkspaceFocusAPI(t *testing.T) {
 func TestWorkspaceFocusBroadcastsWebsocketChanges(t *testing.T) {
 	app := newAuthedTestApp(t)
 
-	anchor, err := app.ensureTodayDailyWorkspace()
+	anchor, err := app.ensureDefaultWorkspace()
 	if err != nil {
-		t.Fatalf("ensureTodayDailyWorkspace: %v", err)
+		t.Fatalf("ensureDefaultWorkspace: %v", err)
 	}
 	session, err := app.store.GetOrCreateChatSessionForWorkspace(anchor.ID)
 	if err != nil {
@@ -103,9 +103,9 @@ func TestWorkspaceFocusBroadcastsWebsocketChanges(t *testing.T) {
 func TestFocusedWorkspaceShellCommandUsesFocusCWD(t *testing.T) {
 	app := newAuthedTestApp(t)
 
-	anchor, err := app.ensureTodayDailyWorkspace()
+	anchor, err := app.ensureDefaultWorkspace()
 	if err != nil {
-		t.Fatalf("ensureTodayDailyWorkspace: %v", err)
+		t.Fatalf("ensureDefaultWorkspace: %v", err)
 	}
 	session, err := app.store.GetOrCreateChatSessionForWorkspace(anchor.ID)
 	if err != nil {
@@ -141,9 +141,9 @@ func TestFocusedWorkspaceShellCommandUsesFocusCWD(t *testing.T) {
 func TestFocusedWorkspaceLeavesChatSessionAnchored(t *testing.T) {
 	app := newAuthedTestApp(t)
 
-	anchor, err := app.ensureTodayDailyWorkspace()
+	anchor, err := app.ensureDefaultWorkspace()
 	if err != nil {
-		t.Fatalf("ensureTodayDailyWorkspace: %v", err)
+		t.Fatalf("ensureDefaultWorkspace: %v", err)
 	}
 	session, err := app.store.GetOrCreateChatSessionForWorkspace(anchor.ID)
 	if err != nil {
@@ -187,9 +187,9 @@ func TestFocusedWorkspaceLeavesChatSessionAnchored(t *testing.T) {
 func TestExplicitWorkspaceActionOverridesFocusWithoutChangingIt(t *testing.T) {
 	app := newAuthedTestApp(t)
 
-	anchor, err := app.ensureTodayDailyWorkspace()
+	anchor, err := app.ensureDefaultWorkspace()
 	if err != nil {
-		t.Fatalf("ensureTodayDailyWorkspace: %v", err)
+		t.Fatalf("ensureDefaultWorkspace: %v", err)
 	}
 	session, err := app.store.GetOrCreateChatSessionForWorkspace(anchor.ID)
 	if err != nil {
@@ -312,9 +312,9 @@ func TestGetOrCreateAppSessionFollowsFocusedWorkspaceThreadBinding(t *testing.T)
 		_ = app.Shutdown(context.Background())
 	})
 
-	anchor, err := app.ensureTodayDailyWorkspace()
+	anchor, err := app.ensureDefaultWorkspace()
 	if err != nil {
-		t.Fatalf("ensureTodayDailyWorkspace: %v", err)
+		t.Fatalf("ensureDefaultWorkspace: %v", err)
 	}
 	session, err := app.store.GetOrCreateChatSessionForWorkspace(anchor.ID)
 	if err != nil {

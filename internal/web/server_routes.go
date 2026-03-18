@@ -90,7 +90,7 @@ func (a *App) Router() http.Handler {
 	r.Post("/api/workspace/focus", a.handleWorkspaceFocusPost)
 	r.Delete("/api/workspace/focus", a.handleWorkspaceFocusDelete)
 	r.Get("/api/watches", a.handleWorkspaceWatchList)
-	r.Post("/api/workspaces", a.handleRuntimeWorkspaceCreate)
+	r.Post("/api/workspaces", a.handleWorkspaceCreate)
 	r.Get("/api/workspaces/{workspace_id}", a.handleWorkspaceGet)
 	r.Put("/api/workspaces/{workspace_id}", a.handleWorkspaceUpdate)
 	r.Get("/api/workspaces/{workspace_id}/watch", a.handleWorkspaceWatchGet)

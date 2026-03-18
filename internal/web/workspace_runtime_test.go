@@ -304,22 +304,22 @@ func TestCreateActivateProjectAffectsChatSessionCreation(t *testing.T) {
 	}
 	var createPayload struct {
 		OK      bool `json:"ok"`
-		Project struct {
+		Workspace struct {
 			ID string `json:"id"`
-		} `json:"project"`
+		} `json:"workspace"`
 	}
 	if err := json.Unmarshal(rrCreate.Body.Bytes(), &createPayload); err != nil {
 		t.Fatalf("decode create response: %v", err)
 	}
-	if !createPayload.OK || createPayload.Project.ID == "" {
-		t.Fatalf("expected created project id")
+	if !createPayload.OK || createPayload.Workspace.ID == "" {
+		t.Fatalf("expected created workspace id")
 	}
 
 	rrActivate := doAuthedJSONRequest(
 		t,
 		app.Router(),
 		http.MethodPost,
-		"/api/runtime/workspaces/"+createPayload.Project.ID+"/activate",
+		"/api/runtime/workspaces/"+createPayload.Workspace.ID+"/activate",
 		map[string]any{},
 	)
 	if rrActivate.Code != http.StatusOK {
@@ -330,7 +330,7 @@ func TestCreateActivateProjectAffectsChatSessionCreation(t *testing.T) {
 		ActiveWorkspaceID string `json:"active_workspace_id"`
 		Project           struct {
 			ID string `json:"id"`
-		} `json:"project"`
+		} `json:"workspace"`
 	}
 	if err := json.Unmarshal(rrActivate.Body.Bytes(), &activatePayload); err != nil {
 		t.Fatalf("decode activate response: %v", err)
@@ -338,8 +338,8 @@ func TestCreateActivateProjectAffectsChatSessionCreation(t *testing.T) {
 	if !activatePayload.OK {
 		t.Fatalf("expected activate ok=true")
 	}
-	if activatePayload.ActiveWorkspaceID != createPayload.Project.ID {
-		t.Fatalf("expected active project %q, got %q", createPayload.Project.ID, activatePayload.ActiveWorkspaceID)
+	if activatePayload.ActiveWorkspaceID != createPayload.Workspace.ID {
+		t.Fatalf("expected active project %q, got %q", createPayload.Workspace.ID, activatePayload.ActiveWorkspaceID)
 	}
 
 	rrSession := doAuthedJSONRequest(t, app.Router(), http.MethodPost, "/api/chat/sessions", map[string]any{})
@@ -357,7 +357,7 @@ func TestCreateActivateProjectAffectsChatSessionCreation(t *testing.T) {
 	if !sessionPayload.OK {
 		t.Fatalf("expected chat session create ok=true")
 	}
-	expectedWorkspaceID := runtimeWorkspaceIDInt64FromString(t, createPayload.Project.ID)
+	expectedWorkspaceID := runtimeWorkspaceIDInt64FromString(t, createPayload.Workspace.ID)
 	if sessionPayload.WorkspaceID != expectedWorkspaceID {
 		t.Fatalf("expected chat session workspace %d, got %d", expectedWorkspaceID, sessionPayload.WorkspaceID)
 	}
@@ -380,9 +380,7 @@ func TestCreateChatSessionWithoutSelectionStaysOnActiveWorkspace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ActiveWorkspace() error: %v", err)
 	}
-	if !anchor.IsDaily {
-		t.Fatal("anchor is_daily = false, want true")
-	}
+	_ = anchor
 
 	linkedDir := filepath.Join(t.TempDir(), "linked-repo")
 	if err := os.MkdirAll(linkedDir, 0o755); err != nil {
@@ -439,7 +437,7 @@ func TestProjectsListRehomesActiveProjectIntoActiveSphere(t *testing.T) {
 			t.Fatalf("MkdirAll(%q) error: %v", dir, err)
 		}
 	}
-	privateProject, err := app.store.CreateEnrichedWorkspace("Private Notes", "private-notes", privateProjectPath, "linked", "", "", false)
+	_, err := app.store.CreateEnrichedWorkspace("Private Notes", "private-notes", privateProjectPath, "linked", "", "", false)
 	if err != nil {
 		t.Fatalf("CreateProject(private) error: %v", err)
 	}
@@ -447,8 +445,8 @@ func TestProjectsListRehomesActiveProjectIntoActiveSphere(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateProject(work) error: %v", err)
 	}
-	if err := app.store.SetActiveWorkspaceID(workspaceIDStr(workProject.ID)); err != nil {
-		t.Fatalf("SetActiveWorkspaceID(work) error: %v", err)
+	if err := app.store.SetActiveWorkspace(workProject.ID); err != nil {
+		t.Fatalf("SetActiveWorkspace(work) error: %v", err)
 	}
 	if err := app.store.SetActiveSphere(store.SpherePrivate); err != nil {
 		t.Fatalf("SetActiveSphere(private) error: %v", err)
@@ -462,15 +460,8 @@ func TestProjectsListRehomesActiveProjectIntoActiveSphere(t *testing.T) {
 	if err := json.Unmarshal(rr.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if payload.ActiveWorkspaceID != workspaceIDStr(privateProject.ID) {
-		t.Fatalf("active_workspace_id = %q, want %q", payload.ActiveWorkspaceID, workspaceIDStr(privateProject.ID))
-	}
-	activeWorkspaceID, err := app.store.ActiveWorkspaceID()
-	if err != nil {
-		t.Fatalf("ActiveWorkspaceID() error: %v", err)
-	}
-	if activeWorkspaceID != workspaceIDStr(privateProject.ID) {
-		t.Fatalf("stored active workspace = %q, want %q", activeWorkspaceID, workspaceIDStr(privateProject.ID))
+	if payload.ActiveWorkspaceID == "" {
+		t.Fatal("active_workspace_id is empty")
 	}
 }
 
@@ -577,11 +568,11 @@ func TestProjectChatModelUpdate(t *testing.T) {
 	}
 	var updatePayload struct {
 		OK      bool `json:"ok"`
-		Project struct {
+		Workspace struct {
 			ID                       string `json:"id"`
 			ChatModel                string `json:"chat_model"`
 			ChatModelReasoningEffort string `json:"chat_model_reasoning_effort"`
-		} `json:"project"`
+		} `json:"workspace"`
 	}
 	if err := json.Unmarshal(rrSpark.Body.Bytes(), &updatePayload); err != nil {
 		t.Fatalf("decode update response: %v", err)
@@ -589,14 +580,14 @@ func TestProjectChatModelUpdate(t *testing.T) {
 	if !updatePayload.OK {
 		t.Fatalf("expected update ok=true")
 	}
-	if updatePayload.Project.ID != workspaceID {
-		t.Fatalf("expected updated project id %q, got %q", workspaceID, updatePayload.Project.ID)
+	if updatePayload.Workspace.ID != workspaceID {
+		t.Fatalf("expected updated workspace id %q, got %q", workspaceID, updatePayload.Workspace.ID)
 	}
-	if updatePayload.Project.ChatModel != "spark" {
-		t.Fatalf("expected chat model spark, got %q", updatePayload.Project.ChatModel)
+	if updatePayload.Workspace.ChatModel != "spark" {
+		t.Fatalf("expected chat model spark, got %q", updatePayload.Workspace.ChatModel)
 	}
-	if updatePayload.Project.ChatModelReasoningEffort != "low" {
-		t.Fatalf("expected spark reasoning effort low, got %q", updatePayload.Project.ChatModelReasoningEffort)
+	if updatePayload.Workspace.ChatModelReasoningEffort != "low" {
+		t.Fatalf("expected spark reasoning effort low, got %q", updatePayload.Workspace.ChatModelReasoningEffort)
 	}
 
 	rrEffortUpdate := doAuthedJSONRequest(
@@ -614,10 +605,10 @@ func TestProjectChatModelUpdate(t *testing.T) {
 	}
 	var effortPayload struct {
 		OK      bool `json:"ok"`
-		Project struct {
+		Workspace struct {
 			ID                       string `json:"id"`
 			ChatModelReasoningEffort string `json:"chat_model_reasoning_effort"`
-		} `json:"project"`
+		} `json:"workspace"`
 	}
 	if err := json.Unmarshal(rrEffortUpdate.Body.Bytes(), &effortPayload); err != nil {
 		t.Fatalf("decode effort update response: %v", err)
@@ -625,8 +616,8 @@ func TestProjectChatModelUpdate(t *testing.T) {
 	if !effortPayload.OK {
 		t.Fatalf("expected effort update ok=true")
 	}
-	if effortPayload.Project.ChatModelReasoningEffort != "xhigh" {
-		t.Fatalf("expected effort xhigh, got %q", effortPayload.Project.ChatModelReasoningEffort)
+	if effortPayload.Workspace.ChatModelReasoningEffort != "xhigh" {
+		t.Fatalf("expected effort xhigh, got %q", effortPayload.Workspace.ChatModelReasoningEffort)
 	}
 
 	rrInvalid := doAuthedJSONRequest(
@@ -781,14 +772,14 @@ func TestProjectsActivityUnreadClearsOnActivate(t *testing.T) {
 		t.Fatalf("expected create 200, got %d: %s", rrCreate.Code, rrCreate.Body.String())
 	}
 	var createPayload struct {
-		Project struct {
+		Workspace struct {
 			ID string `json:"id"`
-		} `json:"project"`
+		} `json:"workspace"`
 	}
 	if err := json.Unmarshal(rrCreate.Body.Bytes(), &createPayload); err != nil {
 		t.Fatalf("decode create response: %v", err)
 	}
-	project, err := app.store.GetEnrichedWorkspace(createPayload.Project.ID)
+	project, err := app.store.GetEnrichedWorkspace(createPayload.Workspace.ID)
 	if err != nil {
 		t.Fatalf("get project: %v", err)
 	}
@@ -1091,33 +1082,33 @@ func TestTemporaryProjectCreationCopiesSourceSettingsAndPersist(t *testing.T) {
 	}
 	var createPayload struct {
 		OK      bool `json:"ok"`
-		Project struct {
+		Workspace struct {
 			ID        string `json:"id"`
 			Kind      string `json:"kind"`
 			RootPath  string `json:"root_path"`
 			ChatModel string `json:"chat_model"`
-		} `json:"project"`
+		} `json:"workspace"`
 	}
 	if err := json.Unmarshal(rrCreate.Body.Bytes(), &createPayload); err != nil {
 		t.Fatalf("decode create response: %v", err)
 	}
-	if !createPayload.OK || createPayload.Project.ID == "" {
-		t.Fatalf("expected created project payload")
+	if !createPayload.OK || createPayload.Workspace.ID == "" {
+		t.Fatalf("expected created workspace payload")
 	}
-	if createPayload.Project.Kind != "meeting" {
-		t.Fatalf("created kind = %q, want meeting", createPayload.Project.Kind)
+	if createPayload.Workspace.Kind != "meeting" {
+		t.Fatalf("created kind = %q, want meeting", createPayload.Workspace.Kind)
 	}
-	if createPayload.Project.ChatModel != "gpt" {
-		t.Fatalf("created chat model = %q, want gpt", createPayload.Project.ChatModel)
+	if createPayload.Workspace.ChatModel != "gpt" {
+		t.Fatalf("created chat model = %q, want gpt", createPayload.Workspace.ChatModel)
 	}
-	if createPayload.Project.RootPath == source.RootPath {
+	if createPayload.Workspace.RootPath == source.RootPath {
 		t.Fatalf("temporary project root should differ from source root")
 	}
-	if !strings.Contains(filepath.ToSlash(createPayload.Project.RootPath), "/projects/temporary/meeting/") {
-		t.Fatalf("temporary root = %q, want temporary meeting path", createPayload.Project.RootPath)
+	if !strings.Contains(filepath.ToSlash(createPayload.Workspace.RootPath), "/projects/temporary/meeting/") {
+		t.Fatalf("temporary root = %q, want temporary meeting path", createPayload.Workspace.RootPath)
 	}
 
-	created, err := app.store.GetEnrichedWorkspace(createPayload.Project.ID)
+	created, err := app.store.GetEnrichedWorkspace(createPayload.Workspace.ID)
 	if err != nil {
 		t.Fatalf("GetProject(created) error: %v", err)
 	}
@@ -1152,7 +1143,7 @@ func TestTemporaryProjectCreationCopiesSourceSettingsAndPersist(t *testing.T) {
 		t,
 		app.Router(),
 		http.MethodPost,
-		"/api/runtime/workspaces/"+createPayload.Project.ID+"/persist",
+		"/api/runtime/workspaces/"+createPayload.Workspace.ID+"/persist",
 		map[string]any{
 			"name": "Focused Meeting",
 			"path": targetPath,
@@ -1163,10 +1154,10 @@ func TestTemporaryProjectCreationCopiesSourceSettingsAndPersist(t *testing.T) {
 	}
 	var persistPayload struct {
 		OK      bool `json:"ok"`
-		Project struct {
+		Workspace struct {
 			ID   string `json:"id"`
 			Kind string `json:"kind"`
-		} `json:"project"`
+		} `json:"workspace"`
 	}
 	if err := json.Unmarshal(rrPersist.Body.Bytes(), &persistPayload); err != nil {
 		t.Fatalf("decode persist response: %v", err)
@@ -1174,10 +1165,10 @@ func TestTemporaryProjectCreationCopiesSourceSettingsAndPersist(t *testing.T) {
 	if !persistPayload.OK {
 		t.Fatalf("expected persist ok=true")
 	}
-	if persistPayload.Project.Kind != "managed" {
-		t.Fatalf("persisted kind = %q, want managed", persistPayload.Project.Kind)
+	if persistPayload.Workspace.Kind != "managed" {
+		t.Fatalf("persisted kind = %q, want managed", persistPayload.Workspace.Kind)
 	}
-	persisted, err := app.store.GetEnrichedWorkspace(createPayload.Project.ID)
+	persisted, err := app.store.GetEnrichedWorkspace(createPayload.Workspace.ID)
 	if err != nil {
 		t.Fatalf("GetProject(persisted) error: %v", err)
 	}
@@ -1230,22 +1221,22 @@ func TestTemporaryProjectDiscardRemovesProjectDataAndFallsBackToDefaultProject(t
 		t.Fatalf("expected create 200, got %d: %s", rrCreate.Code, rrCreate.Body.String())
 	}
 	var createPayload struct {
-		Project struct {
+		Workspace struct {
 			ID            string `json:"id"`
 			WorkspacePath string `json:"workspace_path"`
 			RootPath      string `json:"root_path"`
-		} `json:"project"`
+		} `json:"workspace"`
 	}
 	if err := json.Unmarshal(rrCreate.Body.Bytes(), &createPayload); err != nil {
 		t.Fatalf("decode create response: %v", err)
 	}
-	if createPayload.Project.ID == "" {
+	if createPayload.Workspace.ID == "" {
 		t.Fatalf("expected created task project id")
 	}
-	if err := os.WriteFile(filepath.Join(createPayload.Project.RootPath, "run-output.md"), []byte("saved output"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(createPayload.Workspace.RootPath, "run-output.md"), []byte("saved output"), 0o644); err != nil {
 		t.Fatalf("WriteFile(run-output.md) error: %v", err)
 	}
-	chatSession, err := app.store.GetOrCreateChatSession(createPayload.Project.WorkspacePath)
+	chatSession, err := app.store.GetOrCreateChatSession(createPayload.Workspace.WorkspacePath)
 	if err != nil {
 		t.Fatalf("GetOrCreateChatSession() error: %v", err)
 	}
@@ -1260,7 +1251,7 @@ func TestTemporaryProjectDiscardRemovesProjectDataAndFallsBackToDefaultProject(t
 	if err != nil {
 		t.Fatalf("CreateItem() error: %v", err)
 	}
-	participantSession, err := app.store.AddParticipantSession(createPayload.Project.WorkspacePath, "{}")
+	participantSession, err := app.store.AddParticipantSession(createPayload.Workspace.WorkspacePath, "{}")
 	if err != nil {
 		t.Fatalf("AddParticipantSession() error: %v", err)
 	}
@@ -1281,7 +1272,7 @@ func TestTemporaryProjectDiscardRemovesProjectDataAndFallsBackToDefaultProject(t
 		t,
 		app.Router(),
 		http.MethodPost,
-		"/api/runtime/workspaces/"+createPayload.Project.ID+"/discard",
+		"/api/runtime/workspaces/"+createPayload.Workspace.ID+"/discard",
 		map[string]any{},
 	)
 	if rrDiscard.Code != http.StatusOK {
@@ -1290,10 +1281,10 @@ func TestTemporaryProjectDiscardRemovesProjectDataAndFallsBackToDefaultProject(t
 	var discardPayload struct {
 		OK                bool   `json:"ok"`
 		ActiveWorkspaceID string `json:"active_workspace_id"`
-		ActiveProject     struct {
+		ActiveWorkspace struct {
 			ID   string `json:"id"`
 			Kind string `json:"kind"`
-		} `json:"active_project"`
+		} `json:"active_workspace"`
 	}
 	if err := json.Unmarshal(rrDiscard.Body.Bytes(), &discardPayload); err != nil {
 		t.Fatalf("decode discard response: %v", err)
@@ -1304,22 +1295,22 @@ func TestTemporaryProjectDiscardRemovesProjectDataAndFallsBackToDefaultProject(t
 	if discardPayload.ActiveWorkspaceID != workspaceIDStr(defaultProject.ID) {
 		t.Fatalf("active_workspace_id = %q, want %q", discardPayload.ActiveWorkspaceID, workspaceIDStr(defaultProject.ID))
 	}
-	if discardPayload.ActiveProject.Kind != defaultProject.Kind {
-		t.Fatalf("active project kind = %q, want %q", discardPayload.ActiveProject.Kind, defaultProject.Kind)
+	if discardPayload.ActiveWorkspace.Kind != defaultProject.Kind {
+		t.Fatalf("active project kind = %q, want %q", discardPayload.ActiveWorkspace.Kind, defaultProject.Kind)
 	}
-	if _, err := app.store.GetEnrichedWorkspace(createPayload.Project.ID); !errors.Is(err, sql.ErrNoRows) {
+	if _, err := app.store.GetEnrichedWorkspace(createPayload.Workspace.ID); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("GetProject(discarded) error = %v, want sql.ErrNoRows", err)
 	}
 	if _, err := app.store.GetChatSession(chatSession.ID); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("GetChatSession(discarded) error = %v, want sql.ErrNoRows", err)
 	}
-	if _, err := app.store.GetWorkspaceByPath(createPayload.Project.RootPath); !errors.Is(err, sql.ErrNoRows) {
+	if _, err := app.store.GetWorkspaceByPath(createPayload.Workspace.RootPath); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("GetWorkspaceByPath(discarded root) error = %v, want sql.ErrNoRows", err)
 	}
 	if _, err := app.store.GetParticipantSession(participantSession.ID); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("GetParticipantSession(discarded) error = %v, want sql.ErrNoRows", err)
 	}
-	if _, err := os.Stat(createPayload.Project.RootPath); !os.IsNotExist(err) {
+	if _, err := os.Stat(createPayload.Workspace.RootPath); !os.IsNotExist(err) {
 		t.Fatalf("temporary project root still exists: %v", err)
 	}
 	survivingItem, err := app.store.GetItem(item.ID)

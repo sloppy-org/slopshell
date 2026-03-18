@@ -209,7 +209,7 @@ func (a *App) deleteWorkspaceAndRepairState(workspaceID int64) error {
 		return err
 	}
 	deletedFocusedWorkspace := focusedID == workspaceID
-	if err := a.store.DeleteWorkspace(workspaceID); err != nil {
+	if err := a.store.DeleteEnrichedWorkspace(workspaceIDStr(workspaceID)); err != nil {
 		return err
 	}
 	if deletedFocusedWorkspace {
