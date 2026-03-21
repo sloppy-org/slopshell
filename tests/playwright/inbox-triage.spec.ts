@@ -429,7 +429,7 @@ test.describe('inbox triage interactions', () => {
 
     await expect(page.locator('#canvas-text')).toContainText('Parser cleanup plan');
     await expect(page.locator('#canvas-text')).toContainText('Notes');
-    await expect(page.locator('#canvas-text')).toContainText('Context');
+    await expect(page.locator('#canvas-text')).toContainText('Label');
     await expect(page.locator('#canvas-text')).toContainText('Workspace: Default');
   });
 
@@ -537,7 +537,7 @@ test.describe('inbox triage interactions', () => {
     expect(triageCalls.map((entry: any) => entry?.payload?.action)).toEqual(['done', 'delete', 'delegate', 'later']);
   });
 
-  test('desktop context menu workspace and context pickers reassign the active item', async ({ page }) => {
+  test('desktop context menu workspace picker reassigns the active item', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await waitReady(page);
     await page.evaluate(() => {
@@ -550,7 +550,6 @@ test.describe('inbox triage interactions', () => {
     await setInboxItems(page, [{
       ...parserInboxItem,
       workspace_id: 1,
-      workspace_id: '',
     }]);
 
     const row = page.locator('#pr-file-list .pr-file-item[data-item-id="101"]');
@@ -567,24 +566,11 @@ test.describe('inbox triage interactions', () => {
       });
     }).toBe(true);
 
-    await row.click({ button: 'right' });
-    await expect(page.locator('#item-sidebar-menu')).toContainText('Context...');
-    await page.locator('#item-sidebar-menu .item-sidebar-menu-item', { hasText: 'Context...' }).click();
-    await expect(page.locator('#item-sidebar-menu')).toContainText('Test');
-    await page.locator('#item-sidebar-menu .item-sidebar-menu-item', { hasText: 'Test' }).click();
-    await expect.poll(async () => {
-      return page.evaluate(() => {
-        const log = (window as any).__harnessLog || [];
-        return log.some((entry: any) => entry?.action === 'item_project');
-      });
-    }).toBe(true);
-
     const itemState = await page.evaluate(() => {
       const data = (window as any).__itemSidebarData || {};
       return Array.isArray(data.inbox) ? data.inbox[0] : null;
     });
     expect(itemState?.workspace_id).toBe(2);
-    expect(itemState?.workspace_id).toBe('test');
   });
 
   test('stale inbox reload does not resurrect a triaged item', async ({ page }) => {

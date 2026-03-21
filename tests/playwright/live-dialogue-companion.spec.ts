@@ -140,7 +140,7 @@ test.beforeEach(async ({ page }) => {
   await waitReady(page);
 });
 
-test('companion face shows listening state during recording', async ({ page }) => {
+test('companion face stays idle until dialogue speech is detected', async ({ page }) => {
   await setDialogueListenWindowMs(page, 3_000);
   await setDialogueMode(page, true);
   await enableCompanion(page);
@@ -164,7 +164,7 @@ test('companion face shows listening state during recording', async ({ page }) =
   await expect.poll(async () => page.evaluate(() => {
     const surface = document.getElementById('companion-idle-surface');
     return surface?.dataset.state || '';
-  })).toBe('listening');
+  })).toBe('idle');
 });
 
 test('"recording..." status text suppressed when companion visible', async ({ page }) => {

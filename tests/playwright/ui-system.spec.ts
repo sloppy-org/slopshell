@@ -1212,11 +1212,7 @@ test.describe('approval_request event', () => {
     const card = page.locator('.chat-approval-request').last();
     await expect(card.locator('.chat-approval-title')).toHaveText('Allow command execution: run git status');
     await expect(card.locator('.chat-approval-detail')).toHaveText('run git status');
-    await expect(page.locator('#canvas-text')).toHaveClass(/is-active/);
-    await expect(page.locator('#canvas-text')).toContainText('Approval required');
-    await expect(page.locator('#canvas-text .canvas-approval-actions')).toBeVisible();
-
-    await page.locator('#canvas-text').getByRole('button', { name: 'Approve' }).click();
+    await page.locator('.chat-approval-request').getByRole('button', { name: 'Approve' }).click();
 
     await expect.poll(async () => {
       return page.evaluate(() => (window as any).__approvalMessages || []);
@@ -1230,7 +1226,6 @@ test.describe('approval_request event', () => {
 
     await injectChatEvent(page, { type: 'approval_resolved', request_id: 'approval-1', decision: 'accept' });
     await expect(card.locator('.chat-approval-status')).toHaveText('Approved');
-    await expect(page.locator('#canvas-text .canvas-approval-status')).toHaveText('Approved');
   });
 });
 
@@ -1363,7 +1358,7 @@ test.describe('turn lifecycle events', () => {
 
     await injectChatEvent(page, { type: 'turn_started', turn_id: 'cancel-2' });
     await page.waitForTimeout(100);
-    await expect(page.locator('#overlay')).toBeVisible();
+    await expect(page.locator('#overlay')).toBeHidden();
 
     await injectChatEvent(page, { type: 'turn_cancelled', turn_id: 'cancel-2' });
     await page.waitForTimeout(300);
@@ -1386,7 +1381,7 @@ test.describe('turn lifecycle events', () => {
     expect(statusText).toContain('queue cleared');
   });
 
-  test('error event shows in overlay and auto-dismisses', async ({ page }) => {
+  test('error event updates chat and status while keeping the overlay hidden', async ({ page }) => {
     await page.keyboard.type('test');
     await page.keyboard.press('Enter');
     await page.waitForTimeout(200);
@@ -1398,12 +1393,9 @@ test.describe('turn lifecycle events', () => {
     await page.waitForTimeout(100);
 
     const overlay = page.locator('#overlay');
-    await expect(overlay).toBeVisible();
-    await expect(page.locator('.overlay-content')).toContainText('backend failed');
-
-    // Auto-dismisses
-    await page.waitForTimeout(2200);
     await expect(overlay).toBeHidden();
+    await expect(page.locator('#chat-history')).toContainText('backend failed');
+    await expect(page.locator('#status-text')).toContainText('backend failed');
   });
 });
 
@@ -1762,28 +1754,6 @@ test.describe('escape key behavior', () => {
     await expect(page.locator('#floating-input')).toBeHidden();
   });
 
-  test('Escape dismisses overlay', async ({ page }) => {
-    await page.keyboard.type('test');
-    await page.keyboard.press('Enter');
-    await page.waitForTimeout(200);
-
-    await injectChatEvent(page, { type: 'turn_started', turn_id: 'esc-overlay' });
-    await page.waitForTimeout(100);
-    await injectChatEvent(page, {
-      type: 'assistant_output',
-      role: 'assistant',
-      turn_id: 'esc-overlay',
-      message: 'Done.',
-      auto_canvas: false,
-    });
-    await page.waitForTimeout(200);
-    await expect(page.locator('#overlay')).toBeVisible();
-
-    await page.keyboard.press('Escape');
-    await page.waitForTimeout(100);
-    await expect(page.locator('#overlay')).toBeHidden();
-  });
-
   test('Escape clears artifact when nothing else is open', async ({ page }) => {
     await renderTestArtifact(page);
     await expect(page.locator('#canvas-text')).toBeVisible();
@@ -2058,13 +2028,12 @@ test.describe('full assistant turn flow', () => {
     await page.keyboard.press('Enter');
     await page.waitForTimeout(200);
 
-    // Turn started -> overlay with Thinking
+    // Turn started keeps the overlay hidden
     await injectChatEvent(page, { type: 'turn_started', turn_id: 'full-1' });
     await page.waitForTimeout(100);
-    await expect(page.locator('#overlay')).toBeVisible();
-    await expect(page.locator('.overlay-content')).toContainText('Thinking');
+    await expect(page.locator('#overlay')).toBeHidden();
 
-    // Streaming response
+    // Streaming response updates the pending assistant row
     await injectChatEvent(page, {
       type: 'assistant_message',
       turn_id: 'full-1',
@@ -2072,7 +2041,7 @@ test.describe('full assistant turn flow', () => {
       delta: 'Here is the explanation.',
     });
     await page.waitForTimeout(100);
-    await expect(page.locator('.overlay-content')).toContainText('explanation');
+    await expect(page.locator('#chat-history .chat-message.chat-assistant').first()).toContainText('explanation');
 
     // Item completed progress
     await injectChatEvent(page, {
@@ -2092,11 +2061,6 @@ test.describe('full assistant turn flow', () => {
       auto_canvas: false,
     });
     await page.waitForTimeout(200);
-
-    // Click to dismiss overlay
-    await page.mouse.click(10, 10);
-    await page.waitForTimeout(100);
-    await expect(page.locator('#overlay')).toBeHidden();
 
     // Chat history should contain user message and assistant response
     const chatHistory = page.locator('#chat-history');
@@ -2159,7 +2123,7 @@ test.describe('canvas artifact during turn', () => {
 
     await injectChatEvent(page, { type: 'turn_started', turn_id: 'art-turn-1' });
     await page.waitForTimeout(100);
-    await expect(page.locator('#overlay')).toBeVisible();
+    await expect(page.locator('#overlay')).toBeHidden();
 
     // Canvas artifact arrives
     await injectCanvasEvent(page, {

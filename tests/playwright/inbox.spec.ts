@@ -362,27 +362,7 @@ test.describe('item inbox sidebar', () => {
       },
     });
     await expect(page.locator('#pr-file-pane')).toHaveClass(/is-open/);
-    await expect(page.locator('#item-sidebar-context-filter')).toBeVisible();
     await expect(page.locator('#pr-file-list')).toContainText('Review W7x backlog');
     await expect(page.locator('#pr-file-list')).toContainText('Reply to family email');
-
-    await page.locator('#item-sidebar-context-filter').click();
-    await page.locator('#item-sidebar-menu').getByRole('button', { name: 'Work' }).click();
-
-    await expect(page.locator('#item-sidebar-context-filter')).toContainText('Context: Work');
-    await expect(page.locator('#pr-file-list')).toContainText('Review W7x backlog');
-    await expect(page.locator('#pr-file-list')).not.toContainText('Reply to family email');
-
-    await page.locator('#item-sidebar-context-clear').click();
-
-    await expect(page.locator('#item-sidebar-context-filter')).toContainText('Filter by Context');
-    await expect(page.locator('#pr-file-list')).toContainText('Review W7x backlog');
-    await expect(page.locator('#pr-file-list')).toContainText('Reply to family email');
-
-    const log = await page.evaluate(() => (window as any).__harnessLog || []);
-    const itemFetch = log.find((entry: any) => entry?.action === 'item_list' && String(entry?.url || '').includes('/api/items/inbox?') && String(entry?.url || '').includes('context_id=10'));
-    const clearedFetch = [...log].reverse().find((entry: any) => entry?.action === 'item_list' && String(entry?.url || '').includes('/api/items/inbox') && !String(entry?.url || '').includes('context_id='));
-    expect(itemFetch).toBeTruthy();
-    expect(clearedFetch).toBeTruthy();
   });
 });

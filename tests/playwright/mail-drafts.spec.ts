@@ -286,7 +286,7 @@ test.describe('mail drafts', () => {
     await expect(page.locator('[name="subject"]')).toHaveValue('Re: Client question');
   });
 
-  test('new mail starts dictation authoring when the prompt tool is active', async ({ page }) => {
+  test('new mail starts voice mail authoring when the prompt tool is active', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await waitReady(page);
 
@@ -303,17 +303,20 @@ test.describe('mail drafts', () => {
 
     await clearLog(page);
     await page.locator('#new-mail-trigger').click();
-    await waitForLogEntry(page, 'api_fetch', 'dictation_start');
-    await expect(page.locator('#dictation-indicator')).toContainText('Email Draft');
+    await waitForLogEntry(page, 'api_fetch', 'mail_draft_create');
+    await waitForLogEntry(page, 'media', 'get_user_media');
+    await waitForLogEntry(page, 'recorder', 'start');
 
-    await page.evaluate(async () => {
-      await (window as any)._taburaApp.appendDictationTranscript('Hello team. Sending the updated status shortly.');
-    });
-    await expect(page.locator('#canvas-text')).toContainText('Email Draft');
-    await expect(page.locator('#canvas-text')).toContainText('Hello team. Sending the updated status shortly.');
+    await expect(page.locator('#canvas-text')).toHaveClass(/mail-draft-canvas/);
+    await expect(page.locator('.mail-draft-title')).toContainText('Draft email');
+    await expect(page.locator('#dictation-indicator')).toBeHidden();
+    await expect.poll(async () => page.evaluate(() => {
+      const app = (window as any)._taburaApp;
+      return String(app?.getState?.().voiceLifecycle || '');
+    })).toBe('recording');
   });
 
-  test('reply starts dictation authoring when the prompt tool is active', async ({ page }) => {
+  test('reply starts voice mail authoring when the prompt tool is active', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await waitReady(page);
 
@@ -357,15 +360,19 @@ test.describe('mail drafts', () => {
 
     await clearLog(page);
     await page.locator('#reply-mail-trigger').click();
-    await waitForLogEntry(page, 'api_fetch', 'dictation_start');
-    await expect(page.locator('#dictation-indicator')).toContainText('Email Reply');
+    await waitForLogEntry(page, 'api_fetch', 'mail_draft_reply');
+    await waitForLogEntry(page, 'media', 'get_user_media');
+    await waitForLogEntry(page, 'recorder', 'start');
 
-    await page.evaluate(async () => {
-      await (window as any)._taburaApp.appendDictationTranscript('I can send the revised proposal this afternoon.');
-    });
-    await expect(page.locator('#canvas-text')).toContainText('Email Reply Draft');
-    await expect(page.locator('#canvas-text')).toContainText('Thread: Client question');
-    await expect(page.locator('#canvas-text')).toContainText('I can send the revised proposal this afternoon.');
+    await expect(page.locator('#canvas-text')).toHaveClass(/mail-draft-canvas/);
+    await expect(page.locator('.mail-draft-title')).toContainText('Re: Client question');
+    await expect(page.locator('[name="to"]')).toHaveValue('client@example.com');
+    await expect(page.locator('[name="subject"]')).toHaveValue('Re: Client question');
+    await expect(page.locator('#dictation-indicator')).toBeHidden();
+    await expect.poll(async () => page.evaluate(() => {
+      const app = (window as any)._taburaApp;
+      return String(app?.getState?.().voiceLifecycle || '');
+    })).toBe('recording');
   });
 
   test('command center can launch reply from the current sidebar selection', async ({ page }) => {

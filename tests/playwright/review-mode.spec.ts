@@ -1,5 +1,23 @@
 import { expect, test, type Page } from '@playwright/test';
 
+async function waitReady(page: Page) {
+  await page.goto('/tests/playwright/harness.html');
+  await page.waitForFunction(() => {
+    const app = (window as any)._taburaApp;
+    if (typeof app?.getState !== 'function') return false;
+    const s = app.getState();
+    return s.chatWs && s.chatWs.readyState === (window as any).WebSocket.OPEN;
+  }, null, { timeout: 5_000 });
+  await page.waitForTimeout(200);
+}
+
+async function injectCanvasModuleRef(page: Page) {
+  await page.evaluate(async () => {
+    const mod = await import('../../internal/web/static/canvas.js');
+    (window as any).__canvasModule = mod;
+  });
+}
+
 function plainTextEvent(eventID: string, text: string) {
   return {
     kind: 'text_artifact',
@@ -30,23 +48,24 @@ function pdfEvent(eventID: string, path = 'missing.pdf') {
 }
 
 async function renderArtifact(page: Page, event: Record<string, unknown>) {
-  await page.waitForFunction(() => typeof (window as any).renderHarnessArtifact === 'function');
   await page.evaluate((payload) => {
-    // @ts-expect-error injected by harness module
-    window.renderHarnessArtifact(payload);
+    const mod = (window as any).__canvasModule;
+    if (!mod?.renderCanvas) {
+      throw new Error('canvas module unavailable');
+    }
+    mod.renderCanvas(payload);
   }, event);
 }
 
 async function clearHarnessMessages(page: Page) {
-  await page.waitForFunction(() => typeof (window as any).clearHarnessMessages === 'function');
   await page.evaluate(() => {
-    // @ts-expect-error injected by harness module
-    window.clearHarnessMessages();
+    (window as any).__harnessLog?.splice?.(0);
   });
 }
 
 test.beforeEach(async ({ page }) => {
-  await page.goto('/tests/playwright/review-harness.html');
+  await waitReady(page);
+  await injectCanvasModuleRef(page);
   await clearHarnessMessages(page);
 });
 
@@ -90,8 +109,11 @@ test('clearCanvas hides all artifact panes', async ({ page }) => {
   await expect(page.locator('#canvas-text')).toBeVisible();
 
   await page.evaluate(() => {
-    // @ts-expect-error injected by harness module
-    window.clearHarnessCanvas();
+    const mod = (window as any).__canvasModule;
+    if (!mod?.clearCanvas) {
+      throw new Error('canvas module unavailable');
+    }
+    mod.clearCanvas();
   });
 
   await expect(page.locator('#canvas-text')).toBeHidden();

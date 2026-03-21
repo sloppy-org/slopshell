@@ -1530,6 +1530,18 @@
       if (u.includes('/api/live-policy')) {
         return new Response(JSON.stringify({ policy: runtimeState.live_policy }), { status: 200 });
       }
+      if (u.includes('/api/dialogue/diagnostics') && opts?.method === 'POST') {
+        let body = {};
+        try { body = JSON.parse(String(opts?.body || '{}')); } catch (_) { body = {}; }
+        window.__harnessLog.push({
+          type: 'api_fetch',
+          action: 'dialogue_diagnostics',
+          method: opts?.method || 'POST',
+          url: u,
+          payload: body,
+        });
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      }
       if (u.includes('/api/workspace/focus')) {
         const payload = normalizeHarnessWorkspaceFocus(harnessWorkspaceFocus);
         window.__harnessLog.push({
@@ -1633,7 +1645,7 @@
           ok: true,
           created: true,
           activated: Boolean(body?.activate),
-          project: cloneProject(id),
+          workspace: cloneProject(id),
         }), { status: 200 });
       }
       if (u.includes('/api/runtime/workspaces') && u.includes('/activate')) {
@@ -1664,7 +1676,7 @@
           ok: true,
           active_workspace_id: project.id,
           active_sphere: runtimeState.active_sphere,
-          project,
+          workspace: project,
         }), { status: 200 });
       }
       if (u.includes('/api/runtime/workspaces/') && u.includes('/persist') && opts?.method === 'POST') {
@@ -1686,7 +1698,7 @@
         });
         return new Response(JSON.stringify({
           ok: true,
-          project: cloneProject(projectId),
+          workspace: cloneProject(projectId),
         }), { status: 200 });
       }
       if (u.includes('/api/runtime/workspaces/') && u.includes('/discard') && opts?.method === 'POST') {
@@ -1709,7 +1721,7 @@
           ok: true,
           discarded_project: projectId,
           active_workspace_id: activeWorkspaceId,
-          active_project: cloneProject(activeWorkspaceId),
+          workspace: cloneProject(activeWorkspaceId),
         }), { status: 200 });
       }
       if (u.includes('/api/hotword/status')) {
@@ -1745,7 +1757,7 @@
           payload: { workspace_id: projectId, model, reasoning_effort: effort },
         });
         return new Response(JSON.stringify({
-          project: cloneProject(projectId),
+          workspace: cloneProject(projectId),
         }), { status: 200 });
       }
       if (u.includes('/api/runtime/workspaces/activity')) {
@@ -1755,7 +1767,7 @@
           method: opts?.method || 'GET',
           url: u,
         });
-        const projects = harnessProjects.map((project) => ({
+        const workspaces = harnessProjects.map((project) => ({
           workspace_id: project.id,
           workspace_path: project.workspace_path,
           name: project.name,
@@ -1766,7 +1778,7 @@
           review_pending: Boolean(project.review_pending),
           run_state: { ...(harnessProjectRunStates[project.id] || project.run_state || {}) },
         }));
-        return new Response(JSON.stringify({ ok: true, projects }), { status: 200 });
+        return new Response(JSON.stringify({ ok: true, workspaces }), { status: 200 });
       }
       if (u.includes('/api/workspaces/') && u.includes('/files')) {
         const query = new URL(u, window.location.href).searchParams;
@@ -2351,9 +2363,9 @@
         return new Response(JSON.stringify({ ok: true, items }), { status: 200 });
       }
       if (u.includes('/api/runtime/workspaces')) {
-        const projects = harnessProjects.map((project) => cloneProject(project.id));
+        const workspaces = harnessProjects.map((project) => cloneProject(project.id));
         return new Response(JSON.stringify({
-          projects,
+          workspaces,
           default_workspace_id: 'test',
           active_workspace_id: activeWorkspaceId,
         }), { status: 200 });

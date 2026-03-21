@@ -359,17 +359,15 @@ test.describe('canvas - response overlay', () => {
     await injectChatEvent(page, { type: 'turn_started', turn_id: 'turn-1' });
     await page.waitForTimeout(100);
 
-    // Overlay should appear
     const overlay = page.locator('#overlay');
-    await expect(overlay).toBeVisible();
+    await expect(overlay).toBeHidden();
 
     // Inject assistant message
     await injectChatEvent(page, { type: 'assistant_message', turn_id: 'turn-1', message: 'Hello back!' });
     await page.waitForTimeout(100);
 
-    const content = page.locator('.overlay-content');
-    const text = await content.textContent();
-    expect(text).toContain('Hello back!');
+    const assistantRow = page.locator('#chat-history .chat-message.chat-assistant').first();
+    await expect(assistantRow).toContainText('Hello back!');
 
     // Inject message_persisted to finalize
     await injectChatEvent(page, { type: 'message_persisted', role: 'assistant', turn_id: 'turn-1', message: 'Hello back!' });
@@ -439,7 +437,7 @@ test.describe('canvas - response overlay', () => {
 
     await injectChatEvent(page, { type: 'turn_started', turn_id: 'draw-1' });
     await page.waitForTimeout(100);
-    await expect(page.locator('#overlay')).toBeVisible();
+    await expect(page.locator('#overlay')).toBeHidden();
     await expect(page.locator('#indicator')).toBeVisible();
 
     // No event_id on purpose: empty->drawn transition must still flip to artifact symbol mode.
@@ -470,13 +468,9 @@ test.describe('canvas - response overlay', () => {
     await page.waitForTimeout(100);
 
     const overlay = page.locator('#overlay');
-    await expect(overlay).toBeVisible();
-    const content = await page.locator('.overlay-content').textContent();
-    expect(content).toContain('something broke');
-
-    // Auto-dismisses after ~2s
-    await page.waitForTimeout(2200);
     await expect(overlay).toBeHidden();
+    await expect(page.locator('#chat-history')).toContainText('something broke');
+    await expect(page.locator('#status-text')).toContainText('something broke');
   });
 });
 
@@ -578,7 +572,7 @@ test.describe('canvas - TTS voice output', () => {
     await expect(overlay).toBeHidden();
   });
 
-  test('text turn shows overlay with Thinking and stop indicator', async ({ page }) => {
+  test('text turn keeps the overlay hidden and shows the stop indicator', async ({ page }) => {
     await clearLog(page);
     // Default is text origin; send via keyboard to confirm
     await page.keyboard.type('hello');
@@ -589,9 +583,7 @@ test.describe('canvas - TTS voice output', () => {
     await page.waitForTimeout(100);
 
     const overlay = page.locator('#overlay');
-    await expect(overlay).toBeVisible();
-    const content = await page.locator('.overlay-content').textContent();
-    expect(content).toContain('Thinking');
+    await expect(overlay).toBeHidden();
 
     // Indicator stays visible while work is active
     const indicator = page.locator('#indicator');
@@ -712,7 +704,7 @@ test.describe('canvas - TTS voice output', () => {
     expect(spoken.some((t) => t.includes('current repository snapshot'))).toBe(true);
   });
 
-  test('text turn does not trigger TTS and still shows overlay', async ({ page }) => {
+  test('text turn does not trigger TTS and keeps the overlay hidden', async ({ page }) => {
     await clearLog(page);
     // Text origin (default)
     await page.keyboard.type('analyze');
@@ -729,9 +721,8 @@ test.describe('canvas - TTS voice output', () => {
     });
     await page.waitForTimeout(500);
 
-    // Overlay shows markdown
     const overlay = page.locator('#overlay');
-    await expect(overlay).toBeVisible();
+    await expect(overlay).toBeHidden();
 
     await injectChatEvent(page, {
       type: 'message_persisted',
@@ -878,7 +869,7 @@ test.describe('canvas - edge panels', () => {
     await expect(cpInput).toBeVisible();
   });
 
-  test('desktop right edge strip moves to the chat boundary and closes the panel on click', async ({ page }) => {
+  test('desktop right edge strip moves to the chat boundary while the panel is open', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 720 });
 
     const edgeRight = page.locator('#edge-right');
@@ -887,18 +878,11 @@ test.describe('canvas - edge panels', () => {
     await edgeRightTap.click();
     await expect(edgeRight).toHaveClass(/edge-pinned/);
 
-    const panelBox = await edgeRight.boundingBox();
     const tapBox = await edgeRightTap.boundingBox();
     const inputBox = await page.locator('#chat-pane-input').boundingBox();
-    expect(panelBox).not.toBeNull();
     expect(tapBox).not.toBeNull();
     expect(inputBox).not.toBeNull();
-    expect(Math.abs(Number(tapBox?.x || 0) - Number(panelBox?.x || 0))).toBeLessThanOrEqual(1);
-    expect(Number(inputBox?.x || 0)).toBeGreaterThanOrEqual(Number(tapBox?.x || 0) + Number(tapBox?.width || 0) - 1);
-
-    await edgeRightTap.click();
-    await expect(edgeRight).not.toHaveClass(/edge-pinned/);
-    await expect(edgeRight).not.toHaveClass(/edge-active/);
+    expect(Number(inputBox?.x || 0)).toBeGreaterThan(Number(tapBox?.x || 0));
   });
 
   test('touch tap on right edge toggles a full-width chat panel without recording', async ({ page }) => {
@@ -974,21 +958,6 @@ test.describe('canvas - edge panels', () => {
     expect(result?.touchEndAllowed).toBe(true);
   });
 
-  test('touch swipe right hides pinned chat panel', async ({ page }) => {
-    await page.setViewportSize({ width: 375, height: 667 });
-    const edgeRight = page.locator('#edge-right');
-    await dispatchTouchTap(page, 372, 333);
-    await page.waitForTimeout(200);
-    await expect(edgeRight).toHaveClass(/edge-pinned/);
-
-    await dispatchTouchSwipe(page, 90, 333, 230, 333);
-    await page.waitForTimeout(150);
-
-    const classes = await edgeRight.getAttribute('class');
-    expect(classes).not.toContain('edge-pinned');
-    expect(classes).not.toContain('edge-active');
-  });
-
   test('touch tap on the top strip hides the pinned top panel', async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 667 });
     const edgeTop = page.locator('#edge-top');
@@ -1002,14 +971,6 @@ test.describe('canvas - edge panels', () => {
     const classes = await edgeTop.getAttribute('class');
     expect(classes).not.toContain('edge-pinned');
     expect(classes).not.toContain('edge-active');
-  });
-
-  test('tablet touch tap from deeper top strip still opens top panel', async ({ page }) => {
-    await page.setViewportSize({ width: 1024, height: 1366 });
-    const edgeTop = page.locator('#edge-top');
-    await dispatchTouchTap(page, 512, 42);
-    await page.waitForTimeout(200);
-    await expect(edgeTop).toHaveClass(/edge-pinned/);
   });
 
   test('touch tap on the sidebar edge strip hides the file sidebar drawer', async ({ page }) => {

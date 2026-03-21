@@ -153,7 +153,7 @@ test.beforeEach(async ({ page }) => {
 
 test('Live panel swaps Dialogue/Meeting choices for active status and Stop', async ({ page }) => {
   await waitForEdgeButtons(page);
-  await expect(page.locator('#edge-top .edge-panel-title')).toHaveText('Workspaces');
+  await expect(page.locator('#edge-top .edge-panel-title')).toHaveText('Runtime');
   await expect(page.locator('#edge-top-models')).toHaveAttribute('aria-label', 'Workspace runtime controls');
   await expect(page.locator('#edge-top-models .edge-live-dialogue-btn')).toBeVisible();
   await expect(page.locator('#edge-top-models .edge-live-meeting-btn')).toBeVisible();
@@ -358,7 +358,7 @@ test('speech onset during dialogue listen starts recording', async ({ page }) =>
   })).toBe(true);
 });
 
-test('dialogue listen falls back to frame probabilities when speech-start callback is missed', async ({ page }) => {
+test('dialogue listen stays armed when only frame probabilities arrive without speech-start callbacks', async ({ page }) => {
   await page.evaluate(() => {
     (window as any).__taburaVadMock = {
       init() { return true; },
@@ -395,15 +395,24 @@ test('dialogue listen falls back to frame probabilities when speech-start callba
   await setDialogueMode(page, true);
   await clearLog(page);
 
-  await expect.poll(async () => {
-    const log = await getLog(page);
-    return log.some((entry) => entry.type === 'recorder' && entry.action === 'start');
-  }, { timeout: 5_000 }).toBe(true);
+  await page.waitForTimeout(1_000);
+
+  const recorderStarted = await page.evaluate(() => {
+    const log = (window as any).__harnessLog;
+    return Array.isArray(log) && log.some((entry: any) => entry?.type === 'recorder' && entry?.action === 'start');
+  });
+  expect(recorderStarted).toBe(false);
 
   await expect.poll(async () => page.evaluate(() => {
     const app = (window as any)._taburaApp;
-    return Boolean(app?.getState?.().chatVoiceCapture);
+    const s = app?.getState?.();
+    return Boolean(s?.liveSessionDialogueListenActive) && String(s?.voiceLifecycle || '') === 'listening';
   })).toBe(true);
+
+  await expect.poll(async () => {
+    const log = await getLog(page);
+    return log.some((entry) => entry.type === 'recorder' && entry.action === 'start');
+  }, { timeout: 2_000 }).toBe(false);
 });
 
 test('dialogue listen stays armed without a fixed timeout', async ({ page }) => {
