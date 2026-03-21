@@ -1,4 +1,12 @@
 import { expect, test, type Page } from '@playwright/test';
+import {
+  circleSegment,
+  setLiveMode,
+  setSilentMode,
+  stopLiveMode,
+  switchToWorkspace,
+  waitForCircleControls,
+} from './tabura-circle-helpers';
 
 type HarnessLogEntry = {
   type: string;
@@ -62,78 +70,12 @@ async function setDialogueListenWindowMs(page: Page, ms: number) {
   }, ms);
 }
 
-async function waitForEdgeButtons(page: Page) {
-  await expect.poll(async () => page.evaluate(() => {
-    const dialogue = document.querySelector('#edge-top-models .edge-live-dialogue-btn');
-    const silent = document.querySelector('#edge-top-models .edge-silent-btn');
-    return Boolean(dialogue && silent);
-  })).toBe(true);
-}
-
-async function switchToTestProject(page: Page) {
-  await page.evaluate(() => {
-    const buttons = Array.from(document.querySelectorAll('#edge-top-projects .edge-project-btn'));
-    const button = buttons.find((node) => node.textContent?.trim().toLowerCase() === 'test');
-    if (button instanceof HTMLButtonElement) {
-      button.click();
-    }
-  });
-  await expect.poll(async () => page.evaluate(() => {
-    const app = (window as any)._taburaApp;
-    const state = app?.getState?.();
-    const wsOpen = (window as any).WebSocket.OPEN;
-    if (String(state?.activeWorkspaceId || '') !== 'test') return '';
-    return state?.chatWs?.readyState === wsOpen ? 'ready' : 'waiting';
-  })).toBe('ready');
-}
-
 async function setDialogueMode(page: Page, enabled: boolean) {
   if (enabled) {
-    await switchToTestProject(page);
-    await waitForEdgeButtons(page);
-    const dialogueButton = page.locator('#edge-top-models .edge-live-dialogue-btn');
-    await expect(dialogueButton).toBeEnabled();
-    await page.evaluate(() => {
-      const button = document.querySelector('#edge-top-models .edge-live-dialogue-btn');
-      if (!(button instanceof HTMLButtonElement)) {
-        throw new Error('dialogue button not found');
-      }
-      button.click();
-    });
-    await expect(page.locator('#edge-top-models .edge-live-status')).toContainText('Dialogue');
+    await setLiveMode(page, 'dialogue');
     return;
   }
-  const stopButton = page.locator('#edge-top-models .edge-live-stop-btn');
-  if (await stopButton.count()) {
-    await page.evaluate(() => {
-      const button = document.querySelector('#edge-top-models .edge-live-stop-btn');
-      if (button instanceof HTMLButtonElement) {
-        button.click();
-      }
-    });
-  }
-  await expect(page.locator('#edge-top-models .edge-live-dialogue-btn')).toBeVisible();
-}
-
-async function setSilentMode(page: Page, enabled: boolean) {
-  await expect.poll(async () => page.evaluate(() => {
-    const button = document.querySelector('#edge-top-models .edge-silent-btn');
-    return button instanceof HTMLButtonElement;
-  })).toBe(true);
-  await page.evaluate((target) => {
-    const button = document.querySelector('#edge-top-models .edge-silent-btn');
-    if (!(button instanceof HTMLButtonElement)) {
-      throw new Error('silent button not found');
-    }
-    const current = button.getAttribute('aria-pressed') === 'true';
-    if (current !== target) {
-      button.click();
-    }
-  }, enabled);
-  await expect.poll(async () => page.evaluate(() => {
-    const button = document.querySelector('#edge-top-models .edge-silent-btn');
-    return button instanceof HTMLButtonElement ? button.getAttribute('aria-pressed') : 'false';
-  })).toBe(enabled ? 'true' : 'false');
+  await stopLiveMode(page, 'dialogue');
 }
 async function triggerVoiceAssistantTTS(page: Page, turnID: string, text = 'Hello there.') {
   await page.evaluate(() => {
@@ -151,49 +93,31 @@ test.beforeEach(async ({ page }) => {
   await waitReady(page);
 });
 
-test('Live panel swaps Dialogue/Meeting choices for active status and Stop', async ({ page }) => {
-  await waitForEdgeButtons(page);
+test('Tabura Circle drives live dialogue while the top panel stays summary-only', async ({ page }) => {
+  await waitForCircleControls(page);
   await expect(page.locator('#edge-top .edge-panel-title')).toHaveText('Runtime');
-  await expect(page.locator('#edge-top-models')).toHaveAttribute('aria-label', 'Workspace runtime controls');
-  await expect(page.locator('#edge-top-models .edge-live-dialogue-btn')).toBeVisible();
-  await expect(page.locator('#edge-top-models .edge-live-meeting-btn')).toBeVisible();
+  await expect(page.locator('#edge-top-models')).toHaveAttribute('aria-label', 'Workspace runtime summary');
+  await expect(page.locator('#edge-top-models button')).toHaveCount(0);
 
   await setDialogueMode(page, true);
 
   await expect(page.locator('#edge-top-models .edge-live-status')).toContainText('Dialogue');
-  await expect(page.locator('#edge-top-models .edge-live-stop-btn')).toBeVisible();
-  await expect(page.locator('#edge-top-models .edge-live-dialogue-btn')).toHaveCount(0);
+  await expect(circleSegment(page, 'dialogue')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('#edge-top-models')).not.toContainText('Companion');
   await expect(page.locator('#edge-top-models')).not.toContainText('Conversation');
 
   await setDialogueMode(page, false);
-  await expect(page.locator('#edge-top-models .edge-live-dialogue-btn')).toBeVisible();
-  await expect(page.locator('#edge-top-models .edge-live-meeting-btn')).toBeVisible();
+  await expect(circleSegment(page, 'dialogue')).toHaveAttribute('aria-pressed', 'false');
+  await expect(circleSegment(page, 'meeting')).toHaveAttribute('aria-pressed', 'false');
 });
 
 test('Meeting entry shows active status and returns to choices on Stop', async ({ page }) => {
-  await switchToTestProject(page);
-  await waitForEdgeButtons(page);
-  const meetingButton = page.locator('#edge-top-models .edge-live-meeting-btn');
-  await expect(meetingButton).toBeEnabled();
-  await page.evaluate(() => {
-    const button = document.querySelector('#edge-top-models .edge-live-meeting-btn');
-    if (!(button instanceof HTMLButtonElement)) {
-      throw new Error('meeting button not found');
-    }
-    button.click();
-  });
-
+  await setLiveMode(page, 'meeting');
   await expect(page.locator('#edge-top-models .edge-live-status')).toContainText('Meeting');
 
-  await page.evaluate(() => {
-    const button = document.querySelector('#edge-top-models .edge-live-stop-btn');
-    if (button instanceof HTMLButtonElement) {
-      button.click();
-    }
-  });
-  await expect(page.locator('#edge-top-models .edge-live-dialogue-btn')).toBeVisible();
-  await expect(page.locator('#edge-top-models .edge-live-meeting-btn')).toBeVisible();
+  await stopLiveMode(page, 'meeting');
+  await expect(circleSegment(page, 'dialogue')).toHaveAttribute('aria-pressed', 'false');
+  await expect(circleSegment(page, 'meeting')).toHaveAttribute('aria-pressed', 'false');
 });
 
 test('Live policy persists from runtime and reacts to websocket policy changes', async ({ page }) => {
@@ -205,7 +129,7 @@ test('Live policy persists from runtime and reacts to websocket policy changes',
     return s.chatWs && s.chatWs.readyState === (window as any).WebSocket.OPEN;
   }, null, { timeout: 5_000 });
   await page.waitForTimeout(200);
-  await waitForEdgeButtons(page);
+  await waitForCircleControls(page);
 
   const initialSessionState = await page.evaluate(() => {
     const app = (window as any)._taburaApp;
@@ -217,17 +141,13 @@ test('Live policy persists from runtime and reacts to websocket policy changes',
     };
   });
 
-  await expect(page.locator('#edge-top-models .edge-live-meeting-btn')).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.locator('#edge-top-models .edge-live-dialogue-btn')).toHaveAttribute('aria-pressed', 'false');
+  await expect.poll(async () => page.evaluate(() => {
+    const app = (window as any)._taburaApp;
+    return String(app?.getState?.().livePolicy || '');
+  })).toBe('meeting');
 
   await clearLog(page);
-  await page.evaluate(() => {
-    const button = document.querySelector('#edge-top-models .edge-live-dialogue-btn');
-    if (!(button instanceof HTMLButtonElement)) {
-      throw new Error('dialogue button not found');
-    }
-    button.click();
-  });
+  await setLiveMode(page, 'dialogue');
 
   await expect.poll(async () => {
     const log = await getLog(page);
@@ -244,17 +164,13 @@ test('Live policy persists from runtime and reacts to websocket policy changes',
     };
   })).toEqual(initialSessionState);
 
-  await page.evaluate(() => {
-    const button = document.querySelector('#edge-top-models .edge-live-stop-btn');
-    if (button instanceof HTMLButtonElement) {
-      button.click();
-    }
-  });
-  await expect(page.locator('#edge-top-models .edge-live-dialogue-btn')).toBeVisible();
+  await stopLiveMode(page, 'dialogue');
 
   await injectChatEvent(page, { type: 'live_policy_changed', policy: 'meeting' });
-  await expect(page.locator('#edge-top-models .edge-live-meeting-btn')).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.locator('#edge-top-models .edge-live-dialogue-btn')).toHaveAttribute('aria-pressed', 'false');
+  await expect.poll(async () => page.evaluate(() => {
+    const app = (window as any)._taburaApp;
+    return String(app?.getState?.().livePolicy || '');
+  })).toBe('meeting');
 });
 
 test('Dialogue shows listening indicator immediately and after TTS playback', async ({ page }) => {

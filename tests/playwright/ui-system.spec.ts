@@ -1,4 +1,12 @@
 import { expect, test, type Page } from '@playwright/test';
+import {
+  circleSegment,
+  clickCircleSegment,
+  openCircle,
+  setLiveMode,
+  switchToWorkspace,
+  waitForCircleControls,
+} from './tabura-circle-helpers';
 
 type HarnessLogEntry = { type: string; action?: string; text?: string; [key: string]: unknown };
 
@@ -119,43 +127,6 @@ async function dispatchPrintableKey(page: Page, key: string) {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: value, bubbles: true }));
     document.dispatchEvent(new KeyboardEvent('keyup', { key: value, bubbles: true }));
   }, key);
-}
-
-async function dragToolPalette(page: Page, dx: number, dy: number) {
-  return page.locator('#tool-palette').evaluate((el, delta) => {
-    const rect = el.getBoundingClientRect();
-    const startX = rect.left + 8;
-    const startY = rect.top + 8;
-    const endX = startX + Number(delta.dx || 0);
-    const endY = startY + Number(delta.dy || 0);
-    el.dispatchEvent(new PointerEvent('pointerdown', {
-      bubbles: true,
-      pointerId: 41,
-      button: 0,
-      clientX: startX,
-      clientY: startY,
-    }));
-    el.dispatchEvent(new PointerEvent('pointermove', {
-      bubbles: true,
-      pointerId: 41,
-      buttons: 1,
-      clientX: endX,
-      clientY: endY,
-    }));
-    el.dispatchEvent(new PointerEvent('pointerup', {
-      bubbles: true,
-      pointerId: 41,
-      button: 0,
-      clientX: endX,
-      clientY: endY,
-    }));
-    const style = window.getComputedStyle(el);
-    return {
-      left: style.left,
-      top: style.top,
-      stored: window.localStorage.getItem('tabura.toolPalettePosition'),
-    };
-  }, { dx, dy });
 }
 
 async function waitForLogEntry(page: Page, type: string, action?: string) {
@@ -417,49 +388,65 @@ test.describe('tabula rasa button', () => {
   });
 });
 
-test.describe('floating tool palette', () => {
+test.describe('Tabura Circle', () => {
   test.beforeEach(async ({ page }) => {
     await waitReady(page);
   });
 
-  test('renders icon-only interaction controls outside the top panel', async ({ page }) => {
-    await expect(page.locator('#tool-palette')).toBeVisible();
+  test('renders session and tool controls outside the top panel', async ({ page }) => {
+    await expect(page.locator('#tabura-circle-dot')).toBeVisible();
+    await waitForCircleControls(page);
 
     const snapshot = await page.evaluate(() => {
-      const paletteButtons = Array.from(document.querySelectorAll('#tool-palette .tool-palette-btn')).map((button) => ({
-        mode: button.getAttribute('data-mode'),
-        label: button.getAttribute('aria-label'),
+      const circleButtons = Array.from(document.querySelectorAll('#tabura-circle-menu .tabura-circle-segment')).map((button) => ({
+        segment: button.getAttribute('data-segment'),
+        kind: button.getAttribute('data-kind'),
         text: String(button.textContent || '').trim(),
       }));
       const topButtonTexts = Array.from(document.querySelectorAll('#edge-top-models button')).map((button) => String(button.textContent || '').trim());
       const topModels = document.getElementById('edge-top-models');
       return {
-        paletteButtons,
+        circleButtons,
         topButtonTexts,
-        dialogueButtons: document.querySelectorAll('#edge-top-models .edge-live-dialogue-btn').length,
+        topButtonCount: document.querySelectorAll('#edge-top-models button').length,
         topOverflows: topModels ? (topModels.scrollWidth > topModels.clientWidth + 1) : null,
       };
     });
 
-    expect(snapshot.paletteButtons.map((button) => button.mode)).toEqual(['pointer', 'highlight', 'ink', 'text_note', 'prompt']);
-    expect(snapshot.paletteButtons.every((button) => button.text === '')).toBe(true);
-    expect(snapshot.topButtonTexts).not.toContain('pointer');
-    expect(snapshot.topButtonTexts).not.toContain('ink');
-    expect(snapshot.dialogueButtons).toBe(1);
+    expect(snapshot.circleButtons.map((button) => button.segment)).toEqual([
+      'dialogue',
+      'meeting',
+      'silent',
+      'prompt',
+      'text_note',
+      'pointer',
+      'highlight',
+      'ink',
+    ]);
+    expect(snapshot.circleButtons.map((button) => button.kind)).toEqual([
+      'session',
+      'session',
+      'toggle',
+      'tool',
+      'tool',
+      'tool',
+      'tool',
+      'tool',
+    ]);
+    expect(snapshot.circleButtons.every((button) => button.text.length > 0)).toBe(true);
+    expect(snapshot.topButtonTexts).toHaveLength(0);
+    expect(snapshot.topButtonCount).toBe(0);
     expect(snapshot.topOverflows).toBe(false);
   });
 
-  test('palette clicks switch the active interaction mode', async ({ page }) => {
+  test('circle clicks switch the active interaction mode', async ({ page }) => {
     await clearLog(page);
-
-    const textNoteButton = page.locator('#tool-palette .tool-palette-btn[data-mode="text_note"]');
-    const pointerButton = page.locator('#tool-palette .tool-palette-btn[data-mode="pointer"]');
-
-    await textNoteButton.click();
+    await clickCircleSegment(page, 'text_note');
     await waitForLogEntry(page, 'api_fetch', 'runtime_preferences');
 
-    await expect(textNoteButton).toHaveAttribute('aria-pressed', 'true');
-    await expect(pointerButton).toHaveAttribute('aria-pressed', 'false');
+    await expect(circleSegment(page, 'text_note')).toHaveAttribute('aria-pressed', 'true');
+    await expect(circleSegment(page, 'pointer')).toHaveAttribute('aria-pressed', 'false');
+    await expect(page.locator('#tabura-circle-dot')).toHaveAttribute('data-tool', 'text_note');
 
     const tool = await page.evaluate(() => (window as any)._taburaApp?.getState?.().interaction.tool);
     expect(tool).toBe('text_note');
@@ -469,30 +456,17 @@ test.describe('floating tool palette', () => {
     await clearLog(page);
     await page.keyboard.press('i');
     await waitForLogEntry(page, 'api_fetch', 'runtime_preferences');
-    await expect(page.locator('#tool-palette .tool-palette-btn[data-mode="ink"]')).toHaveAttribute('aria-pressed', 'true');
+    await expect(circleSegment(page, 'ink')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('#tabura-circle-dot')).toHaveAttribute('data-tool', 'ink');
   });
 
-  test('palette position persists after dragging', async ({ page }) => {
-    const first = await dragToolPalette(page, -140, -90);
-    expect(first.left).not.toBe('auto');
-    expect(first.top).not.toBe('auto');
-    const stored = JSON.parse(String(first.stored || 'null'));
-    expect(typeof stored?.x).toBe('number');
-    expect(typeof stored?.y).toBe('number');
+  test('circle collapses again when focus returns to the canvas', async ({ page }) => {
+    await openCircle(page);
+    await expect(page.locator('#tabura-circle')).toHaveAttribute('data-state', 'expanded');
 
-    await waitReady(page);
+    await page.mouse.click(420, 320);
 
-    const second = await page.locator('#tool-palette').evaluate((el) => {
-      const style = window.getComputedStyle(el);
-      return {
-        left: style.left,
-        top: style.top,
-        stored: window.localStorage.getItem('tabura.toolPalettePosition'),
-      };
-    });
-    expect(second.left).toBe(first.left);
-    expect(second.top).toBe(first.top);
-    expect(second.stored).toBe(first.stored);
+    await expect(page.locator('#tabura-circle')).toHaveAttribute('data-state', 'collapsed');
   });
 
   test('artifact kind picks the default tool for the common case', async ({ page }) => {
@@ -503,7 +477,8 @@ test.describe('floating tool palette', () => {
       text: 'Transcript line one\nTranscript line two',
       meta: { artifact_kind: 'transcript' },
     });
-    await expect(page.locator('#tool-palette .tool-palette-btn[data-mode="highlight"]')).toHaveAttribute('aria-pressed', 'true');
+    await expect(circleSegment(page, 'highlight')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('#tabura-circle-dot')).toHaveAttribute('data-tool', 'highlight');
 
     await injectCanvasEvent(page, {
       kind: 'text_artifact',
@@ -512,7 +487,8 @@ test.describe('floating tool palette', () => {
       text: 'From: Ada\n\nHello',
       meta: { artifact_kind: 'email_thread' },
     });
-    await expect(page.locator('#tool-palette .tool-palette-btn[data-mode="text_note"]')).toHaveAttribute('aria-pressed', 'true');
+    await expect(circleSegment(page, 'text_note')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('#tabura-circle-dot')).toHaveAttribute('data-tool', 'text_note');
 
     await injectCanvasEvent(page, {
       kind: 'text_artifact',
@@ -549,7 +525,8 @@ test.describe('floating tool palette', () => {
       { x: canvasBox.x + 160, y: canvasBox.y + 170, pressure: 0.7 },
     ]);
 
-    await expect(page.locator('#tool-palette .tool-palette-btn[data-mode="ink"]')).toHaveAttribute('aria-pressed', 'true');
+    await expect(circleSegment(page, 'ink')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('#tabura-circle-dot')).toHaveAttribute('data-tool', 'ink');
     await expect(page.locator('#ink-controls')).toBeVisible();
     const runtimeUpdates = (await getLog(page)).filter((entry) => entry.type === 'api_fetch' && entry.action === 'runtime_preferences');
     expect(runtimeUpdates).toHaveLength(0);
@@ -842,7 +819,7 @@ test.describe('floating tool palette', () => {
     await page.locator('#pr-file-list .pr-file-item').first().click();
 
     await expect(page.locator('#canvas-text')).toContainText('Need a response before tomorrow morning.');
-    await expect(page.locator('#tool-palette')).toBeVisible();
+    await expect(page.locator('#tabura-circle-dot')).toHaveAttribute('data-tool', 'text_note');
     await expect.poll(async () => {
       return page.evaluate(() => (window as any)._taburaApp?.getState?.().interaction.surface);
     }).toBe('annotate');
@@ -1001,7 +978,7 @@ test.describe('floating tool palette', () => {
     await expect(page.locator('#canvas-text')).toContainText('Need a response before tomorrow morning.');
     await expect(page.locator('#canvas-text')).toContainText('I can confirm the review packet is ready.');
     await expect(page.locator('#canvas-text')).not.toContainText('- Kind:');
-    await expect(page.locator('#tool-palette')).toBeVisible();
+    await expect(page.locator('#tabura-circle-dot')).toHaveAttribute('data-tool', 'text_note');
     await expect.poll(async () => {
       return page.evaluate(() => (window as any)._taburaApp?.getState?.().interaction.surface);
     }).toBe('annotate');
@@ -1018,7 +995,7 @@ test.describe('floating tool palette', () => {
 
     await expect(page.locator('#surface-toggle')).toBeVisible();
     await expect(page.locator('#surface-toggle')).toHaveAttribute('aria-label', 'Switch to annotate');
-    await expect(page.locator('#tool-palette')).toBeHidden();
+    await expect(page.locator('#tabura-circle-dot')).toHaveAttribute('data-tool', 'pointer');
     await expect.poll(async () => {
       return page.evaluate(() => (window as any)._taburaApp?.getState?.().interaction.surface);
     }).toBe('editor');
@@ -1026,7 +1003,7 @@ test.describe('floating tool palette', () => {
     await page.locator('#surface-toggle').click();
 
     await expect(page.locator('#surface-toggle')).toHaveAttribute('aria-label', 'Switch to editor');
-    await expect(page.locator('#tool-palette')).toBeVisible();
+    await expect(page.locator('#tabura-circle-dot')).toHaveAttribute('data-tool', 'pointer');
     await expect.poll(async () => {
       return page.evaluate(() => (window as any)._taburaApp?.getState?.().interaction.surface);
     }).toBe('annotate');
@@ -1406,40 +1383,17 @@ test.describe('turn lifecycle events', () => {
 
 test.describe('Live Dialogue multi-turn', () => {
   async function switchToTestProject(page: Page) {
-    await page.evaluate(() => {
-      const buttons = Array.from(document.querySelectorAll('#edge-top-projects .edge-project-btn'));
-      const button = buttons.find((node) => node.textContent?.trim().toLowerCase() === 'test');
-      if (button instanceof HTMLButtonElement) {
-        button.click();
-      }
-    });
-    await expect.poll(async () => page.evaluate(() => {
-      const app = (window as any)._taburaApp;
-      const state = app?.getState?.();
-      const wsOpen = (window as any).WebSocket.OPEN;
-      if (String(state?.activeWorkspaceId || '') !== 'test') return '';
-      return state?.chatWs?.readyState === wsOpen ? 'ready' : 'waiting';
-    })).toBe('ready');
+    await switchToWorkspace(page, 'test');
   }
 
   async function waitForEdgeButtons(page: Page) {
-    await expect.poll(async () => page.evaluate(() => {
-      const dialogue = document.querySelector('#edge-top-models .edge-live-dialogue-btn');
-      const silent = document.querySelector('#edge-top-models .edge-silent-btn');
-      return Boolean(dialogue && silent);
-    })).toBe(true);
+    await waitForCircleControls(page);
   }
 
   async function enableConversationMode(page: Page) {
     await switchToTestProject(page);
     await waitForEdgeButtons(page);
-    await page.evaluate(() => {
-      const button = document.querySelector('#edge-top-models .edge-live-dialogue-btn');
-      if (!(button instanceof HTMLButtonElement)) {
-        throw new Error('dialogue button not found');
-      }
-      button.click();
-    });
+    await setLiveMode(page, 'dialogue');
     await expect(page.locator('#edge-top-models .edge-live-status')).toContainText('Dialogue');
   }
 

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { setLiveMode } from './tabura-circle-helpers';
 
 async function clearLog(page: Page) {
   await page.evaluate(() => {
@@ -281,15 +282,7 @@ test('meeting tap stays cursor-only and does not start local capture', async ({ 
   await page.setViewportSize({ width: 1280, height: 800 });
   await waitReady(page);
   await switchToProject(page, 'test');
-  const meetingButton = page.locator('#edge-top-models .edge-live-meeting-btn');
-  await expect(meetingButton).toBeEnabled();
-  await page.evaluate(() => {
-    const button = document.querySelector('#edge-top-models .edge-live-meeting-btn');
-    if (!(button instanceof HTMLButtonElement)) {
-      throw new Error('meeting button not found');
-    }
-    button.click();
-  });
+  await setLiveMode(page, 'meeting');
   await expect(page.locator('#edge-top-models .edge-live-status')).toContainText('Meeting');
   await clearLog(page);
 
