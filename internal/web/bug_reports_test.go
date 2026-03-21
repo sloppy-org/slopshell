@@ -555,6 +555,39 @@ func TestBugReportIssueTitleUsesStructuredFallbackWithoutFreeText(t *testing.T) 
 	}
 }
 
+func TestBugReportIssueTitleUsesCanvasStateFallbackForDefaultWorkspace(t *testing.T) {
+	canvasState, err := json.Marshal(map[string]any{
+		"interaction_surface":    "canvas",
+		"interaction_tool":       "annotate",
+		"last_input_origin":      "pen",
+		"workspace_browser_path": "docs/interaction-grammar.md",
+	})
+	if err != nil {
+		t.Fatalf("Marshal() error: %v", err)
+	}
+	bundle := bugReportBundle{
+		ActiveWorkspace: "default",
+		CanvasState:     canvasState,
+	}
+
+	title := bugReportIssueTitle(bundle)
+	if title != "Bug report: interaction failed in default while browsing docs/interaction-grammar.md" {
+		t.Fatalf("bugReportIssueTitle() = %q", title)
+	}
+	body := bugReportIssueBody(bundle, ".tabura/artifacts/bugs/20260321-161441-a83c6a31/bundle.json")
+	for _, needle := range []string{
+		"## Summary\n\ninteraction failed in default while browsing docs/interaction-grammar.md",
+		"- Interaction surface: `canvas`",
+		"- Interaction tool: `annotate`",
+		"- Last input origin: `pen`",
+		"- Workspace browser path: `docs/interaction-grammar.md`",
+	} {
+		if !strings.Contains(body, needle) {
+			t.Fatalf("bugReportIssueBody() missing %q:\n%s", needle, body)
+		}
+	}
+}
+
 func initGitRepo(t *testing.T, dir string) {
 	t.Helper()
 	commands := [][]string{

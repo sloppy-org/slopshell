@@ -459,17 +459,21 @@ func bugReportIssueTitle(bundle bugReportBundle) string {
 	return "Bug report: interaction failure"
 }
 
-func bugReportCanvasArtifactTitle(raw json.RawMessage) string {
+func bugReportCanvasStateField(raw json.RawMessage, keys ...string) string {
 	var payload map[string]any
 	if err := json.Unmarshal(raw, &payload); err != nil {
 		return ""
 	}
-	for _, key := range []string{"artifact_title", "active_artifact_title", "title"} {
+	for _, key := range keys {
 		if clean := strings.TrimSpace(fmt.Sprint(payload[key])); clean != "" && clean != "<nil>" {
 			return clean
 		}
 	}
 	return ""
+}
+
+func bugReportCanvasArtifactTitle(raw json.RawMessage) string {
+	return bugReportCanvasStateField(raw, "artifact_title", "active_artifact_title", "title")
 }
 
 func bugReportSummary(bundle bugReportBundle) string {
@@ -523,11 +527,20 @@ func bugReportStructuredSummary(bundle bugReportBundle) string {
 	mode := strings.TrimSpace(bundle.ActiveMode)
 	workspace := strings.TrimSpace(bundle.ActiveWorkspace)
 	trigger := strings.TrimSpace(bundle.Trigger)
+	interaction := bugReportStructuredInteraction(bundle.CanvasState)
 	switch {
 	case mode != "" && artifact != "":
 		return fmt.Sprintf("%s interaction failed while viewing %s", mode, artifact)
 	case artifact != "":
 		return fmt.Sprintf("interaction failed while viewing %s", artifact)
+	case mode != "" && workspace != "" && interaction != "":
+		return fmt.Sprintf("%s interaction failed in %s %s", mode, workspace, interaction)
+	case workspace != "" && interaction != "":
+		return fmt.Sprintf("interaction failed in %s %s", workspace, interaction)
+	case mode != "" && interaction != "":
+		return fmt.Sprintf("%s interaction failed %s", mode, interaction)
+	case interaction != "":
+		return fmt.Sprintf("interaction failed %s", interaction)
 	case mode != "" && workspace != "":
 		return fmt.Sprintf("%s interaction failed in %s", mode, workspace)
 	case mode != "":
@@ -539,6 +552,31 @@ func bugReportStructuredSummary(bundle bugReportBundle) string {
 	default:
 		return ""
 	}
+}
+
+func bugReportStructuredInteraction(raw json.RawMessage) string {
+	switch {
+	case bugReportCanvasStateField(raw, "workspace_browser_path") != "":
+		return fmt.Sprintf("while browsing %s", bugReportCanvasStateField(raw, "workspace_browser_path"))
+	case bugReportCanvasStateField(raw, "item_sidebar_view") != "":
+		return fmt.Sprintf("while viewing %s sidebar", bugReportCanvasStateField(raw, "item_sidebar_view"))
+	}
+
+	surface := bugReportCanvasStateField(raw, "interaction_surface")
+	tool := bugReportCanvasStateField(raw, "interaction_tool")
+	switch {
+	case surface != "" && tool != "":
+		return fmt.Sprintf("on %s with %s", surface, tool)
+	case surface != "":
+		return fmt.Sprintf("on %s", surface)
+	case tool != "":
+		return fmt.Sprintf("with %s", tool)
+	}
+
+	if origin := bugReportCanvasStateField(raw, "last_input_origin"); origin != "" {
+		return fmt.Sprintf("after %s input", origin)
+	}
+	return ""
 }
 
 func normalizeBugReportEvidenceLine(raw string) string {
@@ -646,6 +684,11 @@ func bugReportIssueBody(bundle bugReportBundle, bundlePath string) string {
 		bugReportContextLine("Version", bundle.Version),
 		bugReportContextLine("Git SHA", bundle.GitSHA),
 		bugReportContextLine("Canvas artifact", bugReportCanvasArtifactTitle(bundle.CanvasState)),
+		bugReportContextLine("Interaction surface", bugReportCanvasStateField(bundle.CanvasState, "interaction_surface")),
+		bugReportContextLine("Interaction tool", bugReportCanvasStateField(bundle.CanvasState, "interaction_tool")),
+		bugReportContextLine("Last input origin", bugReportCanvasStateField(bundle.CanvasState, "last_input_origin")),
+		bugReportContextLine("Item sidebar view", bugReportCanvasStateField(bundle.CanvasState, "item_sidebar_view")),
+		bugReportContextLine("Workspace browser path", bugReportCanvasStateField(bundle.CanvasState, "workspace_browser_path")),
 	} {
 		if line != "" {
 			b.WriteString(line)
