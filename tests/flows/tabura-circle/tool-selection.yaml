@@ -1,0 +1,37 @@
+name: tabura_circle_select_ink_tool
+description: Open the Tabura Circle, select ink, and collapse while keeping the tool selection.
+tags:
+  - circle
+  - tool
+preconditions:
+  tool: pointer
+  session: none
+  silent: false
+steps:
+  - action: tap
+    target: tabura_circle_dot
+    expect:
+      tabura_circle: expanded
+  - action: tap
+    target: tabura_circle_segment_ink
+    expect:
+      active_tool: ink
+      session: none
+      silent: false
+      tabura_circle: expanded
+      body_class_contains: tool-ink
+      cursor_class: tool-ink
+  - action: verify
+    target: canvas_viewport
+    expect:
+      active_tool: ink
+      session: none
+      silent: false
+      cursor_class: tool-ink
+  - action: tap_outside
+    expect:
+      active_tool: ink
+      session: none
+      silent: false
+      tabura_circle: collapsed
+      dot_inner_icon: pen_nib

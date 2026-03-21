@@ -7,6 +7,7 @@
     "test:e2e:headed": "./scripts/playwright.sh --headed",
     "test:e2e:ci": "npx playwright test --config=playwright.e2e.ci.config.ts",
     "test:e2e:local": "./scripts/e2e-local.sh",
+    "test:flows": "node ./tests/flows/validate.cjs && node ./tests/flows/coverage.cjs && npx playwright test tests/playwright/flow-runner.spec.ts",
     "test:playtest": "./scripts/playtest.sh",
     "test:reports": "./scripts/test-reports.sh",
     "typecheck:frontend": "tsc --noEmit -p tsconfig.json"
@@ -16,6 +17,7 @@
     "@types/ws": "^8.18.1",
     "esbuild": "^0.25.12",
     "typescript": "^5.8.2",
-    "ws": "^8.19.0"
+    "ws": "^8.19.0",
+    "yaml": "^2.8.3"
   }
 }

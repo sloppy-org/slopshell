@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tabura Flow Harness</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: "IBM Plex Sans", "Helvetica Neue", sans-serif;
+      --bg: #f1efe8;
+      --panel: rgba(255, 255, 255, 0.78);
+      --ink: #161616;
+      --muted: #5e594f;
+      --ring: rgba(22, 22, 22, 0.18);
+      --accent: #0d5e8c;
+      --recording: #c63a2f;
+      --working: #2f7d44;
+      --tool: #161616;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at top left, rgba(13, 94, 140, 0.18), transparent 32%),
+        radial-gradient(circle at bottom right, rgba(198, 58, 47, 0.12), transparent 28%),
+        linear-gradient(180deg, #f4f1e8 0%, #ece8dd 100%);
+      color: var(--ink);
+    }
+
+    body.tool-pointer { --tool: #161616; }
+    body.tool-highlight { --tool: #c49700; }
+    body.tool-ink { --tool: #1c587d; }
+    body.tool-text_note { --tool: #9b6d00; }
+    body.tool-prompt { --tool: #7a2d54; }
+
+    #harness {
+      min-height: 100vh;
+      padding: 28px;
+      position: relative;
+    }
+
+    #canvas-viewport {
+      min-height: calc(100vh - 56px);
+      border-radius: 28px;
+      border: 1px solid rgba(22, 22, 22, 0.08);
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(250, 247, 240, 0.92)),
+        repeating-linear-gradient(0deg, rgba(22, 22, 22, 0.025), rgba(22, 22, 22, 0.025) 1px, transparent 1px, transparent 28px);
+      box-shadow: 0 24px 80px rgba(22, 22, 22, 0.12);
+      padding: 28px;
+      position: relative;
+    }
+
+    .eyebrow {
+      font-size: 12px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+
+    .headline {
+      max-width: 28rem;
+      margin: 0 0 12px;
+      font-size: clamp(2rem, 4vw, 3.5rem);
+      line-height: 0.95;
+    }
+
+    .copy {
+      max-width: 28rem;
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    #indicator-shell {
+      position: absolute;
+      inset: 28px;
+      pointer-events: none;
+    }
+
+    #indicator-border {
+      position: absolute;
+      inset: 0;
+      border: 5px solid transparent;
+      border-radius: 28px;
+      pointer-events: auto;
+      background: transparent;
+    }
+
+    #indicator {
+      position: absolute;
+      top: 18px;
+      right: 18px;
+      min-width: 124px;
+      padding: 12px 14px;
+      border-radius: 999px;
+      background: var(--panel);
+      border: 1px solid rgba(22, 22, 22, 0.08);
+      box-shadow: 0 16px 40px rgba(22, 22, 22, 0.14);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      pointer-events: auto;
+    }
+
+    #indicator-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 999px;
+      background: var(--tool);
+      box-shadow: 0 0 0 6px rgba(22, 22, 22, 0.06);
+    }
+
+    body.indicator-listening #indicator-dot { background: var(--accent); }
+    body.indicator-paused #indicator-dot { background: #5d6b7e; }
+    body.indicator-recording #indicator-dot { background: var(--recording); }
+    body.indicator-working #indicator-dot { background: var(--working); }
+
+    body.indicator-listening #indicator-border {
+      border-color: rgba(13, 94, 140, 0.75);
+      box-shadow: 0 0 0 2px rgba(13, 94, 140, 0.08);
+    }
+
+    body.indicator-paused #indicator-border {
+      border-color: rgba(93, 107, 126, 0.66);
+    }
+
+    body.indicator-recording #indicator-border {
+      border-color: rgba(198, 58, 47, 0.88);
+    }
+
+    body.indicator-working #indicator-border {
+      border-color: rgba(47, 125, 68, 0.82);
+    }
+
+    #tabura-circle {
+      position: fixed;
+      right: 32px;
+      bottom: 32px;
+      width: 288px;
+      height: 288px;
+      pointer-events: none;
+    }
+
+    #tabura-circle.is-expanded {
+      pointer-events: auto;
+    }
+
+    #tabura-circle-dot {
+      position: absolute;
+      right: 0;
+      bottom: 0;
+      width: 64px;
+      height: 64px;
+      border: 0;
+      border-radius: 999px;
+      background: var(--ink);
+      color: #fff;
+      font-size: 24px;
+      box-shadow:
+        0 20px 50px rgba(22, 22, 22, 0.28),
+        0 0 0 7px rgba(255, 255, 255, 0.55);
+      pointer-events: auto;
+      position: absolute;
+    }
+
+    #tabura-circle-dot::after {
+      content: attr(data-session-label);
+      position: absolute;
+      inset: -6px;
+      border-radius: 999px;
+      border: 2px solid var(--ring);
+      pointer-events: none;
+    }
+
+    body.session-dialogue #tabura-circle-dot::after { border-color: rgba(13, 94, 140, 0.8); }
+    body.session-meeting #tabura-circle-dot::after { border-color: rgba(93, 107, 126, 0.8); }
+    body.silent-on #tabura-circle-dot::before {
+      content: "";
+      position: absolute;
+      width: 44px;
+      height: 2px;
+      background: #fff0f0;
+      transform: rotate(-35deg);
+      border-radius: 999px;
+    }
+
+    #tabura-circle-menu {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      opacity: 0;
+      transform: scale(0.84);
+      transition: opacity 140ms ease, transform 140ms ease;
+      pointer-events: none;
+    }
+
+    #tabura-circle.is-expanded #tabura-circle-menu {
+      opacity: 1;
+      transform: scale(1);
+      pointer-events: auto;
+    }
+
+    .segment {
+      position: absolute;
+      width: 74px;
+      height: 74px;
+      border-radius: 999px;
+      border: 1px solid rgba(22, 22, 22, 0.12);
+      background: rgba(255, 255, 255, 0.92);
+      color: var(--ink);
+      display: grid;
+      place-items: center;
+      box-shadow: 0 10px 28px rgba(22, 22, 22, 0.12);
+    }
+
+    .segment[aria-pressed="true"] {
+      background: var(--ink);
+      color: #fff;
+    }
+
+    .segment[data-kind="session"][aria-pressed="true"] {
+      background: var(--accent);
+    }
+
+    .segment[data-kind="toggle"][aria-pressed="true"] {
+      background: #6b103f;
+    }
+
+    .segment[data-segment="dialogue"] { top: 26px; left: 106px; }
+    .segment[data-segment="meeting"] { top: 66px; left: 188px; }
+    .segment[data-segment="silent"] { top: 112px; left: 18px; }
+    .segment[data-segment="prompt"] { top: 190px; left: 68px; }
+    .segment[data-segment="text_note"] { top: 194px; left: 150px; }
+    .segment[data-segment="pointer"] { top: 106px; left: 210px; }
+    .segment[data-segment="highlight"] { top: 166px; left: 214px; }
+    .segment[data-segment="ink"] { top: 224px; left: 180px; }
+
+    #harness-controls {
+      position: fixed;
+      left: 36px;
+      bottom: 36px;
+      display: flex;
+      gap: 10px;
+      padding: 12px;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.78);
+      box-shadow: 0 14px 40px rgba(22, 22, 22, 0.12);
+    }
+
+    #harness-controls button {
+      border: 0;
+      border-radius: 999px;
+      padding: 10px 14px;
+      background: #ece6d8;
+      color: var(--ink);
+    }
+  </style>
+</head>
+<body>
+  <div id="harness">
+    <div id="canvas-viewport" aria-label="Canvas viewport">
+      <div class="eyebrow">Flow Harness</div>
+      <h1 class="headline">Shared interaction flows drive the same logical state.</h1>
+      <p class="copy">This page simulates the Tabura Circle and indicator contract so the flow runner can execute real interactions before the native clients exist.</p>
+      <div id="indicator-shell">
+        <button id="indicator-border" type="button" aria-label="Stop active indicator state"></button>
+        <div id="indicator" aria-live="polite">
+          <span id="indicator-dot" aria-hidden="true"></span>
+          <span id="indicator-label">Idle</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="tabura-circle" class="is-collapsed" data-state="collapsed">
+    <div id="tabura-circle-menu" aria-label="Tabura Circle">
+      <button class="segment" type="button" data-kind="session" data-segment="dialogue" aria-pressed="false">Dialogue</button>
+      <button class="segment" type="button" data-kind="session" data-segment="meeting" aria-pressed="false">Meeting</button>
+      <button class="segment" type="button" data-kind="toggle" data-segment="silent" aria-pressed="false">Silent</button>
+      <button class="segment" type="button" data-kind="tool" data-segment="prompt" aria-pressed="false">Prompt</button>
+      <button class="segment" type="button" data-kind="tool" data-segment="text_note" aria-pressed="false">Note</button>
+      <button class="segment" type="button" data-kind="tool" data-segment="pointer" aria-pressed="true">Pointer</button>
+      <button class="segment" type="button" data-kind="tool" data-segment="highlight" aria-pressed="false">Highlight</button>
+      <button class="segment" type="button" data-kind="tool" data-segment="ink" aria-pressed="false">Ink</button>
+    </div>
+    <button id="tabura-circle-dot" type="button" aria-label="Toggle Tabura Circle">↗</button>
+  </div>
+
+  <div id="harness-controls" aria-label="Indicator simulation">
+    <button id="indicator-simulate-recording" type="button">Recording</button>
+    <button id="indicator-simulate-working" type="button">Working</button>
+    <button id="indicator-override-clear" type="button">Derived State</button>
+  </div>
+
+  <script type="module" src="/tests/playwright/flow-harness.js"></script>
+</body>
+</html>

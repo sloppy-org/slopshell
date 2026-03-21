@@ -1,0 +1,229 @@
+name: tabura_circle_combined_states
+description: Cover every tool, session, and silent-mode combination through the flow system.
+tags:
+  - circle
+  - matrix
+preconditions:
+  tool: pointer
+  session: none
+  silent: false
+steps:
+  - action: verify
+    expect:
+      active_tool: pointer
+      session: none
+      silent: false
+  - action: tap
+    target: tabura_circle_dot
+    expect:
+      tabura_circle: expanded
+  - action: tap
+    target: tabura_circle_segment_highlight
+    expect:
+      active_tool: highlight
+      session: none
+      silent: false
+  - action: tap
+    target: tabura_circle_segment_ink
+    expect:
+      active_tool: ink
+      session: none
+      silent: false
+  - action: tap
+    target: tabura_circle_segment_text_note
+    expect:
+      active_tool: text_note
+      session: none
+      silent: false
+  - action: tap
+    target: tabura_circle_segment_prompt
+    expect:
+      active_tool: prompt
+      session: none
+      silent: false
+  - action: tap
+    target: tabura_circle_segment_pointer
+    expect:
+      active_tool: pointer
+      session: none
+      silent: false
+  - action: tap
+    target: tabura_circle_segment_silent
+    expect:
+      active_tool: pointer
+      session: none
+      silent: true
+  - action: tap
+    target: tabura_circle_segment_highlight
+    expect:
+      active_tool: highlight
+      session: none
+      silent: true
+  - action: tap
+    target: tabura_circle_segment_ink
+    expect:
+      active_tool: ink
+      session: none
+      silent: true
+  - action: tap
+    target: tabura_circle_segment_text_note
+    expect:
+      active_tool: text_note
+      session: none
+      silent: true
+  - action: tap
+    target: tabura_circle_segment_prompt
+    expect:
+      active_tool: prompt
+      session: none
+      silent: true
+  - action: tap
+    target: tabura_circle_segment_pointer
+    expect:
+      active_tool: pointer
+      session: none
+      silent: true
+  - action: tap
+    target: tabura_circle_segment_dialogue
+    expect:
+      active_tool: pointer
+      session: dialogue
+      silent: true
+  - action: tap
+    target: tabura_circle_segment_highlight
+    expect:
+      active_tool: highlight
+      session: dialogue
+      silent: true
+  - action: tap
+    target: tabura_circle_segment_ink
+    expect:
+      active_tool: ink
+      session: dialogue
+      silent: true
+  - action: tap
+    target: tabura_circle_segment_text_note
+    expect:
+      active_tool: text_note
+      session: dialogue
+      silent: true
+  - action: tap
+    target: tabura_circle_segment_prompt
+    expect:
+      active_tool: prompt
+      session: dialogue
+      silent: true
+  - action: tap
+    target: tabura_circle_segment_pointer
+    expect:
+      active_tool: pointer
+      session: dialogue
+      silent: true
+  - action: tap
+    target: tabura_circle_segment_silent
+    expect:
+      active_tool: pointer
+      session: dialogue
+      silent: false
+  - action: tap
+    target: tabura_circle_segment_highlight
+    expect:
+      active_tool: highlight
+      session: dialogue
+      silent: false
+  - action: tap
+    target: tabura_circle_segment_ink
+    expect:
+      active_tool: ink
+      session: dialogue
+      silent: false
+  - action: tap
+    target: tabura_circle_segment_text_note
+    expect:
+      active_tool: text_note
+      session: dialogue
+      silent: false
+  - action: tap
+    target: tabura_circle_segment_prompt
+    expect:
+      active_tool: prompt
+      session: dialogue
+      silent: false
+  - action: tap
+    target: tabura_circle_segment_pointer
+    expect:
+      active_tool: pointer
+      session: dialogue
+      silent: false
+  - action: tap
+    target: tabura_circle_segment_meeting
+    expect:
+      active_tool: pointer
+      session: meeting
+      silent: false
+  - action: tap
+    target: tabura_circle_segment_highlight
+    expect:
+      active_tool: highlight
+      session: meeting
+      silent: false
+  - action: tap
+    target: tabura_circle_segment_ink
+    expect:
+      active_tool: ink
+      session: meeting
+      silent: false
+  - action: tap
+    target: tabura_circle_segment_text_note
+    expect:
+      active_tool: text_note
+      session: meeting
+      silent: false
+  - action: tap
+    target: tabura_circle_segment_prompt
+    expect:
+      active_tool: prompt
+      session: meeting
+      silent: false
+  - action: tap
+    target: tabura_circle_segment_pointer
+    expect:
+      active_tool: pointer
+      session: meeting
+      silent: false
+  - action: tap
+    target: tabura_circle_segment_silent
+    expect:
+      active_tool: pointer
+      session: meeting
+      silent: true
+  - action: tap
+    target: tabura_circle_segment_highlight
+    expect:
+      active_tool: highlight
+      session: meeting
+      silent: true
+  - action: tap
+    target: tabura_circle_segment_ink
+    expect:
+      active_tool: ink
+      session: meeting
+      silent: true
+  - action: tap
+    target: tabura_circle_segment_text_note
+    expect:
+      active_tool: text_note
+      session: meeting
+      silent: true
+  - action: tap
+    target: tabura_circle_segment_prompt
+    expect:
+      active_tool: prompt
+      session: meeting
+      silent: true
+  - action: tap_outside
+    expect:
+      active_tool: prompt
+      session: meeting
+      silent: true
+      tabura_circle: collapsed

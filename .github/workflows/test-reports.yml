@@ -33,13 +33,18 @@ jobs:
         run: npm run typecheck:frontend
 
       - name: Install Playwright browser deps
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium firefox
 
       - name: Verify generated surface files
         run: ./scripts/sync-surface.sh --check
 
       - name: Verify chat prompt contract
         run: ./scripts/check-chat-prompt-contract.sh
+
+      - name: Run shared UI flow suite
+        env:
+          PLAYWRIGHT_GREP_INVERT: "@local-only"
+        run: npm run test:flows
 
       - name: Run CI-safe E2E
         env:

@@ -1,0 +1,38 @@
+name: tabura_circle_toggle_sessions
+description: Toggle dialogue and meeting through the circle while keeping only one active session.
+tags:
+  - circle
+  - session
+preconditions:
+  tool: pointer
+  session: none
+  silent: false
+steps:
+  - action: tap
+    target: tabura_circle_dot
+    expect:
+      tabura_circle: expanded
+  - action: tap
+    target: tabura_circle_segment_dialogue
+    expect:
+      active_tool: pointer
+      session: dialogue
+      silent: false
+      indicator_state: listening
+      tabura_circle: expanded
+  - action: tap
+    target: tabura_circle_segment_meeting
+    expect:
+      active_tool: pointer
+      session: meeting
+      silent: false
+      indicator_state: paused
+      tabura_circle: expanded
+  - action: tap
+    target: tabura_circle_segment_meeting
+    expect:
+      active_tool: pointer
+      session: none
+      silent: false
+      indicator_state: idle
+      tabura_circle: expanded

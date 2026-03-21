@@ -1,0 +1,30 @@
+name: tabura_circle_toggle_silent
+description: Toggle silent independently from tool and session selection.
+tags:
+  - circle
+  - silent
+preconditions:
+  tool: prompt
+  session: dialogue
+  silent: false
+steps:
+  - action: tap
+    target: tabura_circle_dot
+    expect:
+      tabura_circle: expanded
+  - action: tap
+    target: tabura_circle_segment_silent
+    expect:
+      active_tool: prompt
+      session: dialogue
+      silent: true
+      indicator_state: listening
+      tabura_circle: expanded
+  - action: tap
+    target: tabura_circle_segment_silent
+    expect:
+      active_tool: prompt
+      session: dialogue
+      silent: false
+      indicator_state: listening
+      tabura_circle: expanded

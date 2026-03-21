@@ -1,0 +1,158 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/krystophny/tabura/tests/flows/schema.json",
+  "title": "Tabura Shared UI Flow",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "name",
+    "description",
+    "tags",
+    "steps"
+  ],
+  "properties": {
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1
+    },
+    "tags": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "preconditions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tool": {
+          "enum": [
+            "pointer",
+            "highlight",
+            "ink",
+            "text_note",
+            "prompt"
+          ]
+        },
+        "session": {
+          "enum": [
+            "none",
+            "dialogue",
+            "meeting"
+          ]
+        },
+        "silent": {
+          "type": "boolean"
+        },
+        "indicator_state": {
+          "enum": [
+            "idle",
+            "listening",
+            "paused",
+            "recording",
+            "working"
+          ]
+        }
+      }
+    },
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "action"
+        ],
+        "properties": {
+          "action": {
+            "enum": [
+              "tap",
+              "tap_outside",
+              "verify",
+              "wait"
+            ]
+          },
+          "target": {
+            "type": "string",
+            "minLength": 1
+          },
+          "duration_ms": {
+            "type": "number",
+            "minimum": 0
+          },
+          "platforms": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "enum": [
+                "web",
+                "ios",
+                "android"
+              ]
+            }
+          },
+          "expect": {
+            "type": "object",
+            "minProperties": 1,
+            "additionalProperties": false,
+            "properties": {
+              "active_tool": {
+                "enum": [
+                  "pointer",
+                  "highlight",
+                  "ink",
+                  "text_note",
+                  "prompt"
+                ]
+              },
+              "session": {
+                "enum": [
+                  "none",
+                  "dialogue",
+                  "meeting"
+                ]
+              },
+              "silent": {
+                "type": "boolean"
+              },
+              "tabura_circle": {
+                "enum": [
+                  "expanded",
+                  "collapsed"
+                ]
+              },
+              "dot_inner_icon": {
+                "type": "string",
+                "minLength": 1
+              },
+              "body_class_contains": {
+                "type": "string",
+                "minLength": 1
+              },
+              "indicator_state": {
+                "enum": [
+                  "idle",
+                  "listening",
+                  "paused",
+                  "recording",
+                  "working"
+                ]
+              },
+              "cursor_class": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

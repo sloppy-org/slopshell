@@ -1,0 +1,23 @@
+name: indicator_tap_to_stop_dialogue
+description: Stop an active dialogue session by tapping the indicator border.
+tags:
+  - indicator
+  - stop
+preconditions:
+  tool: pointer
+  session: dialogue
+  silent: false
+steps:
+  - action: verify
+    expect:
+      active_tool: pointer
+      session: dialogue
+      silent: false
+      indicator_state: listening
+  - action: tap
+    target: indicator_border
+    expect:
+      active_tool: pointer
+      session: none
+      silent: false
+      indicator_state: idle

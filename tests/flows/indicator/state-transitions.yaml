@@ -1,0 +1,61 @@
+name: indicator_state_transitions
+description: Exercise indicator state transitions and clearing the transient override back to the session-derived state.
+tags:
+  - indicator
+  - state
+preconditions:
+  tool: pointer
+  session: meeting
+  silent: false
+steps:
+  - action: verify
+    expect:
+      active_tool: pointer
+      session: meeting
+      silent: false
+      indicator_state: paused
+  - action: tap
+    target: indicator_simulate_recording
+    platforms:
+      - web
+    expect:
+      active_tool: pointer
+      session: meeting
+      silent: false
+      indicator_state: recording
+  - action: tap
+    target: indicator_simulate_working
+    platforms:
+      - web
+    expect:
+      active_tool: pointer
+      session: meeting
+      silent: false
+      indicator_state: working
+  - action: tap
+    target: indicator_override_clear
+    platforms:
+      - web
+    expect:
+      active_tool: pointer
+      session: meeting
+      silent: false
+      indicator_state: paused
+  - action: tap
+    target: tabura_circle_dot
+    expect:
+      tabura_circle: expanded
+  - action: tap
+    target: tabura_circle_segment_dialogue
+    expect:
+      active_tool: pointer
+      session: dialogue
+      silent: false
+      indicator_state: listening
+  - action: tap
+    target: indicator_border
+    expect:
+      active_tool: pointer
+      session: none
+      silent: false
+      indicator_state: idle
