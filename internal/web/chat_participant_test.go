@@ -278,6 +278,98 @@ func TestParticipantStatusReportsZero(t *testing.T) {
 	}
 }
 
+func TestParticipantStatusIncludesMeetingDiagnosticsAndReplayEval(t *testing.T) {
+	app := newAuthedTestApp(t)
+	project := createParticipantSessionProject(t, app, "meeting-status")
+	workspace, err := app.ensureWorkspaceReady(project, false)
+	if err != nil {
+		t.Fatalf("ensureWorkspaceReady: %v", err)
+	}
+	if err := app.store.SetActiveWorkspace(workspace.ID); err != nil {
+		t.Fatalf("SetActiveWorkspace: %v", err)
+	}
+	enableCompanionForTestProject(t, app, project.WorkspacePath)
+	workspace, err = app.store.GetWorkspace(workspace.ID)
+	if err != nil {
+		t.Fatalf("GetWorkspace: %v", err)
+	}
+	cfg := app.loadCompanionConfig(workspace)
+	cfg.DirectedSpeechGateEnabled = true
+	if err := app.saveCompanionConfig(project.ID, cfg); err != nil {
+		t.Fatalf("save companion config: %v", err)
+	}
+
+	sess, err := app.store.AddParticipantSession(project.WorkspacePath, "{}")
+	if err != nil {
+		t.Fatalf("AddParticipantSession: %v", err)
+	}
+	if err := app.store.AddParticipantEvent(sess.ID, 0, "session_started", "{}"); err != nil {
+		t.Fatalf("AddParticipantEvent session_started: %v", err)
+	}
+	first, err := app.store.AddParticipantSegment(store.ParticipantSegment{
+		SessionID:   sess.ID,
+		Speaker:     "Alice",
+		Text:        "Tabura, summarize that.",
+		CommittedAt: 100,
+		Status:      "final",
+	})
+	if err != nil {
+		t.Fatalf("AddParticipantSegment(first): %v", err)
+	}
+	if err := app.store.AddParticipantEvent(sess.ID, first.ID, "segment_committed", `{"text":"Tabura, summarize that."}`); err != nil {
+		t.Fatalf("AddParticipantEvent segment_committed(first): %v", err)
+	}
+	if err := app.store.AddParticipantEvent(sess.ID, first.ID, "assistant_triggered", `{"chat_session_id":"chat-1"}`); err != nil {
+		t.Fatalf("AddParticipantEvent assistant_triggered: %v", err)
+	}
+	second, err := app.store.AddParticipantSegment(store.ParticipantSegment{
+		SessionID:   sess.ID,
+		Speaker:     "Bob",
+		Text:        "Can you include the appendix?",
+		CommittedAt: 102,
+		Status:      "final",
+	})
+	if err != nil {
+		t.Fatalf("AddParticipantSegment(second): %v", err)
+	}
+	if err := app.store.AddParticipantEvent(sess.ID, second.ID, "segment_committed", `{"text":"Can you include the appendix?"}`); err != nil {
+		t.Fatalf("AddParticipantEvent segment_committed(second): %v", err)
+	}
+
+	rr := doAuthedJSONRequest(t, app.Router(), http.MethodGet, "/api/participant/status", nil)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("GET status = %d, want 200", rr.Code)
+	}
+	var resp companionStateResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.ActiveSessions != 1 {
+		t.Fatalf("active_sessions = %d, want 1", resp.ActiveSessions)
+	}
+	if resp.ActiveSessionID != sess.ID {
+		t.Fatalf("active_session_id = %q, want %q", resp.ActiveSessionID, sess.ID)
+	}
+	if resp.InteractionPolicy.Decision != companionInteractionDecisionSuppressed {
+		t.Fatalf("interaction_policy.decision = %q, want %q", resp.InteractionPolicy.Decision, companionInteractionDecisionSuppressed)
+	}
+	if resp.InteractionPolicy.Reason != "overlap_other_speaker" {
+		t.Fatalf("interaction_policy.reason = %q, want overlap_other_speaker", resp.InteractionPolicy.Reason)
+	}
+	if resp.DecisionSummary.Pickup == "" || resp.DecisionSummary.Overlap == "" {
+		t.Fatalf("decision_summary = %#v, want non-empty pickup and overlap text", resp.DecisionSummary)
+	}
+	if resp.ReplayEval.CorpusVersion != "meeting-v1" {
+		t.Fatalf("replay_eval.corpus_version = %q, want meeting-v1", resp.ReplayEval.CorpusVersion)
+	}
+	if resp.ReplayEval.Metrics.FalseBargeIns != 0 {
+		t.Fatalf("replay_eval.false_barge_ins = %d, want 0", resp.ReplayEval.Metrics.FalseBargeIns)
+	}
+	if resp.ReplayEval.Metrics.OverlapYields != 2 {
+		t.Fatalf("replay_eval.overlap_yields = %d, want 2", resp.ReplayEval.Metrics.OverlapYields)
+	}
+}
+
 func TestParticipantSessionsListRequiresAuth(t *testing.T) {
 	app := newAuthedTestApp(t)
 

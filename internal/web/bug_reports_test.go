@@ -77,8 +77,21 @@ func TestHandleBugReportCreateWritesBundleUnderWorkspaceArtifacts(t *testing.T) 
 			"live_policy":         "meeting",
 			"turn_policy_profile": "balanced",
 			"participant_status": map[string]any{
+				"decision_summary": map[string]any{
+					"pickup":  "Not picked up because the latest request did not address Tabura and did not match the tracked speaker.",
+					"overlap": "Wrong-speaker overlap is suppressed while another speaker owns the pending turn.",
+				},
 				"directed_speech_gate": map[string]any{"decision": "target_speaker_follow_up"},
 				"interaction_policy":   map[string]any{"decision": "respond"},
+				"replay_eval": map[string]any{
+					"corpus_version": "meeting-v1",
+					"profile":        "balanced",
+					"metrics": map[string]any{
+						"false_barge_ins":       0,
+						"missed_speaker_starts": 0,
+						"overlap_yields":        2,
+					},
+				},
 			},
 		},
 		"note":                "The indicator froze after the tap.",
@@ -151,6 +164,27 @@ func TestHandleBugReportCreateWritesBundleUnderWorkspaceArtifacts(t *testing.T) 
 	}
 	if got := strFromAny(directedSpeechGate["decision"]); got != "target_speaker_follow_up" {
 		t.Fatalf("participant_status.directed_speech_gate.decision = %q, want target_speaker_follow_up", got)
+	}
+	decisionSummary, ok := participantStatus["decision_summary"].(map[string]any)
+	if !ok {
+		t.Fatalf("participant_status.decision_summary = %#v, want object", participantStatus["decision_summary"])
+	}
+	if got := strFromAny(decisionSummary["overlap"]); got == "" {
+		t.Fatal("participant_status.decision_summary.overlap is empty")
+	}
+	replayEval, ok := participantStatus["replay_eval"].(map[string]any)
+	if !ok {
+		t.Fatalf("participant_status.replay_eval = %#v, want object", participantStatus["replay_eval"])
+	}
+	if got := strFromAny(replayEval["corpus_version"]); got != "meeting-v1" {
+		t.Fatalf("participant_status.replay_eval.corpus_version = %q, want meeting-v1", got)
+	}
+	replayMetrics, ok := replayEval["metrics"].(map[string]any)
+	if !ok {
+		t.Fatalf("participant_status.replay_eval.metrics = %#v, want object", replayEval["metrics"])
+	}
+	if got := intFromAny(replayMetrics["overlap_yields"], 0); got != 2 {
+		t.Fatalf("participant_status.replay_eval.metrics.overlap_yields = %d, want 2", got)
 	}
 	device, ok := bundle["device"].(map[string]any)
 	if !ok {

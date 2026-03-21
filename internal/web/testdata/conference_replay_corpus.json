@@ -1,0 +1,197 @@
+{
+  "version": "meeting-v1",
+  "cases": [
+    {
+      "name": "direct_address_response",
+      "session": {
+        "id": "psess-replay-1",
+        "workspace_path": "conference-replay",
+        "started_at": 100
+      },
+      "segments": [
+        {
+          "id": 1,
+          "session_id": "psess-replay-1",
+          "speaker": "Alice",
+          "text": "Tabura, summarize the decision log.",
+          "committed_at": 120,
+          "status": "final"
+        }
+      ],
+      "events": [
+        {
+          "session_id": "psess-replay-1",
+          "segment_id": 1,
+          "event_type": "segment_committed",
+          "created_at": 120
+        }
+      ],
+      "expect": {
+        "trigger_expected": true,
+        "gate_decision": "direct_address",
+        "gate_reason": "assistant_name_mentioned",
+        "interaction_decision": "respond",
+        "interaction_reason": "direct_address_ready",
+        "overlap": false
+      }
+    },
+    {
+      "name": "target_speaker_follow_up_response",
+      "session": {
+        "id": "psess-replay-2",
+        "workspace_path": "conference-replay",
+        "started_at": 200
+      },
+      "segments": [
+        {
+          "id": 2,
+          "session_id": "psess-replay-2",
+          "speaker": "Alice",
+          "text": "Tabura, capture the blockers.",
+          "committed_at": 220,
+          "status": "final"
+        },
+        {
+          "id": 3,
+          "session_id": "psess-replay-2",
+          "speaker": "Alice",
+          "text": "Can you include the owners too?",
+          "committed_at": 240,
+          "status": "final"
+        }
+      ],
+      "events": [
+        {
+          "session_id": "psess-replay-2",
+          "segment_id": 2,
+          "event_type": "segment_committed",
+          "created_at": 220
+        },
+        {
+          "session_id": "psess-replay-2",
+          "segment_id": 3,
+          "event_type": "segment_committed",
+          "created_at": 240
+        }
+      ],
+      "expect": {
+        "trigger_expected": true,
+        "gate_decision": "direct_address",
+        "gate_reason": "target_speaker_follow_up",
+        "interaction_decision": "respond",
+        "interaction_reason": "target_speaker_follow_up_ready",
+        "overlap": false
+      }
+    },
+    {
+      "name": "wrong_speaker_overlap_suppressed",
+      "session": {
+        "id": "psess-replay-3",
+        "workspace_path": "conference-replay",
+        "started_at": 300
+      },
+      "segments": [
+        {
+          "id": 4,
+          "session_id": "psess-replay-3",
+          "speaker": "Alice",
+          "text": "Tabura, summarize that section.",
+          "committed_at": 320,
+          "status": "final"
+        },
+        {
+          "id": 5,
+          "session_id": "psess-replay-3",
+          "speaker": "Bob",
+          "text": "Can you include the appendix?",
+          "committed_at": 340,
+          "status": "final"
+        }
+      ],
+      "events": [
+        {
+          "session_id": "psess-replay-3",
+          "segment_id": 4,
+          "event_type": "segment_committed",
+          "created_at": 320
+        },
+        {
+          "session_id": "psess-replay-3",
+          "segment_id": 4,
+          "event_type": "assistant_triggered",
+          "created_at": 321
+        },
+        {
+          "session_id": "psess-replay-3",
+          "segment_id": 5,
+          "event_type": "segment_committed",
+          "created_at": 340
+        }
+      ],
+      "expect": {
+        "trigger_expected": false,
+        "gate_decision": "uncertain",
+        "gate_reason": "request_without_assistant_name",
+        "interaction_decision": "suppressed",
+        "interaction_reason": "overlap_other_speaker",
+        "overlap": true
+      }
+    },
+    {
+      "name": "same_speaker_overlap_interrupt",
+      "session": {
+        "id": "psess-replay-4",
+        "workspace_path": "conference-replay",
+        "started_at": 400
+      },
+      "segments": [
+        {
+          "id": 6,
+          "session_id": "psess-replay-4",
+          "speaker": "Alice",
+          "text": "Tabura, summarize that section.",
+          "committed_at": 420,
+          "status": "final"
+        },
+        {
+          "id": 7,
+          "session_id": "psess-replay-4",
+          "speaker": "Alice",
+          "text": "Can you include the appendix?",
+          "committed_at": 440,
+          "status": "final"
+        }
+      ],
+      "events": [
+        {
+          "session_id": "psess-replay-4",
+          "segment_id": 6,
+          "event_type": "segment_committed",
+          "created_at": 420
+        },
+        {
+          "session_id": "psess-replay-4",
+          "segment_id": 6,
+          "event_type": "assistant_triggered",
+          "created_at": 421
+        },
+        {
+          "session_id": "psess-replay-4",
+          "segment_id": 7,
+          "event_type": "segment_committed",
+          "created_at": 440
+        }
+      ],
+      "pending_since_ms": 1200,
+      "evaluated_at_ms": 1480,
+      "expect": {
+        "trigger_expected": true,
+        "gate_decision": "direct_address",
+        "gate_reason": "target_speaker_follow_up",
+        "interaction_decision": "interrupt",
+        "interaction_reason": "target_speaker_overlap",
+        "overlap": true
+      }
+    }
+  ]
+}

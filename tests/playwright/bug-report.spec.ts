@@ -272,6 +272,10 @@ test.describe('bug report flow', () => {
         ok: true,
         active_sessions: 1,
         active_session_id: 'psess-harness-001',
+        decision_summary: {
+          pickup: 'Not picked up because the latest request did not address Tabura and did not match the tracked speaker.',
+          overlap: 'Wrong-speaker overlap is suppressed while another speaker owns the pending turn.',
+        },
         directed_speech_gate: {
           decision: 'target_speaker_follow_up',
           reason: 'target_speaker_follow_up',
@@ -285,6 +289,15 @@ test.describe('bug report flow', () => {
           speaker: 'Alice',
           target_speaker: 'Alice',
           pending_speaker: 'Alice',
+        },
+        replay_eval: {
+          corpus_version: 'meeting-v1',
+          profile: 'balanced',
+          metrics: {
+            false_barge_ins: 0,
+            missed_speaker_starts: 0,
+            overlap_yields: 2,
+          },
         },
       };
     });
@@ -301,5 +314,8 @@ test.describe('bug report flow', () => {
     expect(request.meeting_diagnostics?.live_policy).toBe('meeting');
     expect(request.meeting_diagnostics?.participant_status?.directed_speech_gate?.decision).toBe('target_speaker_follow_up');
     expect(request.meeting_diagnostics?.participant_status?.interaction_policy?.reason).toBe('target_speaker_overlap');
+    expect(request.meeting_diagnostics?.participant_status?.decision_summary?.overlap).toContain('Wrong-speaker overlap');
+    expect(request.meeting_diagnostics?.participant_status?.replay_eval?.corpus_version).toBe('meeting-v1');
+    expect(request.meeting_diagnostics?.participant_status?.replay_eval?.metrics?.overlap_yields).toBe(2);
   });
 });

@@ -64,8 +64,8 @@ func TestPlaytestScriptUsesLocalIntentRuntimeProbe(t *testing.T) {
 		t.Fatal("playtest script still probes the removed classifier port 8425")
 	}
 	requireContainsAll(t, content,
-		"Local intent runtime detected on :8426.",
-		"Local intent runtime not detected on :8426; continuing with live runtime defaults.",
+		"Local intent runtime detected on :8081.",
+		"Local intent runtime not detected on :8081; continuing with live runtime defaults.",
 	)
 	if strings.Contains(content, "Intent LLM fallback") {
 		t.Fatal("playtest script still uses the deprecated intent LLM fallback wording")

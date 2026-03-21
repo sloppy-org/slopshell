@@ -61,6 +61,8 @@ type companionStateResponse struct {
 	LatestSession      *store.ParticipantSession       `json:"latest_session,omitempty"`
 	DirectedSpeechGate companionDirectedSpeechGate     `json:"directed_speech_gate"`
 	InteractionPolicy  companionInteractionPolicyState `json:"interaction_policy"`
+	DecisionSummary    conferenceDecisionSummary       `json:"decision_summary"`
+	ReplayEval         conferenceReplaySummary         `json:"replay_eval"`
 	Config             companionConfig                 `json:"config"`
 }
 
@@ -230,6 +232,61 @@ func (a *App) companionWorkspaceForWorkspaceIDOrActive(workspaceID string) (stor
 	return workspace, project, nil
 }
 
+func (a *App) companionStateForWorkspace(workspace store.Workspace, project *store.Workspace) (companionStateResponse, error) {
+	cfg := a.loadCompanionConfig(workspace)
+	sessions, err := a.store.ListParticipantSessionsForWorkspace(workspace.ID)
+	if err != nil {
+		return companionStateResponse{}, err
+	}
+	activeSessions := 0
+	activeSessionID := ""
+	var latestSession *store.ParticipantSession
+	var gateSession *store.ParticipantSession
+	for i := range sessions {
+		if latestSession == nil {
+			latestSession = &sessions[i]
+		}
+		if sessions[i].EndedAt != 0 {
+			continue
+		}
+		activeSessions++
+		if activeSessionID == "" {
+			activeSessionID = sessions[i].ID
+			gateSession = &sessions[i]
+		}
+	}
+	if gateSession == nil {
+		gateSession = latestSession
+	}
+	companionKey := a.companionKeyForWorkspace(workspace)
+	workspaceID := ""
+	if project != nil {
+		workspaceID = workspaceIDStr(project.ID)
+	}
+	runtime := a.currentCompanionRuntimeState(companionKey, cfg)
+	gate := a.loadCompanionDirectedSpeechGate(cfg, gateSession)
+	policy := a.loadCompanionInteractionPolicy(cfg, gateSession)
+	return companionStateResponse{
+		OK:                 true,
+		WorkspaceID:        workspaceID,
+		WorkspacePath:      companionKey,
+		State:              runtime.State,
+		Runtime:            runtime,
+		CompanionEnabled:   cfg.CompanionEnabled,
+		IdleSurface:        cfg.IdleSurface,
+		AudioPersistence:   cfg.AudioPersistence,
+		CaptureSource:      cfg.CaptureSource,
+		ActiveSessions:     activeSessions,
+		ActiveSessionID:    activeSessionID,
+		LatestSession:      latestSession,
+		DirectedSpeechGate: gate,
+		InteractionPolicy:  policy,
+		DecisionSummary:    summarizeConferenceDecision(gate, policy),
+		ReplayEval:         buildConferenceReplaySummary(a.runtimeTurnPolicyProfile()),
+		Config:             cfg,
+	}, nil
+}
+
 func (a *App) resolveParticipantProject(chatSessionID string) (string, companionConfig) {
 	cleanSessionID := strings.TrimSpace(chatSessionID)
 	if cleanSessionID == "" {
@@ -363,57 +420,12 @@ func (a *App) handleWorkspaceCompanionState(w http.ResponseWriter, r *http.Reque
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	cfg := a.loadCompanionConfig(workspace)
-	sessions, err := a.store.ListParticipantSessionsForWorkspace(workspace.ID)
+	state, err := a.companionStateForWorkspace(workspace, project)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	activeSessions := 0
-	activeSessionID := ""
-	var latestSession *store.ParticipantSession
-	var gateSession *store.ParticipantSession
-	for i := range sessions {
-		if latestSession == nil {
-			latestSession = &sessions[i]
-		}
-		if sessions[i].EndedAt != 0 {
-			continue
-		}
-		activeSessions++
-		if activeSessionID == "" {
-			activeSessionID = sessions[i].ID
-			gateSession = &sessions[i]
-		}
-	}
-	if gateSession == nil {
-		gateSession = latestSession
-	}
-	companionKey := a.companionKeyForWorkspace(workspace)
-	workspaceID := ""
-	if project != nil {
-		workspaceID = workspaceIDStr(project.ID)
-	}
-	runtime := a.currentCompanionRuntimeState(companionKey, cfg)
-	gate := a.loadCompanionDirectedSpeechGate(cfg, gateSession)
-	policy := a.loadCompanionInteractionPolicy(cfg, gateSession)
-	writeJSON(w, companionStateResponse{
-		OK:                 true,
-		WorkspaceID:        workspaceID,
-		WorkspacePath:      companionKey,
-		State:              runtime.State,
-		Runtime:            runtime,
-		CompanionEnabled:   cfg.CompanionEnabled,
-		IdleSurface:        cfg.IdleSurface,
-		AudioPersistence:   cfg.AudioPersistence,
-		CaptureSource:      cfg.CaptureSource,
-		ActiveSessions:     activeSessions,
-		ActiveSessionID:    activeSessionID,
-		LatestSession:      latestSession,
-		DirectedSpeechGate: gate,
-		InteractionPolicy:  policy,
-		Config:             cfg,
-	})
+	writeJSON(w, state)
 }
 
 func (a *App) stopParticipantCaptureSessions(match func(store.ParticipantSession) bool, reason, errMsg string) {

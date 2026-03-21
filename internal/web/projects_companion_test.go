@@ -283,4 +283,13 @@ func TestProjectCompanionStateExposesDirectedSpeechGateMetadata(t *testing.T) {
 	if state.InteractionPolicy.TargetSpeaker != "Alice" {
 		t.Fatalf("interaction_policy.target_speaker = %q, want Alice", state.InteractionPolicy.TargetSpeaker)
 	}
+	if state.DecisionSummary.Pickup == "" || state.DecisionSummary.Overlap == "" {
+		t.Fatalf("decision_summary = %#v, want populated pickup and overlap summaries", state.DecisionSummary)
+	}
+	if state.ReplayEval.CorpusVersion != "meeting-v1" {
+		t.Fatalf("replay_eval.corpus_version = %q, want meeting-v1", state.ReplayEval.CorpusVersion)
+	}
+	if state.ReplayEval.Metrics.Passing != 4 {
+		t.Fatalf("replay_eval.passing = %d, want 4", state.ReplayEval.Metrics.Passing)
+	}
 }

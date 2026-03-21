@@ -36,12 +36,12 @@ Supported loopback sidecars and helpers:
 - `tabura-codex-app-server.service` for Codex app-server (`ws://127.0.0.1:8787`)
 - `tabura-piper-tts.service` for Piper TTS (`http://127.0.0.1:8424/v1/audio/speech`)
 - `tabura-stt.service` for voxtype daemon with STT service and push-to-talk (`/v1/audio/transcriptions` on `127.0.0.1:8427`)
-- `tabura-llm.service` for the local Qwen routing/fallback layer (`/v1/chat/completions` via base URL `http://127.0.0.1:8426`)
+- `tabura-llm.service` for the local Qwen routing/fallback layer (`/v1/chat/completions` via base URL `http://127.0.0.1:8081`)
 
 Non-runtime notes:
 - No separate `tabura-mcp.service` sidecar is part of the current model.
 - No Helpy runtime is part of Tabura.
-- `scripts/install.sh` wires `TABURA_INTENT_LLM_URL=http://127.0.0.1:8426` for `tabura-web.service`.
+- `scripts/install.sh` wires `TABURA_INTENT_LLM_URL=http://127.0.0.1:8081` for `tabura-web.service`.
 - Current Qwen profile defaults in code are `qwen3.5-9b` with profile options `qwen3.5-9b,qwen3.5-4b`.
 - `scripts/install-tabura-user-units.sh` enables the full local unit set, including `tabura-llm.service` and `tabura-stt.service`.
 
@@ -136,7 +136,7 @@ systemctl --user restart tabura-codex-app-server.service tabura-piper-tts.servic
 - MCP canvas WS: `ws://127.0.0.1:9420/ws/canvas`
 - App-server: `ws://127.0.0.1:8787`
 - TTS base URL: `http://127.0.0.1:8424` (`/v1/audio/speech`)
-- Intent LLM base URL: `http://127.0.0.1:8426` (Tabura calls `/v1/chat/completions`)
+- Intent LLM base URL: `http://127.0.0.1:8081` (Tabura calls `/v1/chat/completions`)
 - STT base URL: `http://127.0.0.1:8427` (`/v1/audio/transcriptions`)
 - Local canvas session: `local`
 

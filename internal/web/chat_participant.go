@@ -437,17 +437,16 @@ func (a *App) handleParticipantStatus(w http.ResponseWriter, r *http.Request) {
 	if !a.requireAuth(w, r) {
 		return
 	}
-	active := 0
-	a.hub.forEachChatConn(func(conn *chatWSConn) {
-		conn.participantMu.Lock()
-		if conn.participantActive {
-			active++
+	if workspace, err := a.activeCompanionWorkspace(); err == nil {
+		project, _ := a.workspaceFromStore(workspace)
+		if state, stateErr := a.companionStateForWorkspace(workspace, project); stateErr == nil {
+			writeJSON(w, state)
+			return
 		}
-		conn.participantMu.Unlock()
-	})
+	}
 	writeJSON(w, map[string]interface{}{
 		"ok":              true,
-		"active_sessions": active,
+		"active_sessions": 0,
 	})
 }
 
