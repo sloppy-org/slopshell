@@ -123,6 +123,11 @@ State transitions:
 - **Listening** (blue border + pulse): dialogue follow-up window after TTS response.
 - Follow-up timeout returns to **Paused** and restarts hotword monitoring.
 
+Control surfaces:
+- The web runtime uses a single floating `#tabura-circle` for tool selection, Dialogue/Meeting activation, and the Silent toggle.
+- The top edge panel is reduced to workspace navigation and runtime summary only.
+- Configuration-heavy surfaces such as hotword/model/voice management live under `/manage` instead of the canvas shell.
+
 Utterance filtering (server-side in `internal/stt/transcribe.go`):
 - Whisper hallucination blocklist (13 phrases).
 - Noise rejection: filler-only transcripts (<3 words), TV/radio background patterns.

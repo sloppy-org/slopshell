@@ -195,6 +195,8 @@ func (a *App) Router() http.Handler {
 
 	// static
 	r.Get("/", a.serveIndex)
+	r.Get("/manage", a.serveManage)
+	r.Get("/manage/*", a.serveManage)
 	r.Get("/canvas", a.serveCanvas)
 	r.Get("/capture", a.serveCapture)
 	staticHandler := withNoStore(http.StripPrefix("/static/", http.FileServer(http.FS(staticSubFS()))))
@@ -314,6 +316,45 @@ func (a *App) serveCapture(w http.ResponseWriter, r *http.Request) {
 		styleTagVer := fmt.Sprintf(`href="./static/capture.css?v=%s"`, url.QueryEscape(boot))
 		scriptTag := `src="./static/capture.js"`
 		scriptTagVer := fmt.Sprintf(`src="./static/capture.js?v=%s"`, url.QueryEscape(boot))
+		page = strings.Replace(page, styleTag, styleTagVer, 1)
+		page = strings.Replace(page, scriptTag, scriptTagVer, 1)
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write([]byte(page))
+}
+
+func appBasePath(r *http.Request) string {
+	if r == nil {
+		return "/"
+	}
+	if forwarded := strings.TrimSpace(r.Header.Get("X-Forwarded-Prefix")); forwarded != "" {
+		return normalizeBasePath(forwarded)
+	}
+	return "/"
+}
+
+func (a *App) serveManage(w http.ResponseWriter, r *http.Request) {
+	var data []byte
+	var err error
+	if a.devRuntime {
+		data, err = os.ReadFile(filepath.Join(a.localProjectDir, "internal", "web", "static", "manage.html"))
+	} else {
+		data, err = staticFiles.ReadFile("static/manage.html")
+	}
+	if err != nil {
+		http.Error(w, "manage client not found", http.StatusNotFound)
+		return
+	}
+	page := string(data)
+	baseHref := html.EscapeString(appBasePath(r))
+	page = strings.Replace(page, "<head>", fmt.Sprintf("<head>\n  <base href=\"%s\">", baseHref), 1)
+	boot := strings.TrimSpace(a.bootID)
+	if boot != "" {
+		styleTag := `href="./static/manage.css"`
+		styleTagVer := fmt.Sprintf(`href="./static/manage.css?v=%s"`, url.QueryEscape(boot))
+		scriptTag := `src="./static/manage.js"`
+		scriptTagVer := fmt.Sprintf(`src="./static/manage.js?v=%s"`, url.QueryEscape(boot))
 		page = strings.Replace(page, styleTag, styleTagVer, 1)
 		page = strings.Replace(page, scriptTag, scriptTagVer, 1)
 	}

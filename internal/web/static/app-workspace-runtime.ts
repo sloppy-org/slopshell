@@ -27,7 +27,6 @@ const chatHistoryEl = (...args) => refs.chatHistoryEl(...args);
 const scrollChatToBottom = (...args) => refs.scrollChatToBottom(...args);
 const cancelChatVoiceCapture = (...args) => refs.cancelChatVoiceCapture(...args);
 const resetDialogueTurnController = (...args) => refs.resetDialogueTurnController(...args);
-const toggleTTSSilentMode = (...args) => refs.toggleTTSSilentMode(...args);
 const requestHotwordSync = (...args) => refs.requestHotwordSync(...args);
 const clearWelcomeSurface = (...args) => refs.clearWelcomeSurface(...args);
 const requestMicRefresh = (...args) => refs.requestMicRefresh(...args);
@@ -51,8 +50,6 @@ const normalizeProjectChatModelAlias = (...args) => refs.normalizeProjectChatMod
 const renderToolPalette = (...args) => refs.renderToolPalette(...args);
 const loadItemSidebarView = (...args) => refs.loadItemSidebarView(...args);
 const refreshItemSidebarCounts = (...args) => refs.refreshItemSidebarCounts(...args);
-const openInboxMailTriage = (...args) => refs.openInboxMailTriage(...args);
-const openJunkMailTriage = (...args) => refs.openJunkMailTriage(...args);
 const isTemporaryProjectKind = (...args) => refs.isTemporaryProjectKind(...args);
 const shouldRenderAssistantHistoryInChat = (...args) => refs.shouldRenderAssistantHistoryInChat(...args);
 const hasLocalAssistantWork = (...args) => refs.hasLocalAssistantWork(...args);
@@ -443,115 +440,30 @@ export function renderEdgeTopModelButtons() {
 
   const actions = document.createElement('div');
   actions.className = 'edge-runtime-actions';
-
-  const liveDisabled = !project || state.projectSwitchInFlight || state.projectModelSwitchInFlight;
+  const liveStatus = document.createElement('span');
+  liveStatus.className = 'edge-live-status';
   if (state.liveSessionActive) {
-    const liveStatus = document.createElement('span');
-    liveStatus.className = 'edge-live-status';
     liveStatus.textContent = liveSessionStatusSummary();
     if (state.hotwordEnabled) {
       liveStatus.title = `Live session hotword: ${state.liveSessionHotword || LIVE_SESSION_HOTWORD_DEFAULT}`;
     }
-    actions.appendChild(liveStatus);
-
-    const stopButton = document.createElement('button');
-    stopButton.type = 'button';
-    stopButton.className = 'edge-project-btn edge-live-stop-btn';
-    stopButton.textContent = 'Stop';
-    stopButton.disabled = liveDisabled;
-    stopButton.addEventListener('click', () => {
-      void deactivateLiveSession({ disableMeetingConfig: true });
-    });
-    actions.appendChild(stopButton);
   } else {
-    const dialogueButton = document.createElement('button');
-    dialogueButton.type = 'button';
-    dialogueButton.className = 'edge-project-btn edge-live-dialogue-btn';
-    dialogueButton.textContent = 'Dialogue';
-    dialogueButton.setAttribute('aria-pressed', state.livePolicy === LIVE_SESSION_MODE_DIALOGUE ? 'true' : 'false');
-    if (state.livePolicy === LIVE_SESSION_MODE_DIALOGUE) {
-      dialogueButton.classList.add('is-active');
-    }
-    dialogueButton.disabled = liveDisabled;
-    dialogueButton.addEventListener('click', () => {
-      void activateLiveSession(LIVE_SESSION_MODE_DIALOGUE)
-        .then((started) => {
-          renderEdgeTopModelButtons();
-          updateAssistantActivityIndicator();
-          if (started) {
-            showStatus('live dialogue on');
-          }
-        })
-        .catch((err) => {
-          const message = String(err?.message || err || 'live dialogue failed');
-          showStatus(`live dialogue failed: ${message}`);
-        });
-    });
-    actions.appendChild(dialogueButton);
-
-    const meetingButton = document.createElement('button');
-    meetingButton.type = 'button';
-    meetingButton.className = 'edge-project-btn edge-live-meeting-btn';
-    meetingButton.textContent = 'Meeting';
-    meetingButton.setAttribute('aria-pressed', state.livePolicy === LIVE_SESSION_MODE_MEETING ? 'true' : 'false');
-    if (state.livePolicy === LIVE_SESSION_MODE_MEETING) {
-      meetingButton.classList.add('is-active');
-    }
-    meetingButton.disabled = liveDisabled;
-    meetingButton.addEventListener('click', () => {
-      void activateLiveSession(LIVE_SESSION_MODE_MEETING)
-        .then((started) => {
-          renderEdgeTopModelButtons();
-          updateAssistantActivityIndicator();
-          if (started) {
-            showStatus('live meeting on');
-          }
-        })
-        .catch((err) => {
-          const message = String(err?.message || err || 'live meeting failed');
-          appendPlainMessage('system', `Live meeting failed: ${message}`);
-          showStatus(`live meeting failed: ${message}`);
-        });
-    });
-    actions.appendChild(meetingButton);
+    liveStatus.textContent = 'Manual';
+    liveStatus.title = 'Use the Tabura Circle for Dialogue, Meeting, Silent, and Stop.';
   }
+  actions.appendChild(liveStatus);
+
+  const modelChip = document.createElement('span');
+  modelChip.className = 'edge-runtime-chip';
+  modelChip.textContent = (activeProjectChatModelAlias() || 'spark').toUpperCase();
+  actions.appendChild(modelChip);
 
   if (state.ttsEnabled) {
-    const silentButton = document.createElement('button');
-    silentButton.type = 'button';
-    silentButton.className = 'edge-project-btn edge-silent-btn';
-    silentButton.textContent = 'Silent';
-    silentButton.setAttribute('aria-pressed', state.ttsSilent ? 'true' : 'false');
-    if (state.ttsSilent) {
-      silentButton.classList.add('is-active');
-    }
-    silentButton.disabled = state.projectSwitchInFlight || state.projectModelSwitchInFlight;
-    silentButton.addEventListener('click', () => {
-      toggleTTSSilentMode();
-    });
-    actions.appendChild(silentButton);
+    const voiceChip = document.createElement('span');
+    voiceChip.className = 'edge-runtime-chip';
+    voiceChip.textContent = state.ttsSilent ? 'Silent' : 'Voice';
+    actions.appendChild(voiceChip);
   }
-
-  const triageBusy = state.mailTriage?.loading || state.mailTriage?.submitting;
-  const inboxTriageButton = document.createElement('button');
-  inboxTriageButton.type = 'button';
-  inboxTriageButton.className = 'edge-project-btn edge-mail-triage-btn';
-  inboxTriageButton.textContent = 'Inbox Triage';
-  inboxTriageButton.disabled = triageBusy;
-  inboxTriageButton.addEventListener('click', () => {
-    void openInboxMailTriage();
-  });
-  actions.appendChild(inboxTriageButton);
-
-  const junkTriageButton = document.createElement('button');
-  junkTriageButton.type = 'button';
-  junkTriageButton.className = 'edge-project-btn edge-mail-triage-btn';
-  junkTriageButton.textContent = 'Junk Audit';
-  junkTriageButton.disabled = triageBusy;
-  junkTriageButton.addEventListener('click', () => {
-    void openJunkMailTriage();
-  });
-  actions.appendChild(junkTriageButton);
 
   shell.appendChild(summary);
   shell.appendChild(actions);

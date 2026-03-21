@@ -258,6 +258,13 @@ export function bindUi() {
       }
       return false;
     };
+    const pointHitsIndicatorBorder = (x, y) => {
+      const borderWidth = 8;
+      return x <= borderWidth
+        || y <= borderWidth
+        || x >= window.innerWidth - borderWidth
+        || y >= window.innerHeight - borderWidth;
+    };
     const isTapOnInteractiveUi = (ev) => {
       const t = ev.target;
       if (!(t instanceof Element)) return false;
@@ -268,8 +275,9 @@ export function bindUi() {
       if (!isTouch && isSuppressedClick()) return;
       const stopGestureActive = isUiStopGestureActive();
       const hitsChip = pointHitsIndicatorChip(x, y);
-      if (!hitsChip && isTouch && stopGestureActive && isTapOnInteractiveUi(ev)) return;
-      if (!hitsChip && !(isTouch && stopGestureActive)) return;
+      const hitsBorder = pointHitsIndicatorBorder(x, y);
+      if (!hitsChip && !hitsBorder && isTouch && stopGestureActive && isTapOnInteractiveUi(ev)) return;
+      if (!hitsChip && !hitsBorder && !(isTouch && stopGestureActive)) return;
       ev.preventDefault();
       ev.stopPropagation();
       if (isTouch) suppressSyntheticClick();

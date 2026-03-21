@@ -8,6 +8,9 @@ const launchReplyAuthoring = (...args) => refs.launchReplyAuthoring(...args);
 const launchReplyAllAuthoring = (...args) => refs.launchReplyAllAuthoring(...args);
 const launchForwardAuthoring = (...args) => refs.launchForwardAuthoring(...args);
 const selectInteractionTool = (...args) => refs.selectInteractionTool(...args);
+const openInboxMailTriage = (...args) => refs.openInboxMailTriage(...args);
+const openJunkMailTriage = (...args) => refs.openJunkMailTriage(...args);
+const openManagementPage = (...args) => refs.openManagementPage(...args);
 
 const COMMAND_CENTER_ID = 'command-center';
 const COMMAND_CENTER_INPUT_ID = 'command-center-input';
@@ -53,6 +56,30 @@ const COMMAND_CENTER_COMMANDS: Array<{ id: string; title: string; detail: string
     shortcut: 'C',
     keywords: 'compose new mail email spark draft',
     run: () => launchNewMailAuthoring(),
+  },
+  {
+    id: 'inbox-triage',
+    title: 'Inbox Triage',
+    detail: 'Review the inbox triage queue.',
+    shortcut: 'Triage',
+    keywords: 'inbox triage mail review',
+    run: () => openInboxMailTriage(),
+  },
+  {
+    id: 'junk-audit',
+    title: 'Junk Audit',
+    detail: 'Review the junk mail audit queue.',
+    shortcut: 'Junk',
+    keywords: 'junk audit spam triage review',
+    run: () => openJunkMailTriage(),
+  },
+  {
+    id: 'manage-runtime',
+    title: 'Open Manage',
+    detail: 'Open the management UI in a dedicated page.',
+    shortcut: 'Manage',
+    keywords: 'manage settings hotword models voices admin',
+    run: () => openManagementPage('manage'),
   },
   {
     id: 'tool-pointer',

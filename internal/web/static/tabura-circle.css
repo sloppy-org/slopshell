@@ -1,0 +1,146 @@
+.tabura-circle {
+  --circle-shell-size: 280px;
+  --circle-dot-size: 56px;
+  --circle-segment-size: 72px;
+  --circle-ring-color: rgba(15, 23, 42, 0.18);
+  position: fixed;
+  right: calc(1rem + var(--safe-area-right));
+  bottom: calc(1rem + var(--safe-area-bottom));
+  width: var(--circle-shell-size);
+  height: var(--circle-shell-size);
+  pointer-events: none;
+  z-index: 395;
+}
+
+.tabura-circle.is-expanded {
+  pointer-events: auto;
+}
+
+.tabura-circle-dot {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: var(--circle-dot-size);
+  height: var(--circle-dot-size);
+  border: 0;
+  border-radius: 999px;
+  background: #121926;
+  color: #fff;
+  font-size: 1.15rem;
+  font-weight: 700;
+  box-shadow:
+    0 20px 52px rgba(15, 23, 42, 0.24),
+    0 0 0 7px rgba(255, 255, 255, 0.66);
+  pointer-events: auto;
+}
+
+.tabura-circle-dot::after {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border: 2px solid var(--circle-ring-color);
+  border-radius: 999px;
+  pointer-events: none;
+}
+
+.tabura-circle-dot[data-session="dialogue"]::after {
+  --circle-ring-color: rgba(13, 94, 140, 0.82);
+}
+
+.tabura-circle-dot[data-session="meeting"]::after {
+  --circle-ring-color: rgba(93, 107, 126, 0.86);
+}
+
+.tabura-circle-dot[data-session="dialogue"] {
+  box-shadow:
+    0 20px 52px rgba(15, 23, 42, 0.24),
+    0 0 24px rgba(37, 99, 235, 0.2),
+    0 0 0 7px rgba(255, 255, 255, 0.66);
+}
+
+.tabura-circle-dot[data-tool="ink"] {
+  background: #142236;
+}
+
+.tabura-circle-dot[data-silent="true"]::before {
+  content: '';
+  position: absolute;
+  inset: auto;
+  width: 40px;
+  height: 2px;
+  background: rgba(255, 244, 244, 0.96);
+  border-radius: 999px;
+  transform: rotate(-35deg);
+}
+
+.tabura-circle-menu {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transform: scale(0.86);
+  transition: opacity 150ms ease, transform 150ms ease;
+  pointer-events: none;
+}
+
+.tabura-circle.is-expanded .tabura-circle-menu {
+  opacity: 1;
+  transform: scale(1);
+  pointer-events: auto;
+}
+
+.tabura-circle-segment {
+  position: absolute;
+  width: var(--circle-segment-size);
+  height: var(--circle-segment-size);
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.96);
+  color: #132033;
+  box-shadow: 0 12px 34px rgba(15, 23, 42, 0.13);
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.tabura-circle-segment[aria-pressed="true"] {
+  background: #121926;
+  color: #fff;
+}
+
+.tabura-circle-segment[data-kind="session"][aria-pressed="true"] {
+  background: #0d5e8c;
+}
+
+.tabura-circle-segment[data-kind="toggle"][aria-pressed="true"] {
+  background: #6b103f;
+}
+
+.tabura-circle-segment[data-segment="dialogue"] { top: 26px; left: 104px; }
+.tabura-circle-segment[data-segment="meeting"] { top: 68px; left: 186px; }
+.tabura-circle-segment[data-segment="silent"] { top: 112px; left: 14px; }
+.tabura-circle-segment[data-segment="prompt"] { top: 188px; left: 66px; }
+.tabura-circle-segment[data-segment="text_note"] { top: 194px; left: 146px; }
+.tabura-circle-segment[data-segment="pointer"] { top: 106px; left: 206px; }
+.tabura-circle-segment[data-segment="highlight"] { top: 164px; left: 210px; }
+.tabura-circle-segment[data-segment="ink"] { top: 220px; left: 176px; }
+
+body.black-screen .tabura-circle {
+  opacity: 0.14;
+}
+
+@media (max-width: 720px) {
+  .tabura-circle {
+    --circle-shell-size: 252px;
+    --circle-dot-size: 54px;
+    --circle-segment-size: 68px;
+  }
+
+  .tabura-circle-segment[data-segment="dialogue"] { top: 20px; left: 92px; }
+  .tabura-circle-segment[data-segment="meeting"] { top: 56px; left: 166px; }
+  .tabura-circle-segment[data-segment="silent"] { top: 100px; left: 12px; }
+  .tabura-circle-segment[data-segment="prompt"] { top: 172px; left: 58px; }
+  .tabura-circle-segment[data-segment="text_note"] { top: 176px; left: 130px; }
+  .tabura-circle-segment[data-segment="pointer"] { top: 96px; left: 184px; }
+  .tabura-circle-segment[data-segment="highlight"] { top: 150px; left: 188px; }
+  .tabura-circle-segment[data-segment="ink"] { top: 202px; left: 156px; }
+}

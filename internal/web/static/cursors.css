@@ -1,0 +1,31 @@
+body.surface-annotate.tool-pointer #canvas-viewport {
+  cursor: default;
+}
+
+body.surface-annotate.tool-highlight #canvas-viewport {
+  cursor: copy;
+}
+
+body.surface-annotate.tool-ink #canvas-viewport {
+  cursor: crosshair;
+}
+
+body.surface-annotate.tool-text-note #canvas-viewport {
+  cursor: cell;
+}
+
+body.surface-annotate.tool-prompt #canvas-viewport {
+  cursor: pointer;
+}
+
+body.indicator-recording #canvas-viewport {
+  cursor: none;
+}
+
+body.indicator-listening #canvas-viewport {
+  cursor: wait;
+}
+
+body.indicator-working #canvas-viewport {
+  cursor: progress;
+}

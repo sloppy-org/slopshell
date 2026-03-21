@@ -171,6 +171,9 @@ export function showIndicatorMode(mode, x, y) {
       || nextMode === 'paused'
       || nextMode === 'cursor';
     body.classList.toggle('cue-active', isCueVisible);
+    body.classList.toggle('indicator-recording', nextMode === 'recording' || nextMode === 'cursor');
+    body.classList.toggle('indicator-listening', nextMode === 'listening' || nextMode === 'paused');
+    body.classList.toggle('indicator-working', nextMode === 'play');
   }
   uiState.indicatorVisible = true;
   uiState.indicatorMode = nextMode;
@@ -184,6 +187,7 @@ export function hideIndicator() {
   const body = document.body;
   if (body) {
     body.classList.remove('cue-active');
+    body.classList.remove('indicator-recording', 'indicator-listening', 'indicator-working');
   }
   uiState.indicatorVisible = false;
   uiState.indicatorMode = '';

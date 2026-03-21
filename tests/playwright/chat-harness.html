@@ -34,7 +34,19 @@
         <div class="overlay-content"></div>
       </div>
 
-      <div id="tool-palette" class="tool-palette" aria-label="Interaction tools"></div>
+      <div id="tabura-circle" class="tabura-circle" aria-label="Tabura Circle">
+        <div id="tabura-circle-menu" class="tabura-circle-menu" aria-label="Tabura Circle menu">
+          <button id="tabura-circle-segment-dialogue" class="tabura-circle-segment" type="button" data-kind="session" data-segment="dialogue">Dialogue</button>
+          <button id="tabura-circle-segment-meeting" class="tabura-circle-segment" type="button" data-kind="session" data-segment="meeting">Meeting</button>
+          <button id="tabura-circle-segment-silent" class="tabura-circle-segment" type="button" data-kind="toggle" data-segment="silent">Silent</button>
+          <button id="tabura-circle-segment-prompt" class="tabura-circle-segment" type="button" data-kind="tool" data-segment="prompt">Prompt</button>
+          <button id="tabura-circle-segment-text-note" class="tabura-circle-segment" type="button" data-kind="tool" data-segment="text_note">Note</button>
+          <button id="tabura-circle-segment-pointer" class="tabura-circle-segment" type="button" data-kind="tool" data-segment="pointer">Pointer</button>
+          <button id="tabura-circle-segment-highlight" class="tabura-circle-segment" type="button" data-kind="tool" data-segment="highlight">Highlight</button>
+          <button id="tabura-circle-segment-ink" class="tabura-circle-segment" type="button" data-kind="tool" data-segment="ink">Ink</button>
+        </div>
+        <button id="tabura-circle-dot" type="button" class="tabura-circle-dot" aria-label="Toggle Tabura Circle"></button>
+      </div>
 
       <button id="edge-right-tap" type="button" class="edge-right-tap" aria-label="Toggle chat panel"></button>
 
@@ -44,7 +56,7 @@
             <span class="edge-panel-title">Runtime</span>
             <button id="btn-edge-rasa" type="button" class="edge-btn">Tabula Rasa</button>
           </div>
-          <div id="edge-top-models" aria-label="Workspace runtime controls"></div>
+          <div id="edge-top-models" aria-label="Workspace runtime summary"></div>
           <div id="edge-top-projects"></div>
         </div>
       </div>

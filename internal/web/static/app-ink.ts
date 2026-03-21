@@ -62,9 +62,19 @@ export function renderInkControls() {
 }
 
 export function syncInteractionBodyState() {
-  document.body.classList.toggle('tool-ink', isInkTool() && state.interaction.surface === 'annotate');
+  const tool = String(state.interaction.tool || 'pointer').trim().toLowerCase() || 'pointer';
+  document.body.classList.toggle('tool-pointer', tool === 'pointer');
+  document.body.classList.toggle('tool-highlight', tool === 'highlight');
+  document.body.classList.toggle('tool-ink', tool === 'ink' && state.interaction.surface === 'annotate');
+  document.body.classList.toggle('tool-text-note', tool === 'text_note');
+  document.body.classList.toggle('tool-prompt', tool === 'prompt');
   document.body.classList.toggle('surface-editor', state.interaction.surface === 'editor');
   document.body.classList.toggle('surface-annotate', state.interaction.surface === 'annotate');
+  document.body.classList.toggle('session-dialogue', state.liveSessionActive && state.liveSessionMode === 'dialogue');
+  document.body.classList.toggle('session-meeting', state.liveSessionActive && state.liveSessionMode === 'meeting');
+  document.body.classList.toggle('session-none', !state.liveSessionActive);
+  document.body.classList.toggle('silent-on', Boolean(state.ttsSilent));
+  document.body.classList.toggle('silent-off', !state.ttsSilent);
 }
 
 export function setPenInkingState(active) {

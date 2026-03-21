@@ -147,6 +147,16 @@ Tabura exposes exactly two live runtime modes:
 
 Anything else is either a temporary implementation detail or a bug in naming, UX, or state modeling.
 
+## Control Surface Contract
+
+The canvas runtime exposes one persistent control surface: the Tabura Circle.
+
+- The collapsed circle shows the active tool in its center and the active live session on the outer ring.
+- Expanding the circle exposes the five interaction tools (`pointer`, `highlight`, `ink`, `text_note`, `prompt`) plus the live-session controls (`dialogue`, `meeting`) and the independent `silent` toggle.
+- Dialogue and Meeting are zero-or-one runtime sessions. Tapping the active session again returns the runtime to manual mode.
+- Stop is not a dedicated top-panel button. The stop affordance is the active indicator frame, the active circle session segment, or a voice stop intent.
+- Management surfaces such as hotword/model/voice configuration live under `/manage`, not in the canvas runtime shell.
+
 ## Canonical Action Semantics
 
 All shipped actions must reduce to this grammar:

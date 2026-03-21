@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="color-scheme" content="light">
+  <title>tabura manage</title>
+  <link rel="stylesheet" href="./static/manage.css">
+</head>
+<body>
+  <main class="manage-shell">
+    <header class="manage-header">
+      <div>
+        <p class="manage-eyebrow">Management</p>
+        <h1>Tabura Manage</h1>
+        <p class="manage-copy">Configuration and system status live here so the canvas stays focused on interaction.</p>
+      </div>
+      <a class="manage-back" href="./">Back to canvas</a>
+    </header>
+
+    <div class="manage-grid">
+      <nav class="manage-nav" aria-label="Management sections">
+        <a data-manage-link="manage" href="./manage">Dashboard</a>
+        <a data-manage-link="hotword" href="./manage/hotword">Hotword</a>
+        <a data-manage-link="models" href="./manage/models">Models</a>
+        <a data-manage-link="voices" href="./manage/voices">Voices</a>
+      </nav>
+
+      <section class="manage-content">
+        <section id="manage-dashboard" class="manage-panel" data-manage-section="manage">
+          <h2>Dashboard</h2>
+          <div id="manage-dashboard-cards" class="manage-cards"></div>
+        </section>
+
+        <section id="manage-hotword" class="manage-panel" data-manage-section="hotword">
+          <h2>Hotword</h2>
+          <div id="manage-hotword-status" class="manage-stack"></div>
+        </section>
+
+        <section id="manage-models" class="manage-panel" data-manage-section="models">
+          <h2>Models</h2>
+          <div id="manage-models-status" class="manage-stack"></div>
+        </section>
+
+        <section id="manage-voices" class="manage-panel" data-manage-section="voices">
+          <h2>Voices</h2>
+          <div id="manage-voices-status" class="manage-stack"></div>
+        </section>
+      </section>
+    </div>
+  </main>
+
+  <script type="module" src="./static/manage.js"></script>
+</body>
+</html>

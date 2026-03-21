@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Replaced the floating tool palette and top-panel live controls with the unified Tabura Circle.
+- Added the dedicated `/manage` surface for runtime, hotword, model, and voice status.
+
 ## v0.2.0 - 2026-03-11
 
 - Published the current release notes in [`docs/release-v0.2.0.md`](docs/release-v0.2.0.md).
