@@ -181,15 +181,19 @@ func (a *App) handleBugReportCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	issueTitle := bugReportIssueTitle(bundle)
-	issue, itemID, issueErr := a.createGitHubIssueFromBugReport(workspace, bundlePath, bundle)
-	if issueErr != nil {
-		bundle.GitHubIssueError = strings.TrimSpace(issueErr.Error())
+	if issueSkipReason := bugReportAutoFileSkipReason(bundle); issueSkipReason != "" {
+		bundle.GitHubIssueError = issueSkipReason
 	} else {
-		bundle.GitHubIssueURL = strings.TrimSpace(issue.URL)
-		bundle.GitHubIssueNo = issue.Number
-		bundle.ItemID = itemID
-		bundle.IssueLabels = []string{"bug", "p0"}
-		issueTitle = strings.TrimSpace(issue.Title)
+		issue, itemID, issueErr := a.createGitHubIssueFromBugReport(workspace, bundlePath, bundle)
+		if issueErr != nil {
+			bundle.GitHubIssueError = strings.TrimSpace(issueErr.Error())
+		} else {
+			bundle.GitHubIssueURL = strings.TrimSpace(issue.URL)
+			bundle.GitHubIssueNo = issue.Number
+			bundle.ItemID = itemID
+			bundle.IssueLabels = []string{"bug", "p0"}
+			issueTitle = strings.TrimSpace(issue.Title)
+		}
 	}
 	if err := writeBugReportBundle(bundlePath, bundle); err != nil {
 		http.Error(w, "update bundle failed", http.StatusInternalServerError)
@@ -496,6 +500,29 @@ func bugReportSummary(bundle bugReportBundle) string {
 		return clean
 	}
 	return ""
+}
+
+func bugReportAutoFileSkipReason(bundle bugReportBundle) string {
+	if bugReportHasActionableSummary(bundle) {
+		return ""
+	}
+	return "auto-filing skipped: add a short note or capture clearer interaction context"
+}
+
+func bugReportHasActionableSummary(bundle bugReportBundle) bool {
+	for _, candidate := range []string{
+		firstSentence(bundle.Note),
+		firstSentence(bundle.VoiceTranscript),
+		bugReportLogSummary(bundle.BrowserLogs),
+		bugReportRecentEventSummary(bundle.RecentEvents),
+		bugReportCanvasArtifactTitle(bundle.CanvasState),
+		bugReportStructuredInteraction(bundle.CanvasState),
+	} {
+		if strings.TrimSpace(candidate) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func bugReportLogSummary(lines []string) string {

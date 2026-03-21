@@ -329,6 +329,52 @@ func TestHandleBugReportCreateUsesDefaultWorkspace(t *testing.T) {
 	}
 }
 
+func TestHandleBugReportCreateSkipsIssueAutofilingForLowSignalBundle(t *testing.T) {
+	app := newAuthedTestApp(t)
+	workspaceDir := t.TempDir()
+	workspace, err := app.store.CreateWorkspace("default", workspaceDir, store.SpherePrivate)
+	if err != nil {
+		t.Fatalf("CreateWorkspace() error: %v", err)
+	}
+	if err := app.store.SetActiveWorkspace(workspace.ID); err != nil {
+		t.Fatalf("SetActiveWorkspace() error: %v", err)
+	}
+	app.ghCommandRunner = func(_ context.Context, _ string, args ...string) (string, error) {
+		t.Fatalf("unexpected gh invocation: %v", args)
+		return "", nil
+	}
+
+	rr := doAuthedJSONRequest(t, app.Router(), "POST", "/api/bugs/report", map[string]any{
+		"screenshot_data_url": testPNGDataURL,
+	})
+	if rr.Code != 200 {
+		t.Fatalf("POST /api/bugs/report status = %d, want 200: %s", rr.Code, rr.Body.String())
+	}
+
+	payload := decodeJSONResponse(t, rr)
+	if got := intFromAny(payload["issue_number"], 0); got != 0 {
+		t.Fatalf("issue_number = %d, want 0", got)
+	}
+	if got := strFromAny(payload["issue_error"]); got != "auto-filing skipped: add a short note or capture clearer interaction context" {
+		t.Fatalf("issue_error = %q", got)
+	}
+	bundlePath := strFromAny(payload["bundle_path"])
+	bundleBytes, err := os.ReadFile(filepath.Join(workspaceDir, filepath.FromSlash(bundlePath)))
+	if err != nil {
+		t.Fatalf("read bundle: %v", err)
+	}
+	var bundle map[string]any
+	if err := json.Unmarshal(bundleBytes, &bundle); err != nil {
+		t.Fatalf("decode bundle: %v", err)
+	}
+	if got := strFromAny(bundle["github_issue_error"]); got != "auto-filing skipped: add a short note or capture clearer interaction context" {
+		t.Fatalf("bundle github_issue_error = %q", got)
+	}
+	if got := intFromAny(bundle["github_issue_number"], 0); got != 0 {
+		t.Fatalf("bundle github_issue_number = %d, want 0", got)
+	}
+}
+
 func TestHandleBugReportCreateUsesLocalProjectFallback(t *testing.T) {
 	dataDir := t.TempDir()
 	localProjectDir := t.TempDir()
@@ -586,6 +632,35 @@ func TestBugReportIssueTitleUsesStructuredFallbackWithoutFreeText(t *testing.T) 
 	body := bugReportIssueBody(bundle, ".tabura/artifacts/bugs/20260311-110721-568aa357/bundle.json")
 	if !strings.Contains(body, "## Summary\n\npen interaction failed in 2026/03/11") {
 		t.Fatalf("bugReportIssueBody() missing structured summary:\n%s", body)
+	}
+}
+
+func TestBugReportAutoFileSkipReasonRequiresActionableContext(t *testing.T) {
+	if got := bugReportAutoFileSkipReason(bugReportBundle{
+		ActiveMode:      "pen",
+		ActiveWorkspace: "default",
+	}); got != "auto-filing skipped: add a short note or capture clearer interaction context" {
+		t.Fatalf("bugReportAutoFileSkipReason() = %q", got)
+	}
+
+	canvasState, err := json.Marshal(map[string]any{
+		"text_input_visible": true,
+	})
+	if err != nil {
+		t.Fatalf("Marshal() error: %v", err)
+	}
+	if got := bugReportAutoFileSkipReason(bugReportBundle{
+		ActiveWorkspace: "default",
+		CanvasState:     canvasState,
+	}); got != "" {
+		t.Fatalf("bugReportAutoFileSkipReason() with structured interaction = %q, want empty", got)
+	}
+
+	if got := bugReportAutoFileSkipReason(bugReportBundle{
+		ActiveWorkspace: "default",
+		Note:            "The floating input stopped accepting Enter.",
+	}); got != "" {
+		t.Fatalf("bugReportAutoFileSkipReason() with note = %q, want empty", got)
 	}
 }
 
