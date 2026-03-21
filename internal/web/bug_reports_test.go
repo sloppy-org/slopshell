@@ -577,6 +577,68 @@ func TestBugReportIssueTitleUsesActiveModeFallbackForDefaultWorkspace(t *testing
 	}
 }
 
+func TestBugReportIssueTitleUsesTypingFallbackForDefaultWorkspace(t *testing.T) {
+	canvasState, err := json.Marshal(map[string]any{
+		"interaction_surface": "annotate",
+		"interaction_tool":    "pointer",
+		"text_input_visible":  true,
+	})
+	if err != nil {
+		t.Fatalf("Marshal() error: %v", err)
+	}
+	bundle := bugReportBundle{
+		ActiveWorkspace: "default",
+		CanvasState:     canvasState,
+	}
+
+	title := bugReportIssueTitle(bundle)
+	if title != "Bug report: interaction failed in default while typing" {
+		t.Fatalf("bugReportIssueTitle() = %q", title)
+	}
+	body := bugReportIssueBody(bundle, ".tabura/artifacts/bugs/20260321-164735-94e3e5e1/bundle.json")
+	for _, needle := range []string{
+		"## Summary\n\ninteraction failed in default while typing",
+		"- Text input visible: `true`",
+		"- Interaction surface: `annotate`",
+		"- Interaction tool: `pointer`",
+	} {
+		if !strings.Contains(body, needle) {
+			t.Fatalf("bugReportIssueBody() missing %q:\n%s", needle, body)
+		}
+	}
+}
+
+func TestBugReportIssueTitleUsesPRReviewFallbackForDefaultWorkspace(t *testing.T) {
+	canvasState, err := json.Marshal(map[string]any{
+		"interaction_surface": "annotate",
+		"interaction_tool":    "pointer",
+		"pr_review_mode":      true,
+	})
+	if err != nil {
+		t.Fatalf("Marshal() error: %v", err)
+	}
+	bundle := bugReportBundle{
+		ActiveWorkspace: "default",
+		CanvasState:     canvasState,
+	}
+
+	title := bugReportIssueTitle(bundle)
+	if title != "Bug report: interaction failed in default during PR review" {
+		t.Fatalf("bugReportIssueTitle() = %q", title)
+	}
+	body := bugReportIssueBody(bundle, ".tabura/artifacts/bugs/20260321-164735-94e3e5e1/bundle.json")
+	for _, needle := range []string{
+		"## Summary\n\ninteraction failed in default during PR review",
+		"- PR review mode: `true`",
+		"- Interaction surface: `annotate`",
+		"- Interaction tool: `pointer`",
+	} {
+		if !strings.Contains(body, needle) {
+			t.Fatalf("bugReportIssueBody() missing %q:\n%s", needle, body)
+		}
+	}
+}
+
 func TestBugReportIssueTitleUsesCanvasStateFallbackForDefaultWorkspace(t *testing.T) {
 	canvasState, err := json.Marshal(map[string]any{
 		"interaction_surface":    "canvas",

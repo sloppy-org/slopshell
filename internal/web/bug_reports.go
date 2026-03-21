@@ -476,6 +476,11 @@ func bugReportCanvasArtifactTitle(raw json.RawMessage) string {
 	return bugReportCanvasStateField(raw, "artifact_title", "active_artifact_title", "title")
 }
 
+func bugReportCanvasStateBool(raw json.RawMessage, key string) bool {
+	value := strings.TrimSpace(strings.ToLower(bugReportCanvasStateField(raw, key)))
+	return value == "true"
+}
+
 func bugReportSummary(bundle bugReportBundle) string {
 	for _, candidate := range []string{
 		firstSentence(bundle.Note),
@@ -560,11 +565,19 @@ func bugReportStructuredInteraction(raw json.RawMessage) string {
 		return fmt.Sprintf("while browsing %s", bugReportCanvasStateField(raw, "workspace_browser_path"))
 	case bugReportCanvasStateField(raw, "item_sidebar_view") != "":
 		return fmt.Sprintf("while viewing %s sidebar", bugReportCanvasStateField(raw, "item_sidebar_view"))
+	case bugReportCanvasStateBool(raw, "text_input_visible"):
+		return "while typing"
+	case bugReportCanvasStateBool(raw, "pr_review_mode"):
+		return "during PR review"
+	case bugReportCanvasStateBool(raw, "overlay_visible"):
+		return "with the overlay open"
 	}
 
 	surface := bugReportCanvasStateField(raw, "interaction_surface")
 	tool := bugReportCanvasStateField(raw, "interaction_tool")
 	switch {
+	case surface == "annotate" && tool == "pointer":
+		// These are the default canvas states and are less useful than richer UI context.
 	case surface != "" && tool != "":
 		return fmt.Sprintf("on %s with %s", surface, tool)
 	case surface != "":
@@ -686,6 +699,9 @@ func bugReportIssueBody(bundle bugReportBundle, bundlePath string) string {
 		bugReportContextLine("Canvas artifact", bugReportCanvasArtifactTitle(bundle.CanvasState)),
 		bugReportContextLine("Interaction surface", bugReportCanvasStateField(bundle.CanvasState, "interaction_surface")),
 		bugReportContextLine("Interaction tool", bugReportCanvasStateField(bundle.CanvasState, "interaction_tool")),
+		bugReportContextLine("Text input visible", bugReportCanvasStateField(bundle.CanvasState, "text_input_visible")),
+		bugReportContextLine("PR review mode", bugReportCanvasStateField(bundle.CanvasState, "pr_review_mode")),
+		bugReportContextLine("Overlay visible", bugReportCanvasStateField(bundle.CanvasState, "overlay_visible")),
 		bugReportContextLine("Last input origin", bugReportCanvasStateField(bundle.CanvasState, "last_input_origin")),
 		bugReportContextLine("Item sidebar view", bugReportCanvasStateField(bundle.CanvasState, "item_sidebar_view")),
 		bugReportContextLine("Workspace browser path", bugReportCanvasStateField(bundle.CanvasState, "workspace_browser_path")),
