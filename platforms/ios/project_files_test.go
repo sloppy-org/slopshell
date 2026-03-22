@@ -24,6 +24,7 @@ func TestTaburaIOSProjectIncludesExpectedFiles(t *testing.T) {
 		filepath.Join("Sources", "TaburaFlowContract", "FlowRunner.swift"),
 		filepath.Join("Tests", "TaburaFlowContractTests", "TaburaFlowContractTests.swift"),
 		filepath.Join("Tests", "TaburaFlowContractTests", "Resources", "flow-fixtures.json"),
+		filepath.Join("Tests", "TaburaIOSModelsTests", "TaburaDialogueModeTests.swift"),
 		"TaburaIOSApp.swift",
 		"ContentView.swift",
 		"TaburaAppModel.swift",
@@ -76,6 +77,43 @@ func TestTaburaIOSInfoPlistDeclaresMobileCapabilities(t *testing.T) {
 	for _, snippet := range requiredSnippets {
 		if !strings.Contains(info, snippet) {
 			t.Fatalf("Info.plist missing %q", snippet)
+		}
+	}
+}
+
+func TestTaburaIOSSourcesCoverBlackScreenDialogueMode(t *testing.T) {
+	projectRoot, err := filepath.Abs(".")
+	if err != nil {
+		t.Fatalf("Abs: %v", err)
+	}
+	checks := []struct {
+		relative string
+		snippets []string
+	}{
+		{
+			relative: filepath.Join("TaburaIOS", "ContentView.swift"),
+			snippets: []string{"blackScreenDialoguePanel", "Exit Dialogue", "isIdleTimerDisabled"},
+		},
+		{
+			relative: filepath.Join("TaburaIOS", "TaburaAppModel.swift"),
+			snippets: []string{"toggleDialogueMode()", "companion/config", "live-policy", "toggle_live_dialogue"},
+		},
+		{
+			relative: filepath.Join("TaburaIOS", "TaburaModels.swift"),
+			snippets: []string{"TaburaDialogueModePresentation", "usesBlackScreen", "keepScreenAwake", "Tap to stop recording"},
+		},
+	}
+	for _, check := range checks {
+		path := filepath.Join(projectRoot, check.relative)
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("ReadFile(%s): %v", path, err)
+		}
+		content := string(data)
+		for _, snippet := range check.snippets {
+			if !strings.Contains(content, snippet) {
+				t.Fatalf("%s missing %q", check.relative, snippet)
+			}
 		}
 	}
 }

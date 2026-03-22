@@ -41,6 +41,17 @@ android {
     }
 }
 
+configurations.configureEach {
+    resolutionStrategy.eachDependency {
+        if (requested.group == "org.apache.commons.io" && requested.name == "commonsIO") {
+            useTarget("commons-io:commons-io:2.5")
+        }
+        if (requested.group == "com.tencent" && requested.name == "mmkv" && requested.version == "1.0.15") {
+            useVersion("1.2.15")
+        }
+    }
+}
+
 dependencies {
     implementation("androidx.activity:activity-compose:1.10.1")
     implementation("androidx.compose.foundation:foundation:1.8.0")
@@ -58,10 +69,12 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.9.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.9.0")
     implementation("androidx.webkit:webkit:1.13.0")
+    implementation("com.google.android.material:material:1.12.0")
     implementation("com.onyx.android.sdk:onyxsdk-device:1.1.11")
     implementation("com.onyx.android.sdk:onyxsdk-pen:1.2.1")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
 
     debugImplementation("androidx.compose.ui:ui-tooling:1.8.0")
+    testImplementation("junit:junit:4.13.2")
 }

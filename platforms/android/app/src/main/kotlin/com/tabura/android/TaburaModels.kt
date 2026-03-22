@@ -45,7 +45,100 @@ data class TaburaChatEventPayload(
     val error: String = "",
     val text: String = "",
     val reason: String = "",
+    val state: String = "",
+    val workspacePath: String = "",
+    val actionType: String = "",
 )
+
+data class TaburaCompanionConfig(
+    val companionEnabled: Boolean,
+    val idleSurface: String,
+)
+
+data class TaburaCompanionState(
+    val companionEnabled: Boolean,
+    val idleSurface: String,
+    val state: String,
+    val reason: String,
+)
+
+enum class TaburaCompanionIdleSurface(val wireValue: String) {
+    ROBOT("robot"),
+    BLACK("black");
+
+    companion object {
+        fun normalize(raw: String): TaburaCompanionIdleSurface {
+            return if (raw.trim().lowercase() == BLACK.wireValue) BLACK else ROBOT
+        }
+    }
+}
+
+enum class TaburaDialogueRuntimeState {
+    IDLE,
+    LISTENING,
+    RECORDING,
+    THINKING,
+    TALKING,
+    ERROR;
+
+    companion object {
+        fun normalize(raw: String): TaburaDialogueRuntimeState {
+            return when (raw.trim().lowercase()) {
+                "listening" -> LISTENING
+                "recording" -> RECORDING
+                "thinking" -> THINKING
+                "talking" -> TALKING
+                "error" -> ERROR
+                else -> IDLE
+            }
+        }
+    }
+}
+
+data class TaburaDialogueModePresentation(
+    val isActive: Boolean,
+    val isRecording: Boolean,
+    val isAwaitingAssistant: Boolean,
+    val companionEnabled: Boolean,
+    val idleSurface: String,
+    val runtimeStateValue: String,
+) {
+    val effectiveIdleSurface = TaburaCompanionIdleSurface.normalize(idleSurface)
+    val usesBlackScreen = isActive && effectiveIdleSurface == TaburaCompanionIdleSurface.BLACK
+    val keepScreenAwake = usesBlackScreen
+    val runtimeState = when {
+        !isActive -> TaburaDialogueRuntimeState.IDLE
+        isRecording -> TaburaDialogueRuntimeState.RECORDING
+        isAwaitingAssistant -> TaburaDialogueRuntimeState.THINKING
+        else -> TaburaDialogueRuntimeState.normalize(runtimeStateValue).let {
+            if (it == TaburaDialogueRuntimeState.IDLE) TaburaDialogueRuntimeState.LISTENING else it
+        }
+    }
+    val primaryLabel = when (runtimeState) {
+        TaburaDialogueRuntimeState.IDLE -> if (companionEnabled) "Ready" else "Disconnected"
+        TaburaDialogueRuntimeState.LISTENING -> "Listening"
+        TaburaDialogueRuntimeState.RECORDING -> "Recording"
+        TaburaDialogueRuntimeState.THINKING -> "Working"
+        TaburaDialogueRuntimeState.TALKING -> "Reply ready"
+        TaburaDialogueRuntimeState.ERROR -> "Attention needed"
+    }
+    val secondaryLabel = when (runtimeState) {
+        TaburaDialogueRuntimeState.IDLE -> "Start dialogue to hand the screen to voice."
+        TaburaDialogueRuntimeState.LISTENING -> "Tap anywhere on the dialogue surface to record."
+        TaburaDialogueRuntimeState.RECORDING -> "Android keeps the foreground mic service active while recording."
+        TaburaDialogueRuntimeState.THINKING -> "Tabura is processing your last recording."
+        TaburaDialogueRuntimeState.TALKING -> "Tap to interrupt and start a new recording."
+        TaburaDialogueRuntimeState.ERROR -> "Check the connection banner for the latest error."
+    }
+    val tapActionLabel = when (runtimeState) {
+        TaburaDialogueRuntimeState.IDLE -> "Start dialogue"
+        TaburaDialogueRuntimeState.LISTENING -> "Tap to record"
+        TaburaDialogueRuntimeState.RECORDING -> "Tap to stop recording"
+        TaburaDialogueRuntimeState.THINKING -> "Waiting for Tabura"
+        TaburaDialogueRuntimeState.TALKING -> "Tap to record"
+        TaburaDialogueRuntimeState.ERROR -> "Tap to retry"
+    }
+}
 
 data class TaburaInkPoint(
     val x: Float,
@@ -153,6 +246,7 @@ fun parseCanvasArtifact(payload: JSONObject): TaburaCanvasArtifact {
 
 fun parseChatEvent(raw: String): TaburaChatEventPayload {
     val json = JSONObject(raw)
+    val action = json.optJSONObject("action")
     return TaburaChatEventPayload(
         type = json.optString("type"),
         turnId = json.optString("turn_id"),
@@ -162,6 +256,27 @@ fun parseChatEvent(raw: String): TaburaChatEventPayload {
         html = json.optString("html"),
         error = json.optString("error"),
         text = json.optString("text"),
+        reason = json.optString("reason"),
+        state = json.optString("state"),
+        workspacePath = json.optString("workspace_path"),
+        actionType = action?.optString("type").orEmpty(),
+    )
+}
+
+fun parseCompanionConfig(body: String): TaburaCompanionConfig {
+    val json = JSONObject(body)
+    return TaburaCompanionConfig(
+        companionEnabled = json.optBoolean("companion_enabled"),
+        idleSurface = json.optString("idle_surface", TaburaCompanionIdleSurface.ROBOT.wireValue),
+    )
+}
+
+fun parseCompanionState(body: String): TaburaCompanionState {
+    val json = JSONObject(body)
+    return TaburaCompanionState(
+        companionEnabled = json.optBoolean("companion_enabled"),
+        idleSurface = json.optString("idle_surface", TaburaCompanionIdleSurface.ROBOT.wireValue),
+        state = json.optString("state"),
         reason = json.optString("reason"),
     )
 }
@@ -175,6 +290,21 @@ fun composerRequest(text: String): String {
         .put("text", text)
         .put("output_mode", "voice")
         .toString()
+}
+
+fun companionConfigPatch(companionEnabled: Boolean? = null, idleSurface: String? = null): String {
+    val json = JSONObject()
+    if (companionEnabled != null) {
+        json.put("companion_enabled", companionEnabled)
+    }
+    if (!idleSurface.isNullOrBlank()) {
+        json.put("idle_surface", idleSurface)
+    }
+    return json.toString()
+}
+
+fun livePolicyRequest(policy: String): String {
+    return JSONObject().put("policy", policy).toString()
 }
 
 fun audioPcmMessage(data: ByteArray): String {

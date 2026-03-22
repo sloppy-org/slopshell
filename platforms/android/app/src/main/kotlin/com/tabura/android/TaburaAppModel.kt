@@ -35,7 +35,22 @@ class TaburaAppModel(application: Application) : AndroidViewModel(application) {
         val isRecording: Boolean = false,
         val inkRequestsResponse: Boolean = true,
         val discoveredServers: List<TaburaDiscoveredServer> = emptyList(),
-    )
+        val isDialogueModeActive: Boolean = false,
+        val isAwaitingAssistantResponse: Boolean = false,
+        val companionEnabled: Boolean = false,
+        val companionIdleSurface: String = TaburaCompanionIdleSurface.ROBOT.wireValue,
+        val companionRuntimeState: String = TaburaDialogueRuntimeState.IDLE.name.lowercase(),
+    ) {
+        val dialoguePresentation: TaburaDialogueModePresentation
+            get() = TaburaDialogueModePresentation(
+                isActive = isDialogueModeActive,
+                isRecording = isRecording,
+                isAwaitingAssistant = isAwaitingAssistantResponse,
+                companionEnabled = companionEnabled,
+                idleSurface = companionIdleSurface,
+                runtimeStateValue = companionRuntimeState,
+            )
+    }
 
     private val client = OkHttpClient()
     private val jsonMediaType = "application/json".toMediaType()
@@ -67,6 +82,7 @@ class TaburaAppModel(application: Application) : AndroidViewModel(application) {
     )
 
     private var activeWorkspace: TaburaWorkspace? = null
+    private var restoreCompanionEnabledOnExit: Boolean? = null
 
     init {
         discovery.start()
@@ -95,6 +111,11 @@ class TaburaAppModel(application: Application) : AndroidViewModel(application) {
         _state.update { current ->
             current.copy(
                 isRecording = active,
+                companionRuntimeState = if (current.isDialogueModeActive && active) {
+                    TaburaDialogueRuntimeState.RECORDING.name.lowercase()
+                } else {
+                    current.companionRuntimeState
+                },
                 lastError = message.ifBlank { current.lastError },
             )
         }
@@ -148,9 +169,75 @@ class TaburaAppModel(application: Application) : AndroidViewModel(application) {
         val baseUrl = state.value.serverUrl.trim()
         viewModelScope.launch {
             runCatching {
+                activeWorkspace?.let { current ->
+                    stopDialogueMode(baseUrl, current, restoreCompanion = true)
+                }
                 attachWorkspace(baseUrl, workspace)
             }.onFailure { error ->
                 setError(error.message ?: "Workspace switch failed")
+            }
+        }
+    }
+
+    fun toggleDialogueMode() {
+        val workspace = activeWorkspace ?: return
+        val baseUrl = state.value.serverUrl.trim()
+        viewModelScope.launch {
+            runCatching {
+                if (state.value.isDialogueModeActive) {
+                    stopDialogueMode(baseUrl, workspace, restoreCompanion = true)
+                    return@runCatching
+                }
+                restoreCompanionEnabledOnExit = state.value.companionEnabled
+                postJson(taburaApiUrl(baseUrl, "live-policy"), livePolicyRequest("dialogue"))
+                if (!state.value.companionEnabled) {
+                    val config = parseCompanionConfig(
+                        putJson(
+                            taburaApiUrl(baseUrl, "workspaces/${workspace.id}/companion/config"),
+                            companionConfigPatch(companionEnabled = true),
+                        )
+                    )
+                    applyCompanionConfig(config)
+                }
+                _state.update { current ->
+                    current.copy(
+                        isDialogueModeActive = true,
+                        isAwaitingAssistantResponse = false,
+                        statusText = "Dialogue mode on",
+                    )
+                }
+            }.onFailure { error ->
+                setError(error.message ?: "Dialogue mode failed")
+            }
+        }
+    }
+
+    fun setDialogueIdleSurface(surface: TaburaCompanionIdleSurface) {
+        val workspace = activeWorkspace ?: run {
+            _state.update { current -> current.copy(companionIdleSurface = surface.wireValue) }
+            return
+        }
+        val baseUrl = state.value.serverUrl.trim()
+        viewModelScope.launch {
+            runCatching {
+                val config = parseCompanionConfig(
+                    putJson(
+                        taburaApiUrl(baseUrl, "workspaces/${workspace.id}/companion/config"),
+                        companionConfigPatch(idleSurface = surface.wireValue),
+                    )
+                )
+                applyCompanionConfig(config)
+                _state.update { current ->
+                    current.copy(
+                        statusText = if (surface == TaburaCompanionIdleSurface.BLACK) {
+                            "Black dialogue surface ready"
+                        } else {
+                            "Robot dialogue surface ready"
+                        },
+                    )
+                }
+            }.onFailure { error ->
+                setError(error.message ?: "Surface update failed")
             }
         }
     }
@@ -192,6 +279,17 @@ class TaburaAppModel(application: Application) : AndroidViewModel(application) {
     fun stopAudio() {
         if (!chatTransport.sendJson(audioStopMessage())) {
             _state.update { current -> current.copy(isRecording = false) }
+            return
+        }
+        _state.update { current ->
+            current.copy(
+                isAwaitingAssistantResponse = current.isDialogueModeActive,
+                companionRuntimeState = if (current.isDialogueModeActive) {
+                    TaburaDialogueRuntimeState.THINKING.name.lowercase()
+                } else {
+                    current.companionRuntimeState
+                },
+            )
         }
     }
 
@@ -212,6 +310,8 @@ class TaburaAppModel(application: Application) : AndroidViewModel(application) {
     private suspend fun attachWorkspace(baseUrl: String, workspace: TaburaWorkspace) {
         activeWorkspace = workspace
         val history = loadHistory(baseUrl, workspace)
+        val companionConfig = loadCompanionConfig(baseUrl, workspace)
+        val companionState = loadCompanionState(baseUrl, workspace)
         _state.update { current ->
             current.copy(
                 messages = history,
@@ -223,9 +323,16 @@ class TaburaAppModel(application: Application) : AndroidViewModel(application) {
         canvasTransport.loadSnapshot(baseUrl, workspace.canvasSessionId)?.let { artifact ->
             _state.update { current -> current.copy(canvas = artifact) }
         }
+        applyCompanionConfig(companionConfig)
+        applyCompanionState(companionState)
         _state.update { current ->
-            current.copy(statusText = "Connected to ${workspace.name}")
+            current.copy(
+                statusText = "Connected to ${workspace.name}",
+                isDialogueModeActive = false,
+                isAwaitingAssistantResponse = false,
+            )
         }
+        restoreCompanionEnabledOnExit = null
     }
 
     private suspend fun loginIfNeeded(baseUrl: String) {
@@ -252,6 +359,14 @@ class TaburaAppModel(application: Application) : AndroidViewModel(application) {
         return parseChatHistory(get(taburaApiUrl(baseUrl, "chat/sessions/${workspace.chatSessionId}/history")))
     }
 
+    private suspend fun loadCompanionConfig(baseUrl: String, workspace: TaburaWorkspace): TaburaCompanionConfig {
+        return parseCompanionConfig(get(taburaApiUrl(baseUrl, "workspaces/${workspace.id}/companion/config")))
+    }
+
+    private suspend fun loadCompanionState(baseUrl: String, workspace: TaburaWorkspace): TaburaCompanionState {
+        return parseCompanionState(get(taburaApiUrl(baseUrl, "workspaces/${workspace.id}/companion/state")))
+    }
+
     private suspend fun get(url: String): String = withContext(Dispatchers.IO) {
         val request = Request.Builder().url(url).build()
         client.newCall(request).execute().use { response ->
@@ -275,8 +390,62 @@ class TaburaAppModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private suspend fun putJson(url: String, body: String): String = withContext(Dispatchers.IO) {
+        val request = Request.Builder()
+            .url(url)
+            .put(body.toRequestBody(jsonMediaType))
+            .build()
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                error("HTTP ${response.code} for $url")
+            }
+            response.body?.string().orEmpty()
+        }
+    }
+
+    private suspend fun stopDialogueMode(baseUrl: String, workspace: TaburaWorkspace, restoreCompanion: Boolean) {
+        if (state.value.isRecording) {
+            stopAudio()
+        }
+        _state.update { current ->
+            current.copy(
+                isDialogueModeActive = false,
+                isAwaitingAssistantResponse = false,
+                companionRuntimeState = TaburaDialogueRuntimeState.IDLE.name.lowercase(),
+            )
+        }
+        if (restoreCompanion) {
+            val restore = restoreCompanionEnabledOnExit
+            if (restore != null && restore != state.value.companionEnabled) {
+                val config = parseCompanionConfig(
+                    putJson(
+                        taburaApiUrl(baseUrl, "workspaces/${workspace.id}/companion/config"),
+                        companionConfigPatch(companionEnabled = restore),
+                    )
+                )
+                applyCompanionConfig(config)
+            }
+        }
+        restoreCompanionEnabledOnExit = null
+        _state.update { current -> current.copy(statusText = "Dialogue mode off") }
+    }
+
     private fun handleChatEvent(event: TaburaChatEventPayload) {
         when (event.type) {
+            "action" -> {
+                if (event.actionType == "toggle_live_dialogue") {
+                    toggleDialogueMode()
+                }
+            }
+
+            "companion_state" -> {
+                if (event.workspacePath.isBlank() || event.workspacePath == activeWorkspace?.rootPath) {
+                    _state.update { current ->
+                        current.copy(companionRuntimeState = TaburaDialogueRuntimeState.normalize(event.state).name.lowercase())
+                    }
+                }
+            }
+
             "render_chat", "assistant_output", "message_persisted" -> {
                 val content = event.markdown.ifBlank { event.message.ifBlank { event.text } }
                 if (content.isBlank()) {
@@ -289,7 +458,13 @@ class TaburaAppModel(application: Application) : AndroidViewModel(application) {
                             role = event.role.ifBlank { "assistant" },
                             text = content,
                             html = event.html,
-                        )
+                        ),
+                        isAwaitingAssistantResponse = false,
+                        companionRuntimeState = if (current.isDialogueModeActive && !current.isRecording) {
+                            TaburaDialogueRuntimeState.LISTENING.name.lowercase()
+                        } else {
+                            current.companionRuntimeState
+                        },
                     )
                 }
             }
@@ -308,11 +483,50 @@ class TaburaAppModel(application: Application) : AndroidViewModel(application) {
 
             "stt_empty" -> {
                 _state.update { current ->
-                    current.copy(statusText = event.reason.ifBlank { "No speech detected" })
+                    current.copy(
+                        statusText = event.reason.ifBlank { "No speech detected" },
+                        isAwaitingAssistantResponse = false,
+                        companionRuntimeState = if (current.isDialogueModeActive) {
+                            TaburaDialogueRuntimeState.LISTENING.name.lowercase()
+                        } else {
+                            current.companionRuntimeState
+                        },
+                    )
                 }
             }
 
-            "stt_error", "error" -> setError(event.error.ifBlank { "Tabura server error" })
+            "stt_error", "error" -> {
+                setError(event.error.ifBlank { "Tabura server error" })
+                _state.update { current ->
+                    current.copy(
+                        isAwaitingAssistantResponse = false,
+                        companionRuntimeState = if (current.isDialogueModeActive) {
+                            TaburaDialogueRuntimeState.ERROR.name.lowercase()
+                        } else {
+                            current.companionRuntimeState
+                        },
+                    )
+                }
+            }
+        }
+    }
+
+    private fun applyCompanionConfig(config: TaburaCompanionConfig) {
+        _state.update { current ->
+            current.copy(
+                companionEnabled = config.companionEnabled,
+                companionIdleSurface = TaburaCompanionIdleSurface.normalize(config.idleSurface).wireValue,
+            )
+        }
+    }
+
+    private fun applyCompanionState(companionState: TaburaCompanionState) {
+        _state.update { current ->
+            current.copy(
+                companionEnabled = companionState.companionEnabled,
+                companionIdleSurface = TaburaCompanionIdleSurface.normalize(companionState.idleSurface).wireValue,
+                companionRuntimeState = TaburaDialogueRuntimeState.normalize(companionState.state).name.lowercase(),
+            )
         }
     }
 

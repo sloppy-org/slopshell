@@ -87,30 +87,41 @@ private class TaburaCanvasDisplayWebView(
 }
 
 private fun applyEinkDisplayHtml(html: String): String {
+    val bodyMatch = BODY_TAG.find(html)
     val withBodyClass = when {
-        BODY_TAG.containsMatchIn(html) -> BODY_TAG.replaceFirst(html) { match ->
-            val attributes = match.groupValues[1]
-            if (BODY_CLASS_TAG.containsMatchIn(attributes)) {
-                "<body${BODY_CLASS_TAG.replaceFirst(attributes) { classMatch ->
-                    val classes = classMatch.groupValues[1]
-                        .split(Regex("\\s+"))
-                        .filter { it.isNotBlank() }
-                        .toMutableList()
-                    if (!classes.contains("eink-display")) {
-                        classes += "eink-display"
-                    }
-                    " class=\"${classes.joinToString(" ")}\""
-                }}>"
+        bodyMatch != null -> {
+            val attributes = bodyMatch.groupValues[1]
+            val replacement = if (BODY_CLASS_TAG.containsMatchIn(attributes)) {
+                val classMatch = BODY_CLASS_TAG.find(attributes)
+                val classes = classMatch?.groupValues?.getOrNull(1)
+                    ?.split(Regex("\\s+"))
+                    ?.filter { it.isNotBlank() }
+                    ?.toMutableList()
+                    ?: mutableListOf()
+                if (!classes.contains("eink-display")) {
+                    classes += "eink-display"
+                }
+                val updatedAttributes = classMatch?.range?.let { range ->
+                    attributes.replaceRange(range, "class=\"${classes.joinToString(" ")}\"")
+                } ?: attributes
+                "<body$updatedAttributes>"
             } else {
                 "<body$attributes class=\"eink-display\">"
             }
+            html.replaceRange(bodyMatch.range, replacement)
         }
         else -> "<html><body class=\"eink-display\">$html</body></html>"
     }
-    return if (HEAD_END_TAG.containsMatchIn(withBodyClass)) {
-        HEAD_END_TAG.replaceFirst(withBodyClass, "$EINK_STYLE</head>")
+    val headMatch = HEAD_END_TAG.find(withBodyClass)
+    return if (headMatch != null) {
+        withBodyClass.replaceRange(headMatch.range, "$EINK_STYLE</head>")
     } else {
-        BODY_TAG.replaceFirst(withBodyClass, "<head>$EINK_STYLE</head>$0")
+        val nextBodyMatch = BODY_TAG.find(withBodyClass)
+        if (nextBodyMatch != null) {
+            withBodyClass.replaceRange(nextBodyMatch.range, "<head>$EINK_STYLE</head>${nextBodyMatch.value}")
+        } else {
+            "<head>$EINK_STYLE</head>$withBodyClass"
+        }
     }
 }
 

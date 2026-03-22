@@ -35,6 +35,7 @@ func TestTaburaAndroidProjectIncludesExpectedFiles(t *testing.T) {
 		filepath.Join("flow-contracts", "src", "test", "kotlin", "com", "tabura", "android", "flow", "FlowRunner.kt"),
 		filepath.Join("flow-contracts", "src", "test", "kotlin", "com", "tabura", "android", "flow", "FlowContractTest.kt"),
 		filepath.Join("flow-contracts", "src", "test", "resources", "flow-fixtures.json"),
+		filepath.Join("app", "src", "test", "kotlin", "com", "tabura", "android", "TaburaDialogueModeTest.kt"),
 		filepath.Join("app", "src", "main", "res", "values", "strings.xml"),
 		filepath.Join("app", "src", "main", "res", "values", "themes.xml"),
 	}
@@ -126,6 +127,10 @@ func TestTaburaAndroidSourcesCoverThinClientResponsibilities(t *testing.T) {
 		snippets []string
 	}{
 		{
+			relative: filepath.Join("app", "src", "main", "kotlin", "com", "tabura", "android", "MainActivity.kt"),
+			snippets: []string{"BlackScreenDialogueSurface", "FLAG_KEEP_SCREEN_ON", "Start Dialogue", "Exit Dialogue"},
+		},
+		{
 			relative: filepath.Join("app", "src", "main", "kotlin", "com", "tabura", "android", "TaburaServerDiscovery.kt"),
 			snippets: []string{"NsdManager", "_tabura._tcp."},
 		},
@@ -147,7 +152,7 @@ func TestTaburaAndroidSourcesCoverThinClientResponsibilities(t *testing.T) {
 		},
 		{
 			relative: filepath.Join("app", "src", "main", "kotlin", "com", "tabura", "android", "TaburaModels.kt"),
-			snippets: []string{"ink_stroke", "audio_pcm"},
+			snippets: []string{"ink_stroke", "audio_pcm", "TaburaDialogueModePresentation", "Tap to stop recording"},
 		},
 		{
 			relative: filepath.Join("app", "src", "main", "kotlin", "com", "tabura", "android", "TaburaCanvasWebView.kt"),
@@ -166,7 +171,7 @@ func TestTaburaAndroidSourcesCoverThinClientResponsibilities(t *testing.T) {
 			relative: filepath.Join("app", "src", "main", "kotlin", "com", "tabura", "android", "TaburaBooxInkSurfaceView.kt"),
 			snippets: []string{
 				"TouchHelper.create",
-				"setUseRawInput(true)",
+				"setRawInputReaderEnable(true)",
 				"openRawDrawing",
 				"setRawDrawingEnabled(true)",
 				"closeRawDrawing",

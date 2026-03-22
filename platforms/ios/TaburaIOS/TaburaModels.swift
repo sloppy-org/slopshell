@@ -113,6 +113,9 @@ struct TaburaChatEventPayload: Decodable {
     let error: String?
     let text: String?
     let reason: String?
+    let state: String?
+    let workspacePath: String?
+    let actionType: String?
 
     private enum CodingKeys: String, CodingKey {
         case type
@@ -124,6 +127,166 @@ struct TaburaChatEventPayload: Decodable {
         case error
         case text
         case reason
+        case state
+        case workspacePath = "workspace_path"
+        case action
+    }
+
+    private struct ActionPayload: Decodable {
+        let type: String?
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        type = try container.decode(String.self, forKey: .type)
+        turnID = try container.decodeIfPresent(String.self, forKey: .turnID)
+        role = try container.decodeIfPresent(String.self, forKey: .role)
+        message = try container.decodeIfPresent(String.self, forKey: .message)
+        markdown = try container.decodeIfPresent(String.self, forKey: .markdown)
+        html = try container.decodeIfPresent(String.self, forKey: .html)
+        error = try container.decodeIfPresent(String.self, forKey: .error)
+        text = try container.decodeIfPresent(String.self, forKey: .text)
+        reason = try container.decodeIfPresent(String.self, forKey: .reason)
+        state = try container.decodeIfPresent(String.self, forKey: .state)
+        workspacePath = try container.decodeIfPresent(String.self, forKey: .workspacePath)
+        actionType = try container.decodeIfPresent(ActionPayload.self, forKey: .action)?.type
+    }
+}
+
+struct TaburaCompanionConfig: Decodable {
+    let companionEnabled: Bool
+    let idleSurface: String
+
+    private enum CodingKeys: String, CodingKey {
+        case companionEnabled = "companion_enabled"
+        case idleSurface = "idle_surface"
+    }
+}
+
+struct TaburaCompanionConfigPatch: Encodable {
+    let companionEnabled: Bool?
+    let idleSurface: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case companionEnabled = "companion_enabled"
+        case idleSurface = "idle_surface"
+    }
+}
+
+struct TaburaCompanionStateResponse: Decodable {
+    let companionEnabled: Bool
+    let idleSurface: String
+    let state: String
+    let reason: String
+
+    private enum CodingKeys: String, CodingKey {
+        case companionEnabled = "companion_enabled"
+        case idleSurface = "idle_surface"
+        case state
+        case reason
+    }
+}
+
+struct TaburaLivePolicyRequest: Encodable {
+    let policy: String
+}
+
+enum TaburaCompanionIdleSurface: String, Equatable {
+    case robot
+    case black
+
+    init(raw: String) {
+        self = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "black" ? .black : .robot
+    }
+}
+
+enum TaburaDialogueRuntimeState: String, Equatable {
+    case idle
+    case listening
+    case recording
+    case thinking
+    case talking
+    case error
+
+    init(raw: String) {
+        switch raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "listening":
+            self = .listening
+        case "recording":
+            self = .recording
+        case "thinking":
+            self = .thinking
+        case "talking":
+            self = .talking
+        case "error":
+            self = .error
+        default:
+            self = .idle
+        }
+    }
+}
+
+struct TaburaDialogueModePresentation: Equatable {
+    let isActive: Bool
+    let usesBlackScreen: Bool
+    let keepScreenAwake: Bool
+    let runtimeState: TaburaDialogueRuntimeState
+    let primaryLabel: String
+    let secondaryLabel: String
+    let tapActionLabel: String
+
+    init(
+        isActive: Bool,
+        isRecording: Bool,
+        isAwaitingAssistant: Bool,
+        companionEnabled: Bool,
+        idleSurface: String,
+        runtimeState: String
+    ) {
+        let normalizedSurface = TaburaCompanionIdleSurface(raw: idleSurface)
+        let derivedState: TaburaDialogueRuntimeState
+        if !isActive {
+            derivedState = .idle
+        } else if isRecording {
+            derivedState = .recording
+        } else if isAwaitingAssistant {
+            derivedState = .thinking
+        } else {
+            let serverState = TaburaDialogueRuntimeState(raw: runtimeState)
+            derivedState = serverState == .idle ? .listening : serverState
+        }
+
+        self.isActive = isActive
+        usesBlackScreen = isActive && normalizedSurface == .black
+        keepScreenAwake = usesBlackScreen
+        self.runtimeState = derivedState
+
+        switch derivedState {
+        case .idle:
+            primaryLabel = companionEnabled ? "Ready" : "Disconnected"
+            secondaryLabel = "Start dialogue to hand the screen to voice."
+            tapActionLabel = "Start dialogue"
+        case .listening:
+            primaryLabel = "Listening"
+            secondaryLabel = "Tap anywhere on the dialogue surface to record."
+            tapActionLabel = "Tap to record"
+        case .recording:
+            primaryLabel = "Recording"
+            secondaryLabel = "Tap again to stop and send audio."
+            tapActionLabel = "Tap to stop recording"
+        case .thinking:
+            primaryLabel = "Working"
+            secondaryLabel = "Tabura is processing your last recording."
+            tapActionLabel = "Waiting for Tabura"
+        case .talking:
+            primaryLabel = "Reply ready"
+            secondaryLabel = "Tap to interrupt and start a new recording."
+            tapActionLabel = "Tap to record"
+        case .error:
+            primaryLabel = "Attention needed"
+            secondaryLabel = "Check the connection banner for the latest error."
+            tapActionLabel = "Tap to retry"
+        }
     }
 }
 
@@ -210,7 +373,7 @@ func taburaWSURL(baseURL: URL, path: String) -> URL? {
 }
 
 func taburaAPIURL(baseURL: URL, path: String) -> URL {
-    baseURL.appending(path: "api/" + path)
+    baseURL.appendingPathComponent("api").appendingPathComponent(path)
 }
 
 func taburaCanvasHTML(from payload: TaburaCanvasEventPayload) -> String {

@@ -5,9 +5,9 @@ import android.graphics.Color
 import android.graphics.Rect
 import android.util.AttributeSet
 import android.view.View
-import com.onyx.android.sdk.data.note.TouchPoint
 import com.onyx.android.sdk.pen.RawInputCallback
 import com.onyx.android.sdk.pen.TouchHelper
+import com.onyx.android.sdk.pen.data.TouchPoint
 import com.onyx.android.sdk.pen.data.TouchPointList
 
 class TaburaBooxInkSurfaceView @JvmOverloads constructor(
@@ -18,7 +18,7 @@ class TaburaBooxInkSurfaceView @JvmOverloads constructor(
     private val rawPoints = mutableListOf<TaburaInkPoint>()
     private var onCommit: (List<TaburaInkStroke>) -> Unit = {}
 
-    private val callback = object : RawInputCallback {
+    private val callback = object : RawInputCallback() {
         override fun onBeginRawDrawing(active: Boolean, touchPoint: TouchPoint) {
             rawPoints.clear()
             rawPoints += touchPoint.toInkPoint()
@@ -97,7 +97,7 @@ class TaburaBooxInkSurfaceView @JvmOverloads constructor(
         getLocalVisibleRect(limit)
         val helper = TouchHelper.create(this, callback)
         helper.setStrokeWidth(DEFAULT_STROKE_WIDTH)
-        helper.setUseRawInput(true)
+        helper.setRawInputReaderEnable(true)
         helper.setLimitRect(limit, emptyList<Rect>())
         helper.openRawDrawing()
         helper.setRawDrawingEnabled(true)

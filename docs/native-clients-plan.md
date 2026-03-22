@@ -43,6 +43,11 @@ The shipped native surfaces match the thin-client split.
   `platforms/ios/TaburaIOS/TaburaChatTransport.swift` connect to the server.
 - `platforms/ios/TaburaIOS/TaburaServerDiscovery.swift` handles `_tabura._tcp`
   discovery.
+- `platforms/ios/TaburaIOS/ContentView.swift` now exposes an explicit native
+  dialogue surface selector and a full-screen black dialogue mode.
+- `platforms/ios/TaburaIOS/TaburaAppModel.swift` wires dialogue entry and exit
+  to `/api/live-policy`, `/api/workspaces/{id}/companion/config`, and incoming
+  `toggle_live_dialogue` / `companion_state` chat events.
 
 ### Android and Boox
 
@@ -58,6 +63,13 @@ The shipped native surfaces match the thin-client split.
   connect to the server.
 - `platforms/android/app/src/main/kotlin/com/tabura/android/TaburaServerDiscovery.kt`
   handles `_tabura._tcp` discovery.
+- `platforms/android/app/src/main/kotlin/com/tabura/android/MainActivity.kt`
+  now exposes an explicit native dialogue surface selector and a full-screen
+  black dialogue mode.
+- `platforms/android/app/src/main/kotlin/com/tabura/android/TaburaAppModel.kt`
+  wires dialogue entry and exit to `/api/live-policy`,
+  `/api/workspaces/{id}/companion/config`, and incoming
+  `toggle_live_dialogue` / `companion_state` chat events.
 
 ### Web
 
@@ -82,15 +94,56 @@ techniques are anchored in the platform files above.
 
 ## Delivery Status
 
-The original implementation slices for the native-client push are complete:
+Dialogue black-screen mode is now intentionally implemented across the shipped
+clients:
 
 - `#632` server-side render protocol
 - `#633` native iOS client
 - `#634` native Android client
 - `#635` Onyx Boox support
 - `#636` web ink rewrite
-- `#637` black-screen dialogue mode
+- `#637` black-screen dialogue mode on web, iOS, and Android
 - `#638` mDNS advertisement and push relay
 
-Issue `#639` remains useful as the umbrella record, but the actual plan now
-lives in this canonical repo document instead of a missing private plan path.
+Issue `#639` remains the broader umbrella for the rest of the native-client
+push. This document only claims the black-screen dialogue slice that is
+implemented in the current repo state.
+
+## Native Dialogue Mode Operation
+
+Native dialogue mode is now explicit instead of implied:
+
+- Choose `Robot` or `Black` in the native dialogue surface control.
+- Tap `Start Dialogue` to enter live dialogue locally. The client posts
+  `/api/live-policy` with `dialogue` and ensures
+  `/api/workspaces/{id}/companion/config` has `companion_enabled=true`.
+- When the selected idle surface is `black`, the client swaps into a full-screen
+  black tap target and keeps the screen awake while dialogue mode stays active.
+- Tap the full-screen surface to start recording and tap again to stop. Android
+  continues to use the foreground microphone service for the active recording
+  path.
+- Tap `Exit Dialogue` or trigger `toggle_live_dialogue` from the server to
+  leave the mode.
+
+## Manual Verification
+
+Use these pass/fail checks when real devices are available:
+
+1. iOS black-screen dialogue surface
+   Pass: set the surface to `Black`, tap `Start Dialogue`, confirm the app
+   enters a full-screen black surface, the screen does not dim, and a tap starts
+   then stops microphone capture.
+   Fail: the app stays in the standard shell, the screen sleeps, or taps do not
+   control recording.
+2. Android black-screen dialogue surface
+   Pass: set the surface to `Black`, tap `Start Dialogue`, confirm the app
+   enters a full-screen black surface, the display stays awake, and a tap starts
+   then stops the foreground microphone service path.
+   Fail: the app stays in the standard shell, the display sleeps, or recording
+   state diverges from the foreground-service state.
+3. Server/client wiring
+   Pass: switching the surface updates `/api/workspaces/{id}/companion/config`,
+   entering dialogue posts `/api/live-policy`, and a server
+   `toggle_live_dialogue` action toggles the native mode.
+   Fail: native dialogue mode only works as a local visual toggle with no server
+   state integration.

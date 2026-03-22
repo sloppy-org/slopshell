@@ -1,13 +1,31 @@
 import SwiftUI
+import UIKit
 
 struct ContentView: View {
     @StateObject private var model = TaburaAppModel()
 
     var body: some View {
-        NavigationStack {
+        NavigationStack { rootContent }
+            .onAppear {
+                UIApplication.shared.isIdleTimerDisabled = model.dialoguePresentation.keepScreenAwake
+            }
+            .onDisappear {
+                UIApplication.shared.isIdleTimerDisabled = false
+            }
+            .onChange(of: model.dialoguePresentation.keepScreenAwake) { _, enabled in
+                UIApplication.shared.isIdleTimerDisabled = enabled
+            }
+    }
+
+    @ViewBuilder
+    private var rootContent: some View {
+        if model.dialoguePresentation.usesBlackScreen {
+            blackScreenDialoguePanel
+        } else {
             VStack(spacing: 16) {
                 connectionPanel
                 workspacePicker
+                dialogueControls
                 canvasPanel
                 chatPanel
                 composerPanel
@@ -76,6 +94,40 @@ struct ContentView: View {
         }
     }
 
+    private var dialogueControls: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Dialogue Surface")
+                    .font(.headline)
+                Spacer()
+                Picker("Surface", selection: Binding(
+                    get: { TaburaCompanionIdleSurface(raw: model.companionIdleSurface) },
+                    set: { surface in
+                        Task { await model.setDialogueIdleSurface(surface) }
+                    }
+                )) {
+                    Text("Robot").tag(TaburaCompanionIdleSurface.robot)
+                    Text("Black").tag(TaburaCompanionIdleSurface.black)
+                }
+                .pickerStyle(.segmented)
+            }
+            HStack {
+                Button(model.isDialogueModeActive ? "Stop Dialogue" : "Start Dialogue") {
+                    Task { await model.toggleDialogueMode() }
+                }
+                .buttonStyle(.borderedProminent)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(model.dialoguePresentation.primaryLabel)
+                        .font(.subheadline.weight(.semibold))
+                    Text(model.dialoguePresentation.secondaryLabel)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+        }
+    }
+
     private var canvasPanel: some View {
         ZStack(alignment: .topTrailing) {
             TaburaCanvasWebView(html: model.canvas.html, baseURL: URL(string: model.serverURLString))
@@ -136,5 +188,49 @@ struct ContentView: View {
                 .buttonStyle(.borderedProminent)
             }
         }
+    }
+
+    private var blackScreenDialoguePanel: some View {
+        let presentation = model.dialoguePresentation
+        return ZStack {
+            Button {
+                Task { await model.toggleRecording() }
+            } label: {
+                Color.black.ignoresSafeArea()
+            }
+            .buttonStyle(.plain)
+            VStack(spacing: 18) {
+                Spacer()
+                Text(presentation.primaryLabel)
+                    .font(.system(size: 36, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white)
+                Text(presentation.secondaryLabel)
+                    .font(.title3)
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.white.opacity(0.8))
+                    .padding(.horizontal, 32)
+                Text(presentation.tapActionLabel)
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 12)
+                    .background(.white.opacity(0.12), in: Capsule())
+                if model.lastError.isEmpty == false {
+                    Text(model.lastError)
+                        .font(.footnote)
+                        .foregroundStyle(.red.opacity(0.9))
+                        .padding(.horizontal, 24)
+                }
+                Spacer()
+                Button("Exit Dialogue") {
+                    Task { await model.toggleDialogueMode() }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.white)
+                .foregroundStyle(.black)
+                .padding(.bottom, 32)
+            }
+        }
+        .navigationBarHidden(true)
     }
 }

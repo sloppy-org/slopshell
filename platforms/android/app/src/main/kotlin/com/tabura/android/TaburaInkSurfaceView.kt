@@ -7,6 +7,8 @@ import android.util.SparseArray
 import android.view.MotionEvent
 import android.view.View
 import android.widget.FrameLayout
+import androidx.ink.brush.Brush
+import androidx.ink.brush.StockBrushes
 import androidx.ink.authoring.InProgressStrokeId
 import androidx.ink.authoring.InProgressStrokesFinishedListener
 import androidx.ink.authoring.InProgressStrokesView
@@ -22,6 +24,12 @@ class TaburaInkSurfaceView @JvmOverloads constructor(
     private val pointerToStrokeId = SparseArray<InProgressStrokeId>()
     private val pointerToPoints = mutableMapOf<Int, MutableList<TaburaInkPoint>>()
     private var onCommit: (List<TaburaInkStroke>) -> Unit = {}
+    private val strokeBrush = Brush.createWithColorIntArgb(
+        StockBrushes.pressurePen(),
+        Color.BLACK,
+        3.0f,
+        0.1f,
+    )
 
     init {
         setBackgroundColor(Color.TRANSPARENT)
@@ -60,7 +68,7 @@ class TaburaInkSurfaceView @JvmOverloads constructor(
         val pointerIndex = event.actionIndex
         val pointerId = event.getPointerId(pointerIndex)
         requestUnbufferedDispatch(event)
-        pointerToStrokeId.put(pointerId, inProgressStrokesView.startStroke(event, pointerId))
+        pointerToStrokeId.put(pointerId, inProgressStrokesView.startStroke(event, pointerId, strokeBrush))
         pointerToPoints[pointerId] = mutableListOf()
         collectSamples(event, pointerIndex, pointerId)
         return true

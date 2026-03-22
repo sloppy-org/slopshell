@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.os.Bundle
 import android.os.IBinder
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
@@ -34,6 +35,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -77,6 +79,13 @@ class MainActivity : ComponentActivity(), TaburaAudioCaptureService.Listener {
             val state by model.state.collectAsState()
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
+                    SideEffect {
+                        if (state.dialoguePresentation.keepScreenAwake) {
+                            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                        } else {
+                            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                        }
+                    }
                     TaburaAndroidApp(
                         state = state,
                         onServerUrlChanged = model::updateServerUrl,
@@ -87,6 +96,8 @@ class MainActivity : ComponentActivity(), TaburaAudioCaptureService.Listener {
                         onComposerChanged = model::updateComposerText,
                         onSendComposer = model::sendComposerMessage,
                         onToggleRecording = ::toggleRecording,
+                        onToggleDialogue = model::toggleDialogueMode,
+                        onSetDialogueIdleSurface = model::setDialogueIdleSurface,
                         onInkCommit = model::submitInk,
                         onInkRequestsResponseChanged = model::setInkRequestsResponse,
                     )
@@ -158,12 +169,25 @@ private fun TaburaAndroidApp(
     onComposerChanged: (String) -> Unit,
     onSendComposer: () -> Unit,
     onToggleRecording: () -> Unit,
+    onToggleDialogue: () -> Unit,
+    onSetDialogueIdleSurface: (TaburaCompanionIdleSurface) -> Unit,
     onInkCommit: (List<TaburaInkStroke>) -> Unit,
     onInkRequestsResponseChanged: (Boolean) -> Unit,
 ) {
     val context = LocalContext.current
     val displayProfile = remember(context) {
         detectTaburaDisplayProfile(context)
+    }
+    val dialoguePresentation = state.dialoguePresentation
+
+    if (dialoguePresentation.usesBlackScreen) {
+        BlackScreenDialogueSurface(
+            presentation = dialoguePresentation,
+            errorText = state.lastError,
+            onToggleRecording = onToggleRecording,
+            onExitDialogue = onToggleDialogue,
+        )
+        return
     }
 
     Column(
@@ -239,6 +263,27 @@ private fun TaburaAndroidApp(
                 onCheckedChange = onInkRequestsResponseChanged,
             )
             Text("Ink asks Tabura")
+        }
+
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("Dialogue Surface", style = MaterialTheme.typography.titleMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = { onSetDialogueIdleSurface(TaburaCompanionIdleSurface.ROBOT) }) {
+                    Text(if (state.companionIdleSurface == TaburaCompanionIdleSurface.ROBOT.wireValue) "• Robot" else "Robot")
+                }
+                Button(onClick = { onSetDialogueIdleSurface(TaburaCompanionIdleSurface.BLACK) }) {
+                    Text(if (state.companionIdleSurface == TaburaCompanionIdleSurface.BLACK.wireValue) "• Black" else "Black")
+                }
+                Button(onClick = onToggleDialogue) {
+                    Text(if (state.isDialogueModeActive) "Stop Dialogue" else "Start Dialogue")
+                }
+            }
+            Text(dialoguePresentation.primaryLabel, style = MaterialTheme.typography.titleSmall)
+            Text(
+                dialoguePresentation.secondaryLabel,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
 
         Box(
@@ -328,6 +373,46 @@ private fun TaburaAndroidApp(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+    }
+}
+
+@Composable
+private fun BlackScreenDialogueSurface(
+    presentation: TaburaDialogueModePresentation,
+    errorText: String,
+    onToggleRecording: () -> Unit,
+    onExitDialogue: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black),
+        contentAlignment = Alignment.Center,
+    ) {
+        Button(
+            modifier = Modifier.fillMaxSize(),
+            onClick = onToggleRecording,
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                Text(presentation.primaryLabel, style = MaterialTheme.typography.headlineLarge)
+                Text(presentation.secondaryLabel, style = MaterialTheme.typography.titleMedium)
+                Text(presentation.tapActionLabel, style = MaterialTheme.typography.titleSmall)
+                if (errorText.isNotBlank()) {
+                    Text(errorText, color = MaterialTheme.colorScheme.error)
+                }
+            }
+        }
+        Button(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(24.dp),
+            onClick = onExitDialogue,
+        ) {
+            Text("Exit Dialogue")
         }
     }
 }
