@@ -14,8 +14,16 @@ const fixtureTargets = [
     output: path.join(repoRoot, 'platforms', 'ios', 'Tests', 'TaburaFlowContractTests', 'Resources', 'flow-fixtures.json'),
   },
   {
+    platform: 'ios',
+    output: path.join(repoRoot, 'platforms', 'ios', 'TaburaIOSUITests', 'Resources', 'flow-fixtures.json'),
+  },
+  {
     platform: 'android',
     output: path.join(repoRoot, 'platforms', 'android', 'flow-contracts', 'src', 'test', 'resources', 'flow-fixtures.json'),
+  },
+  {
+    platform: 'android',
+    output: path.join(repoRoot, 'platforms', 'android', 'app', 'src', 'androidTest', 'assets', 'flow-fixtures.json'),
   },
 ];
 

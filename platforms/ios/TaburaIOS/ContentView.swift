@@ -234,3 +234,207 @@ struct ContentView: View {
         .navigationBarHidden(true)
     }
 }
+
+struct TaburaFlowHarnessPreconditions {
+    var tool = "pointer"
+    var session = "none"
+    var silent = false
+    var indicatorState = ""
+}
+
+private struct TaburaFlowHarnessState {
+    var activeTool = "pointer"
+    var session = "none"
+    var silent = false
+    var circleExpanded = false
+    var indicatorOverride = ""
+
+    var taburaCircle: String {
+        circleExpanded ? "expanded" : "collapsed"
+    }
+
+    var dotInnerIcon: String {
+        switch activeTool {
+        case "highlight":
+            return "marker"
+        case "ink":
+            return "pen_nib"
+        case "text_note":
+            return "sticky_note"
+        case "prompt":
+            return "mic"
+        default:
+            return "arrow"
+        }
+    }
+
+    var indicatorState: String {
+        if indicatorOverride.isEmpty == false {
+            return indicatorOverride
+        }
+        switch session {
+        case "dialogue":
+            return "listening"
+        case "meeting":
+            return "paused"
+        default:
+            return "idle"
+        }
+    }
+
+    var bodyClass: String {
+        [
+            "tool-\(activeTool)",
+            "session-\(session)",
+            "indicator-\(indicatorState)",
+            silent ? "silent-on" : "silent-off",
+            circleExpanded ? "circle-expanded" : "circle-collapsed",
+        ].joined(separator: " ")
+    }
+
+    var cursorClass: String {
+        "tool-\(activeTool)"
+    }
+}
+
+func parseTaburaFlowHarnessPreconditions(_ raw: String?) -> TaburaFlowHarnessPreconditions {
+    guard
+        let raw,
+        let data = raw.data(using: .utf8),
+        let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+    else {
+        return TaburaFlowHarnessPreconditions()
+    }
+    return TaburaFlowHarnessPreconditions(
+        tool: json["tool"] as? String ?? "pointer",
+        session: json["session"] as? String ?? "none",
+        silent: json["silent"] as? Bool ?? false,
+        indicatorState: json["indicator_state"] as? String ?? ""
+    )
+}
+
+private func makeTaburaFlowHarnessState(preconditions: TaburaFlowHarnessPreconditions) -> TaburaFlowHarnessState {
+    TaburaFlowHarnessState(
+        activeTool: ["highlight", "ink", "text_note", "prompt"].contains(preconditions.tool) ? preconditions.tool : "pointer",
+        session: ["dialogue", "meeting"].contains(preconditions.session) ? preconditions.session : "none",
+        silent: preconditions.silent,
+        circleExpanded: false,
+        indicatorOverride: ["idle", "listening", "paused", "recording", "working"].contains(preconditions.indicatorState) ? preconditions.indicatorState : ""
+    )
+}
+
+struct TaburaFlowHarnessRootView: View {
+    @State private var state: TaburaFlowHarnessState
+
+    init(preconditions: TaburaFlowHarnessPreconditions) {
+        _state = State(initialValue: makeTaburaFlowHarnessState(preconditions: preconditions))
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Native Flow Harness")
+                    .font(.title.bold())
+                HStack(spacing: 16) {
+                    Button {
+                        state.circleExpanded.toggle()
+                    } label: {
+                        ZStack {
+                            Circle()
+                                .fill(.black)
+                                .frame(width: 72, height: 72)
+                            Text(state.dotInnerIcon)
+                                .foregroundStyle(.white)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("tabura_circle_dot")
+
+                    Button {
+                        state.session = "none"
+                        state.indicatorOverride = ""
+                    } label: {
+                        Text(state.indicatorState)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
+                            .background(.thinMaterial, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("indicator_border")
+                }
+
+                if state.circleExpanded {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 100), spacing: 8)], spacing: 8) {
+                        flowHarnessSegment(id: "tabura_circle_pointer", label: "Pointer") {
+                            state.activeTool = "pointer"
+                        }
+                        flowHarnessSegment(id: "tabura_circle_highlight", label: "Highlight") {
+                            state.activeTool = "highlight"
+                        }
+                        flowHarnessSegment(id: "tabura_circle_ink", label: "Ink") {
+                            state.activeTool = "ink"
+                        }
+                        flowHarnessSegment(id: "tabura_circle_text_note", label: "Text") {
+                            state.activeTool = "text_note"
+                        }
+                        flowHarnessSegment(id: "tabura_circle_prompt", label: "Prompt") {
+                            state.activeTool = "prompt"
+                        }
+                        flowHarnessSegment(id: "tabura_circle_dialogue", label: "Dialogue") {
+                            state.session = state.session == "dialogue" ? "none" : "dialogue"
+                            state.indicatorOverride = ""
+                        }
+                        flowHarnessSegment(id: "tabura_circle_meeting", label: "Meeting") {
+                            state.session = state.session == "meeting" ? "none" : "meeting"
+                            state.indicatorOverride = ""
+                        }
+                        flowHarnessSegment(id: "tabura_circle_silent", label: "Silent") {
+                            state.silent.toggle()
+                        }
+                    }
+                }
+
+                RoundedRectangle(cornerRadius: 20)
+                    .fill(.white)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 20)
+                            .strokeBorder(Color.secondary.opacity(0.2), lineWidth: 1)
+                    }
+                    .frame(height: 180)
+                    .overlay {
+                        Text("Canvas")
+                    }
+                    .onTapGesture {
+                        state.circleExpanded = false
+                    }
+                    .accessibilityIdentifier("canvas_viewport")
+
+                VStack(alignment: .leading, spacing: 8) {
+                    flowHarnessValue(state.activeTool, id: "flow_state_active_tool")
+                    flowHarnessValue(state.session, id: "flow_state_session")
+                    flowHarnessValue(state.silent ? "true" : "false", id: "flow_state_silent")
+                    flowHarnessValue(state.taburaCircle, id: "flow_state_tabura_circle")
+                    flowHarnessValue(state.dotInnerIcon, id: "flow_state_dot_inner_icon")
+                    flowHarnessValue(state.indicatorState, id: "flow_state_indicator_state")
+                    flowHarnessValue(state.bodyClass, id: "flow_state_body_class")
+                    flowHarnessValue(state.cursorClass, id: "flow_state_cursor_class")
+                }
+            }
+            .padding(16)
+        }
+    }
+
+    @ViewBuilder
+    private func flowHarnessSegment(id: String, label: String, action: @escaping () -> Void) -> some View {
+        Button(label, action: action)
+            .buttonStyle(.borderedProminent)
+            .accessibilityIdentifier(id)
+    }
+
+    @ViewBuilder
+    private func flowHarnessValue(_ value: String, id: String) -> some View {
+        Text(value)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityIdentifier(id)
+    }
+}

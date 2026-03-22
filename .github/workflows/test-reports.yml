@@ -44,6 +44,9 @@ jobs:
       - name: Verify Test Reports workflow gating
         run: npm run test:workflow-config
 
+      - name: Verify native validation docs
+        run: npm run test:native-docs
+
       - name: Run shared UI flow suite
         env:
           PLAYWRIGHT_GREP_INVERT: "@local-only"

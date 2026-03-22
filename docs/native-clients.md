@@ -6,7 +6,8 @@ The repo does not claim a broader finished mobile product than what is verified 
 
 - iOS thin-client transport, ink capture, audio capture, and black dialogue surface wiring
 - Android thin-client transport, ink capture, foreground audio capture, and black dialogue surface wiring
-- Boox device detection, raw drawing, and e-ink refresh hooks on the Android client
+
+Boox-specific code paths exist in the Android client, but Boox hardware validation is tracked separately and is not part of the completion claim in this document.
 
 Use [`native-clients-plan.md`](native-clients-plan.md) for the architecture decision and source-code anchors. Use this document for setup, run, verification, and documentation honesty.
 
@@ -27,57 +28,64 @@ Use [`native-clients-plan.md`](native-clients-plan.md) for the architecture deci
      --mcp-port 9420
    ```
 
-2. iOS:
+2. Fast native contract checks:
 
    ```bash
-   swift test --package-path platforms/ios
-   open platforms/ios/TaburaIOS.xcodeproj
+   npm run test:flows:ios:contract
+   npm run test:flows:android:contract
    ```
 
-   Build and run `TaburaIOS` on a device or simulator on the same network. Allow microphone and local-network access when prompted.
-
-3. Android:
+3. Full native validation:
 
    ```bash
-   ANDROID_HOME=/home/ert/android-sdk gradle -p platforms/android app:testDebugUnitTest
-   gradle -p platforms/android/flow-contracts test
-   ANDROID_HOME=/home/ert/android-sdk gradle -p platforms/android app:installDebug
+   npm run test:flows:native
    ```
 
-   Build and run the app on an Android device on the same network. The same APK path is used on Onyx Boox hardware.
+   This wraps [`./scripts/test-native-flows.sh`](../scripts/test-native-flows.sh).
 
-4. Boox:
+   This command:
 
-   Use the Android build above on current Onyx hardware. The Boox path is the Android client plus `TaburaBooxDevice.kt`, `TaburaBooxInkSurfaceView.kt`, and the Boox SDK dependencies already wired in the Gradle project.
+- refreshes the generated native flow fixtures
+- runs the shared web Playwright flow suite
+- runs the fast iOS and Android contract suites
+- runs the Android UI harness on a local emulator
+- syncs the repo to `faepmac1` and runs the iOS UI harness on a simulator there
+
+   Environment knobs:
+
+- `ANDROID_HOME` or `ANDROID_SDK_ROOT` must point at the local Android SDK.
+- `TABURA_ANDROID_AVD` chooses the Android emulator. If unset, the first local AVD is used.
+- `TABURA_IOS_SSH_HOST` defaults to `faepmac1`.
+- `TABURA_IOS_REMOTE_ROOT` defaults to `~/tabura-ci` on the macOS host.
+- `TABURA_IOS_DESTINATION` overrides the `xcodebuild` simulator destination string.
+
+4. Manual app runs:
+
+   After the automated checks pass, build and run `TaburaIOS` or the Android app on current hardware when a PR needs human validation beyond the scripted harness.
 
 ## Automated Verification
 
 Use these checks before claiming the native slice is working:
 
-1. iOS thin-client contract:
+1. Fast native contract suites:
 
    ```bash
-   swift test --package-path platforms/ios
-   ```
-
-   This covers dialogue presentation logic, event decoding, transport URL helpers, payload encoding, and the shared flow contract.
-
-2. Android thin-client contract:
-
-   ```bash
-   ANDROID_HOME=/home/ert/android-sdk gradle -p platforms/android app:testDebugUnitTest
-   gradle -p platforms/android/flow-contracts test
+   npm run test:flows:native:contract
    ```
 
    This covers dialogue presentation logic, transport URL helpers, payload encoding, Boox detection heuristics, and the shared flow contract.
 
-3. Server/web dialogue companion wiring:
+2. Release-validation path:
 
    ```bash
-   ./scripts/playwright.sh
+   npm run test:flows:native
    ```
 
-   The Playwright suite includes `tests/playwright/live-dialogue-companion.spec.ts`, which covers the shared black dialogue behavior on the web runtime that the native clients mirror.
+   This is the required completion-evidence command for the iOS/Android thin-client slice.
+
+3. Server/web dialogue companion wiring:
+
+   `npm run test:flows:native` already includes the shared Playwright flow suite, so the web/native circle contract stays in one validation path.
 
 The structural tests in `platforms/ios/project_files_test.go` and `platforms/android/project_files_test.go` are regression guards for packaging/layout. They are not completion evidence on their own.
 
@@ -105,12 +113,10 @@ Attach current hardware results to the PR or issue when platform hardware is inv
 
 4. Boox raw drawing and e-ink refresh
 
-   Pass: the app reports `Boox E-Ink mode active`, raw stylus drawing uses the Onyx path, new canvas content refreshes without stale ghosting, and the content WebView applies the Boox contrast/update hooks.
-
-   Fail: the generic Android ink path is used on Boox hardware, raw drawing never opens, or the screen keeps stale canvas frames after updates.
+   This is tracked separately. Do not use iOS/Android completion evidence as a proxy for Boox hardware readiness.
 
 ## Documentation Honesty
 
 Do not describe the native clients as a broader completed product unless the automated checks above pass and the manual checklist above has current hardware results attached.
 
-The current repo claim is limited to the shipped thin-client slice documented here and in `native-clients-plan.md`.
+The current repo claim is limited to the iOS/Android thin-client slice documented here and in `native-clients-plan.md`. Boox-specific validation remains a separate track.

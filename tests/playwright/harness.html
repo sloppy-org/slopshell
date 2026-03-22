@@ -1587,6 +1587,7 @@
         } catch (_) {
           body = {};
         }
+        const bugReportMode = String(window.__taburaBugReportTestEnv?.issueMode || '').trim().toLowerCase();
         window.__bugReportRequests.push(body);
         window.__harnessLog.push({
           type: 'api_fetch',
@@ -1595,30 +1596,37 @@
           url: u,
           trigger: body.trigger || '',
         });
-        prependInboxItem({
-          id: 103,
-          title: 'Bug report: Harness repro',
-          state: 'inbox',
-          sphere: 'private',
-          artifact_id: 0,
-          source: 'github',
-          source_ref: 'krystophny/tabura#77',
-          artifact_title: 'Bug report: Harness repro',
-          artifact_kind: 'github_issue',
-          actor_name: '',
-          created_at: '2026-03-08 15:04:05',
-          updated_at: '2026-03-08 15:04:05',
-        });
-        return new Response(JSON.stringify({
+        if (bugReportMode !== 'local') {
+          prependInboxItem({
+            id: 103,
+            title: 'Bug report: Harness repro',
+            state: 'inbox',
+            sphere: 'private',
+            artifact_id: 0,
+            source: 'github',
+            source_ref: 'krystophny/tabura#77',
+            artifact_title: 'Bug report: Harness repro',
+            artifact_kind: 'github_issue',
+            actor_name: '',
+            created_at: '2026-03-08 15:04:05',
+            updated_at: '2026-03-08 15:04:05',
+          });
+        }
+        const payload = {
           ok: true,
           bundle_path: '.tabura/artifacts/bugs/20260308-150405-abcd1234/bundle.json',
           screenshot_path: '.tabura/artifacts/bugs/20260308-150405-abcd1234/screenshot.png',
           annotated_path: body.annotated_data_url ? '.tabura/artifacts/bugs/20260308-150405-abcd1234/annotated.png' : '',
-          issue_number: 77,
-          issue_url: 'https://github.com/krystophny/tabura/issues/77',
           issue_title: 'Bug report: Harness repro',
-          item_id: 501,
-        }), { status: 200 });
+        };
+        if (bugReportMode === 'local') {
+          payload.issue_error = 'auto-filing skipped: add a short note or capture clearer interaction context';
+          return new Response(JSON.stringify(payload), { status: 200 });
+        }
+        payload.issue_number = 77;
+        payload.issue_url = 'https://github.com/krystophny/tabura/issues/77';
+        payload.item_id = 501;
+        return new Response(JSON.stringify(payload), { status: 200 });
       }
       if (u.endsWith('/api/runtime/workspaces') && opts?.method === 'POST') {
         let body = {};

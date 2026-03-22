@@ -2,6 +2,7 @@ import PencilKit
 import SwiftUI
 
 struct TaburaInkCaptureView: UIViewRepresentable {
+    private static let penWidth = 2.4
     let onCommit: ([TaburaInkStroke]) -> Void
 
     func makeCoordinator() -> Coordinator {
@@ -14,7 +15,7 @@ struct TaburaInkCaptureView: UIViewRepresentable {
         canvas.isOpaque = false
         canvas.drawingPolicy = .pencilOnly
         canvas.delegate = context.coordinator
-        canvas.tool = PKInkingTool(.pen, color: .black, width: 2.4)
+        canvas.tool = PKInkingTool(.pen, color: .black, width: Self.penWidth)
         return canvas
     }
 
@@ -35,28 +36,37 @@ struct TaburaInkCaptureView: UIViewRepresentable {
             guard drawing.strokes.count > lastStrokeCount else {
                 return
             }
-            let newStrokes = Array(drawing.strokes[lastStrokeCount...]).map { stroke in
-                TaburaInkStroke(
-                    pointerType: "pencil",
-                    width: Double(stroke.ink.width),
-                    points: stroke.path.map { point in
-                        TaburaInkPoint(
-                            x: point.location.x,
-                            y: point.location.y,
-                            pressure: Double(point.force),
-                            tiltX: Double(point.azimuth),
-                            tiltY: Double(point.altitude),
-                            roll: 0,
-                            timestampMS: point.timeOffset * 1000
-                        )
-                    }
-                )
-            }.filter { !$0.points.isEmpty }
+            let strokeSlice = drawing.strokes[lastStrokeCount...]
+            let newStrokes = strokeSlice.compactMap(makeStroke)
             lastStrokeCount = drawing.strokes.count
             guard !newStrokes.isEmpty else {
                 return
             }
             onCommit(newStrokes)
+        }
+
+        private func makeStroke(from stroke: PKStroke) -> TaburaInkStroke? {
+            let points = stroke.path.map(makePoint)
+            guard !points.isEmpty else {
+                return nil
+            }
+            return TaburaInkStroke(
+                pointerType: "pencil",
+                width: TaburaInkCaptureView.penWidth,
+                points: points
+            )
+        }
+
+        private func makePoint(from point: PKStrokePoint) -> TaburaInkPoint {
+            TaburaInkPoint(
+                x: point.location.x,
+                y: point.location.y,
+                pressure: Double(point.force),
+                tiltX: Double(point.azimuth),
+                tiltY: Double(point.altitude),
+                roll: 0,
+                timestampMS: point.timeOffset * 1000
+            )
         }
     }
 }

@@ -3,13 +3,17 @@ import Foundation
 
 final class TaburaAudioCapture {
     private let engine = AVAudioEngine()
-    private let outputFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16_000, channels: 1, interleaved: true)
+    private let outputFormat: AVAudioFormat
     private let voiceThreshold: Float = 0.012
     private let onChunk: @MainActor (Data) -> Void
     private let onStateChange: @MainActor (Bool, String) -> Void
     private var isRunning = false
 
     init(onChunk: @escaping @MainActor (Data) -> Void, onStateChange: @escaping @MainActor (Bool, String) -> Void) {
+        guard let outputFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16_000, channels: 1, interleaved: true) else {
+            fatalError("failed to create capture output format")
+        }
+        self.outputFormat = outputFormat
         self.onChunk = onChunk
         self.onStateChange = onStateChange
     }
@@ -19,7 +23,7 @@ final class TaburaAudioCapture {
             return
         }
         let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.playAndRecord, mode: .spokenAudio, options: [.mixWithOthers, .defaultToSpeaker, .allowBluetooth])
+        try session.setCategory(.playAndRecord, mode: .spokenAudio, options: [.mixWithOthers, .defaultToSpeaker, .allowBluetoothHFP])
         try session.setPreferredSampleRate(16_000)
         try session.setActive(true, options: [])
 
@@ -87,11 +91,11 @@ final class TaburaAudioCapture {
         var sourceConsumed = false
         converter.convert(to: outputBuffer, error: &error) { _, outStatus in
             if sourceConsumed {
-                outStatus.pointee = .endOfStream
+                outStatus.pointee = AVAudioConverterInputStatus.endOfStream
                 return nil
             }
             sourceConsumed = true
-            outStatus.pointee = .haveData
+            outStatus.pointee = AVAudioConverterInputStatus.haveData
             return buffer
         }
         if error != nil {

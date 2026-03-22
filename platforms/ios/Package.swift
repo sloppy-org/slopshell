@@ -20,6 +20,18 @@ let package = Package(
         .target(
             name: "TaburaIOSModels",
             path: "TaburaIOS",
+            exclude: [
+                "ContentView.swift",
+                "Info.plist",
+                "TaburaAppModel.swift",
+                "TaburaAudioCapture.swift",
+                "TaburaCanvasTransport.swift",
+                "TaburaCanvasWebView.swift",
+                "TaburaChatTransport.swift",
+                "TaburaIOSApp.swift",
+                "TaburaInkCaptureView.swift",
+                "TaburaServerDiscovery.swift",
+            ],
             sources: ["TaburaModels.swift"]
         ),
         .testTarget(

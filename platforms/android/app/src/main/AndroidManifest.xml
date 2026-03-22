@@ -38,6 +38,10 @@
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="microphone" />
+
+        <provider
+            android:name="com.onyx.android.sdk.common.provider.OnyxFileProvider"
+            tools:node="remove" />
     </application>
 
 </manifest>

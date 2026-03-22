@@ -11,9 +11,16 @@ __pycache__/
 playwright-report/
 test-results/
 tests/manual/
-tabura
+/tabura
 tools/
 .env
 internal/web/static/vad/
 internal/web/static/*.js
 internal/web/static/*.js.map
+platforms/android/.gradle/
+platforms/android/.kotlin/
+platforms/android/app/build/
+platforms/android/build/
+platforms/android/flow-contracts/.gradle/
+platforms/android/flow-contracts/build/
+platforms/ios/.build/

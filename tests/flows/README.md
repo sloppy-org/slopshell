@@ -97,14 +97,19 @@ such as `cursor_class` are skipped on touch profiles, matching the shared contra
 Native flow contract runners consume generated fixtures derived from the same YAML:
 
 - `node ./scripts/sync-native-flow-fixtures.mjs` refreshes the checked-in native fixtures.
-- `npm run test:flows:ios` runs the Swift flow contract suite in `platforms/ios`.
-- `npm run test:flows:android` runs the Kotlin flow contract suite in `platforms/android/flow-contracts`.
-- `npm run test:flows:native` runs both native suites back to back.
+- `npm run test:flows:ios:contract` runs the Swift flow contract suite in `platforms/ios`.
+- `npm run test:flows:android:contract` runs the Android model/contract suites in `platforms/android`.
+- `npm run test:flows:ios` runs the iOS simulator UI harness on `faepmac1`.
+- `npm run test:flows:android` runs the Android emulator UI harness locally.
+- `npm run test:flows:native` runs the full validation path: fixture sync, shared web flows, both native contract suites, Android UI, and iOS UI.
 
-The iOS runner is a Swift package. Run it on a machine with Swift available;
-for this repo the documented macOS host is `faepmac1`.
+The iOS contract runner is a Swift package. Run it on a machine with Swift
+available; for this repo the documented macOS host is `faepmac1`. The full iOS
+UI run is performed there through `./scripts/test-native-flows.sh`.
 
-The generated fixture files live in the native test bundles:
+The generated fixture files live in the native test bundles and UI harness assets:
 
 - `platforms/ios/Tests/TaburaFlowContractTests/Resources/flow-fixtures.json`
+- `platforms/ios/TaburaIOSUITests/Resources/flow-fixtures.json`
 - `platforms/android/flow-contracts/src/test/resources/flow-fixtures.json`
+- `platforms/android/app/src/androidTest/assets/flow-fixtures.json`

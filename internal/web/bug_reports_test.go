@@ -253,15 +253,27 @@ func TestHandleBugReportCreateWritesBundleUnderWorkspaceArtifacts(t *testing.T) 
 		"--label bug",
 		"--label p0",
 		"--title Bug report: The indicator froze after the tap",
-		"## Evidence",
+		"## Note",
 		"Sphere",
 		"## Device",
-		".tabura/artifacts/bugs/",
+		"## Meeting diagnostics",
 		"\"platform\": \"macOS\"",
 		"\"os_version\": \"14.4.0\"",
+		"\"live_policy\": \"meeting\"",
+		"The indicator froze after the tap.",
 	} {
 		if !strings.Contains(createCall, needle) {
 			t.Fatalf("create call = %q, missing %q", createCall, needle)
+		}
+	}
+	for _, needle := range []string{
+		".tabura/artifacts/bugs/",
+		"Bundle:",
+		"Screenshot:",
+		"Annotated image:",
+	} {
+		if strings.Contains(createCall, needle) {
+			t.Fatalf("create call = %q, should not contain %q", createCall, needle)
 		}
 	}
 }
@@ -616,6 +628,58 @@ func TestBugReportIssueTitleUsesBrowserLogFallback(t *testing.T) {
 	body := bugReportIssueBody(bundle, ".tabura/artifacts/bugs/20260311-110721-568aa357/bundle.json")
 	if !strings.Contains(body, "## Summary\n\nTypeError: Cannot read properties of undefined (reading 'click')") {
 		t.Fatalf("bugReportIssueBody() missing browser log summary:\n%s", body)
+	}
+}
+
+func TestBugReportIssueBodyOmitsLocalPathsAndIncludesDiagnostics(t *testing.T) {
+	dialogueDiagnostics, err := json.Marshal(map[string]any{
+		"live_policy": "dialogue",
+		"runtime":     "listening",
+	})
+	if err != nil {
+		t.Fatalf("Marshal(dialogueDiagnostics) error: %v", err)
+	}
+	meetingDiagnostics, err := json.Marshal(map[string]any{
+		"live_policy": "meeting",
+		"participant_status": map[string]any{
+			"decision": "respond",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Marshal(meetingDiagnostics) error: %v", err)
+	}
+	bundle := bugReportBundle{
+		ActiveMode:          "pen",
+		ActiveWorkspace:     "default",
+		Note:                "The indicator froze after the second tap.",
+		DialogueDiagnostics: dialogueDiagnostics,
+		MeetingDiagnostics:  meetingDiagnostics,
+		ScreenshotPath:      ".tabura/artifacts/bugs/20260311-110721-568aa357/screenshot.png",
+		AnnotatedPath:       ".tabura/artifacts/bugs/20260311-110721-568aa357/annotated.png",
+	}
+
+	body := bugReportIssueBody(bundle, ".tabura/artifacts/bugs/20260311-110721-568aa357/bundle.json")
+	for _, needle := range []string{
+		"## Note",
+		"The indicator froze after the second tap.",
+		"## Dialogue diagnostics",
+		"\"live_policy\": \"dialogue\"",
+		"## Meeting diagnostics",
+		"\"decision\": \"respond\"",
+	} {
+		if !strings.Contains(body, needle) {
+			t.Fatalf("bugReportIssueBody() missing %q:\n%s", needle, body)
+		}
+	}
+	for _, needle := range []string{
+		".tabura/artifacts/bugs/",
+		"Bundle:",
+		"Screenshot:",
+		"Annotated image:",
+	} {
+		if strings.Contains(body, needle) {
+			t.Fatalf("bugReportIssueBody() should not contain %q:\n%s", needle, body)
+		}
 	}
 }
 

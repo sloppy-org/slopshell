@@ -35,7 +35,7 @@ final class TaburaChatTransport {
         }
         let data = try JSONEncoder().encode(payload)
         guard let text = String(data: data, encoding: .utf8) else {
-            throw URLError(.cannotEncodeContentData)
+            throw NSError(domain: NSURLErrorDomain, code: -1, userInfo: [NSLocalizedDescriptionKey: "websocket payload encoding failed"])
         }
         try await task.send(.string(text))
     }

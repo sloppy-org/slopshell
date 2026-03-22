@@ -48,6 +48,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 
+private const val extraFlowHarnessEnabled = "tabura.flow_harness"
+private const val extraFlowPreconditionsJSON = "tabura.flow_preconditions_json"
+
 class MainActivity : ComponentActivity(), TaburaAudioCaptureService.Listener {
     private val model by viewModels<TaburaAppModel>()
 
@@ -75,10 +78,18 @@ class MainActivity : ComponentActivity(), TaburaAudioCaptureService.Listener {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         bindAudioService()
+        val flowHarnessEnabled = intent?.getBooleanExtra(extraFlowHarnessEnabled, false) == true
+        val flowHarnessPreconditions = parseTaburaFlowHarnessPreconditions(
+            intent?.getStringExtra(extraFlowPreconditionsJSON),
+        )
         setContent {
-            val state by model.state.collectAsState()
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
+                    if (flowHarnessEnabled) {
+                        TaburaFlowHarnessScreen(preconditions = flowHarnessPreconditions)
+                        return@Surface
+                    }
+                    val state by model.state.collectAsState()
                     SideEffect {
                         if (state.dialoguePresentation.keepScreenAwake) {
                             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)

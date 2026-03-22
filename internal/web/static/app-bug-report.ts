@@ -97,14 +97,15 @@ function bugReportIssueCanvasMarkdown(payload) {
   const issueURL = safeText(payload?.issue_url);
   const issueError = safeText(payload?.issue_error);
   const bundlePath = safeText(payload?.bundle_path);
-  const lines = ['# Bug report filed', ''];
+  const filed = issueNumber > 0 || Boolean(issueURL);
+  const lines = [filed ? '# Bug report filed' : '# Bug report saved locally', ''];
   if (issueNumber > 0 && issueURL) {
     lines.push(`- Issue: [#${issueNumber}](${issueURL})`);
   } else if (issueURL) {
     lines.push(`- Issue: ${issueURL}`);
   }
   if (issueError) {
-    lines.push(`- Issue filing error: ${issueError}`);
+    lines.push(filed ? `- Issue filing error: ${issueError}` : `- GitHub auto-filing: ${issueError}`);
   }
   if (bundlePath) {
     lines.push(`- Bundle: \`${bundlePath}\``);
@@ -861,27 +862,28 @@ async function saveBugReport() {
       throw new Error(detail);
     }
     const payload = await resp.json();
+    const issueNumber = Number(payload?.issue_number || 0);
+    const issueError = safeText(payload?.issue_error);
+    const filed = issueNumber > 0 || safeText(payload?.issue_url);
     closeBugReportSheet();
     renderCanvas({
       kind: 'text_artifact',
       event_id: `bug-report-${Date.now()}`,
-      title: safeText(payload?.issue_title) || 'Bug report filed',
+      title: safeText(payload?.issue_title) || (filed ? 'Bug report filed' : 'Bug report saved locally'),
       text: bugReportIssueCanvasMarkdown(payload),
     });
     showCanvasColumn('canvas-text');
-    const issueNumber = Number(payload?.issue_number || 0);
     try {
       await refreshBugReportInboxState();
     } catch (refreshErr) {
       console.warn('bug report inbox refresh failed', refreshErr);
     }
-    const issueError = safeText(payload?.issue_error);
     if (issueNumber > 0) {
       showStatus(`bug report filed: #${issueNumber}`);
     } else if (issueError) {
-      showStatus(`bug bundle saved (issue filing failed): ${safeText(payload?.bundle_path) || 'ok'}`);
+      showStatus(`bug report saved locally: ${safeText(payload?.bundle_path) || 'ok'}`);
     } else {
-      showStatus(`bug bundle saved: ${safeText(payload?.bundle_path) || 'ok'}`);
+      showStatus(`bug report saved locally: ${safeText(payload?.bundle_path) || 'ok'}`);
     }
   } catch (err) {
     showStatus(`bug bundle failed: ${safeText(err?.message || err) || 'unknown error'}`);

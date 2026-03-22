@@ -28,8 +28,7 @@ internal fun shouldTreatAsBooxDevice(
     hasTouchHelperClass: Boolean,
 ): Boolean {
     val normalizedManufacturer = manufacturer.trim().lowercase()
-    return Build.MANUFACTURER.lowercase() == "onyx" ||
-        normalizedManufacturer == "onyx" ||
+    return normalizedManufacturer == "onyx" ||
         hasOnyxSdkPackage ||
         hasTouchHelperClass
 }

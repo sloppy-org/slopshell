@@ -35,7 +35,9 @@ final class TaburaAppModel: ObservableObject {
         self?.lastError = message
     })
     private lazy var audioCapture = TaburaAudioCapture(onChunk: { [weak self] data in
-        await self?.sendAudioChunk(data)
+        Task {
+            await self?.sendAudioChunk(data)
+        }
     }, onStateChange: { [weak self] running, message in
         self?.isRecording = running
         if message.isEmpty == false {

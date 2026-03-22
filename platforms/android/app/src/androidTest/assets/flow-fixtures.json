@@ -1,0 +1,701 @@
+{
+  "platform": "android",
+  "flows": [
+    {
+      "name": "indicator_state_transitions",
+      "description": "Exercise indicator state transitions and clearing the transient override back to the session-derived state.",
+      "tags": [
+        "indicator",
+        "state"
+      ],
+      "preconditions": {
+        "tool": "pointer",
+        "session": "meeting",
+        "silent": false
+      },
+      "steps": [
+        {
+          "action": "verify",
+          "expect": {
+            "active_tool": "pointer",
+            "session": "meeting",
+            "silent": false,
+            "indicator_state": "paused"
+          }
+        },
+        {
+          "action": "tap",
+          "target": "indicator_simulate_recording",
+          "platforms": [
+            "web"
+          ],
+          "expect": {
+            "active_tool": "pointer",
+            "session": "meeting",
+            "silent": false,
+            "indicator_state": "recording"
+          }
+        },
+        {
+          "action": "tap",
+          "target": "indicator_simulate_working",
+          "platforms": [
+            "web"
+          ],
+          "expect": {
+            "active_tool": "pointer",
+            "session": "meeting",
+            "silent": false,
+            "indicator_state": "working"
+          }
+        },
+        {
+          "action": "tap",
+          "target": "indicator_override_clear",
+          "platforms": [
+            "web"
+          ],
+          "expect": {
+            "active_tool": "pointer",
+            "session": "meeting",
+            "silent": false,
+            "indicator_state": "paused"
+          }
+        },
+        {
+          "action": "tap",
+          "target": "tabura_circle_dot",
+          "expect": {
+            "tabura_circle": "expanded"
+          }
+        },
+        {
+          "action": "tap",
+          "target": "tabura_circle_segment_dialogue",
+          "expect": {
+            "active_tool": "pointer",
+            "session": "dialogue",
+            "silent": false,
+            "indicator_state": "listening"
+          }
+        },
+        {
+          "action": "tap",
+          "target": "indicator_border",
+          "expect": {
+            "active_tool": "pointer",
+            "session": "none",
+            "silent": false,
+            "indicator_state": "idle"
+          }
+        }
+      ],
+      "file": "tests/flows/indicator/state-transitions.yaml"
+    },
+    {
+      "name": "indicator_tap_to_stop_dialogue",
+      "description": "Stop an active dialogue session by tapping the indicator border.",
+      "tags": [
+        "indicator",
+        "stop"
+      ],
+      "preconditions": {
+        "tool": "pointer",
+        "session": "dialogue",
+        "silent": false
+      },
+      "steps": [
+        {
+          "action": "verify",
+          "expect": {
+            "active_tool": "pointer",
+            "session": "dialogue",
+            "silent": false,
+            "indicator_state": "listening"
+          }
+        },
+        {
+          "action": "tap",
+          "target": "indicator_border",
+          "expect": {
+            "active_tool": "pointer",
+            "session": "none",
+            "silent": false,
+            "indicator_state": "idle"
+          }
+        }
+      ],
+      "file": "tests/flows/indicator/tap-to-stop-dialogue.yaml"
+    },
+    {
+      "name": "tabura_circle_combined_states",
+      "description": "Cover every tool, session, and silent-mode combination through the flow system.",
+      "tags": [
+        "circle",
+        "matrix"
+      ],
+      "preconditions": {
+        "tool": "pointer",
+        "session": "none",
+        "silent": false
+      },
+      "steps": [
+        {
+          "action": "verify",
+          "expect": {
+            "active_tool": "pointer",
+            "session": "none",
+            "silent": false
+          }
+        },
+        {
+          "action": "tap",
+          "target": "tabura_circle_dot",
+          "expect": {
+            "tabura_circle": "expanded"
+          }
+        },
+        {
+          "action": "tap",
+          "target": "tabura_circle_segment_highlight",
+          "expect": {
+            "active_tool": "highlight",
+            "session": "none",
+            "silent": false
+          }
+        },
+        {
+          "action": "tap",
+          "target": "tabura_circle_segment_ink",
+          "expect": {
+            "active_tool": "ink",
+            "session": "none",
+            "silent": false
+          }
+        },
+        {
+          "action": "tap",
+          "target": "tabura_circle_segment_text_note",
+          "expect": {
+            "active_tool": "text_note",
+            "session": "none",
+            "silent": false
+          }
+        },
+        {
+          "action": "tap",
+          "target": "tabura_circle_segment_prompt",
+          "expect": {
+            "active_tool": "prompt",
+            "session": "none",
+            "silent": false
+          }
+        },
+        {
+          "action": "tap",
+          "target": "tabura_circle_segment_pointer",
+          "expect": {
+            "active_tool": "pointer",
+            "session": "none",
+            "silent": false
+          }
+        },
+        {
+          "action": "tap",
+          "target": "tabura_circle_segment_silent",
+          "expect": {
+            "active_tool": "pointer",
+            "session": "none",
+            "silent": true
+          }
+        },
+        {
+          "action": "tap",
+          "target": "tabura_circle_segment_highlight",
+          "expect": {
+            "active_tool": "highlight",
+            "session": "none",
+            "silent": true
+          }
+        },
+        {
+          "action": "tap",
+          "target": "tabura_circle_segment_ink",
+          "expect": {
+            "active_tool": "ink",
+            "session": "none",
+            "silent": true
+          }
+        },
+        {
+          "action": "tap",
+          "target": "tabura_circle_segment_text_note",
+          "expect": {
+            "active_tool": "text_note",
+            "session": "none",
+            "silent": true
+          }
+        },
+        {
+          "action": "tap",
+          "target": "tabura_circle_segment_prompt",
+          "expect": {
+            "active_tool": "prompt",
+            "session": "none",
+            "silent": true
+          }
+        },
+        {
+          "action": "tap",
+          "target": "tabura_circle_segment_pointer",
+          "expect": {
+            "active_tool": "pointer",
+            "session": "none",
+            "silent": true
+          }
+        },
+        {
+          "action": "tap",
+          "target": "tabura_circle_segment_dialogue",
+          "expect": {
+            "active_tool": "pointer",
+            "session": "dialogue",
+            "silent": true
+          }
+        },
+        {
+          "action": "tap",
+          "target": "tabura_circle_segment_highlight",
+          "expect": {
+            "active_tool": "highlight",
+            "session": "dialogue",
+            "silent": true
+          }
+        },
+        {
+          "action": "tap",
+          "target": "tabura_circle_segment_ink",
+          "expect": {
+            "active_tool": "ink",
+            "session": "dialogue",
+            "silent": true
+          }
+        },
+        {
+          "action": "tap",
+          "target": "tabura_circle_segment_text_note",
+          "expect": {
+            "active_tool": "text_note",
+            "session": "dialogue",
+            "silent": true
+          }
+        },
+        {
+          "action": "tap",
+          "target": "tabura_circle_segment_prompt",
+          "expect": {
+            "active_tool": "prompt",
+            "session": "dialogue",
+            "silent": true
+          }
+        },
+        {
+          "action": "tap",
+          "target": "tabura_circle_segment_pointer",
+          "expect": {
+            "active_tool": "pointer",
+            "session": "dialogue",
+            "silent": true
+          }
+        },
+        {
+          "action": "tap",
+          "target": "tabura_circle_segment_silent",
+          "expect": {
+            "active_tool": "pointer",
+            "session": "dialogue",
+            "silent": false
+          }
+        },
+        {
+          "action": "tap",
+          "target": "tabura_circle_segment_highlight",
+          "expect": {
+            "active_tool": "highlight",
+            "session": "dialogue",
+            "silent": false
+          }
+        },
+        {
+          "action": "tap",
+          "target": "tabura_circle_segment_ink",
+          "expect": {
+            "active_tool": "ink",
+            "session": "dialogue",
+            "silent": false
+          }
+        },
+        {
+          "action": "tap",
+          "target": "tabura_circle_segment_text_note",
+          "expect": {
+            "active_tool": "text_note",
+            "session": "dialogue",
+            "silent": false
+          }
+        },
+        {
+          "action": "tap",
+          "target": "tabura_circle_segment_prompt",
+          "expect": {
+            "active_tool": "prompt",
+            "session": "dialogue",
+            "silent": false
+          }
+        },
+        {
+          "action": "tap",
+          "target": "tabura_circle_segment_pointer",
+          "expect": {
+            "active_tool": "pointer",
+            "session": "dialogue",
+            "silent": false
+          }
+        },
+        {
+          "action": "tap",
+          "target": "tabura_circle_segment_meeting",
+          "expect": {
+            "active_tool": "pointer",
+            "session": "meeting",
+            "silent": false
+          }
+        },
+        {
+          "action": "tap",
+          "target": "tabura_circle_segment_highlight",
+          "expect": {
+            "active_tool": "highlight",
+            "session": "meeting",
+            "silent": false
+          }
+        },
+        {
+          "action": "tap",
+          "target": "tabura_circle_segment_ink",
+          "expect": {
+            "active_tool": "ink",
+            "session": "meeting",
+            "silent": false
+          }
+        },
+        {
+          "action": "tap",
+          "target": "tabura_circle_segment_text_note",
+          "expect": {
+            "active_tool": "text_note",
+            "session": "meeting",
+            "silent": false
+          }
+        },
+        {
+          "action": "tap",
+          "target": "tabura_circle_segment_prompt",
+          "expect": {
+            "active_tool": "prompt",
+            "session": "meeting",
+            "silent": false
+          }
+        },
+        {
+          "action": "tap",
+          "target": "tabura_circle_segment_pointer",
+          "expect": {
+            "active_tool": "pointer",
+            "session": "meeting",
+            "silent": false
+          }
+        },
+        {
+          "action": "tap",
+          "target": "tabura_circle_segment_silent",
+          "expect": {
+            "active_tool": "pointer",
+            "session": "meeting",
+            "silent": true
+          }
+        },
+        {
+          "action": "tap",
+          "target": "tabura_circle_segment_highlight",
+          "expect": {
+            "active_tool": "highlight",
+            "session": "meeting",
+            "silent": true
+          }
+        },
+        {
+          "action": "tap",
+          "target": "tabura_circle_segment_ink",
+          "expect": {
+            "active_tool": "ink",
+            "session": "meeting",
+            "silent": true
+          }
+        },
+        {
+          "action": "tap",
+          "target": "tabura_circle_segment_text_note",
+          "expect": {
+            "active_tool": "text_note",
+            "session": "meeting",
+            "silent": true
+          }
+        },
+        {
+          "action": "tap",
+          "target": "tabura_circle_segment_prompt",
+          "expect": {
+            "active_tool": "prompt",
+            "session": "meeting",
+            "silent": true
+          }
+        },
+        {
+          "action": "tap_outside",
+          "expect": {
+            "active_tool": "prompt",
+            "session": "meeting",
+            "silent": true,
+            "tabura_circle": "collapsed"
+          }
+        }
+      ],
+      "file": "tests/flows/tabura-circle/combined-states.yaml"
+    },
+    {
+      "name": "tabura_circle_multi_select_tool_and_session",
+      "description": "Keep the circle open while changing both the active tool and the active session.",
+      "tags": [
+        "circle",
+        "multi"
+      ],
+      "preconditions": {
+        "tool": "pointer",
+        "session": "none",
+        "silent": false
+      },
+      "steps": [
+        {
+          "action": "tap",
+          "target": "tabura_circle_dot",
+          "expect": {
+            "tabura_circle": "expanded"
+          }
+        },
+        {
+          "action": "tap",
+          "target": "tabura_circle_segment_ink",
+          "expect": {
+            "active_tool": "ink",
+            "session": "none",
+            "silent": false,
+            "tabura_circle": "expanded"
+          }
+        },
+        {
+          "action": "tap",
+          "target": "tabura_circle_segment_dialogue",
+          "expect": {
+            "active_tool": "ink",
+            "session": "dialogue",
+            "silent": false,
+            "indicator_state": "listening",
+            "tabura_circle": "expanded"
+          }
+        },
+        {
+          "action": "tap_outside",
+          "expect": {
+            "active_tool": "ink",
+            "session": "dialogue",
+            "silent": false,
+            "indicator_state": "listening",
+            "tabura_circle": "collapsed",
+            "dot_inner_icon": "pen_nib"
+          }
+        }
+      ],
+      "file": "tests/flows/tabura-circle/multi-selection.yaml"
+    },
+    {
+      "name": "tabura_circle_toggle_sessions",
+      "description": "Toggle dialogue and meeting through the circle while keeping only one active session.",
+      "tags": [
+        "circle",
+        "session"
+      ],
+      "preconditions": {
+        "tool": "pointer",
+        "session": "none",
+        "silent": false
+      },
+      "steps": [
+        {
+          "action": "tap",
+          "target": "tabura_circle_dot",
+          "expect": {
+            "tabura_circle": "expanded"
+          }
+        },
+        {
+          "action": "tap",
+          "target": "tabura_circle_segment_dialogue",
+          "expect": {
+            "active_tool": "pointer",
+            "session": "dialogue",
+            "silent": false,
+            "indicator_state": "listening",
+            "tabura_circle": "expanded"
+          }
+        },
+        {
+          "action": "tap",
+          "target": "tabura_circle_segment_meeting",
+          "expect": {
+            "active_tool": "pointer",
+            "session": "meeting",
+            "silent": false,
+            "indicator_state": "paused",
+            "tabura_circle": "expanded"
+          }
+        },
+        {
+          "action": "tap",
+          "target": "tabura_circle_segment_meeting",
+          "expect": {
+            "active_tool": "pointer",
+            "session": "none",
+            "silent": false,
+            "indicator_state": "idle",
+            "tabura_circle": "expanded"
+          }
+        }
+      ],
+      "file": "tests/flows/tabura-circle/session-toggle.yaml"
+    },
+    {
+      "name": "tabura_circle_toggle_silent",
+      "description": "Toggle silent independently from tool and session selection.",
+      "tags": [
+        "circle",
+        "silent"
+      ],
+      "preconditions": {
+        "tool": "prompt",
+        "session": "dialogue",
+        "silent": false
+      },
+      "steps": [
+        {
+          "action": "tap",
+          "target": "tabura_circle_dot",
+          "expect": {
+            "tabura_circle": "expanded"
+          }
+        },
+        {
+          "action": "tap",
+          "target": "tabura_circle_segment_silent",
+          "expect": {
+            "active_tool": "prompt",
+            "session": "dialogue",
+            "silent": true,
+            "indicator_state": "listening",
+            "tabura_circle": "expanded"
+          }
+        },
+        {
+          "action": "tap",
+          "target": "tabura_circle_segment_silent",
+          "expect": {
+            "active_tool": "prompt",
+            "session": "dialogue",
+            "silent": false,
+            "indicator_state": "listening",
+            "tabura_circle": "expanded"
+          }
+        }
+      ],
+      "file": "tests/flows/tabura-circle/silent-toggle.yaml"
+    },
+    {
+      "name": "tabura_circle_select_ink_tool",
+      "description": "Open the Tabura Circle, select ink, and collapse while keeping the tool selection.",
+      "tags": [
+        "circle",
+        "tool"
+      ],
+      "preconditions": {
+        "tool": "pointer",
+        "session": "none",
+        "silent": false
+      },
+      "steps": [
+        {
+          "action": "tap",
+          "target": "tabura_circle_dot",
+          "expect": {
+            "tabura_circle": "expanded"
+          }
+        },
+        {
+          "action": "tap",
+          "target": "tabura_circle_segment_ink",
+          "expect": {
+            "active_tool": "ink",
+            "session": "none",
+            "silent": false,
+            "tabura_circle": "expanded",
+            "body_class_contains": "tool-ink",
+            "cursor_class": "tool-ink"
+          }
+        },
+        {
+          "action": "verify",
+          "target": "canvas_viewport",
+          "expect": {
+            "active_tool": "ink",
+            "session": "none",
+            "silent": false,
+            "cursor_class": "tool-ink"
+          }
+        },
+        {
+          "action": "tap_outside",
+          "expect": {
+            "active_tool": "ink",
+            "session": "none",
+            "silent": false,
+            "tabura_circle": "collapsed",
+            "dot_inner_icon": "pen_nib"
+          }
+        }
+      ],
+      "file": "tests/flows/tabura-circle/tool-selection.yaml"
+    }
+  ],
+  "selectors": {
+    "tabura_circle_dot": "tabura_circle_dot",
+    "tabura_circle_segment_pointer": "tabura_circle_pointer",
+    "tabura_circle_segment_highlight": "tabura_circle_highlight",
+    "tabura_circle_segment_ink": "tabura_circle_ink",
+    "tabura_circle_segment_text_note": "tabura_circle_text_note",
+    "tabura_circle_segment_prompt": "tabura_circle_prompt",
+    "tabura_circle_segment_dialogue": "tabura_circle_dialogue",
+    "tabura_circle_segment_meeting": "tabura_circle_meeting",
+    "tabura_circle_segment_silent": "tabura_circle_silent",
+    "canvas_viewport": "canvas_viewport",
+    "indicator_border": "indicator_border"
+  }
+}

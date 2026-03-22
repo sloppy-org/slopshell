@@ -121,6 +121,28 @@ test.describe('bug report flow', () => {
     await expect(page.locator('#edge-left-tap')).toHaveAttribute('data-inbox-count', '3');
   });
 
+  test('non-actionable bug reports are saved locally without a GitHub issue', async ({ page }) => {
+    await waitReady(page);
+
+    await page.evaluate(() => {
+      (window as any).__taburaBugReportTestEnv = {
+        issueMode: 'local',
+      };
+    });
+
+    await openTopPanel(page);
+    await page.locator('#bug-report-button').click();
+    await page.locator('#bug-report-save').click();
+
+    await expect.poll(async () => {
+      return page.evaluate(() => (window as any).__bugReportRequests.length);
+    }).toBe(1);
+
+    await expect(page.locator('#canvas-text')).toContainText('Bug report saved locally');
+    await expect(page.locator('#canvas-text')).toContainText('GitHub auto-filing: auto-filing skipped');
+    await expect(page.locator('#canvas-text')).not.toContainText('Issue: [#77]');
+  });
+
   test('closed bug report disappears from the open inbox after github ingest refresh', async ({ page }) => {
     await waitReady(page);
 

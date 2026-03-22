@@ -517,6 +517,8 @@ func bugReportHasActionableSummary(bundle bugReportBundle) bool {
 		bugReportRecentEventSummary(bundle.RecentEvents),
 		bugReportCanvasArtifactTitle(bundle.CanvasState),
 		bugReportStructuredInteraction(bundle.CanvasState),
+		bugReportJSON(bundle.DialogueDiagnostics),
+		bugReportJSON(bundle.MeetingDiagnostics),
 	} {
 		if strings.TrimSpace(candidate) != "" {
 			return true
@@ -737,19 +739,24 @@ func bugReportIssueBody(bundle bugReportBundle, bundlePath string) string {
 			b.WriteString(line)
 		}
 	}
-	b.WriteString("\n## Evidence\n\n")
-	for _, line := range []string{
-		bugReportContextLine("Bundle", bundlePath),
-		bugReportContextLine("Screenshot", bundle.ScreenshotPath),
-		bugReportContextLine("Annotated image", bundle.AnnotatedPath),
-	} {
-		if line != "" {
-			b.WriteString(line)
-		}
+	if note := strings.TrimSpace(bundle.Note); note != "" {
+		b.WriteString("\n## Note\n\n")
+		b.WriteString(note)
+		b.WriteString("\n")
 	}
 	if deviceJSON := bugReportJSON(bundle.Device); deviceJSON != "" {
 		b.WriteString("\n## Device\n\n```json\n")
 		b.WriteString(deviceJSON)
+		b.WriteString("\n```\n")
+	}
+	if diagnosticsJSON := bugReportJSON(bundle.DialogueDiagnostics); diagnosticsJSON != "" {
+		b.WriteString("\n## Dialogue diagnostics\n\n```json\n")
+		b.WriteString(diagnosticsJSON)
+		b.WriteString("\n```\n")
+	}
+	if diagnosticsJSON := bugReportJSON(bundle.MeetingDiagnostics); diagnosticsJSON != "" {
+		b.WriteString("\n## Meeting diagnostics\n\n```json\n")
+		b.WriteString(diagnosticsJSON)
 		b.WriteString("\n```\n")
 	}
 	if len(bundle.RecentEvents) > 0 {
