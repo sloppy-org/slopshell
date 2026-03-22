@@ -204,6 +204,8 @@ func handleChatWSTextMessage(a *App, conn *chatWSConn, sessionID string, data []
 		enqueueRequestedCanvasPosition(a, sessionID, msg.Cursor, firstNonEmptyCursorText(msg.Gesture, msg.Kind, "gesture"), msg.RequestResponse, msg.OutputMode)
 	case "canvas_ink":
 		enqueueRequestedCanvasInk(a, sessionID, msg.Cursor, msg.ArtifactKind, msg.OutputMode, msg.RequestResponse, msg.SnapshotDataURL, msg.TotalStrokes, msg.BoundingBox, msg.OverlappingLines, msg.OverlappingText, msg.Strokes)
+	case "ink_stroke":
+		enqueueRequestedCanvasInk(a, sessionID, msg.Cursor, msg.ArtifactKind, msg.OutputMode, msg.RequestResponse, msg.SnapshotDataURL, msg.TotalStrokes, msg.BoundingBox, msg.OverlappingLines, msg.OverlappingText, msg.Strokes)
 	case "ink_commit":
 		enqueueRequestedCanvasInk(a, sessionID, msg.Cursor, msg.ArtifactKind, msg.OutputMode, msg.RequestResponse, msg.SnapshotDataURL, msg.TotalStrokes, msg.BoundingBox, msg.OverlappingLines, msg.OverlappingText, msg.Strokes)
 	}

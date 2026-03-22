@@ -170,3 +170,54 @@ func TestHandleChatWSTextMessage_CanvasInkQueuesRequestedTurnAndPersistsSnapshot
 		t.Fatal("expected snapshot bytes")
 	}
 }
+
+func TestHandleChatWSTextMessage_InkStrokeAliasQueuesRequestedTurn(t *testing.T) {
+	app := newAuthedTestApp(t)
+	sessionID := testSessionForCanvasPosition(t, app)
+	holdAssistantTurnWorker(t, app, sessionID)
+
+	handleChatWSTextMessage(app, newChatWSConn(nil), sessionID, []byte(`{
+		"type": "ink_stroke",
+		"artifact_kind": "text",
+		"output_mode": "voice",
+		"request_response": true,
+		"total_strokes": 1,
+		"cursor": {
+			"title": "notes.md",
+			"line": 8,
+			"surrounding_text": "7: beta\n8: gamma\n9: delta"
+		},
+		"strokes": [
+			{
+				"pointer_type": "pencil",
+				"width": 2.4,
+				"points": [
+					{ "x": 10, "y": 10, "pressure": 0.5, "tilt_x": 12, "tilt_y": 45, "roll": 0, "timestamp_ms": 1 },
+					{ "x": 22, "y": 10.5, "pressure": 0.6, "tilt_x": 12, "tilt_y": 45, "roll": 0, "timestamp_ms": 2 },
+					{ "x": 36, "y": 10, "pressure": 0.7, "tilt_x": 12, "tilt_y": 45, "roll": 0, "timestamp_ms": 3 }
+				]
+			}
+		]
+	}`))
+
+	if got := app.turns.queuedCount(sessionID); got != 1 {
+		t.Fatalf("queuedCount = %d, want 1", got)
+	}
+	events := app.chatCanvasInk.consume(sessionID)
+	if len(events) != 1 {
+		t.Fatalf("consume len = %d, want 1", len(events))
+	}
+	event := events[0]
+	if event == nil {
+		t.Fatal("expected event")
+	}
+	if event.Gesture != "underline" {
+		t.Fatalf("gesture = %q, want underline", event.Gesture)
+	}
+	if event.Cursor == nil || event.Cursor.Line != 8 {
+		t.Fatalf("cursor = %#v", event.Cursor)
+	}
+	if event.StrokeCount != 1 {
+		t.Fatalf("stroke count = %d, want 1", event.StrokeCount)
+	}
+}
