@@ -10,6 +10,7 @@
     "test:flows": "node ./tests/flows/validate.cjs && node ./tests/flows/coverage.cjs && npx playwright test tests/playwright/flow-runner.spec.ts",
     "test:playtest": "./scripts/playtest.sh",
     "test:reports": "./scripts/test-reports.sh",
+    "test:workflow-config": "node ./scripts/check-test-reports-workflow.mjs",
     "typecheck:frontend": "tsc --noEmit -p tsconfig.json"
   },
   "devDependencies": {
