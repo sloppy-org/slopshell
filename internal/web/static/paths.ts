@@ -8,8 +8,19 @@ function joinRelative(prefix, value) {
   return `./${prefix}/${clean}`;
 }
 
+function currentBaseURL() {
+  return new URL(document.baseURI || window.location.href);
+}
+
+function isStaticPage(url) {
+  const pathname = String(url?.pathname || '');
+  return pathname === '/static'
+    || pathname.endsWith('/static')
+    || pathname.includes('/static/');
+}
+
 export function appURL(path) {
-  return new URL(String(path || './'), document.baseURI || window.location.href).toString();
+  return new URL(String(path || './'), currentBaseURL()).toString();
 }
 
 export function apiURL(path) {
@@ -23,5 +34,9 @@ export function wsURL(path) {
 }
 
 export function staticURL(path) {
+  if (isStaticPage(currentBaseURL())) {
+    const clean = trimLeadingSlashes(path);
+    return appURL(clean ? `./${clean}` : './');
+  }
   return appURL(joinRelative('static', path));
 }

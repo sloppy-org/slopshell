@@ -150,8 +150,9 @@ echo "generated sample"
 	if err := os.WriteFile(trainingScript, []byte(`#!/usr/bin/env bash
 set -euo pipefail
 mkdir -p "$TABURA_HOTWORD_OUTPUT_DIR"
-printf 'trained-model' >"$TABURA_HOTWORD_OUTPUT_DIR/sloppy.onnx"
-echo "trained model: $TABURA_HOTWORD_OUTPUT_DIR/sloppy.onnx"
+printf 'trained-model' >"$TABURA_HOTWORD_OUTPUT_DIR/sloppy-2026-03-23_21-03-09Z.onnx"
+printf 'trained-data' >"$TABURA_HOTWORD_OUTPUT_DIR/sloppy-2026-03-23_21-03-09Z.onnx.data"
+echo "trained model: $TABURA_HOTWORD_OUTPUT_DIR/sloppy-2026-03-23_21-03-09Z.onnx"
 `), 0o755); err != nil {
 		t.Fatalf("write training script: %v", err)
 	}
@@ -201,9 +202,14 @@ echo "trained model: $TABURA_HOTWORD_OUTPUT_DIR/sloppy.onnx"
 	if len(models) == 0 {
 		t.Fatalf("models payload = %#v, want non-empty", decodeJSONResponse(t, modelsRR))
 	}
+	modelPayloadFromList := models[0].(map[string]any)
+	modelFileName := strFromAny(modelPayloadFromList["file_name"])
+	if modelFileName == "" {
+		t.Fatalf("model file name missing from payload: %#v", modelPayloadFromList)
+	}
 
 	deployRR := doAuthedJSONRequest(t, app.Router(), http.MethodPost, "/api/hotword/train/deploy", map[string]any{
-		"model": "sloppy.onnx",
+		"model": modelFileName,
 	})
 	if deployRR.Code != http.StatusOK {
 		t.Fatalf("deploy status = %d, want 200 body=%s", deployRR.Code, deployRR.Body.String())
@@ -227,6 +233,14 @@ echo "trained model: $TABURA_HOTWORD_OUTPUT_DIR/sloppy.onnx"
 	}
 	if string(data) != "trained-model" {
 		t.Fatalf("deployed model = %q, want %q", string(data), "trained-model")
+	}
+	vendorDataPath := vendorPath + ".data"
+	dataSidecar, err := os.ReadFile(vendorDataPath)
+	if err != nil {
+		t.Fatalf("read deployed model data: %v", err)
+	}
+	if string(dataSidecar) != "trained-data" {
+		t.Fatalf("deployed model data = %q, want %q", string(dataSidecar), "trained-data")
 	}
 }
 
@@ -300,8 +314,9 @@ echo "generated sample"
 	if err := os.WriteFile(trainingScript, []byte(`#!/usr/bin/env bash
 set -euo pipefail
 mkdir -p "$TABURA_HOTWORD_OUTPUT_DIR"
-printf 'trained-model' >"$TABURA_HOTWORD_OUTPUT_DIR/sloppy.onnx"
-echo "trained model: $TABURA_HOTWORD_OUTPUT_DIR/sloppy.onnx"
+printf 'trained-model' >"$TABURA_HOTWORD_OUTPUT_DIR/sloppy-2026-03-23_21-03-09Z.onnx"
+printf 'trained-data' >"$TABURA_HOTWORD_OUTPUT_DIR/sloppy-2026-03-23_21-03-09Z.onnx.data"
+echo "trained model: $TABURA_HOTWORD_OUTPUT_DIR/sloppy-2026-03-23_21-03-09Z.onnx"
 `), 0o755); err != nil {
 		t.Fatalf("write training script: %v", err)
 	}

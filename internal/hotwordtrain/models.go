@@ -28,7 +28,7 @@ func (m *Manager) ListModels() ([]Model, error) {
 			FileName:   entry.Name(),
 			Path:       path,
 			CreatedAt:  info.ModTime().UTC().Format(time.RFC3339),
-			SizeBytes:  info.Size(),
+			SizeBytes:  modelTotalSize(path, info),
 			Production: false,
 		})
 	}
@@ -39,7 +39,7 @@ func (m *Manager) ListModels() ([]Model, error) {
 			FileName:   filepath.Base(vendorPath),
 			Path:       vendorPath,
 			CreatedAt:  info.ModTime().UTC().Format(time.RFC3339),
-			SizeBytes:  info.Size(),
+			SizeBytes:  modelTotalSize(vendorPath, info),
 			Production: true,
 		})
 	}
@@ -61,26 +61,97 @@ func (m *Manager) DeployModel(fileName string) (Model, error) {
 	if err := m.ensureDir(filepath.Dir(vendorPath)); err != nil {
 		return Model{}, err
 	}
-	if _, err := os.Stat(vendorPath); err == nil {
-		_ = os.Remove(vendorPath + ".bak")
-		if renameErr := os.Rename(vendorPath, vendorPath+".bak"); renameErr != nil {
-			return Model{}, renameErr
+	if archived, err := m.archiveActiveModel(vendorPath); err != nil {
+		return Model{}, err
+	} else if archived != "" {
+		_ = archived
+	}
+	if err := copyFile(sourcePath, vendorPath); err != nil {
+		return Model{}, err
+	}
+	sourceDataPath := modelDataPath(sourcePath)
+	vendorDataPath := modelDataPath(vendorPath)
+	if modelFileExists(sourceDataPath) {
+		if err := copyFile(sourceDataPath, vendorDataPath); err != nil {
+			return Model{}, err
 		}
-	}
-	data, err := os.ReadFile(sourcePath)
-	if err != nil {
+	} else if err := os.Remove(vendorDataPath); err != nil && !os.IsNotExist(err) {
 		return Model{}, err
 	}
-	if err := os.WriteFile(vendorPath, data, 0o644); err != nil {
-		return Model{}, err
-	}
+	sizeBytes := modelTotalSize(sourcePath, info)
 	model := Model{
 		Name:       strings.TrimSuffix(clean, filepath.Ext(clean)),
-		FileName:   clean,
+		FileName:   filepath.Base(vendorPath),
 		Path:       vendorPath,
 		CreatedAt:  nowRFC3339(),
-		SizeBytes:  int64(len(data)),
+		SizeBytes:  sizeBytes,
 		Production: true,
 	}
 	return model, nil
+}
+
+func modelDataPath(path string) string {
+	return path + ".data"
+}
+
+func modelTotalSize(path string, info os.FileInfo) int64 {
+	size := info.Size()
+	if dataInfo, err := os.Stat(modelDataPath(path)); err == nil && !dataInfo.IsDir() {
+		size += dataInfo.Size()
+	}
+	return size
+}
+
+func modelArchiveFileName(fileName string, stamp time.Time, label string) string {
+	base := strings.TrimSuffix(filepath.Base(fileName), filepath.Ext(fileName))
+	ext := filepath.Ext(fileName)
+	ts := stamp.UTC().Format("2006-01-02_15-04-05Z")
+	if strings.TrimSpace(label) != "" {
+		return fmt.Sprintf("%s-%s-%s%s", base, label, ts, ext)
+	}
+	return fmt.Sprintf("%s-%s%s", base, ts, ext)
+}
+
+func copyFile(sourcePath, targetPath string) error {
+	data, err := os.ReadFile(sourcePath)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(targetPath, data, 0o644)
+}
+
+func (m *Manager) archiveActiveModel(vendorPath string) (string, error) {
+	info, err := os.Stat(vendorPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", err
+	}
+	if info.IsDir() {
+		return "", fmt.Errorf("active model path is a directory: %s", vendorPath)
+	}
+	archiveName := modelArchiveFileName(filepath.Base(vendorPath), info.ModTime(), "production")
+	archivePath := filepath.Join(m.modelsDir(), archiveName)
+	if !modelFileExists(archivePath) {
+		if err := copyFile(vendorPath, archivePath); err != nil {
+			return "", err
+		}
+	}
+	vendorDataPath := modelDataPath(vendorPath)
+	archiveDataPath := modelDataPath(archivePath)
+	if modelFileExists(vendorDataPath) && !modelFileExists(archiveDataPath) {
+		if err := copyFile(vendorDataPath, archiveDataPath); err != nil {
+			return "", err
+		}
+	}
+	return archivePath, nil
+}
+
+func modelFileExists(path string) bool {
+	info, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	return !info.IsDir()
 }

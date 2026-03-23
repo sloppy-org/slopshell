@@ -66,7 +66,8 @@ func (m *Manager) prepareTrainingRun(req TrainRequest) (trainingRun, error) {
 		sampleCount = defaultSettings().SampleCount
 	}
 	negativePhrases := normalizeNegativePhrases(req.NegativePhrases)
-	outputDir := m.trainerOutputDir()
+	runStamp := timeSafeStamp()
+	outputDir := filepath.Join(m.trainerOutputDir(), runStamp)
 	if err := m.ensureDir(outputDir); err != nil {
 		return trainingRun{}, err
 	}
@@ -78,7 +79,7 @@ func (m *Manager) prepareTrainingRun(req TrainRequest) (trainingRun, error) {
 		modelName = defaultModelName
 	}
 	rendered := patchTrainingConfig(string(data), outputDir, sampleCount, negativePhrases)
-	configPath := filepath.Join(m.trainerConfigDir(), fmt.Sprintf("%s-%s.yaml", modelName, timeSafeStamp()))
+	configPath := filepath.Join(m.trainerConfigDir(), fmt.Sprintf("%s-%s.yaml", modelName, runStamp))
 	if err := os.WriteFile(configPath, []byte(rendered), 0o644); err != nil {
 		return trainingRun{}, err
 	}

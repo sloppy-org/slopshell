@@ -41,6 +41,10 @@ func hotwordVendorModelPath(root string) string {
 	return filepath.Join(hotwordVendorDir(root), hotwordModelFileName)
 }
 
+func hotwordModelDataPath(path string) string {
+	return path + ".data"
+}
+
 func fileExists(path string) bool {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -66,10 +70,14 @@ func checkHotwordStatus(root string) map[string]interface{} {
 	}
 	if info, err := os.Stat(modelPath); err == nil && !info.IsDir() {
 		modifiedAt := info.ModTime().UTC().Format(time.RFC3339)
+		sizeBytes := info.Size()
+		if dataInfo, err := os.Stat(hotwordModelDataPath(modelPath)); err == nil && !dataInfo.IsDir() {
+			sizeBytes += dataInfo.Size()
+		}
 		model["exists"] = true
 		model["modified_at"] = modifiedAt
-		model["size_bytes"] = info.Size()
-		model["revision"] = fmt.Sprintf("%s:%d", modifiedAt, info.Size())
+		model["size_bytes"] = sizeBytes
+		model["revision"] = fmt.Sprintf("%s:%d", modifiedAt, sizeBytes)
 	}
 	return map[string]interface{}{
 		"ok":                   true,

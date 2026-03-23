@@ -17,8 +17,8 @@ custom_negative_phrases:
 
 n_samples: 5000
 n_samples_val: 1000
-tts_batch_size: 25
-augmentation_batch_size: 16
+tts_batch_size: 8
+augmentation_batch_size: 8
 augmentation_rounds: 5
 total_length: 32000
 

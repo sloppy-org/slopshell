@@ -598,11 +598,16 @@ func (m *Manager) DatasetSummary() DatasetSummary {
 		}
 	}
 	for _, model := range models {
-		if summary.LatestModel == "" {
+		if !model.Production && summary.LatestModel == "" {
 			summary.LatestModel = model.FileName
 		}
 		if model.Production && summary.ProductionModel == "" {
 			summary.ProductionModel = model.FileName
+		}
+	}
+	for _, model := range models {
+		if summary.LatestModel == "" {
+			summary.LatestModel = model.FileName
 		}
 	}
 	return summary

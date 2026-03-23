@@ -203,6 +203,7 @@
 
   <script>
     (() => {
+      const trainedModelFile = 'sloppy-2026-03-23_21-03-09Z.onnx';
       const state = {
         recordings: [],
         models: [],
@@ -363,17 +364,17 @@
             state: 'running',
             stage: 'training',
             message: 'Training complete.',
-            latest_model: 'sloppy.onnx',
+            latest_model: trainedModelFile,
           };
           state.models = [{
             name: 'sloppy',
-            file_name: 'sloppy.onnx',
-            path: '/tmp/sloppy.onnx',
+            file_name: trainedModelFile,
+            path: `/tmp/${trainedModelFile}`,
             created_at: '2026-03-22T10:05:00Z',
-            size_bytes: 13,
+            size_bytes: 413,
             production: false,
           }];
-          state.config.dataset.latest_model = 'sloppy.onnx';
+          state.config.dataset.latest_model = trainedModelFile;
           notify('training');
           return jsonResponse({ ok: true, status: state.trainingStatus }, 202);
         }
@@ -382,20 +383,20 @@
           state.trainingStatus = {
             state: 'running',
             stage: 'complete',
-            message: 'Training complete and deployed sloppy.onnx.',
-            latest_model: 'sloppy.onnx',
+            message: `Training complete and deployed ${trainedModelFile}.`,
+            latest_model: trainedModelFile,
             progress: 100,
           };
           state.models = [{
             name: 'sloppy',
-            file_name: 'sloppy.onnx',
-            path: '/tmp/sloppy.onnx',
+            file_name: trainedModelFile,
+            path: `/tmp/${trainedModelFile}`,
             created_at: '2026-03-22T10:05:00Z',
-            size_bytes: 13,
+            size_bytes: 413,
             production: true,
           }];
           state.config.dataset.generated_samples = 2000;
-          state.config.dataset.latest_model = 'sloppy.onnx';
+          state.config.dataset.latest_model = trainedModelFile;
           state.config.dataset.production_model = 'sloppy.onnx';
           notify('training');
           return jsonResponse({ ok: true, status: state.trainingStatus, config: state.config }, 202);
@@ -431,7 +432,7 @@
             hotword_status: {
               ok: true,
               ready: true,
-              model: { file: 'sloppy.onnx', exists: true, revision: '2026-03-22T10:05:00Z:13' },
+              model: { file: 'sloppy.onnx', exists: true, revision: '2026-03-22T10:05:00Z:413' },
             },
           });
         }

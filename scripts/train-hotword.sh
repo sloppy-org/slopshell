@@ -34,7 +34,47 @@ if [[ -z "$MODEL_NAME" ]]; then
   exit 1
 fi
 CONFIG_OUTPUT_DIR="$(read_config_scalar output_dir)"
-TARGET_MODEL_PATH="$OUTPUT_DIR/$MODEL_NAME.onnx"
+TARGET_MODEL_PATH=""
+
+ARGS=("$@")
+REQUESTED_STEP=""
+REQUESTED_FROM=""
+VERIFY_ONLY=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --step)
+      REQUESTED_STEP="${2:-}"
+      shift 2
+      ;;
+    --from)
+      REQUESTED_FROM="${2:-}"
+      shift 2
+      ;;
+    --verify-only)
+      VERIFY_ONLY=1
+      shift
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+
+EXPECT_MODEL=1
+if [[ "$VERIFY_ONLY" == "1" ]]; then
+  EXPECT_MODEL=0
+elif [[ -n "$REQUESTED_STEP" ]]; then
+  case "$REQUESTED_STEP" in
+    train|verify-model|export)
+      EXPECT_MODEL=1
+      ;;
+    *)
+      EXPECT_MODEL=0
+      ;;
+  esac
+elif [[ -n "$REQUESTED_FROM" ]]; then
+  EXPECT_MODEL=1
+fi
 
 if [[ ! -d "$TRAINER_DIR/.git" ]]; then
   mkdir -p "$(dirname "$TRAINER_DIR")"
@@ -50,13 +90,26 @@ if [[ "$SKIP_PIP_INSTALL" != "1" ]]; then
   "$VENV_DIR/bin/python" -m pip install --upgrade pip 'setuptools<82' wheel >/dev/null
   # piper-phonemize has no wheels for Python >=3.12; use the community fix package.
   "$VENV_DIR/bin/python" -m pip install piper-phonemize-fix >/dev/null
+  ORT_PACKAGE="onnxruntime"
+  if [[ "${TABURA_HOTWORD_ORT_PACKAGE:-}" != "" ]]; then
+    ORT_PACKAGE="$TABURA_HOTWORD_ORT_PACKAGE"
+  elif [[ "$(uname -s)" == "Linux" ]] && command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L >/dev/null 2>&1; then
+    ORT_PACKAGE="onnxruntime-gpu"
+  fi
+  "$VENV_DIR/bin/python" -m pip uninstall -y onnxruntime onnxruntime-gpu >/dev/null 2>&1 || true
   grep -v '^piper-phonemize' "$TRAINER_DIR/requirements.txt" \
     | "$VENV_DIR/bin/python" -m pip install -r /dev/stdin >/dev/null
+  "$VENV_DIR/bin/python" -m pip install "$ORT_PACKAGE" >/dev/null
 fi
 
 TRAIN_CMD=("$VENV_DIR/bin/python" "$TRAINER_DIR/train_wakeword.py")
 
-"${TRAIN_CMD[@]}" --config "$CONFIG_PATH" "$@"
+"${TRAIN_CMD[@]}" --config "$CONFIG_PATH" "${ARGS[@]}"
+
+if [[ "$EXPECT_MODEL" != "1" ]]; then
+  echo "trainer step complete: ${REQUESTED_STEP:-verify-only}"
+  exit 0
+fi
 
 MODEL_SOURCE_PATH=""
 if [[ -n "$CONFIG_OUTPUT_DIR" ]]; then
@@ -83,12 +136,22 @@ if [[ -z "$MODEL_SOURCE_PATH" && -f "$TARGET_MODEL_PATH" ]]; then
 fi
 
 if [[ -z "$MODEL_SOURCE_PATH" ]]; then
-  echo "training finished but expected model missing: $TARGET_MODEL_PATH" >&2
+  echo "training finished but expected model missing in configured output dir: ${CONFIG_OUTPUT_DIR:-<unset>}" >&2
   exit 1
 fi
 
-if [[ "$MODEL_SOURCE_PATH" != "$TARGET_MODEL_PATH" ]]; then
+model_stamp="$("$PYTHON_BIN" -c 'import datetime, os, sys; print(datetime.datetime.fromtimestamp(os.path.getmtime(sys.argv[1]), datetime.timezone.utc).strftime("%Y-%m-%d_%H-%M-%SZ"))' "$MODEL_SOURCE_PATH")"
+TARGET_MODEL_PATH="$OUTPUT_DIR/$MODEL_NAME-$model_stamp.onnx"
+TARGET_MODEL_DATA_PATH="$TARGET_MODEL_PATH.data"
+MODEL_SOURCE_DATA_PATH="$MODEL_SOURCE_PATH.data"
+
+if [[ "$MODEL_SOURCE_PATH" != "$TARGET_MODEL_PATH" || ! -f "$TARGET_MODEL_PATH" ]]; then
   cp "$MODEL_SOURCE_PATH" "$TARGET_MODEL_PATH"
+fi
+if [[ -f "$MODEL_SOURCE_DATA_PATH" ]]; then
+  if [[ "$MODEL_SOURCE_DATA_PATH" != "$TARGET_MODEL_DATA_PATH" || ! -f "$TARGET_MODEL_DATA_PATH" ]]; then
+    cp "$MODEL_SOURCE_DATA_PATH" "$TARGET_MODEL_DATA_PATH"
+  fi
 fi
 
 echo "trained model: $TARGET_MODEL_PATH"

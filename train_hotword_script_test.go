@@ -79,7 +79,14 @@ output_path.write_bytes(b"sloppy-model")
 		t.Fatalf("train-hotword.sh failed: %v\n%s", err, out)
 	}
 
-	modelPath := filepath.Join(outputDir, "sloppy.onnx")
+	matches, err := filepath.Glob(filepath.Join(outputDir, "sloppy-*.onnx"))
+	if err != nil {
+		t.Fatalf("glob published model: %v", err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("published models = %v, want exactly one\n%s", matches, out)
+	}
+	modelPath := matches[0]
 	data, err := os.ReadFile(modelPath)
 	if err != nil {
 		t.Fatalf("read published model: %v", err)

@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test';
 
+const trainedModelFile = 'sloppy-2026-03-23_21-03-09Z.onnx';
+
 function wavBuffer() {
   const samples = new Int16Array([0, 1200, -1200, 600, -600, 0]);
   const dataSize = samples.length * 2;
@@ -61,8 +63,8 @@ test('hotword training page saves guided config, captures retry feedback, and ru
 
   await page.locator('#pipeline-start').click();
   await expect(page.locator('#pipeline-progress-label')).toContainText('100%');
-  await expect(page.locator('#pipeline-status')).toContainText('Training complete and deployed sloppy.onnx.');
-  await expect(page.locator('#model-list')).toContainText('sloppy.onnx');
+  await expect(page.locator('#pipeline-status')).toContainText(`Training complete and deployed ${trainedModelFile}.`);
+  await expect(page.locator('#model-list')).toContainText(trainedModelFile);
 
   const requests = await page.evaluate(() => (window as any).__hotwordTrainRequests);
   expect(requests).toEqual({

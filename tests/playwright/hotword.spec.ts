@@ -112,6 +112,26 @@ test('hotword runtime pins explicit ONNX wasm asset URLs', async ({ page }) => {
   expect(new URL(paths.wasm).pathname).toContain('/static/vad/ort-wasm-simd-threaded.wasm');
 });
 
+test('hotword runtime resolves static-page assets without double static path', async ({ page }) => {
+  await waitReady(page);
+
+  const paths = await page.evaluate(async () => {
+    const originalPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    history.replaceState({}, '', '/static/hotword-test.html');
+    try {
+      const mod = await import(`/internal/web/static/hotword.js?static-page=${Date.now()}`);
+      return mod.resolveOrtWasmPaths();
+    } finally {
+      history.replaceState({}, '', originalPath);
+    }
+  });
+
+  expect(new URL(paths.mjs).pathname).toContain('/static/vad/ort-wasm-simd-threaded.mjs');
+  expect(new URL(paths.wasm).pathname).toContain('/static/vad/ort-wasm-simd-threaded.wasm');
+  expect(new URL(paths.mjs).pathname).not.toContain('/static/static/');
+  expect(new URL(paths.wasm).pathname).not.toContain('/static/static/');
+});
+
 test('hotword runtime uses sloppy model defaults', async ({ page }) => {
   await waitReady(page);
 
