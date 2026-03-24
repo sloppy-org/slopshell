@@ -12,6 +12,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/krystophny/tabura/internal/appserver"
+	"github.com/krystophny/tabura/internal/modelprofile"
 	"github.com/krystophny/tabura/internal/store"
 )
 
@@ -136,6 +137,70 @@ func appServerThreadStartCWD(msg map[string]interface{}) string {
 	return strings.TrimSpace(cwd)
 }
 
+func newCompanionLocalAssistantURL(t *testing.T, assistantMessage string) string {
+	url, _ := newCompanionLocalAssistantURLWithCapture(t, assistantMessage)
+	return url
+}
+
+func newCompanionLocalAssistantURLWithCapture(t *testing.T, assistantMessage string) (string, <-chan string) {
+	t.Helper()
+	promptCh := make(chan string, 4)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if strings.TrimSpace(r.URL.Path) != "/v1/chat/completions" {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			http.Error(w, "invalid json", http.StatusBadRequest)
+			return
+		}
+		messages, _ := payload["messages"].([]any)
+		if len(messages) > 0 {
+			if last, ok := messages[len(messages)-1].(map[string]any); ok {
+				if prompt := companionCapturedPrompt(last["content"]); prompt != "" {
+					select {
+					case promptCh <- prompt:
+					default:
+					}
+				}
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{
+				"message": map[string]any{
+					"content": assistantMessage,
+				},
+			}},
+		})
+	}))
+	t.Cleanup(srv.Close)
+	return srv.URL, promptCh
+}
+
+func companionCapturedPrompt(raw any) string {
+	if direct := strings.TrimSpace(strFromAny(raw)); direct != "" {
+		return direct
+	}
+	parts, _ := raw.([]any)
+	var lines []string
+	for _, part := range parts {
+		item, _ := part.(map[string]any)
+		if item == nil {
+			continue
+		}
+		if text := strings.TrimSpace(strFromAny(item["text"])); text != "" {
+			lines = append(lines, text)
+		}
+	}
+	return strings.TrimSpace(strings.Join(lines, "\n"))
+}
+
 func waitForAssistantMessage(t *testing.T, app *App, sessionID, want string) {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
@@ -173,7 +238,7 @@ func waitForCapturedThreadStartCWD(t *testing.T, cwdCh <-chan string) string {
 func TestCompanionResponseTriggerExecutesAssistantTurn(t *testing.T) {
 	t.Setenv("TABURA_INTENT_LLM_URL", "off")
 	app := newAuthedTestApp(t)
-	app.appServerClient = newCompanionAppServerClient(t, "Companion reply.")
+	app.assistantLLMURL = newCompanionLocalAssistantURL(t, "Companion reply.")
 
 	project, err := app.ensureDefaultWorkspace()
 	if err != nil {
@@ -253,7 +318,7 @@ func TestCompanionResponseTriggerExecutesAssistantTurn(t *testing.T) {
 func TestCompanionResponseTriggerExecutesTargetSpeakerFollowUp(t *testing.T) {
 	t.Setenv("TABURA_INTENT_LLM_URL", "off")
 	app := newAuthedTestApp(t)
-	app.appServerClient = newCompanionAppServerClient(t, "Companion reply.")
+	app.assistantLLMURL = newCompanionLocalAssistantURL(t, "Companion reply.")
 
 	project, err := app.ensureDefaultWorkspace()
 	if err != nil {
@@ -328,7 +393,7 @@ func TestCompanionResponseTriggerExecutesTargetSpeakerFollowUp(t *testing.T) {
 func TestCompanionResponseTriggerSkipsWhenCompanionDisabled(t *testing.T) {
 	t.Setenv("TABURA_INTENT_LLM_URL", "off")
 	app := newAuthedTestApp(t)
-	app.appServerClient = newCompanionAppServerClient(t, "unexpected reply")
+	app.assistantLLMURL = newCompanionLocalAssistantURL(t, "unexpected reply")
 
 	project, err := app.ensureDefaultWorkspace()
 	if err != nil {
@@ -382,7 +447,7 @@ func TestCompanionResponseTriggerSkipsWhenCompanionDisabled(t *testing.T) {
 func TestCompanionResponseTriggerSkipsFalseTriggerTranscript(t *testing.T) {
 	t.Setenv("TABURA_INTENT_LLM_URL", "off")
 	app := newAuthedTestApp(t)
-	app.appServerClient = newCompanionAppServerClient(t, "unexpected reply")
+	app.assistantLLMURL = newCompanionLocalAssistantURL(t, "unexpected reply")
 
 	project, err := app.ensureDefaultWorkspace()
 	if err != nil {
@@ -445,7 +510,7 @@ func TestCompanionResponseTriggerSkipsFalseTriggerTranscript(t *testing.T) {
 func TestCompanionResponseTriggerUsesSilentModeOutputQueue(t *testing.T) {
 	t.Setenv("TABURA_INTENT_LLM_URL", "off")
 	app := newAuthedTestApp(t)
-	app.appServerClient = newCompanionAppServerClient(t, "Silent companion reply.")
+	app.assistantLLMURL = newCompanionLocalAssistantURL(t, "Silent companion reply.")
 	if err := app.setSilentModeEnabled(true); err != nil {
 		t.Fatalf("set silent mode: %v", err)
 	}
@@ -499,7 +564,7 @@ func TestCompanionResponseTriggerUsesSilentModeOutputQueue(t *testing.T) {
 func TestCompanionResponseTriggerDoesNotDuplicateSegment(t *testing.T) {
 	t.Setenv("TABURA_INTENT_LLM_URL", "off")
 	app := newAuthedTestApp(t)
-	app.appServerClient = newCompanionAppServerClient(t, "Companion reply.")
+	app.assistantLLMURL = newCompanionLocalAssistantURL(t, "Companion reply.")
 
 	project, err := app.ensureDefaultWorkspace()
 	if err != nil {
@@ -665,8 +730,8 @@ func TestCompanionResponseTriggerInterruptsPendingTurn(t *testing.T) {
 func TestCompanionResponseTriggerIncludesProjectScopedCompanionContext(t *testing.T) {
 	t.Setenv("TABURA_INTENT_LLM_URL", "off")
 	app := newAuthedTestApp(t)
-	client, promptCh := newCompanionAppServerClientWithCapture(t, "Companion reply.")
-	app.appServerClient = client
+	promptURL, promptCh := newCompanionLocalAssistantURLWithCapture(t, "Companion reply.")
+	app.assistantLLMURL = promptURL
 
 	project, err := app.ensureDefaultWorkspace()
 	if err != nil {
@@ -785,6 +850,9 @@ func TestCompanionResponseTriggerUsesWorkspaceDirForAppSession(t *testing.T) {
 	project, err := app.ensureDefaultWorkspace()
 	if err != nil {
 		t.Fatalf("ensure default project: %v", err)
+	}
+	if err := app.store.UpdateEnrichedWorkspaceChatModel(workspaceIDStr(project.ID), modelprofile.AliasSpark); err != nil {
+		t.Fatalf("update workspace chat model: %v", err)
 	}
 	cfg := app.loadCompanionConfig(project)
 	cfg.CompanionEnabled = true

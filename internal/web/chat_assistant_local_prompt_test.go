@@ -24,7 +24,8 @@ func TestBuildLeanLocalAssistantPromptIsCompact(t *testing.T) {
 	for _, snippet := range []string{
 		"Workspace: Tabura (/tmp/tabura)",
 		"Canvas: notes.md [markdown]",
-		"Companion summary: Planning next steps.",
+		"## Companion Context",
+		"- Summary: Planning next steps.",
 		"Reply briefly for speech.",
 		"Recent messages:",
 		"USER: latest question",

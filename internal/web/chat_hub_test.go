@@ -93,12 +93,17 @@ func setupMockCanvasShowServer(t *testing.T, seen *int, observed *map[string]int
 
 func latestAssistantMessage(t *testing.T, app *App, sessionID string) string {
 	t.Helper()
+	return latestMessageForRole(t, app, sessionID, "assistant")
+}
+
+func latestMessageForRole(t *testing.T, app *App, sessionID, role string) string {
+	t.Helper()
 	updatedMessages, err := app.store.ListChatMessages(sessionID, 100)
 	if err != nil {
 		t.Fatalf("list updated messages: %v", err)
 	}
 	for i := len(updatedMessages) - 1; i >= 0; i-- {
-		if strings.EqualFold(strings.TrimSpace(updatedMessages[i].Role), "assistant") {
+		if strings.EqualFold(strings.TrimSpace(updatedMessages[i].Role), role) {
 			return strings.TrimSpace(updatedMessages[i].ContentPlain)
 		}
 	}
@@ -821,13 +826,8 @@ func TestRunAssistantTurnOpenReadmeUsesMultiActionPlanAndOpensCanvas(t *testing.
 	}
 }
 
-func TestRunAssistantTurnFallsBackToAppServerWhenIntentLLMUnavailable(t *testing.T) {
-	const assistantReply = "All systems nominal."
-	wsServer := setupMockAppServerStatusServer(t, assistantReply)
-	defer wsServer.Close()
-	wsURL := "ws" + strings.TrimPrefix(wsServer.URL, "http")
-
-	app, err := New(t.TempDir(), "", "", wsURL, "", "", "", false)
+func TestRunAssistantTurnReportsErrorWhenLocalAssistantUnavailable(t *testing.T) {
+	app, err := New(t.TempDir(), "", "", "", "", "", "", false)
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}
@@ -850,8 +850,11 @@ func TestRunAssistantTurnFallsBackToAppServerWhenIntentLLMUnavailable(t *testing
 
 	app.runAssistantTurn(session.ID, dequeuedTurn{outputMode: turnOutputModeSilent})
 
-	if got := latestAssistantMessage(t, app, session.ID); got != assistantReply {
-		t.Fatalf("assistant message = %q, want %q", got, assistantReply)
+	if got := latestAssistantMessage(t, app, session.ID); got != "" {
+		t.Fatalf("assistant message = %q, want empty", got)
+	}
+	if got := latestMessageForRole(t, app, session.ID, "system"); !strings.Contains(got, "connection refused") {
+		t.Fatalf("system message = %q, want connection refused", got)
 	}
 }
 
@@ -959,16 +962,11 @@ func TestRunAssistantTurnPreservesClarificationContextForLocalLLM(t *testing.T) 
 	}
 }
 
-func TestRunAssistantTurnFallsBackToAppServerWhenLocalIntentExecutionFails(t *testing.T) {
-	const assistantReply = "All systems nominal."
-	wsServer := setupMockAppServerStatusServer(t, assistantReply)
-	defer wsServer.Close()
-	wsURL := "ws" + strings.TrimPrefix(wsServer.URL, "http")
-
+func TestRunAssistantTurnReportsErrorWhenLocalAssistantReturnsControlEnvelope(t *testing.T) {
 	llm := setupMockIntentLLMServer(t, http.StatusOK, `{"action":"switch_workspace"}`)
 	defer llm.Close()
 
-	app, err := New(t.TempDir(), "", "", wsURL, "", "", "", false)
+	app, err := New(t.TempDir(), "", "", "", "", "", "", false)
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}
@@ -991,8 +989,11 @@ func TestRunAssistantTurnFallsBackToAppServerWhenLocalIntentExecutionFails(t *te
 
 	app.runAssistantTurn(session.ID, dequeuedTurn{outputMode: turnOutputModeSilent})
 
-	if got := latestAssistantMessage(t, app, session.ID); got != assistantReply {
-		t.Fatalf("assistant message = %q, want %q", got, assistantReply)
+	if got := latestAssistantMessage(t, app, session.ID); got != "" {
+		t.Fatalf("assistant message = %q, want empty", got)
+	}
+	if got := latestMessageForRole(t, app, session.ID, "system"); got != errLocalAssistantUnsupportedResponse.Error() {
+		t.Fatalf("system message = %q, want %q", got, errLocalAssistantUnsupportedResponse.Error())
 	}
 }
 

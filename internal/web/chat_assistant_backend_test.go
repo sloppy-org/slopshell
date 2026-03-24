@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-func TestAssistantBackendForTurnAutoRoutesBetweenLocalAndCodex(t *testing.T) {
+func TestAssistantBackendForTurnRoutesLocalByDefaultAndCodexOnlyForRemoteTurns(t *testing.T) {
 	wsServer := setupMockAppServerStatusServer(t, "codex")
 	defer wsServer.Close()
 	wsURL := "ws" + strings.TrimPrefix(wsServer.URL, "http")
@@ -25,14 +25,36 @@ func TestAssistantBackendForTurnAutoRoutesBetweenLocalAndCodex(t *testing.T) {
 		_ = app.Shutdown(context.Background())
 	})
 
-	localReq := &assistantTurnRequest{userText: "open the workspace README"}
+	localReq := &assistantTurnRequest{
+		userText:    "Wann wurde Isaac Newton geboren?",
+		baseProfile: appServerModelProfile{Alias: "local"},
+	}
 	if got := app.assistantBackendForTurn(localReq).mode(); got != assistantModeLocal {
-		t.Fatalf("auto backend for tool task = %q, want %q", got, assistantModeLocal)
+		t.Fatalf("backend for local default turn = %q, want %q", got, assistantModeLocal)
 	}
 
-	codexReq := &assistantTurnRequest{userText: "help me think through the plasma analysis"}
-	if got := app.assistantBackendForTurn(codexReq).mode(); got != assistantModeCodex {
-		t.Fatalf("auto backend for general task = %q, want %q", got, assistantModeCodex)
+	explicitRemoteReq := &assistantTurnRequest{
+		userText:    "let gpt answer this",
+		turnModel:   "gpt",
+		baseProfile: appServerModelProfile{Alias: "local"},
+	}
+	if got := app.assistantBackendForTurn(explicitRemoteReq).mode(); got != assistantModeCodex {
+		t.Fatalf("backend for explicit remote turn = %q, want %q", got, assistantModeCodex)
+	}
+
+	searchReq := &assistantTurnRequest{
+		userText:    "search the web for today's news",
+		searchTurn:  true,
+		baseProfile: appServerModelProfile{Alias: "local"},
+	}
+	if got := app.assistantBackendForTurn(searchReq).mode(); got != assistantModeCodex {
+		t.Fatalf("backend for search turn = %q, want %q", got, assistantModeCodex)
+	}
+
+	app.assistantLLMURL = ""
+	app.intentLLMURL = ""
+	if got := app.assistantBackendForTurn(localReq).mode(); got != assistantModeLocal {
+		t.Fatalf("backend without local assistant config = %q, want %q", got, assistantModeLocal)
 	}
 }
 

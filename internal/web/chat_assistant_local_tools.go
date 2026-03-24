@@ -16,6 +16,11 @@ import (
 	"github.com/krystophny/tabura/internal/store"
 )
 
+var (
+	errLocalAssistantNotConfigured       = errors.New("local assistant is not configured")
+	errLocalAssistantUnsupportedResponse = errors.New("local assistant returned unsupported control envelope")
+)
+
 type localAssistantLLMToolCall struct {
 	ID       string                        `json:"id,omitempty"`
 	Type     string                        `json:"type,omitempty"`
@@ -112,7 +117,7 @@ func localAssistantToolDefinitions() []map[string]any {
 func (a *App) requestLocalAssistantCompletion(ctx context.Context, messages []map[string]any, enableThinking bool) (localIntentLLMMessage, error) {
 	baseURL := a.assistantLLMBaseURL()
 	if baseURL == "" {
-		return localIntentLLMMessage{}, errors.New("local assistant is not configured")
+		return localIntentLLMMessage{}, errLocalAssistantNotConfigured
 	}
 	return a.requestLocalAssistantCompletionWithConfig(ctx, messages, localAssistantToolDefinitions(), "auto", enableThinking)
 }
@@ -120,7 +125,7 @@ func (a *App) requestLocalAssistantCompletion(ctx context.Context, messages []ma
 func (a *App) requestLocalAssistantCompletionWithConfig(ctx context.Context, messages []map[string]any, tools []map[string]any, toolChoice string, enableThinking bool) (localIntentLLMMessage, error) {
 	baseURL := a.assistantLLMBaseURL()
 	if baseURL == "" {
-		return localIntentLLMMessage{}, errors.New("local assistant is not configured")
+		return localIntentLLMMessage{}, errLocalAssistantNotConfigured
 	}
 	request := map[string]any{
 		"model":       a.localAssistantLLMModel(),
@@ -214,6 +219,9 @@ func parseLocalAssistantDecision(message localIntentLLMMessage) (localAssistantD
 	if content == "" {
 		return localAssistantDecision{}, errors.New("assistant llm returned empty content")
 	}
+	if localAssistantUnsupportedControlEnvelope(content) {
+		return localAssistantDecision{}, errLocalAssistantUnsupportedResponse
+	}
 	if classification, err := parseIntentPlanClassification(content); err == nil && classification.LocalAnswer != nil {
 		if text := strings.TrimSpace(classification.LocalAnswer.Text); text != "" {
 			return localAssistantDecision{FinalText: text}, nil
@@ -265,6 +273,28 @@ func looksLikeMalformedLocalAssistantToolResponse(raw string) bool {
 	}
 	lower := strings.ToLower(trimmed)
 	return strings.Contains(lower, "tool_calls") || strings.Contains(lower, "function_call") || strings.Contains(lower, "\"arguments\"")
+}
+
+func localAssistantUnsupportedControlEnvelope(raw string) bool {
+	decoded, ok := decodeLocalAssistantEnvelope(strings.TrimSpace(stripCodeFence(raw)))
+	if !ok {
+		return false
+	}
+	obj, ok := decoded.(map[string]any)
+	if !ok || obj == nil {
+		return false
+	}
+	for _, allowed := range []string{"final", "text", "tool_calls"} {
+		if _, ok := obj[allowed]; ok {
+			return false
+		}
+	}
+	for _, unsupported := range []string{"action", "actions", "addressed", "local_answer", "ack"} {
+		if _, ok := obj[unsupported]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 func parseLocalAssistantToolCallsAny(raw any) ([]localAssistantToolCall, error) {
@@ -458,6 +488,9 @@ func (a *App) runLocalAssistantToolLoop(ctx context.Context, req *assistantTurnR
 		if err != nil {
 			return "", err
 		}
+		if localAssistantUnsupportedControlEnvelope(message.Content) {
+			return "", errLocalAssistantUnsupportedResponse
+		}
 		return strings.TrimSpace(message.Content), nil
 	}
 	if !localAssistantNeedsTools(req, visual) {
@@ -467,6 +500,9 @@ func (a *App) runLocalAssistantToolLoop(ctx context.Context, req *assistantTurnR
 		}, nil, "", enableThinking)
 		if err != nil {
 			return "", err
+		}
+		if localAssistantUnsupportedControlEnvelope(message.Content) {
+			return "", errLocalAssistantUnsupportedResponse
 		}
 		return strings.TrimSpace(message.Content), nil
 	}

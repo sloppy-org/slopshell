@@ -73,13 +73,7 @@ func appendLeanLocalAssistantCompanion(b *strings.Builder, companion *companionP
 	if b == nil || companion == nil || companion.empty() {
 		return
 	}
-	if summary := strings.TrimSpace(companion.SummaryText); summary != "" {
-		fmt.Fprintf(b, "Companion summary: %s\n", summary)
-		return
-	}
-	if len(companion.RecentTopics) > 0 {
-		fmt.Fprintf(b, "Companion topics: %s\n", strings.Join(companion.RecentTopics, "; "))
-	}
+	appendCompanionPromptContext(b, companion)
 }
 
 func appendLeanLocalAssistantHistory(b *strings.Builder, messages []store.ChatMessage) {

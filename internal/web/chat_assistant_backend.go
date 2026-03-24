@@ -1,7 +1,6 @@
 package web
 
 import (
-	"context"
 	"strings"
 
 	"github.com/krystophny/tabura/internal/modelprofile"
@@ -76,13 +75,10 @@ func (a *App) assistantBackendForTurn(req *assistantTurnRequest) assistantTurnBa
 	if req.localOnly {
 		return &localAssistantBackend{app: a}
 	}
-	if req.turnModel != "" && req.turnModel != modelprofile.AliasLocal {
+	if req.searchTurn || (req.turnModel != "" && req.turnModel != modelprofile.AliasLocal) {
 		return &codexAssistantBackend{app: a}
 	}
-	if req.baseProfile.Alias == modelprofile.AliasLocal {
-		if !a.localAssistantPreferred() && a.appServerClient != nil {
-			return &codexAssistantBackend{app: a}
-		}
+	if modelprofile.ResolveAlias(req.baseProfile.Alias, modelprofile.AliasLocal) == modelprofile.AliasLocal {
 		return &localAssistantBackend{app: a}
 	}
 	switch a.assistantRoutingMode() {
@@ -91,66 +87,11 @@ func (a *App) assistantBackendForTurn(req *assistantTurnRequest) assistantTurnBa
 	case assistantModeCodex:
 		return &codexAssistantBackend{app: a}
 	default:
-		return a.assistantBackendForAutoMode(req)
-	}
-}
-
-func (a *App) assistantBackendForAutoMode(req *assistantTurnRequest) assistantTurnBackend {
-	if a == nil {
-		return &localAssistantBackend{}
-	}
-	if a.appServerClient == nil {
-		return &localAssistantBackend{app: a}
-	}
-	if req == nil {
-		return &codexAssistantBackend{app: a}
-	}
-	if req.baseProfile.Alias == modelprofile.AliasLocal {
-		if !a.localAssistantPreferred() && a.appServerClient != nil {
+		if a.appServerClient != nil {
 			return &codexAssistantBackend{app: a}
 		}
 		return &localAssistantBackend{app: a}
 	}
-	evaluation := a.evaluateLocalTurn(
-		context.Background(),
-		req.sessionID,
-		req.session,
-		req.userText,
-		req.cursorCtx,
-		req.captureMode,
-	)
-	threadBound := strings.TrimSpace(req.session.AppThreadID) != "" && a.appServerClient != nil
-	if evaluation.handled {
-		// Once a chat session is bound to a persistent app-server thread, keep
-		// short local-answer classifications from breaking the remote dialogue.
-		if !(evaluation.isHighConfidenceLocalAnswer() && threadBound) {
-			return &localAssistantBackend{app: a, evaluation: &evaluation}
-		}
-	}
-	if evaluation.isHighConfidenceLocalAnswer() && !threadBound {
-		return &localAssistantBackend{app: a, evaluation: &evaluation}
-	}
-	if a.localAssistantPreferred() && localAssistantAutoRouteCandidate(req.userText) {
-		return &localAssistantBackend{app: a}
-	}
-	return &codexAssistantBackend{app: a}
-}
-
-func (a *App) localAssistantAvailable() bool {
-	return strings.TrimSpace(a.assistantLLMBaseURL()) != ""
-}
-
-func (a *App) localAssistantPreferred() bool {
-	if !a.localAssistantAvailable() {
-		return false
-	}
-	if a.assistantRoutingMode() == assistantModeLocal {
-		return true
-	}
-	if a == nil || a.appServerClient == nil {
-		return true
-	}
-	return a.assistantLLMExplicit
 }
 
 func localAssistantAutoRouteCandidate(text string) bool {
