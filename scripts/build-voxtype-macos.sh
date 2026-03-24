@@ -50,7 +50,7 @@ done
 
 [ "$(uname -s)" = "Darwin" ] || fail "this script is for macOS only"
 
-command -v cargo >/dev/null 2>&1 || fail "cargo not found; install Rust: https://rustup.rs"
+command -v cargo >/dev/null 2>&1 || fail "cargo not found; install Rust with Homebrew: brew install rust"
 command -v cmake >/dev/null 2>&1 || fail "cmake not found; install: brew install cmake"
 command -v git >/dev/null 2>&1 || fail "git not found"
 

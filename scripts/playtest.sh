@@ -20,6 +20,14 @@ wait_for_command() {
   fail "$description"
 }
 
+local_intent_runtime_live() {
+  python3 - <<'PY' >/dev/null 2>&1
+import socket
+sock = socket.create_connection(("127.0.0.1", 8081), timeout=3)
+sock.close()
+PY
+}
+
 latest_workspace_epoch() {
   local -a paths=(
     "$ROOT_DIR/cmd"
@@ -97,12 +105,7 @@ curl -fsS --max-time 3 -o /dev/null -w '' \
 curl -fsS --max-time 3 http://127.0.0.1:8427/healthz >/dev/null \
   || fail 'voxtype STT not running on :8427'
 
-if python3 - <<'PY' >/dev/null 2>&1
-import socket
-sock = socket.create_connection(("127.0.0.1", 8081), timeout=3)
-sock.close()
-PY
-then
+if wait_for_command 'Local intent runtime probe timed out on :8081' 5 local_intent_runtime_live >/dev/null 2>&1; then
   printf 'Local intent runtime detected on :8081.\n'
 else
   printf 'Local intent runtime not detected on :8081; continuing with live runtime defaults.\n'

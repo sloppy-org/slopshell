@@ -155,7 +155,7 @@ class Tabura < Formula
 
   def caveats
     <<~EOS
-      Run `tabura server` or use the full installer:
+      Run 'tabura server' or use the full installer:
         curl -fsSL https://github.com/${OWNER}/${REPO}/releases/latest/download/install.sh | bash
       Requires codex app-server and Python 3.10+ for Piper TTS.
     EOS

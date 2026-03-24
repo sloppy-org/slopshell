@@ -37,6 +37,7 @@ EOF
   assert_contains "${output_dir}/homebrew/Formula/tabura.rb" 'version "1.2.3"'
   assert_contains "${output_dir}/homebrew/Formula/tabura.rb" 'tabura_1.2.3_linux_amd64.tar.gz'
   assert_contains "${output_dir}/homebrew/Formula/tabura.rb" 'sha256 "1111111111111111111111111111111111111111111111111111111111111111"'
+  assert_contains "${output_dir}/homebrew/Formula/tabura.rb" "Run 'tabura server' or use the full installer:"
 
   assert_contains "${output_dir}/aur/PKGBUILD" 'pkgver=1.2.3'
   assert_contains "${output_dir}/aur/PKGBUILD" 'source_x86_64=("https://github.com/krystophny/tabura/releases/download/v1.2.3/tabura_1.2.3_linux_amd64.tar.gz")'
