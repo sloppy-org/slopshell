@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/krystophny/tabura/internal/modelprofile"
+	"github.com/krystophny/tabura/internal/store"
 )
 
 func setupMockIntentLLMServer(t *testing.T, status int, content string) *httptest.Server {
@@ -1000,66 +1001,19 @@ func TestRunAssistantTurnUsesLocalAssistantSystemActionTool(t *testing.T) {
 }
 
 func TestRunAssistantTurnPreservesClarificationContextForLocalLLM(t *testing.T) {
-	llm := setupMockLocalAssistantServer(t, func(call int, payload map[string]any) map[string]any {
-		if call == 1 {
-			messages, _ := payload["messages"].([]any)
-			if len(messages) < 2 {
-				t.Fatalf("message count = %d, want at least 2", len(messages))
-			}
-			last, _ := messages[len(messages)-1].(map[string]any)
-			content := localAssistantContentText(last["content"])
-			for _, snippet := range []string{"Show me my contacts", "Where should I show them?", "On the canvas"} {
-				if !strings.Contains(content, snippet) {
-					t.Fatalf("clarification prompt missing %q:\n%s", snippet, content)
-				}
-			}
-			return map[string]any{
-				"tool_calls": []map[string]any{{
-					"id":   "call-toggle",
-					"type": "function",
-					"function": map[string]any{
-						"name":      "action__toggle_silent",
-						"arguments": `{}`,
-					},
-				}},
-			}
+	req := &assistantTurnRequest{
+		userText: "On the canvas",
+		messages: []store.ChatMessage{
+			{Role: "user", ContentPlain: "Show me my contacts"},
+			{Role: "assistant", ContentPlain: "Where should I show them?"},
+			{Role: "user", ContentPlain: "On the canvas"},
+		},
+	}
+	got := localAssistantToolUserPrompt(req, "ignored full prompt")
+	for _, snippet := range []string{"Show me my contacts", "Where should I show them?", "On the canvas"} {
+		if !strings.Contains(got, snippet) {
+			t.Fatalf("clarification prompt missing %q:\n%s", snippet, got)
 		}
-		return map[string]any{"content": "Toggled silent mode."}
-	})
-	defer llm.Close()
-
-	app, err := New(t.TempDir(), "", "", "", "", "", "", false)
-	if err != nil {
-		t.Fatalf("new app: %v", err)
-	}
-	app.assistantMode = assistantModeLocal
-	app.assistantLLMURL = llm.URL
-	app.intentLLMURL = ""
-	t.Cleanup(func() {
-		_ = app.Shutdown(context.Background())
-	})
-
-	project, err := app.ensureDefaultWorkspace()
-	if err != nil {
-		t.Fatalf("ensure default project: %v", err)
-	}
-	session, err := app.chatSessionForWorkspace(project)
-	if err != nil {
-		t.Fatalf("project session: %v", err)
-	}
-	if _, err := app.store.AddChatMessage(session.ID, "user", "Show me my contacts", "Show me my contacts", "text"); err != nil {
-		t.Fatalf("add first user message: %v", err)
-	}
-	if _, err := app.store.AddChatMessage(session.ID, "assistant", "Where should I show them?", "Where should I show them?", "text"); err != nil {
-		t.Fatalf("add assistant clarification: %v", err)
-	}
-	if _, err := app.store.AddChatMessage(session.ID, "user", "On the canvas", "On the canvas", "text"); err != nil {
-		t.Fatalf("add follow-up user message: %v", err)
-	}
-	app.runAssistantTurn(session.ID, dequeuedTurn{outputMode: turnOutputModeSilent})
-
-	if got := latestAssistantMessage(t, app, session.ID); got != "Toggled silent mode." {
-		t.Fatalf("assistant message = %q, want %q", got, "Toggled silent mode.")
 	}
 }
 

@@ -145,24 +145,144 @@ func TestBuildLocalAssistantToolCatalogUsesSmallCanvasFamily(t *testing.T) {
 		canvasID:     "canvas-session",
 		workspaceDir: t.TempDir(),
 	}
-	catalog, err := app.buildLocalAssistantToolCatalog(state, localAssistantToolFamilyCanvas)
+	catalog, err := app.buildLocalAssistantToolCatalog(state, localAssistantToolFamilyCanvas, "Draw a flowchart on the canvas.")
 	if err != nil {
 		t.Fatalf("buildLocalAssistantToolCatalog() error: %v", err)
 	}
-	canvasTextTool, ok := catalog.ToolsByName["canvas_write_text"]
-	if !ok {
-		t.Fatalf("missing explicit canvas_write_text tool")
-	}
-	if got := strings.TrimSpace(strFromAny(canvasTextTool.DefaultArgs["session_id"])); got != "canvas-session" {
-		t.Fatalf("canvas_write_text session default = %q, want canvas-session", got)
+	if !catalog.RenderGeneratedText {
+		t.Fatal("canvas family should direct-render generated canvas requests")
 	}
 	for _, name := range []string{"workspace_read", "action__open_file_canvas", "action__navigate_canvas"} {
 		if _, ok := catalog.ToolsByName[name]; !ok {
 			t.Fatalf("missing canvas family tool %q: %#v", name, catalog.ToolsByName)
 		}
 	}
-	if len(catalog.ToolsByName) != 4 {
-		t.Fatalf("canvas family tool count = %d, want 4", len(catalog.ToolsByName))
+	if _, ok := catalog.ToolsByName["canvas_write_text"]; ok {
+		t.Fatalf("canvas family should not expose canvas_write_text directly: %#v", catalog.ToolsByName)
+	}
+	if len(catalog.ToolsByName) != 3 {
+		t.Fatalf("canvas family tool count = %d, want 3", len(catalog.ToolsByName))
+	}
+}
+
+func TestParseLocalAssistantDecisionAcceptsBareToolCallObject(t *testing.T) {
+	decision, err := parseLocalAssistantDecision(localIntentLLMMessage{
+		Content: `{"name":"canvas_write_text","arguments":{"title":"Fusion","content":"[Fusion]\n  |\n[Plasma]"}}`,
+	})
+	if err != nil {
+		t.Fatalf("parseLocalAssistantDecision() error: %v", err)
+	}
+	if len(decision.ToolCalls) != 1 {
+		t.Fatalf("tool call count = %d, want 1", len(decision.ToolCalls))
+	}
+	if got := decision.ToolCalls[0].Name; got != "canvas_write_text" {
+		t.Fatalf("tool call name = %q, want canvas_write_text", got)
+	}
+	if got := strings.TrimSpace(strFromAny(decision.ToolCalls[0].Arguments["title"])); got != "Fusion" {
+		t.Fatalf("tool call title = %q, want Fusion", got)
+	}
+}
+
+func TestRunAssistantTurnCanvasRequestRepairsPlainGermanAcknowledgement(t *testing.T) {
+	var llmCalls atomic.Int32
+	var canvasCalls atomic.Int32
+
+	mcp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode mcp payload: %v", err)
+		}
+		switch strings.TrimSpace(strFromAny(payload["method"])) {
+		case "tools/call":
+			canvasCalls.Add(1)
+			params, _ := payload["params"].(map[string]any)
+			if got := strings.TrimSpace(strFromAny(params["name"])); got != "canvas_artifact_show" {
+				t.Fatalf("canvas tool name = %q, want canvas_artifact_show", got)
+			}
+			args, _ := params["arguments"].(map[string]any)
+			content := strings.TrimSpace(strFromAny(args["markdown_or_text"]))
+			if !strings.Contains(strings.ToLower(content), "fusion") && !strings.Contains(strings.ToLower(content), "reaktor") {
+				t.Fatalf("canvas content = %q, want fusion-reactor text artifact", content)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"result": map[string]any{
+					"structuredContent": map[string]any{
+						"ok": true,
+					},
+				},
+			})
+		default:
+			t.Fatalf("unexpected MCP method %q", payload["method"])
+		}
+	}))
+	defer mcp.Close()
+
+	llm := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		call := llmCalls.Add(1)
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode llm payload: %v", err)
+		}
+		messages, _ := payload["messages"].([]any)
+		switch call {
+		case 1:
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"choices": []map[string]any{{
+					"message": map[string]any{
+						"content": "Ich erstelle jetzt ein Flussdiagramm, das den Ablauf der Kernfusion visualisiert.",
+					},
+				}},
+			})
+		case 2:
+			last, _ := messages[len(messages)-1].(map[string]any)
+			if got := strings.TrimSpace(strFromAny(last["content"])); got != localAssistantCanvasContentRequiredPrompt() {
+				t.Fatalf("canvas-content prompt = %q, want %q", got, localAssistantCanvasContentRequiredPrompt())
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"choices": []map[string]any{{
+					"message": map[string]any{
+						"content": "[Fusion Reactor]\n  |\n[Fuel Injection]\n  |\n[Plasma]\n  |\n[Heat Extraction]\n  |\n[Electricity]",
+					},
+				}},
+			})
+		default:
+			t.Fatalf("unexpected extra llm call %d", call)
+		}
+	}))
+	defer llm.Close()
+
+	app, err := New(t.TempDir(), "", mcp.URL, "", "", "", "", false)
+	if err != nil {
+		t.Fatalf("new app: %v", err)
+	}
+	app.assistantMode = assistantModeLocal
+	app.assistantLLMURL = llm.URL
+	t.Cleanup(func() {
+		_ = app.Shutdown(context.Background())
+	})
+
+	project, err := app.ensureDefaultWorkspace()
+	if err != nil {
+		t.Fatalf("ensureDefaultWorkspace: %v", err)
+	}
+	session, err := app.chatSessionForWorkspace(project)
+	if err != nil {
+		t.Fatalf("chatSessionForWorkspace: %v", err)
+	}
+	if _, err := app.store.AddChatMessage(session.ID, "user", "Bitte zeichne mir wie ein Fusionsreaktor funktioniert als Flowchart auf der Canvas.", "Bitte zeichne mir wie ein Fusionsreaktor funktioniert als Flowchart auf der Canvas.", "text"); err != nil {
+		t.Fatalf("AddChatMessage: %v", err)
+	}
+
+	app.runAssistantTurn(session.ID, dequeuedTurn{outputMode: turnOutputModeSilent})
+
+	if got := latestAssistantMessage(t, app, session.ID); got != "Shown on canvas." {
+		t.Fatalf("assistant message = %q", got)
+	}
+	if llmCalls.Load() != 2 {
+		t.Fatalf("llm call count = %d, want 2", llmCalls.Load())
+	}
+	if canvasCalls.Load() != 1 {
+		t.Fatalf("canvas call count = %d, want 1", canvasCalls.Load())
 	}
 }
 
@@ -241,9 +361,12 @@ func TestExecuteLocalAssistantBoundMCPToolUsesCanvasTunnelForCanvasTools(t *test
 		workspaceDir: t.TempDir(),
 		mcpURL:       generalMCP.URL,
 	}
-	catalog, err := app.buildLocalAssistantToolCatalog(state, localAssistantToolFamilyCanvas)
-	if err != nil {
-		t.Fatalf("buildLocalAssistantToolCatalog() error: %v", err)
+	catalog := localAssistantToolCatalog{
+		Family:      localAssistantToolFamilyCanvas,
+		Definitions: []map[string]any{localAssistantCanvasWriteTextTool(state).Definition},
+		ToolsByName: map[string]localAssistantExecutableTool{
+			"canvas_write_text": localAssistantCanvasWriteTextTool(state),
+		},
 	}
 	result, err := app.executeLocalAssistantToolCall(context.Background(), &state, catalog, localAssistantToolCall{
 		ID:   "call-canvas",
@@ -466,6 +589,7 @@ func TestRunAssistantTurnNonFastLocalUsesPrunedExplicitToolPromptForCanvasReques
 	var intentCalls atomic.Int32
 	var llmCalls atomic.Int32
 	var mcpListCalls atomic.Int32
+	var mcpCalls atomic.Int32
 
 	intent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		intentCalls.Add(1)
@@ -515,6 +639,17 @@ func TestRunAssistantTurnNonFastLocalUsesPrunedExplicitToolPromptForCanvasReques
 					}},
 				},
 			})
+		case "tools/call":
+			mcpCalls.Add(1)
+			params, _ := payload["params"].(map[string]any)
+			if got := strings.TrimSpace(strFromAny(params["name"])); got != "canvas_artifact_show" {
+				t.Fatalf("tool name = %q, want canvas_artifact_show", got)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"result": map[string]any{
+					"structuredContent": map[string]any{"ok": true},
+				},
+			})
 		default:
 			t.Fatalf("unexpected MCP method %q", payload["method"])
 		}
@@ -533,12 +668,24 @@ func TestRunAssistantTurnNonFastLocalUsesPrunedExplicitToolPromptForCanvasReques
 		messages, _ := payload["messages"].([]any)
 		system, _ := messages[0].(map[string]any)
 		systemPrompt := strings.TrimSpace(strFromAny(system["content"]))
-		for _, want := range []string{"Available tools in this turn:", "canvas_write_text", "workspace_read", "action__open_file_canvas"} {
+		for _, want := range []string{
+			"The user wants new generated text to appear on the canvas.",
+			"Reply with only the exact canvas text.",
+		} {
 			if !strings.Contains(systemPrompt, want) {
 				t.Fatalf("system prompt missing %q: %q", want, systemPrompt)
 			}
 		}
-		for _, blocked := range []string{"mcp__mail_message_list", "mcp__canvas_artifact_show", "mcp__temp_file_create", "action__toggle_silent"} {
+		for _, blocked := range []string{
+			"Available tools in this turn:",
+			"workspace_read",
+			"action__open_file_canvas",
+			"canvas_write_text",
+			"mcp__mail_message_list",
+			"mcp__canvas_artifact_show",
+			"mcp__temp_file_create",
+			"action__toggle_silent",
+		} {
 			if strings.Contains(systemPrompt, blocked) {
 				t.Fatalf("system prompt should not include %q: %q", blocked, systemPrompt)
 			}
@@ -546,7 +693,7 @@ func TestRunAssistantTurnNonFastLocalUsesPrunedExplicitToolPromptForCanvasReques
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"choices": []map[string]any{{
 				"message": map[string]any{
-					"content": "Canvas tool prompt prepared.",
+					"content": "Orbit Canvas",
 				},
 			}},
 		})
@@ -579,7 +726,7 @@ func TestRunAssistantTurnNonFastLocalUsesPrunedExplicitToolPromptForCanvasReques
 
 	app.runAssistantTurn(session.ID, dequeuedTurn{outputMode: turnOutputModeSilent})
 
-	if got := latestAssistantMessage(t, app, session.ID); got != "Canvas tool prompt prepared." {
+	if got := latestAssistantMessage(t, app, session.ID); got != "Shown on canvas." {
 		t.Fatalf("assistant message = %q", got)
 	}
 	if llmCalls.Load() != 1 {
@@ -588,12 +735,15 @@ func TestRunAssistantTurnNonFastLocalUsesPrunedExplicitToolPromptForCanvasReques
 	if mcpListCalls.Load() != 0 {
 		t.Fatalf("mcp list call count = %d, want 0", mcpListCalls.Load())
 	}
+	if mcpCalls.Load() != 1 {
+		t.Fatalf("mcp call count = %d, want 1", mcpCalls.Load())
+	}
 	if intentCalls.Load() != 0 {
 		t.Fatalf("intent llm call count = %d, want 0", intentCalls.Load())
 	}
 }
 
-func TestRunAssistantTurnNonFastLocalRepairsPlanningTextIntoCanvasToolCall(t *testing.T) {
+func TestRunAssistantTurnNonFastLocalRepairsPlanningTextIntoCanvasOutput(t *testing.T) {
 	var llmCalls atomic.Int32
 	var mcpCalls atomic.Int32
 
@@ -645,31 +795,18 @@ func TestRunAssistantTurnNonFastLocalRepairsPlanningTextIntoCanvasToolCall(t *te
 			})
 		case 2:
 			last, _ := messages[len(messages)-1].(map[string]any)
-			if got := strings.TrimSpace(strFromAny(last["content"])); !strings.Contains(got, "A tool is required for the user's request.") {
+			if got := strings.TrimSpace(strFromAny(last["content"])); got != localAssistantCanvasContentRequiredPrompt() {
 				t.Fatalf("repair prompt = %q", got)
 			}
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"choices": []map[string]any{{
 					"message": map[string]any{
-						"tool_calls": []map[string]any{{
-							"id":   "call-canvas",
-							"type": "function",
-							"function": map[string]any{
-								"name":      "canvas_write_text",
-								"arguments": `{"title":"Tool Test","content":"Orbit Canvas"}`,
-							},
-						}},
+						"content": "Orbit Canvas",
 					},
 				}},
 			})
 		default:
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"choices": []map[string]any{{
-					"message": map[string]any{
-						"content": "DONE",
-					},
-				}},
-			})
+			t.Fatalf("unexpected extra llm call %d", call)
 		}
 	}))
 	defer llm.Close()
@@ -699,11 +836,11 @@ func TestRunAssistantTurnNonFastLocalRepairsPlanningTextIntoCanvasToolCall(t *te
 
 	app.runAssistantTurn(session.ID, dequeuedTurn{outputMode: turnOutputModeSilent})
 
-	if got := latestAssistantMessage(t, app, session.ID); got != "DONE" {
-		t.Fatalf("assistant message = %q, want DONE", got)
+	if got := latestAssistantMessage(t, app, session.ID); got != "Shown on canvas." {
+		t.Fatalf("assistant message = %q, want Shown on canvas.", got)
 	}
-	if llmCalls.Load() != 3 {
-		t.Fatalf("llm call count = %d, want 3", llmCalls.Load())
+	if llmCalls.Load() != 2 {
+		t.Fatalf("llm call count = %d, want 2", llmCalls.Load())
 	}
 	if mcpCalls.Load() != 1 {
 		t.Fatalf("mcp call count = %d, want 1", mcpCalls.Load())
@@ -771,8 +908,8 @@ func TestRunAssistantTurnLocalAssistantCompletesMultiToolLoop(t *testing.T) {
 		messages, _ := payload["messages"].([]any)
 		switch call {
 		case 1:
-			if got := intFromAny(payload["max_tokens"], -1); got != assistantLLMDirectMaxTokens {
-				t.Fatalf("initial tool-aware max_tokens = %d, want %d", got, assistantLLMDirectMaxTokens)
+			if got := intFromAny(payload["max_tokens"], -1); got != assistantLLMToolPlanMaxTokens {
+				t.Fatalf("initial tool-aware max_tokens = %d, want %d", got, assistantLLMToolPlanMaxTokens)
 			}
 			if _, ok := payload["tools"]; ok {
 				t.Fatal("initial local request should not send OpenAI tool definitions")

@@ -26,16 +26,18 @@ type localAssistantExecutableTool struct {
 }
 
 type localAssistantToolCatalog struct {
-	Family      localAssistantToolFamily
-	Definitions []map[string]any
-	ToolsByName map[string]localAssistantExecutableTool
+	Family              localAssistantToolFamily
+	RenderGeneratedText bool
+	Definitions         []map[string]any
+	ToolsByName         map[string]localAssistantExecutableTool
 }
 
-func (a *App) buildLocalAssistantToolCatalog(state localAssistantTurnState, family localAssistantToolFamily) (localAssistantToolCatalog, error) {
+func (a *App) buildLocalAssistantToolCatalog(state localAssistantTurnState, family localAssistantToolFamily, userText string) (localAssistantToolCatalog, error) {
 	out := localAssistantToolCatalog{
-		Family:      family,
-		Definitions: nil,
-		ToolsByName: map[string]localAssistantExecutableTool{},
+		Family:              family,
+		RenderGeneratedText: family == localAssistantToolFamilyCanvas && localAssistantCanvasShouldRenderGeneratedText(userText),
+		Definitions:         nil,
+		ToolsByName:         map[string]localAssistantExecutableTool{},
 	}
 	for _, tool := range localAssistantCoreTools(state, family) {
 		out.add(tool)
@@ -58,7 +60,6 @@ func localAssistantCoreTools(state localAssistantTurnState, family localAssistan
 	case localAssistantToolFamilyCanvas:
 		return []localAssistantExecutableTool{
 			localAssistantWorkspaceReadTool(),
-			localAssistantCanvasWriteTextTool(state),
 			localAssistantSystemActionTool("open_file_canvas"),
 			localAssistantSystemActionTool("navigate_canvas"),
 		}
@@ -473,7 +474,11 @@ func buildLocalAssistantToolPolicy(catalog localAssistantToolCatalog) string {
 		"- Never mix prose with tool JSON.",
 		"- After tool results arrive, either call another tool with the same JSON shape or answer plainly.",
 	}
-	lines = append(lines, localAssistantFamilyPolicyLines(catalog.Family)...)
+	if catalog.Family == localAssistantToolFamilyCanvas {
+		lines = append(lines, localAssistantCanvasPolicyLines(catalog.RenderGeneratedText)...)
+	} else {
+		lines = append(lines, localAssistantFamilyPolicyLines(catalog.Family)...)
+	}
 	lines = append(lines, localAssistantToolCatalogLines(catalog)...)
 	return strings.TrimSpace(strings.Join(lines, "\n"))
 }
@@ -481,15 +486,11 @@ func buildLocalAssistantToolPolicy(catalog localAssistantToolCatalog) string {
 func localAssistantFamilyPolicyLines(family localAssistantToolFamily) []string {
 	switch family {
 	case localAssistantToolFamilyCanvas:
-		return []string{
-			"- This is a canvas request.",
-			"- Use canvas_write_text for new generated text, diagrams, schematics, or ASCII sketches on canvas.",
-			"- Use action__open_file_canvas only for an existing workspace file.",
-			"- Use workspace_read first only if you genuinely need to inspect or find a file path.",
-		}
+		return localAssistantCanvasPolicyLines(false)
 	case localAssistantToolFamilyWorkspace:
 		return []string{
 			"- This is a workspace file request.",
+			"- The first valid response must use the workspace tool when inspection is needed.",
 			"- Use workspace_read instead of shell for listing files, reading files, or finding a path.",
 			"- Use action__open_file_canvas only when the user wants an existing file shown on canvas.",
 		}
@@ -511,6 +512,42 @@ func localAssistantFamilyPolicyLines(family localAssistantToolFamily) []string {
 	default:
 		return nil
 	}
+}
+
+func localAssistantCanvasPolicyLines(directRender bool) []string {
+	if directRender {
+		return []string{
+			"- This is a canvas request.",
+			"- The user wants new generated content on canvas.",
+			"- Reply with the exact canvas text only. Do not return tool JSON, promises, or explanations.",
+			"- Do not add any intro or outro. Write only the artifact body that should appear on canvas.",
+			"- Use action__open_file_canvas only for an existing workspace file.",
+			"- Use workspace_read first only if you genuinely need to inspect or find a file path.",
+		}
+	}
+	return []string{
+		"- This is a canvas request.",
+		"- The first valid response must use a tool, not a promise or explanation.",
+		"- Use action__open_file_canvas only for an existing workspace file.",
+		"- Use workspace_read first only if you genuinely need to inspect or find a file path.",
+	}
+}
+
+func localAssistantCanvasShouldRenderGeneratedText(text string) bool {
+	lower := strings.ToLower(strings.TrimSpace(normalizeLocalAssistantAddress(text)))
+	if lower == "" {
+		return false
+	}
+	if containsAnyLocalAssistantKeyword(lower,
+		"readme", "pdf", "image", "document", "file", "path",
+		"datei", "dokument", "bild", "pfad",
+	) {
+		return false
+	}
+	return containsAnyLocalAssistantKeyword(lower,
+		"canvas", "draw ", "render ", "display ", "show ", "sketch", "diagram", "flowchart", "schematic",
+		"zeichne", "rendere", "darstell", "skizziere", "diagramm", "flussdiagramm", "schema", "schaubild",
+	)
 }
 
 func localAssistantToolCatalogLines(catalog localAssistantToolCatalog) []string {

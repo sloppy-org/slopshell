@@ -173,8 +173,8 @@ export async function waitForAssistantReply(
   return String(await assistantRows.last().textContent() || '').trim();
 }
 
-export async function browserWsTtsToStt(page: Page, text: string, mode: 'http' | 'ws') {
-  return page.evaluate(async ({ prompt, routeMode }) => {
+export async function browserWsTtsToStt(page: Page, text: string, mode: 'http' | 'ws', lang = 'en') {
+  return page.evaluate(async ({ prompt, routeMode, ttsLang }) => {
     const runtimeResp = await fetch('/api/runtime/workspaces');
     if (!runtimeResp.ok) {
       throw new Error(`/api/runtime/workspaces failed: HTTP ${runtimeResp.status}`);
@@ -252,7 +252,7 @@ export async function browserWsTtsToStt(page: Page, text: string, mode: 'http' |
     }
 
     const ttsWS = await openSocket();
-    ttsWS.send(JSON.stringify({ type: 'tts_speak', text: prompt, lang: 'en' }));
+    ttsWS.send(JSON.stringify({ type: 'tts_speak', text: prompt, lang: ttsLang }));
     const wav = await waitForBinary(ttsWS, 30_000);
     ttsWS.close();
 
@@ -290,5 +290,41 @@ export async function browserWsTtsToStt(page: Page, text: string, mode: 'http' |
       status: result?.type,
       transcript: String(result?.text || '').trim(),
     };
-  }, { prompt: text, routeMode: mode });
+  }, { prompt: text, routeMode: mode, ttsLang: lang });
+}
+
+export async function submitVoiceTranscript(
+  page: Page,
+  text: string,
+  options: { silent?: boolean; fast?: boolean } = {},
+) {
+  return page.evaluate(async ({ prompt, silentMode, fastMode }) => {
+    const runtimeResp = await fetch('/api/runtime/workspaces');
+    if (!runtimeResp.ok) {
+      throw new Error(`/api/runtime/workspaces failed: HTTP ${runtimeResp.status}`);
+    }
+    const runtimeBody = await runtimeResp.json();
+    const sessionID = String(runtimeBody?.workspaces?.[0]?.chat_session_id || '').trim();
+    if (!sessionID) {
+      throw new Error('chat_session_id missing from runtime workspaces');
+    }
+    const resp = await fetch(`/api/chat/sessions/${encodeURIComponent(sessionID)}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text: prompt,
+        output_mode: silentMode ? 'silent' : 'voice',
+        capture_mode: 'voice',
+        fast_mode: fastMode,
+      }),
+    });
+    return {
+      status: resp.status,
+      body: await resp.text(),
+    };
+  }, {
+    prompt: text,
+    silentMode: options.silent !== false,
+    fastMode: Boolean(options.fast),
+  });
 }

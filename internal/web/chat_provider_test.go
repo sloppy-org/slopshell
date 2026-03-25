@@ -78,9 +78,6 @@ func TestLocalAssistantTurnHandlesCanvasWriteTextTool(t *testing.T) {
 			t.Fatalf("tool name = %q, want canvas_artifact_show", got)
 		}
 		args, _ := params["arguments"].(map[string]any)
-		if got := strings.TrimSpace(strFromAny(args["title"])); got != "Tool Test" {
-			t.Fatalf("canvas title = %q, want Tool Test", got)
-		}
 		if got := strings.TrimSpace(strFromAny(args["markdown_or_text"])); got != "Orbit Canvas" {
 			t.Fatalf("canvas body = %q, want Orbit Canvas", got)
 		}
@@ -97,22 +94,10 @@ func TestLocalAssistantTurnHandlesCanvasWriteTextTool(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			t.Fatalf("decode llm payload: %v", err)
 		}
-		messages, _ := payload["messages"].([]any)
-		last, _ := messages[len(messages)-1].(map[string]any)
-		if strings.Contains(strings.TrimSpace(strFromAny(last["content"])), `"ok":true`) {
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"choices": []map[string]any{{
-					"message": map[string]any{
-						"content": "DONE",
-					},
-				}},
-			})
-			return
-		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"choices": []map[string]any{{
 				"message": map[string]any{
-					"content": `{"tool_calls":[{"name":"canvas_write_text","arguments":{"title":"Tool Test","content":"Orbit Canvas"}}]}`,
+					"content": "Orbit Canvas",
 				},
 			}},
 		})
@@ -150,8 +135,8 @@ func TestLocalAssistantTurnHandlesCanvasWriteTextTool(t *testing.T) {
 		t.Fatalf("system action name = %q, want canvas_artifact_show", got)
 	}
 	payload := waitForWSJSONMessageType(t, clientConn, 2*time.Second, "assistant_output")
-	if got := strFromAny(payload["message"]); got != "DONE" {
-		t.Fatalf("assistant message = %q, want DONE", got)
+	if got := strFromAny(payload["message"]); got != "Shown on canvas." {
+		t.Fatalf("assistant message = %q, want Shown on canvas.", got)
 	}
 	if mcpCalls.Load() != 1 {
 		t.Fatalf("mcp call count = %d, want 1", mcpCalls.Load())

@@ -30,12 +30,10 @@ type localAssistantLLMToolCall struct {
 	Type     string                        `json:"type,omitempty"`
 	Function localAssistantLLMFunctionCall `json:"function"`
 }
-
 type localAssistantLLMFunctionCall struct {
 	Name      string `json:"name,omitempty"`
 	Arguments string `json:"arguments,omitempty"`
 }
-
 type localAssistantDecision struct {
 	FinalText string
 	ToolCalls []localAssistantToolCall
@@ -127,6 +125,26 @@ func parseLocalAssistantDecision(message localIntentLLMMessage) (localAssistantD
 				}
 				return localAssistantDecision{ToolCalls: calls}, nil
 			}
+			if _, ok := typed["name"]; ok {
+				calls, err := parseLocalAssistantToolCallsAny(typed)
+				if err != nil {
+					return localAssistantDecision{}, err
+				}
+				return localAssistantDecision{ToolCalls: calls}, nil
+			}
+			if _, ok := typed["function"]; ok {
+				calls, err := parseLocalAssistantToolCallsAny(typed)
+				if err != nil {
+					return localAssistantDecision{}, err
+				}
+				return localAssistantDecision{ToolCalls: calls}, nil
+			}
+		case []any:
+			calls, err := parseLocalAssistantToolCallsAny(typed)
+			if err != nil {
+				return localAssistantDecision{}, err
+			}
+			return localAssistantDecision{ToolCalls: calls}, nil
 		}
 	}
 	if looksLikeMalformedLocalAssistantToolResponse(content) {
@@ -152,7 +170,7 @@ func looksLikeMalformedLocalAssistantToolResponse(raw string) bool {
 	if trimmed == "" {
 		return false
 	}
-	if strings.HasPrefix(trimmed, "{") || strings.HasPrefix(trimmed, "[") {
+	if strings.HasPrefix(trimmed, "{") {
 		return true
 	}
 	lower := strings.ToLower(trimmed)
@@ -300,53 +318,6 @@ func localAssistantRepairPrompt(err error) string {
 	)
 }
 
-func localAssistantToolRequiredPrompt() string {
-	return "A tool is required for the user's request. Do not describe a plan. Call the correct explicit tool now, then finish with a short final reply."
-}
-
-func localAssistantLooksLikeToolPlanning(text string) bool {
-	lower := strings.ToLower(strings.TrimSpace(text))
-	if lower == "" {
-		return false
-	}
-	markers := []string{
-		"i need to",
-		"let me",
-		"i'll",
-		"i will",
-		"first,",
-		"first ",
-		"i should",
-		"search for",
-		"find a",
-		"find the",
-	}
-	for _, marker := range markers {
-		if strings.Contains(lower, marker) {
-			return true
-		}
-	}
-	return false
-}
-
-func stripLocalAssistantThinkingPreamble(raw string) string {
-	if strings.TrimSpace(raw) == "" {
-		return ""
-	}
-	clean := strings.TrimLeft(raw, " \t\r\n")
-	if strings.HasPrefix(clean, "<think>") {
-		if idx := strings.Index(clean, "</think>"); idx >= 0 {
-			clean = clean[idx+len("</think>"):]
-		}
-		return strings.TrimLeft(clean, " \t\r\n")
-	}
-	if strings.HasPrefix(clean, "</think>") {
-		clean = clean[len("</think>"):]
-		return strings.TrimLeft(clean, " \t\r\n")
-	}
-	return raw
-}
-
 func (a *App) runLocalAssistantToolLoop(ctx context.Context, req *assistantTurnRequest, prompt string, visual *chatVisualAttachment, onDelta func(fullText string, delta string)) (string, error) {
 	if a == nil || req == nil {
 		return "", errors.New("assistant turn request is required")
@@ -360,17 +331,29 @@ func (a *App) runLocalAssistantToolLoop(ctx context.Context, req *assistantTurnR
 		toolText = strings.TrimSpace(req.promptText)
 	}
 	toolText = normalizeLocalAssistantAddress(toolText)
-	family := selectLocalAssistantToolFamily(toolText)
+	toolUserPrompt := localAssistantToolUserPrompt(req, prompt)
+	familyInput := toolUserPrompt
+	if strings.TrimSpace(familyInput) == "" {
+		familyInput = toolText
+	}
+	family := selectLocalAssistantToolFamily(familyInput)
 	catalog := localAssistantToolCatalog{Family: family, ToolsByName: map[string]localAssistantExecutableTool{}}
 	if family != localAssistantToolFamilyNone {
-		catalog, err = a.buildLocalAssistantToolCatalog(state, family)
+		catalog, err = a.buildLocalAssistantToolCatalog(state, family, familyInput)
 		if err != nil {
 			return "", err
 		}
 	}
+	if catalog.RenderGeneratedText {
+		return a.runLocalAssistantGeneratedCanvasTurn(ctx, req, visual, state, toolUserPrompt)
+	}
+	userPrompt := strings.TrimSpace(prompt)
+	if family != localAssistantToolFamilyNone {
+		userPrompt = toolUserPrompt
+	}
 	conversation := []map[string]any{
 		{"role": "system", "content": buildLocalAssistantDialoguePrompt(buildLocalAssistantToolPolicy(catalog), localAssistantReasoningHint(req))},
-		{"role": "user", "content": buildLocalAssistantUserContent(prompt, visual)},
+		{"role": "user", "content": buildLocalAssistantUserContent(userPrompt, visual)},
 	}
 	enableThinking := localAssistantThinkingEnabled(req)
 	if req.fastMode {
@@ -392,9 +375,12 @@ func (a *App) runLocalAssistantToolLoop(ctx context.Context, req *assistantTurnR
 	malformedRetries := 0
 	toolRequired := family != localAssistantToolFamilyNone && len(catalog.Definitions) > 0
 	toolPlanRetries := 0
+	toolExecuted := false
 	for round := 0; round < assistantLLMMaxToolRounds; round++ {
 		maxTokens := assistantLLMDirectMaxTokens
-		if round > 0 {
+		if toolRequired && !toolExecuted {
+			maxTokens = localAssistantInitialToolMaxTokens(family)
+		} else if round > 0 {
 			maxTokens = assistantLLMToolMaxTokens
 		}
 		emitDelta := onDelta
@@ -407,6 +393,15 @@ func (a *App) runLocalAssistantToolLoop(ctx context.Context, req *assistantTurnR
 		}
 		decision, err := parseLocalAssistantDecision(message)
 		if err != nil {
+			if catalog.RenderGeneratedText {
+				if recovered, ok := recoverLocalAssistantCanvasTextFromMalformedToolOutput(message.Content); ok {
+					confirmation, renderErr := a.renderLocalAssistantCanvasText(ctx, &state, recovered)
+					if renderErr != nil {
+						return "", renderErr
+					}
+					return confirmation, nil
+				}
+			}
 			if errors.Is(err, errLocalAssistantUnsupportedResponse) {
 				return "", err
 			}
@@ -422,7 +417,23 @@ func (a *App) runLocalAssistantToolLoop(ctx context.Context, req *assistantTurnR
 			continue
 		}
 		if text := strings.TrimSpace(decision.FinalText); text != "" {
-			if toolRequired && toolPlanRetries == 0 && localAssistantLooksLikeToolPlanning(text) {
+			if catalog.RenderGeneratedText && !toolExecuted {
+				confirmation, retryPrompt, renderErr := a.handleLocalAssistantGeneratedCanvasText(ctx, &state, toolText, text, toolPlanRetries)
+				if renderErr != nil {
+					return "", renderErr
+				}
+				if retryPrompt != "" {
+					toolPlanRetries++
+					conversation = append(conversation, localAssistantAssistantMessage(message))
+					conversation = append(conversation, map[string]any{
+						"role":    "user",
+						"content": retryPrompt,
+					})
+					continue
+				}
+				return confirmation, nil
+			}
+			if toolRequired && !toolExecuted && toolPlanRetries == 0 {
 				toolPlanRetries++
 				conversation = append(conversation, localAssistantAssistantMessage(message))
 				conversation = append(conversation, map[string]any{
@@ -430,6 +441,9 @@ func (a *App) runLocalAssistantToolLoop(ctx context.Context, req *assistantTurnR
 					"content": localAssistantToolRequiredPrompt(),
 				})
 				continue
+			}
+			if toolRequired && !toolExecuted {
+				return "", errors.New("local assistant answered without calling the required tool")
 			}
 			return text, nil
 		}
@@ -443,6 +457,7 @@ func (a *App) runLocalAssistantToolLoop(ctx context.Context, req *assistantTurnR
 			if execErr != nil {
 				return "", execErr
 			}
+			toolExecuted = true
 			for _, resultPayload := range localAssistantToolPayloads(result, state.workspace.ID) {
 				if resultPayload == nil {
 					continue

@@ -17,6 +17,7 @@ const (
 	defaultAssistantLLMTimeout       = 2 * time.Minute
 	assistantLLMFastMaxTokens        = 512
 	assistantLLMDirectMaxTokens      = 1024
+	assistantLLMToolPlanMaxTokens    = 256
 	assistantLLMToolMaxTokens        = 1024
 	assistantLLMResponseLimit        = 256 * 1024
 	assistantLLMMaxToolRounds        = 6
