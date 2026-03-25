@@ -338,7 +338,7 @@ test('dialogue tap starts local capture with the tapped cursor context', async (
   });
 });
 
-test('meeting taps move the pinned cursor and start immediate prompt capture', async ({ page }) => {
+test('meeting taps stay inert and do not start prompt capture', async ({ page }) => {
   await setLiveMode(page, 'meeting');
   await renderTestArtifact(page);
   await clearLog(page);
@@ -350,21 +350,12 @@ test('meeting taps move the pinned cursor and start immediate prompt capture', a
 
   await page.mouse.click(firstX, firstY);
   await page.waitForTimeout(120);
-  const firstDot = await currentDotPosition(page);
-
   await page.mouse.click(secondX, secondY);
   await page.waitForTimeout(120);
-  const secondDot = await currentDotPosition(page);
 
   const log = await getLog(page);
-  expect(log.some((entry) => entry.type === 'recorder' && entry.action === 'start')).toBe(true);
-  expect(log.filter((entry) => entry.type === 'canvas_position')).toHaveLength(2);
-  expect(String(firstDot?.indicatorClass || '')).toMatch(/is-(cursor|recording)/);
-  expect(String(secondDot?.indicatorClass || '')).toMatch(/is-(cursor|recording)/);
-  expect(firstDot?.left).toBe(`${firstX}px`);
-  expect(firstDot?.top).toBe(`${firstY}px`);
-  expect(secondDot?.left).toBe(`${secondX}px`);
-  expect(secondDot?.top).toBe(`${secondY}px`);
+  expect(log.some((entry) => entry.type === 'recorder' && entry.action === 'start')).toBe(false);
+  expect(log.some((entry) => entry.type === 'canvas_position')).toBe(false);
 });
 
 test('request_position stays local in annotation tools instead of dispatching a reply', async ({ page }) => {
@@ -421,7 +412,7 @@ test('request_position in prompt tool starts a local capture instead of streamin
   });
 });
 
-test('meeting image taps include a visual snapshot for multimodal reasoning', async ({ page }) => {
+test('meeting image taps do not dispatch canvas cursor prompts', async ({ page }) => {
   await setLiveMode(page, 'meeting');
   await renderImageArtifactMock(page);
   await clearLog(page);
@@ -433,20 +424,13 @@ test('meeting image taps include a visual snapshot for multimodal reasoning', as
     return image instanceof HTMLImageElement ? image.naturalWidth : 0;
   })).toBeGreaterThan(0);
   await page.mouse.click((imageBox?.x || 0) + (imageBox?.width || 0) * 0.5, (imageBox?.y || 0) + (imageBox?.height || 0) * 0.5);
-  await expect.poll(async () => {
-    const log = await getLog(page);
-    return log.find((entry) => entry.type === 'canvas_position' && String(entry.snapshot_data_url || '').startsWith('data:image/png;base64,')) || null;
-  }).not.toBeNull();
-
+  await page.waitForTimeout(200);
   const log = await getLog(page);
-  const entry = log.find((item) => item.type === 'canvas_position' && String(item.snapshot_data_url || '').startsWith('data:image/png;base64,'));
-  expect(String(entry?.snapshot_data_url || '')).toContain('data:image/png;base64,');
-  expect(entry?.cursor).toMatchObject({
-    title: 'test-image.png',
-  });
+  expect(log.some((entry) => entry.type === 'canvas_position')).toBe(false);
+  expect(log.some((entry) => entry.type === 'recorder' && entry.action === 'start')).toBe(false);
 });
 
-test('pdf meeting taps include a visual snapshot for multimodal reasoning', async ({ page }) => {
+test('pdf meeting taps do not dispatch canvas cursor prompts', async ({ page }) => {
   await setLiveMode(page, 'meeting');
   await renderPdfArtifactMock(page);
   await clearLog(page);
@@ -454,18 +438,10 @@ test('pdf meeting taps include a visual snapshot for multimodal reasoning', asyn
   const pageBox = await page.locator('#canvas-pdf .canvas-pdf-page-inner').boundingBox();
   expect(pageBox).not.toBeNull();
   await page.mouse.click((pageBox?.x || 0) + (pageBox?.width || 0) * 0.35, (pageBox?.y || 0) + (pageBox?.height || 0) * 0.25);
-  await expect.poll(async () => {
-    const log = await getLog(page);
-    return log.find((entry) => entry.type === 'canvas_position') || null;
-  }).not.toBeNull();
-
+  await page.waitForTimeout(200);
   const log = await getLog(page);
-  const entry = log.find((item) => item.type === 'canvas_position');
-  expect(String(entry?.snapshot_data_url || '')).toContain('data:image/png;base64,');
-  expect(entry?.cursor).toMatchObject({
-    title: 'test.pdf',
-    page: 1,
-  });
+  expect(log.some((entry) => entry.type === 'canvas_position')).toBe(false);
+  expect(log.some((entry) => entry.type === 'recorder' && entry.action === 'start')).toBe(false);
 });
 
 test('markdown image paths are rewritten through the canvas file proxy', async ({ page }) => {

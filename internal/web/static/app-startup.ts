@@ -19,6 +19,7 @@ const consumeRuntimeReloadContext = (...args) => refs.consumeRuntimeReloadContex
 const fetchRuntimeMeta = (...args) => refs.fetchRuntimeMeta(...args);
 const applyRuntimePreferences = (...args) => refs.applyRuntimePreferences(...args);
 const initHotwordLifecycle = (...args) => refs.initHotwordLifecycle(...args);
+const ensureDefaultConversationRuntime = (...args) => refs.ensureDefaultConversationRuntime(...args);
 const resolveInitialWorkspaceID = (...args) => refs.resolveInitialWorkspaceID(...args);
 const applyRuntimeReasoningEffortOptions = (...args) => refs.applyRuntimeReasoningEffortOptions(...args);
 const fetchProjects = (...args) => refs.fetchProjects(...args);
@@ -87,6 +88,11 @@ function showSplash() {
   window.setTimeout(() => splash.remove(), 1700);
 }
 
+function shouldForceDefaultConversationRuntime() {
+  const path = String(window.location.pathname || '').trim();
+  return !path.includes('/tests/playwright/harness.html');
+}
+
 async function init() {
   state.pendingRuntimeReloadContext = consumeRuntimeReloadContext();
   setSomedayReviewNudgeEnabled(readSomedayReviewNudgePreference(), { persist: false });
@@ -129,6 +135,9 @@ async function init() {
   const initialWorkspaceID = resolveInitialWorkspaceID();
   if (!initialWorkspaceID) throw new Error('no workspaces available');
   await switchProject(initialWorkspaceID);
+  if (shouldForceDefaultConversationRuntime()) {
+    await ensureDefaultConversationRuntime();
+  }
   if (isMobileSilent()) {
     const edgeRight = document.getElementById('edge-right');
     if (edgeRight) edgeRight.classList.add('edge-pinned');

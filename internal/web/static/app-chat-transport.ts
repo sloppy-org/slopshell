@@ -21,6 +21,7 @@ const loadChatHistory = (...args) => refs.loadChatHistory(...args);
 const refreshAssistantActivity = (...args) => refs.refreshAssistantActivity(...args);
 const refreshCompanionState = (...args) => refs.refreshCompanionState(...args);
 const enqueueTTSAudio = (...args) => refs.enqueueTTSAudio(...args);
+const beginTTSTurn = (...args) => refs.beginTTSTurn(...args);
 const setTTSSpeakLang = (...args) => refs.setTTSSpeakLang(...args);
 const getTTSLastSpeakText = (...args) => refs.getTTSLastSpeakText(...args);
 const flushTTSChunker = (...args) => refs.flushTTSChunker(...args);
@@ -96,6 +97,7 @@ const openWorkspaceSidebarFile = (...args) => refs.openWorkspaceSidebarFile(...a
 const renderToolPalette = (...args) => refs.renderToolPalette(...args);
 const stepCanvasFile = (...args) => refs.stepCanvasFile(...args);
 const stepCanvasArtifact = (...args) => refs.stepCanvasArtifact(...args);
+const ensureDefaultConversationRuntimeActivation = (...args) => refs.ensureDefaultConversationRuntimeActivation(...args);
 
 export function closeChatWs() {
   state.chatWsToken += 1;
@@ -197,6 +199,9 @@ export function openChatWs() {
       state.pendingRuntimeReloadStatus = '';
     }
     void refreshAssistantActivity();
+    if (state.livePolicy === LIVE_SESSION_MODE_MEETING) {
+      void ensureDefaultConversationRuntimeActivation().catch(() => {});
+    }
     if (isReconnect) {
       resetAssistantTurnTracking();
       void loadChatHistory().catch((err) => {
@@ -630,6 +635,7 @@ export function handleChatEvent(payload) {
     state.turnFirstResponseShown = false;
     // Reset TTS state for new turn
     stopTTSPlayback();
+    beginTTSTurn();
     hideOverlay();
     return;
   }

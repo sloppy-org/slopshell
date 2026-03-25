@@ -2,6 +2,7 @@ import { getState, setAppRefs } from './app-context.js';
 import * as ttsModule from './app-tts.js';
 import * as interactionModule from './app-interaction.js';
 import * as runtimeShellModule from './app-runtime-shell.js';
+import * as runtimeDefaultsModule from './app-runtime-defaults.js';
 import * as runtimeUiModule from './app-runtime-ui.js';
 import * as dialogueDiagnosticsModule from './app-dialogue-diagnostics.js';
 import * as voiceModule from './app-voice.js';
@@ -32,6 +33,7 @@ setAppRefs({
   ...ttsModule,
   ...interactionModule,
   ...runtimeShellModule,
+  ...runtimeDefaultsModule,
   ...runtimeUiModule,
   ...dialogueDiagnosticsModule,
   ...voiceModule,

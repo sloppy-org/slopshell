@@ -96,9 +96,10 @@ export async function stopLiveMode(page: Page, mode: 'dialogue' | 'meeting') {
   await switchToWorkspace(page, 'test');
   await waitForCircleControls(page);
   const segment = circleSegment(page, mode);
-  if (await segment.getAttribute('aria-pressed') === 'true') {
-    await clickCircleSegment(page, mode);
-  }
+  await page.evaluate(async () => {
+    const mod = await import('/internal/web/static/app-workspace-runtime.js');
+    await mod.deactivateLiveSession({ disableMeetingConfig: true, silent: true });
+  });
   await expect(page.locator(LIVE_STATUS_SELECTOR)).toContainText('Manual');
   await expect(segment).toHaveAttribute('aria-pressed', 'false');
 }

@@ -493,6 +493,7 @@ func localAssistantFamilyPolicyLines(family localAssistantToolFamily) []string {
 			"- The first valid response must use the workspace tool when inspection is needed.",
 			"- Use workspace_read instead of shell for listing files, reading files, or finding a path.",
 			"- Use action__open_file_canvas only when the user wants an existing file shown on canvas.",
+			"- For explicit open or display requests, call action__open_file_canvas with the best file path you have. A simple filename such as README or README.md is acceptable.",
 		}
 	case localAssistantToolFamilyShell:
 		return []string{
@@ -530,6 +531,7 @@ func localAssistantCanvasPolicyLines(directRender bool) []string {
 		"- The first valid response must use a tool, not a promise or explanation.",
 		"- Use action__open_file_canvas only for an existing workspace file.",
 		"- Use workspace_read first only if you genuinely need to inspect or find a file path.",
+		"- For explicit open or display requests, call action__open_file_canvas with the best file path you have. A simple filename such as README or README.md is acceptable.",
 	}
 }
 

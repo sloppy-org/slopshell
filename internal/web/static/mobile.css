@@ -1,6 +1,6 @@
 @media (max-width: 767px) {
   .companion-idle-surface {
-    --companion-surface-margin: 1rem;
+    --companion-surface-margin: 1.7rem;
   }
 
   .companion-idle-shell {

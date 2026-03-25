@@ -74,13 +74,20 @@ export async function setLiveSession(
   pointer: PointerMode = 'mouse',
 ) {
   const target = circleSegment(page, mode);
-  const expected = enabled ? 'true' : 'false';
-  if ((await target.getAttribute('aria-pressed')) !== expected) {
-    await clickCircleSegment(page, mode, pointer);
+  if (enabled) {
+    if ((await target.getAttribute('aria-pressed')) !== 'true') {
+      await clickCircleSegment(page, mode, pointer);
+    }
+    await expect(target).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('#edge-top-models .edge-live-status')).toContainText(mode === 'meeting' ? 'Meeting' : 'Dialogue');
+    return;
   }
-  await expect(target).toHaveAttribute('aria-pressed', expected);
-  const label = enabled ? (mode === 'meeting' ? 'Meeting' : 'Dialogue') : 'Manual';
-  await expect(page.locator('#edge-top-models .edge-live-status')).toContainText(label);
+  await page.evaluate(async () => {
+    const mod = await import('/internal/web/static/app-workspace-runtime.js');
+    await mod.deactivateLiveSession({ disableMeetingConfig: true, silent: true });
+  });
+  await expect(target).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('#edge-top-models .edge-live-status')).toContainText('Manual');
 }
 
 export async function setInteractionTool(
@@ -94,8 +101,7 @@ export async function setInteractionTool(
 
 export async function resetCircleRuntimeState(page: Page, pointer: PointerMode = 'mouse') {
   await openCircle(page, pointer);
-  await setLiveSession(page, 'meeting', false, pointer);
-  await setLiveSession(page, 'dialogue', false, pointer);
+  await setLiveSession(page, 'meeting', true, pointer);
   await setCircleToggle(page, 'silent', false, pointer);
   await setCircleToggle(page, 'fast', false, pointer);
   await setInteractionTool(page, 'pointer', pointer);

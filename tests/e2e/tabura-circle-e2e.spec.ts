@@ -19,6 +19,18 @@ test.describe('Tabura Circle live runtime @local-only', () => {
     sessionToken = await authenticate();
   });
 
+  test('page opens in meeting mode with silent and fast off', async ({ page }) => {
+    await openLiveApp(page, sessionToken);
+    await waitForLiveAppReady(page);
+    await expect.poll(async () => {
+      return String(await page.locator('#edge-top-models .edge-live-status').textContent() || '').trim();
+    }, { timeout: 15_000 }).toContain('Meeting');
+    await expect(circleSegment(page, 'meeting')).toHaveAttribute('aria-pressed', 'true');
+    await expect(circleSegment(page, 'silent')).toHaveAttribute('aria-pressed', 'false');
+    await expect(circleSegment(page, 'fast')).toHaveAttribute('aria-pressed', 'false');
+    await expect(page.locator('body')).not.toHaveClass(/silent-mode/);
+  });
+
   test('desktop clicks reach every segment state and persist across refresh', async ({ page }) => {
     await openLiveApp(page, sessionToken);
     await waitForLiveAppReady(page);
@@ -27,7 +39,6 @@ test.describe('Tabura Circle live runtime @local-only', () => {
 
     await setLiveSession(page, 'dialogue', true);
     await setLiveSession(page, 'meeting', true);
-    await setLiveSession(page, 'meeting', false);
 
     await setCircleToggle(page, 'silent', true);
     await setCircleToggle(page, 'fast', true);
@@ -44,8 +55,9 @@ test.describe('Tabura Circle live runtime @local-only', () => {
     await openLiveApp(page, sessionToken);
     await waitForLiveAppReady(page);
 
-    await expect(circleSegment(page, 'silent')).toHaveAttribute('aria-pressed', 'true');
-    await expect(circleSegment(page, 'fast')).toHaveAttribute('aria-pressed', 'true');
+    await expect(circleSegment(page, 'meeting')).toHaveAttribute('aria-pressed', 'true');
+    await expect(circleSegment(page, 'silent')).toHaveAttribute('aria-pressed', 'false');
+    await expect(circleSegment(page, 'fast')).toHaveAttribute('aria-pressed', 'false');
     await expect(page.locator('#tabura-circle-dot')).toHaveAttribute('data-tool', 'pointer');
   });
 });

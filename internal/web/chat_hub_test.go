@@ -902,8 +902,8 @@ func TestRunAssistantTurnOpenReadmeUsesExplicitToolsAndOpensCanvas(t *testing.T)
 
 	app.runAssistantTurn(session.ID, dequeuedTurn{outputMode: turnOutputModeVoice})
 
-	if llmCalls == 0 {
-		t.Fatalf("expected local assistant to be called")
+	if llmCalls != 0 {
+		t.Fatalf("expected direct open_file_canvas path without local assistant call, got %d llm calls", llmCalls)
 	}
 	if showCalls < 1 {
 		t.Fatalf("canvas_artifact_show calls = %d, want >= 1", showCalls)

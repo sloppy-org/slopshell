@@ -1890,6 +1890,51 @@ test.describe('mobile viewport', () => {
     expect(finalTTSCalls).toEqual(['Hello there.', 'How are you?']);
   });
 
+  test('streaming TTS keeps the primed German voice for the whole turn', async ({ page }) => {
+    await clearLog(page);
+    await page.evaluate(async () => {
+      const mod = await import('../../internal/web/static/app-tts.js');
+      const app = (window as any)._taburaApp;
+      const s = app.getState();
+      s.lastInputOrigin = 'voice';
+      s.voiceAwaitingTurn = true;
+      mod.primeTTSTurnLanguage('wie spaet ist es');
+    });
+
+    await injectChatEvent(page, { type: 'turn_started', turn_id: 'stream-lang-de-1', output_mode: 'voice' });
+    await injectChatEvent(page, {
+      type: 'assistant_message',
+      turn_id: 'stream-lang-de-1',
+      output_mode: 'voice',
+      message: 'Es ist',
+      delta: 'Es ist',
+    });
+    await injectChatEvent(page, {
+      type: 'assistant_message',
+      turn_id: 'stream-lang-de-1',
+      output_mode: 'voice',
+      message: 'Es ist jetzt kurz nach drei Uhr.',
+      delta: ' jetzt kurz nach drei Uhr.',
+    });
+
+    await expect.poll(async () => {
+      const log = await getLog(page);
+      return log.filter(e => e.type === 'tts').map(e => e.lang);
+    }).toEqual(['de']);
+
+    await injectChatEvent(page, {
+      type: 'assistant_output',
+      role: 'assistant',
+      turn_id: 'stream-lang-de-1',
+      output_mode: 'voice',
+      message: 'Es ist jetzt kurz nach drei Uhr.',
+      auto_canvas: false,
+    });
+
+    const ttsLangs = (await getLog(page)).filter(e => e.type === 'tts').map(e => e.lang);
+    expect(ttsLangs.every((lang) => lang === 'de')).toBe(true);
+  });
+
   test('pending assistant stream stays plain text until final markdown render', async ({ page }) => {
     await injectChatEvent(page, { type: 'turn_started', turn_id: 'pending-md-1' });
     await injectChatEvent(page, {
@@ -1959,6 +2004,44 @@ test.describe('mobile viewport', () => {
     await expect.poll(async () => page.evaluate(() => {
       return Boolean((window as any)._taburaApp?.getState?.().ttsPlaying);
     })).toBe(false);
+
+    const log = await getLog(page);
+    const recorderStarts = log.filter(e => e.type === 'recorder' && e.action === 'start');
+    expect(recorderStarts.length).toBe(0);
+  });
+
+  test('workspace tap stops speech but keeps meeting mode, canvas, and hotword active', async ({ page }) => {
+    await setLiveMode(page, 'meeting');
+    await renderTestArtifact(page, 'Persistent canvas artifact');
+    await expect.poll(async () => page.evaluate(() => Boolean((window as any).__isHotwordActive?.()))).toBe(true);
+    await page.evaluate(() => {
+      const app = (window as any)._taburaApp;
+      const state = app?.getState?.();
+      if (!state) return;
+      state.ttsPlaying = true;
+      state.lastInputOrigin = 'voice';
+    });
+    await clearLog(page);
+    await dispatchTouchTap(page, 187, 333);
+
+    await expect.poll(async () => page.evaluate(() => {
+      const app = (window as any)._taburaApp;
+      const state = app?.getState?.();
+      const canvasText = document.getElementById('canvas-text');
+      return {
+        ttsPlaying: Boolean(state?.ttsPlaying),
+        liveSessionActive: Boolean(state?.liveSessionActive),
+        liveSessionMode: String(state?.liveSessionMode || ''),
+        artifactVisible: Boolean(canvasText && canvasText.classList.contains('is-active')),
+        hotwordActive: Boolean((window as any).__isHotwordActive?.()),
+      };
+    })).toEqual({
+      ttsPlaying: false,
+      liveSessionActive: true,
+      liveSessionMode: 'meeting',
+      artifactVisible: true,
+      hotwordActive: true,
+    });
 
     const log = await getLog(page);
     const recorderStarts = log.filter(e => e.type === 'recorder' && e.action === 'start');

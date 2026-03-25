@@ -44,6 +44,11 @@ func TestSelectLocalAssistantToolFamilySupportsGermanCanvasRequests(t *testing.T
 			want: localAssistantToolFamilyCanvas,
 		},
 		{
+			name: "english open file canvas",
+			text: "Display the README on canvas.",
+			want: localAssistantToolFamilyCanvas,
+		},
+		{
 			name: "german workspace files",
 			text: "Welche Dateien sind in diesem Verzeichnis?",
 			want: localAssistantToolFamilyWorkspace,
@@ -111,6 +116,24 @@ func TestNormalizeLocalAssistantAddressSupportsVisibleNames(t *testing.T) {
 	for _, tt := range tests {
 		if got := normalizeLocalAssistantAddress(tt.text); got != tt.want {
 			t.Fatalf("normalizeLocalAssistantAddress(%q) = %q, want %q", tt.text, got, tt.want)
+		}
+	}
+}
+
+func TestLocalAssistantDirectOpenFileHint(t *testing.T) {
+	tests := []struct {
+		text   string
+		family localAssistantToolFamily
+		want   string
+	}{
+		{text: "Display the README on canvas.", family: localAssistantToolFamilyCanvas, want: "README"},
+		{text: "Open docs/guide.md on canvas.", family: localAssistantToolFamilyCanvas, want: "docs/guide.md"},
+		{text: "Öffne \"notes/summary.md\" auf der Canvas.", family: localAssistantToolFamilyCanvas, want: "notes/summary.md"},
+		{text: "Draw a flowchart on the canvas.", family: localAssistantToolFamilyCanvas, want: ""},
+	}
+	for _, tt := range tests {
+		if got := localAssistantDirectOpenFileHint(tt.text, tt.family); got != tt.want {
+			t.Fatalf("localAssistantDirectOpenFileHint(%q, %q) = %q, want %q", tt.text, tt.family, got, tt.want)
 		}
 	}
 }

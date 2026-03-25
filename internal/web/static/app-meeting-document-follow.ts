@@ -19,6 +19,18 @@ let viewportTimer = 0;
 let followTimer = 0;
 let lastPositionKey = '';
 
+function hasTrackableMeetingDocument() {
+  if (!trackingActive || !state.liveSessionActive || state.liveSessionMode !== 'meeting') return false;
+  if (!state.hasArtifact) return false;
+  const artifact = (state.currentCanvasArtifact || {}) as Record<string, any>;
+  const kind = String(artifact.kind || artifact.artifactKind || '').trim().toLowerCase();
+  if (kind !== 'text_artifact' && kind !== 'text') {
+    return false;
+  }
+  const ref = String(artifact.path || artifact.title || '').trim();
+  return ref !== '';
+}
+
 function normalizeGesture(raw, fallback = 'viewport_change') {
   const value = String(raw || '').trim().toLowerCase();
   return value || fallback;
@@ -39,6 +51,7 @@ function positionKeyForAnchor(anchor) {
 }
 
 function broadcastCurrentDocumentPosition(gesture = 'viewport_change', { force = false } = {}) {
+  if (!hasTrackableMeetingDocument()) return false;
   const anchor = getCanvasDocumentPositionAnchor();
   if (!anchor) return false;
   const key = positionKeyForAnchor(anchor);
@@ -54,7 +67,7 @@ function broadcastCurrentDocumentPosition(gesture = 'viewport_change', { force =
 }
 
 function scheduleViewportPositionBroadcast(gesture = 'viewport_change') {
-  if (!trackingActive) return;
+  if (!hasTrackableMeetingDocument()) return;
   if (viewportTimer) {
     window.clearTimeout(viewportTimer);
   }
@@ -125,7 +138,8 @@ export function handleMeetingSegmentDocumentFollow(message) {
 }
 
 function handleCanvasRendered() {
-  scheduleViewportPositionBroadcast('canvas_render');
+  cancelPendingMeetingDocumentPositionBroadcast();
+  broadcastCurrentDocumentPosition('canvas_render', { force: true });
 }
 
 export function startMeetingDocumentTracking() {
@@ -137,7 +151,9 @@ export function startMeetingDocumentTracking() {
     viewport.addEventListener('scroll', handleCanvasRendered, { passive: true });
   }
   document.addEventListener('tabura:canvas-rendered', handleCanvasRendered);
-  broadcastCurrentDocumentPosition('meeting_started', { force: true });
+  if (hasTrackableMeetingDocument()) {
+    broadcastCurrentDocumentPosition('meeting_started', { force: true });
+  }
 }
 
 export function stopMeetingDocumentTracking() {

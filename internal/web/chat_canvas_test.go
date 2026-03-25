@@ -490,6 +490,27 @@ func TestResolveCanvasFilePath_UsesProjectRelativeTitle(t *testing.T) {
 	}
 }
 
+func TestResolveCanvasFilePath_ResolvesSimpleWorkspaceQuery(t *testing.T) {
+	tmp := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(tmp, "docs"), 0o755); err != nil {
+		t.Fatalf("mkdir docs: %v", err)
+	}
+	target := filepath.Join(tmp, "docs", "README.md")
+	if err := os.WriteFile(target, []byte("# Tabura\n"), 0o644); err != nil {
+		t.Fatalf("write readme: %v", err)
+	}
+	abs, title, err := resolveCanvasFilePath(tmp, "README")
+	if err != nil {
+		t.Fatalf("resolveCanvasFilePath returned error: %v", err)
+	}
+	if abs != target {
+		t.Fatalf("resolved path = %q, want %q", abs, target)
+	}
+	if title != "docs/README.md" {
+		t.Fatalf("resolved title = %q, want docs/README.md", title)
+	}
+}
+
 func TestResolveCanvasFilePath_RejectsEscapingProjectRoot(t *testing.T) {
 	tmp := t.TempDir()
 	if _, _, err := resolveCanvasFilePath(tmp, "../outside.md"); err == nil {

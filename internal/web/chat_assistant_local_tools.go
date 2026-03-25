@@ -5,14 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/krystophny/tabura/internal/store"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
-
-	"github.com/krystophny/tabura/internal/modelprofile"
-	"github.com/krystophny/tabura/internal/store"
 )
 
 var (
@@ -70,28 +68,6 @@ type localAssistantTurnState struct {
 	workspaceDir string
 	currentDir   string
 	mcpURL       string
-}
-
-func localAssistantThinkingEnabled(req *assistantTurnRequest) bool {
-	if req == nil {
-		return false
-	}
-	effort := modelprofile.NormalizeReasoningEffort(modelprofile.AliasLocal, req.reasoningEffort)
-	return effort != "" && effort != modelprofile.ReasoningNone
-}
-
-func localAssistantReasoningHint(req *assistantTurnRequest) string {
-	if !localAssistantThinkingEnabled(req) {
-		return ""
-	}
-	switch modelprofile.NormalizeReasoningEffort(modelprofile.AliasLocal, req.reasoningEffort) {
-	case modelprofile.ReasoningLow:
-		return "Think briefly before answering."
-	case modelprofile.ReasoningHigh:
-		return "Think carefully and thoroughly before answering."
-	default:
-		return "Think before answering."
-	}
 }
 
 func parseLocalAssistantDecision(message localIntentLLMMessage) (localAssistantDecision, error) {
@@ -343,6 +319,9 @@ func (a *App) runLocalAssistantToolLoop(ctx context.Context, req *assistantTurnR
 		if err != nil {
 			return "", err
 		}
+	}
+	if directPath := strings.TrimSpace(localAssistantDirectOpenFileHint(toolUserPrompt, family)); directPath != "" {
+		return a.runLocalAssistantDirectOpenFileCanvas(ctx, &state, catalog, directPath)
 	}
 	if catalog.RenderGeneratedText {
 		return a.runLocalAssistantGeneratedCanvasTurn(ctx, req, visual, state, toolUserPrompt, buildLocalAssistantCanvasPromptContext(req, prompt))

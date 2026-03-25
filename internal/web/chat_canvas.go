@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -127,6 +128,13 @@ func resolveCanvasFilePath(cwd, requested string) (absolutePath, canvasTitle str
 	} else {
 		abs = filepath.Clean(filepath.Join(rootAbs, raw))
 	}
+	if raw != "" && !filepath.IsAbs(raw) {
+		if _, statErr := os.Stat(abs); statErr != nil && os.IsNotExist(statErr) {
+			if fallback, ok := resolveCanvasFileQuery(rootAbs, raw); ok {
+				abs = fallback
+			}
+		}
+	}
 	rel, err := filepath.Rel(rootAbs, abs)
 	if err != nil {
 		return "", "", err
@@ -136,6 +144,48 @@ func resolveCanvasFilePath(cwd, requested string) (absolutePath, canvasTitle str
 		return "", "", fmt.Errorf("path escapes project root: %s", requested)
 	}
 	return abs, filepath.ToSlash(rel), nil
+}
+
+func resolveCanvasFileQuery(rootAbs, raw string) (string, bool) {
+	query := strings.TrimSpace(raw)
+	if query == "" {
+		return "", false
+	}
+	normalizedQuery := strings.ToLower(filepath.ToSlash(query))
+	bestExact := ""
+	bestContains := ""
+	err := filepath.WalkDir(rootAbs, func(path string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(rootAbs, path)
+		if err != nil || rel == "." {
+			return nil
+		}
+		normalizedRel := strings.ToLower(filepath.ToSlash(rel))
+		base := strings.ToLower(filepath.Base(normalizedRel))
+		if normalizedRel == normalizedQuery || base == normalizedQuery || strings.HasPrefix(base, normalizedQuery+".") {
+			bestExact = path
+			return filepath.SkipAll
+		}
+		if bestContains == "" && strings.Contains(normalizedRel, normalizedQuery) {
+			bestContains = path
+		}
+		return nil
+	})
+	if err != nil && !errors.Is(err, filepath.SkipAll) {
+		return "", false
+	}
+	if bestExact != "" {
+		return filepath.Clean(bestExact), true
+	}
+	if bestContains != "" {
+		return filepath.Clean(bestContains), true
+	}
+	return "", false
 }
 
 func (a *App) executeFileBlocks(workspacePath, canvasSessionID string, blocks []fileBlock) bool {

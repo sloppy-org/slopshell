@@ -200,9 +200,9 @@ export function deriveVoiceLifecycle() {
   if (isRecording()) return VOICE_LIFECYCLE.RECORDING;
   if (state.chatVoiceCapture?.stopping) return VOICE_LIFECYCLE.STOPPING_RECORDING;
   if (state.voiceAwaitingTurn) return VOICE_LIFECYCLE.AWAITING_TURN;
+  if (isTTSSpeaking()) return VOICE_LIFECYCLE.TTS_PLAYING;
   if (isLiveSessionListenActive()) return VOICE_LIFECYCLE.LISTENING;
   if (hasLocalStopCapableWork()) return VOICE_LIFECYCLE.ASSISTANT_WORKING;
-  if (isTTSSpeaking()) return VOICE_LIFECYCLE.TTS_PLAYING;
   return VOICE_LIFECYCLE.IDLE;
 }
 

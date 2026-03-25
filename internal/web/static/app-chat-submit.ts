@@ -14,7 +14,6 @@ const trackAssistantTurnFinished = (...args) => refs.trackAssistantTurnFinished(
 const appendRenderedAssistant = (...args) => refs.appendRenderedAssistant(...args);
 const refreshAssistantActivity = (...args) => refs.refreshAssistantActivity(...args);
 const stopVoiceCaptureAndSend = (...args) => refs.stopVoiceCaptureAndSend(...args);
-const deactivateLiveSession = (...args) => refs.deactivateLiveSession(...args);
 const resetDialogueTurnController = (...args) => refs.resetDialogueTurnController(...args);
 const isMobileSilent = (...args) => refs.isMobileSilent(...args);
 const nextLocalMessageId = (...args) => refs.nextLocalMessageId(...args);
@@ -31,6 +30,7 @@ const shouldStopInUiClick = (...args) => refs.shouldStopInUiClick(...args);
 const sttCancel = (...args) => refs.sttCancel(...args);
 const maybeHandleInlineBugReport = (...args) => refs.maybeHandleInlineBugReport(...args);
 const maybeHandleDictationCommand = (...args) => refs.maybeHandleDictationCommand(...args);
+const primeTTSTurnLanguage = (...args) => refs.primeTTSTurnLanguage(...args);
 
 const STOP_REQUEST_TIMEOUT_MS = 3500;
 const VOICE_TRANSCRIPT_SUBMIT_GUARD_MS = 220;
@@ -230,6 +230,7 @@ export async function submitMessage(text, options: Record<string, any> = {}) {
   }
   state.assistantLastError = '';
   updateAssistantActivityIndicator();
+  primeTTSTurnLanguage(trimmed);
   appendPlainMessage('user', finalText);
 
   if (!finalText.startsWith('/') && (isVoiceTurn() || isMobileSilent())) {
@@ -434,10 +435,6 @@ export async function handleStopAction() {
     setVoiceLifecycle(VOICE_LIFECYCLE.IDLE, 'stop-listening');
     showStatus('ready');
     updateAssistantActivityIndicator();
-    return;
-  }
-  if (state.liveSessionActive && !state.chatVoiceCapture && !isAssistantWorking()) {
-    await deactivateLiveSession({ disableMeetingConfig: true });
     return;
   }
 

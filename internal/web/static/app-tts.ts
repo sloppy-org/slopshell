@@ -10,6 +10,7 @@ const renderEdgeTopModelButtons = (...args) => refs.renderEdgeTopModelButtons(..
 const updateAssistantActivityIndicator = (...args) => refs.updateAssistantActivityIndicator(...args);
 const beginConversationVoiceCapture = (...args) => refs.beginConversationVoiceCapture(...args);
 const acquireMicStream = (...args) => refs.acquireMicStream(...args);
+const handleStopAction = (...args) => refs.handleStopAction(...args);
 const isStopCapableLifecycle = (...args) => refs.isStopCapableLifecycle(...args);
 const syncVoiceLifecycle = (...args) => refs.syncVoiceLifecycle(...args);
 const parseOptionalBoolean = (...args) => refs.parseOptionalBoolean(...args);
@@ -88,12 +89,18 @@ export function inferTTSLanguage(text) {
   const germanHints = new Set([
     'und', 'ist', 'nicht', 'ich', 'du', 'wir', 'sie', 'mit', 'fuer', 'für',
     'auf', 'das', 'der', 'die', 'den', 'dem', 'ein', 'eine', 'bitte', 'danke',
+    'was', 'wie', 'wer', 'wo', 'wann', 'warum', 'wieso', 'weshalb',
+    'welche', 'welcher', 'welches', 'mir', 'mein', 'meine', 'einen', 'einem',
+    'einer', 'spaet', 'spät', 'uhr', 'zeichne', 'erklaere', 'erkläre',
   ]);
   let hits = 0;
   for (const token of tokens) {
     if (germanHints.has(token)) hits += 1;
   }
   if (hits >= 2 && hits / tokens.length >= 0.08) return 'de';
+  if (tokens.length <= 6 && hits >= 1 && ['was', 'wie', 'wer', 'wo', 'wann', 'warum', 'wieso', 'weshalb'].includes(tokens[0])) {
+    return 'de';
+  }
   return '';
 }
 
@@ -312,6 +319,8 @@ let ttsSentenceChunker = null;
 state.ttsEnabled = false;
 let ttsLastSpeakText = '';
 let ttsSpeakLang = 'en';
+let ttsPendingTurnLang = '';
+let ttsTurnLang = '';
 let hotwordSyncInFlight = false;
 let hotwordResyncQueued = false;
 let hotwordInitAttempted = false;
@@ -494,8 +503,9 @@ export function canStartHotwordMonitor() {
   if (!state.liveSessionActive) return false;
   if (!state.ttsEnabled) return false;
   if (mode === VOICE_LIFECYCLE.RECORDING || mode === VOICE_LIFECYCLE.STOPPING_RECORDING) return false;
-  if (mode === VOICE_LIFECYCLE.TTS_PLAYING) return false;
   if (state.chatVoiceCapture) return false;
+  if (isMeetingLiveSession()) return true;
+  if (isDialogueLiveSession() && mode === VOICE_LIFECYCLE.LISTENING) return true;
   if (isStopCapableLifecycle(mode)) return false;
   return true;
 }
@@ -558,6 +568,16 @@ export function configureHotwordLifecycle() {
     if (!canStartHotwordMonitor()) return;
     stopHotwordMonitor();
     state.hotwordActive = false;
+    if (isMeetingLiveSession()) {
+      const mode = syncVoiceLifecycle('hotword-detected-meeting');
+      if (mode !== VOICE_LIFECYCLE.IDLE && mode !== VOICE_LIFECYCLE.LISTENING) {
+        void handleStopAction();
+      } else {
+        requestHotwordSync();
+        updateAssistantActivityIndicator();
+      }
+      return;
+    }
     beginConversationVoiceCapture('hotword');
     updateAssistantActivityIndicator();
   });
@@ -634,6 +654,7 @@ export function stopTTSPlayback() {
   if (ttsPlayer) { ttsPlayer.stop(); ttsPlayer = null; }
   if (ttsSentenceChunker) { ttsSentenceChunker.reset(); ttsSentenceChunker = null; }
   ttsLastSpeakText = '';
+  ttsTurnLang = '';
   ttsSpeakLang = 'en';
   setDialogueTTSBargeInMode(false);
   if (state.ttsPlaying) {
@@ -696,7 +717,10 @@ export function enqueueTTSAudio(audioData) {
 
 export function setTTSSpeakLang(lang) {
   const next = String(lang || '').trim();
-  if (next) ttsSpeakLang = next;
+  if (!next) return;
+  if (ttsTurnLang && ttsTurnLang !== next) return;
+  ttsTurnLang = next;
+  ttsSpeakLang = next;
 }
 
 export function getTTSLastSpeakText() {
@@ -709,4 +733,18 @@ export function flushTTSChunker() {
 
 export function hasTTSPlayer() {
   return Boolean(ttsPlayer);
+}
+
+export function primeTTSTurnLanguage(text) {
+  const inferred = inferTTSLanguage(text);
+  if (inferred) {
+    ttsPendingTurnLang = inferred;
+  }
+}
+
+export function beginTTSTurn() {
+  ttsLastSpeakText = '';
+  ttsTurnLang = ttsPendingTurnLang;
+  ttsSpeakLang = ttsTurnLang || 'en';
+  ttsPendingTurnLang = '';
 }

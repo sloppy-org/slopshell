@@ -88,7 +88,7 @@ async function waitForHotwordStart(page: Page) {
 
 test('hotword detection starts recording directly', async ({ page }) => {
   await waitReady(page);
-  await setMeetingMode(page);
+  await setDialogueMode(page, true);
   await waitForHotwordStart(page);
   await clearLog(page);
 
@@ -212,7 +212,7 @@ test('hotword ring buffer retains four seconds of pre-roll audio', async ({ page
 
 test('hotword plus speech starts recording', async ({ page }) => {
   await waitReady(page);
-  await setMeetingMode(page);
+  await setDialogueMode(page, true);
   await waitForHotwordStart(page);
   await page.evaluate(() => {
     (window as any).__setVadDbFrames([
@@ -247,7 +247,7 @@ test('hotword pre-roll samples are prepended before STT normalization', async ({
 
 test('hotword capture tolerates initial pause before user speech', async ({ page }) => {
   await waitReady(page);
-  await setMeetingMode(page);
+  await setDialogueMode(page, true);
   await waitForHotwordStart(page);
   await page.evaluate(() => {
     (window as any).__setVadDbFrames([
@@ -272,7 +272,7 @@ test('hotword capture tolerates initial pause before user speech', async ({ page
 
 test('standalone hotword falls back to pre-roll audio after silence', async ({ page }) => {
   await waitReady(page);
-  await setMeetingMode(page);
+  await setDialogueMode(page, true);
   await waitForHotwordStart(page);
   await page.evaluate(async () => {
     const mod = await import('/internal/web/static/hotword.js');
@@ -318,7 +318,7 @@ test('dialogue turn controller finalizes a buffered fragment on timeout', async 
 
 test('hotword is paused during recording', async ({ page }) => {
   await waitReady(page);
-  await setMeetingMode(page);
+  await setDialogueMode(page, true);
   await waitForHotwordStart(page);
   await page.evaluate(() => {
     (window as any).__setVadDbFrames([
@@ -341,9 +341,10 @@ test('hotword is paused during recording', async ({ page }) => {
   expect(log.some((entry) => entry.type === 'hotword' && entry.action === 'stop')).toBe(true);
 });
 
-test('hotword is paused while TTS playback is active', async ({ page }) => {
+test('hotword stays active during TTS playback and can barge in', async ({ page }) => {
   await waitReady(page);
-  await setDialogueMode(page, true);
+  await setMeetingMode(page);
+  await waitForHotwordStart(page);
   await page.evaluate(() => {
     (window as any).__setTTSPlaybackDelayMs(500);
   });
@@ -355,10 +356,30 @@ test('hotword is paused while TTS playback is active', async ({ page }) => {
     const log = await getLog(page);
     return log.some((entry) => entry.type === 'tts');
   }).toBe(true);
-  await expect.poll(async () => page.evaluate(() => (window as any).__isHotwordActive())).toBe(false);
+  await expect.poll(async () => page.evaluate(() => (window as any).__isHotwordActive())).toBe(true);
 
-  const log = await getLog(page);
-  expect(log.some((entry) => entry.type === 'hotword' && entry.action === 'start')).toBe(false);
+  await clearLog(page);
+  await triggerHotword(page);
+
+  await expect.poll(async () => {
+    const log = await getLog(page);
+    const recorderStarted = log.some((entry) => entry.type === 'recorder' && entry.action === 'start');
+    const hotwordStopped = log.some((entry) => entry.type === 'hotword' && entry.action === 'stop');
+    const ttsPlaying = await page.evaluate(() => {
+      const app = (window as any)._taburaApp;
+      return Boolean(app?.getState?.().ttsPlaying);
+    });
+    const liveSessionMode = await page.evaluate(() => {
+      const app = (window as any)._taburaApp;
+      return String(app?.getState?.().liveSessionMode || '');
+    });
+    return { recorderStarted, hotwordStopped, ttsPlaying, liveSessionMode };
+  }, { timeout: 5_000 }).toEqual({
+    recorderStarted: false,
+    hotwordStopped: true,
+    ttsPlaying: false,
+    liveSessionMode: 'meeting',
+  });
 });
 
 test('Dialogue off keeps hotword disabled', async ({ page }) => {
@@ -412,18 +433,35 @@ test('Dialogue keeps the live listen indicator armed instead of falling back to 
   }), { timeout: 4_000 }).toBe(true);
 });
 
-test('meeting mode hotword still starts direct recording', async ({ page }) => {
+test('meeting mode hotword cancels the active turn without switching modes', async ({ page }) => {
   await waitReady(page);
   await setMeetingMode(page);
   await waitForHotwordStart(page);
+  await page.evaluate(() => {
+    const app = (window as any)._taburaApp;
+    const state = app?.getState?.();
+    if (!state) return;
+    state.ttsPlaying = true;
+    state.lastInputOrigin = 'voice';
+  });
   await clearLog(page);
 
   await triggerHotword(page);
 
   await expect.poll(async () => {
     const log = await getLog(page);
-    return log.some((entry) => entry.type === 'recorder' && entry.action === 'start');
-  }, { timeout: 5_000 }).toBe(true);
+    return {
+      recorderStarted: log.some((entry) => entry.type === 'recorder' && entry.action === 'start'),
+      hotwordStopped: log.some((entry) => entry.type === 'hotword' && entry.action === 'stop'),
+      liveSessionMode: await page.evaluate(() => String((window as any)._taburaApp?.getState?.().liveSessionMode || '')),
+      ttsPlaying: await page.evaluate(() => Boolean((window as any)._taburaApp?.getState?.().ttsPlaying)),
+    };
+  }, { timeout: 5_000 }).toEqual({
+    recorderStarted: false,
+    hotwordStopped: true,
+    liveSessionMode: 'meeting',
+    ttsPlaying: false,
+  });
 });
 
 test('dialogue turn controller buffers incomplete fragments until semantic completion', async ({ page }) => {

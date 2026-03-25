@@ -308,7 +308,7 @@ test('meeting idle surface tracks runtime state and hides behind open artifacts'
   await expect(page.locator('#companion-idle-surface')).toBeHidden();
 });
 
-test('meeting tap pins the cursor and starts immediate local capture', async ({ page }) => {
+test('meeting tap stays inert and keeps meeting mode active', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await waitReady(page);
   await switchToProject(page, 'test');
@@ -320,7 +320,8 @@ test('meeting tap pins the cursor and starts immediate local capture', async ({ 
   await page.waitForTimeout(300);
 
   const log = await getLog(page);
-  expect(log.some((entry: any) => entry?.type === 'recorder' && entry?.action === 'start')).toBe(true);
+  expect(log.some((entry: any) => entry?.type === 'recorder' && entry?.action === 'start')).toBe(false);
+  expect(log.some((entry: any) => entry?.type === 'canvas_position')).toBe(false);
   await expect(page.locator('#edge-top-models .edge-live-status')).toContainText('Meeting');
 });
 

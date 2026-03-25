@@ -6,7 +6,7 @@
   --companion-face-ring: rgba(29, 78, 216, 0.12);
   --companion-face-surface: radial-gradient(circle at 50% 35%, #ffffff 0%, #f8f9fc 62%, #eef1f6 100%);
   --companion-copy: #111111;
-  --companion-surface-margin: 2.5rem;
+  --companion-surface-margin: 3.9rem;
   display: none;
   position: fixed;
   inset: 0;
@@ -58,8 +58,8 @@
     calc(100vw - (2 * var(--companion-surface-margin)) - var(--safe-area-left) - var(--safe-area-right)),
     calc(100vh - (2 * var(--companion-surface-margin)) - var(--safe-area-top) - var(--safe-area-bottom))
   );
-  max-width: 920px;
-  max-height: 920px;
+  max-width: 780px;
+  max-height: 780px;
   min-width: 320px;
   aspect-ratio: 1 / 1;
   position: relative;

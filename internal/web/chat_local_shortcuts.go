@@ -1,6 +1,9 @@
 package web
 
-import "strings"
+import (
+	"regexp"
+	"strings"
+)
 
 type localAssistantToolFamily string
 
@@ -97,4 +100,33 @@ func containsAnyLocalAssistantKeyword(text string, keywords ...string) bool {
 		}
 	}
 	return false
+}
+
+var localAssistantExplicitPathRe = regexp.MustCompile(`(?i)(?:` + "`" + `([^` + "`" + `]+)` + "`" + `|\"([^\"]+)\"|'([^']+)'|\b([a-z0-9][a-z0-9._/-]*\.[a-z0-9][a-z0-9._-]*)\b)`)
+
+func localAssistantDirectOpenFileHint(text string, family localAssistantToolFamily) string {
+	if family != localAssistantToolFamilyCanvas && family != localAssistantToolFamilyWorkspace {
+		return ""
+	}
+	lower := strings.ToLower(normalizeLocalAssistantAddress(text))
+	if lower == "" {
+		return ""
+	}
+	if !containsAnyLocalAssistantKeyword(lower,
+		"open ", "show ", "display ", "render ", "zeige", "öffne", "oeffne", "darstell", "rendere",
+	) {
+		return ""
+	}
+	if match := localAssistantExplicitPathRe.FindStringSubmatch(strings.TrimSpace(text)); len(match) > 0 {
+		for _, candidate := range match[1:] {
+			candidate = strings.TrimSpace(candidate)
+			if candidate != "" {
+				return candidate
+			}
+		}
+	}
+	if strings.Contains(lower, "readme") {
+		return "README"
+	}
+	return ""
 }
