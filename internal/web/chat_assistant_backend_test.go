@@ -438,8 +438,8 @@ func TestRunAssistantTurnFastLocalSkipsIntentEvalAndCapsOutput(t *testing.T) {
 		if !strings.Contains(gotPrompt, "User request:\nExplain me who you are") {
 			t.Fatalf("fast local prompt = %q, want fast prompt wrapper with user request", gotPrompt)
 		}
-		if !strings.Contains(gotPrompt, "Answer in plain text only. Keep it brief: default to 1-3 short sentences.") {
-			t.Fatalf("fast local prompt = %q, want brief fast guidance", gotPrompt)
+		if !strings.Contains(gotPrompt, "Answer in plain text only. Be concise, but do not under-answer: default to 2-4 short sentences for normal questions.") {
+			t.Fatalf("fast local prompt = %q, want concise fast guidance", gotPrompt)
 		}
 		templateKwargs, _ := payload["chat_template_kwargs"].(map[string]any)
 		if got, ok := templateKwargs["enable_thinking"].(bool); !ok || got {

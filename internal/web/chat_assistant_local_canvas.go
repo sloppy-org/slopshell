@@ -17,7 +17,7 @@ func localAssistantCanvasContentRequiredPrompt() string {
 }
 
 func localAssistantCanvasDiagramRequiredPrompt() string {
-	return "Reply with only a multi-line text diagram for the canvas. Do not return a title alone. Use at least 6 short non-empty lines and include connectors such as |, ->, or boxed steps."
+	return "Reply with only a readable ASCII diagram for the canvas. Do not return a title alone. Use at least 8 non-empty lines or an equally rich boxed flowchart with multiple connected stages. Include connectors such as |, ->, or boxed steps, and label the main components or phases."
 }
 
 func buildLocalAssistantCanvasGenerationPrompt(userText string, promptContext string, reasoningHint string) string {
@@ -33,16 +33,19 @@ func buildLocalAssistantCanvasGenerationPrompt(userText string, promptContext st
 	}
 	if localAssistantCanvasNeedsStructuredDiagram(userText) {
 		lines = append(lines,
-			"This request needs a readable multi-line text diagram.",
-			"Use at least 6 short non-empty lines.",
+			"This request needs a readable, information-rich ASCII diagram.",
+			"Prefer 8-14 non-empty lines unless a denser boxed flowchart is clearly better.",
 			"Include connectors such as ->, |, or boxed steps.",
-			"Keep labels short and concrete.",
+			"Show the main stages, components, and at least one relationship, dependency, or flow between them.",
+			"Do not collapse the diagram into a tiny glossary or two-column word list.",
+			"Keep labels concrete and informative.",
 		)
 	}
 	if localAssistantCanvasHasStructuredDiagramText(promptContext) {
 		lines = append(lines,
 			"The current canvas already contains a structured diagram. Keep the revised result as a structured multi-line diagram.",
 			"Preserve the main subject and the key existing labels unless the user explicitly asks to replace them.",
+			"When revising, improve clarity and detail rather than shrinking the diagram.",
 		)
 	}
 	if strings.TrimSpace(reasoningHint) != "" {

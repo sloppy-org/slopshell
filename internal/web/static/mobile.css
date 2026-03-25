@@ -1,10 +1,14 @@
 @media (max-width: 767px) {
+  .companion-idle-surface {
+    --companion-surface-margin: 1rem;
+  }
+
   .companion-idle-shell {
     padding:
-      calc(2rem + var(--safe-area-top))
-      calc(1rem + var(--safe-area-right))
-      calc(2rem + var(--safe-area-bottom))
-      calc(1rem + var(--safe-area-left));
+      calc(var(--companion-surface-margin) + var(--safe-area-top))
+      calc(var(--companion-surface-margin) + var(--safe-area-right))
+      calc(var(--companion-surface-margin) + var(--safe-area-bottom))
+      calc(var(--companion-surface-margin) + var(--safe-area-left));
   }
 
   .companion-idle-frame {

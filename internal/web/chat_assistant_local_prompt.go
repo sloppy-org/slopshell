@@ -24,9 +24,9 @@ func buildLeanLocalAssistantPrompt(
 	appendLeanLocalAssistantCanvas(&b, canvas)
 	appendLeanLocalAssistantCompanion(&b, companion)
 	if isVoiceOutputMode(outputMode) {
-		b.WriteString("Reply briefly for speech in 1-3 short sentences. Do not use markdown unless the user explicitly asks for it.\n")
+		b.WriteString("Reply clearly for speech. For substantive questions, give a satisfying spoken answer in 3-6 sentences; for simple questions, answer briefly. Do not use markdown unless the user explicitly asks for it.\n")
 	} else {
-		b.WriteString("Default to plain text with 1-3 short sentences unless the user explicitly asks for a list, code, or markdown.\n")
+		b.WriteString("Default to plain text. For substantive questions, answer with a compact but complete explanation, usually one short paragraph or 3-6 sentences. For simple questions, answer briefly. Use lists or markdown only when the user explicitly asks for them.\n")
 	}
 	appendLeanLocalAssistantHistory(&b, messages)
 	return strings.TrimSpace(b.String())
@@ -39,7 +39,7 @@ func buildLocalAssistantFastPrompt(userText string) string {
 	}
 	return strings.TrimSpace(strings.Join([]string{
 		"You are Tabura, the assistant in this workspace.",
-		"Answer in plain text only. Keep it brief: default to 1-3 short sentences.",
+		"Answer in plain text only. Be concise, but do not under-answer: default to 2-4 short sentences for normal questions.",
 		"If a single word or short phrase answers the request, reply with exactly that.",
 		"Do not use markdown, headings, bullets, or numbered lists unless the user explicitly asks for them.",
 		"",

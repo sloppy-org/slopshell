@@ -26,6 +26,7 @@ function canvasArtifactBody(page: Page) {
 
 function normalizeCanvasArtifactText(raw: string) {
   return String(raw || '')
+    .replace(/^Available actions\s*Open\s*Annotate\s*Compose\s*Review\s*Track\s*/i, '')
     .split('\n')
     .map((line) => line.trimEnd())
     .filter((line) => {
@@ -182,7 +183,7 @@ test.describe('local llm conversation flows @local-only', () => {
     const before = await assistantReplyCount(page);
     await submitPrompt(page, 'Please draw a flowchart on the canvas showing how a fusion reactor works.');
     await waitForAssistantReply(page, before, '', 120_000);
-    await expectCanvasFlowchart(page, ['fusion', 'reactor']);
+    await expectCanvasFlowchart(page, ['plasma', 'turbine']);
     await expect(page.locator('#edge-top-models .edge-live-status')).toContainText('Meeting');
   });
 

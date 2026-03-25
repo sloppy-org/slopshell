@@ -27,7 +27,7 @@ func TestBuildLeanLocalAssistantPromptIsCompact(t *testing.T) {
 		"Canvas content:\nline one\nline two",
 		"## Companion Context",
 		"- Summary: Planning next steps.",
-		"Reply briefly for speech in 1-3 short sentences. Do not use markdown unless the user explicitly asks for it.",
+		"Reply clearly for speech. For substantive questions, give a satisfying spoken answer in 3-6 sentences; for simple questions, answer briefly. Do not use markdown unless the user explicitly asks for it.",
 		"Recent messages:",
 		"USER: latest question",
 	} {
@@ -56,7 +56,7 @@ func TestBuildLeanLocalAssistantPrompt_DefaultsToPlainShortChat(t *testing.T) {
 		nil,
 		turnOutputModeSilent,
 	)
-	if !strings.Contains(prompt, "Default to plain text with 1-3 short sentences unless the user explicitly asks for a list, code, or markdown.") {
+	if !strings.Contains(prompt, "Default to plain text. For substantive questions, answer with a compact but complete explanation, usually one short paragraph or 3-6 sentences. For simple questions, answer briefly. Use lists or markdown only when the user explicitly asks for them.") {
 		t.Fatalf("prompt missing plain short chat guidance:\n%s", prompt)
 	}
 }
@@ -69,7 +69,7 @@ func TestBuildLeanLocalAssistantPrompt_VoiceKeepsPlainShortSpeech(t *testing.T) 
 		nil,
 		turnOutputModeVoice,
 	)
-	if !strings.Contains(prompt, "Reply briefly for speech in 1-3 short sentences. Do not use markdown unless the user explicitly asks for it.") {
+	if !strings.Contains(prompt, "Reply clearly for speech. For substantive questions, give a satisfying spoken answer in 3-6 sentences; for simple questions, answer briefly. Do not use markdown unless the user explicitly asks for it.") {
 		t.Fatalf("prompt missing short speech guidance:\n%s", prompt)
 	}
 }
@@ -78,7 +78,7 @@ func TestBuildLocalAssistantFastPromptAddsShortPlainGuidance(t *testing.T) {
 	prompt := buildLocalAssistantFastPrompt("Reply with the single word ORBIT.")
 	for _, snippet := range []string{
 		"You are Tabura, the assistant in this workspace.",
-		"Answer in plain text only. Keep it brief: default to 1-3 short sentences.",
+		"Answer in plain text only. Be concise, but do not under-answer: default to 2-4 short sentences for normal questions.",
 		"If a single word or short phrase answers the request, reply with exactly that.",
 		"Do not use markdown, headings, bullets, or numbered lists unless the user explicitly asks for them.",
 		"User request:\nReply with the single word ORBIT.",
@@ -152,8 +152,30 @@ func TestBuildLocalAssistantCanvasGenerationPromptKeepsStructuredFollowUp(t *tes
 		"[Fusion Reactor]\n  |\n[Plasma]\n  |\n[Turbine]",
 		"",
 	)
-	if !strings.Contains(prompt, "The current canvas already contains a structured diagram. Keep the revised result as a structured multi-line diagram.") {
-		t.Fatalf("canvas prompt missing structured follow-up guidance:\n%s", prompt)
+	for _, snippet := range []string{
+		"The current canvas already contains a structured diagram. Keep the revised result as a structured multi-line diagram.",
+		"When revising, improve clarity and detail rather than shrinking the diagram.",
+	} {
+		if !strings.Contains(prompt, snippet) {
+			t.Fatalf("canvas prompt missing %q:\n%s", snippet, prompt)
+		}
+	}
+}
+
+func TestBuildLocalAssistantCanvasGenerationPromptRequestsRicherDiagram(t *testing.T) {
+	prompt := buildLocalAssistantCanvasGenerationPrompt(
+		"zeichne mir einen tokamak auf der canvas als flowchart ascii-diagramm",
+		"",
+		"",
+	)
+	for _, snippet := range []string{
+		"This request needs a readable, information-rich ASCII diagram.",
+		"Prefer 8-14 non-empty lines unless a denser boxed flowchart is clearly better.",
+		"Do not collapse the diagram into a tiny glossary or two-column word list.",
+	} {
+		if !strings.Contains(prompt, snippet) {
+			t.Fatalf("canvas prompt missing %q:\n%s", snippet, prompt)
+		}
 	}
 }
 

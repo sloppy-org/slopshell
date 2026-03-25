@@ -6,6 +6,7 @@
   --companion-face-ring: rgba(29, 78, 216, 0.12);
   --companion-face-surface: radial-gradient(circle at 50% 35%, #ffffff 0%, #f8f9fc 62%, #eef1f6 100%);
   --companion-copy: #111111;
+  --companion-surface-margin: 2.5rem;
   display: none;
   position: fixed;
   inset: 0;
@@ -31,10 +32,10 @@
   display: grid;
   place-items: center;
   padding:
-    calc(2rem + var(--safe-area-top))
-    calc(1.5rem + var(--safe-area-right))
-    calc(2rem + var(--safe-area-bottom))
-    calc(1.5rem + var(--safe-area-left));
+    calc(var(--companion-surface-margin) + var(--safe-area-top))
+    calc(var(--companion-surface-margin) + var(--safe-area-right))
+    calc(var(--companion-surface-margin) + var(--safe-area-bottom))
+    calc(var(--companion-surface-margin) + var(--safe-area-left));
   background: #ffffff !important;
 }
 
@@ -53,7 +54,13 @@
 }
 
 .companion-idle-face {
-  width: clamp(180px, 28vw, 250px);
+  width: min(
+    calc(100vw - (2 * var(--companion-surface-margin)) - var(--safe-area-left) - var(--safe-area-right)),
+    calc(100vh - (2 * var(--companion-surface-margin)) - var(--safe-area-top) - var(--safe-area-bottom))
+  );
+  max-width: 920px;
+  max-height: 920px;
+  min-width: 320px;
   aspect-ratio: 1 / 1;
   position: relative;
   border: 5px solid var(--companion-face);
