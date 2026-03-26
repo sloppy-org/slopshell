@@ -83,7 +83,9 @@ export function hideCanvasColumn() {
   if (isArtifactEditorActive()) {
     exitArtifactEditMode({ applyChanges: true });
   }
-  exitPrReviewMode();
+  if (state.prReviewMode) {
+    exitPrReviewMode();
+  }
   clearInkDraft();
   state.hasArtifact = false;
   state.interaction.surface = 'annotate';
