@@ -98,6 +98,24 @@ func extractEmbeddedJSON(raw string) string {
 	return ""
 }
 
+func looksLikeCacheClearRequest(text string) bool {
+	lower := strings.ToLower(strings.TrimSpace(text))
+	switch lower {
+	case "clear cache", "cache clear", "cache löschen", "cache loeschen", "reset cache", "cache reset":
+		return true
+	}
+	return false
+}
+
+func looksLikeCacheInvalidateLastRequest(text string) bool {
+	lower := strings.ToLower(strings.TrimSpace(text))
+	switch lower {
+	case "that was wrong", "das war falsch", "wrong answer", "falsche antwort", "invalidate cache", "cache invalidate":
+		return true
+	}
+	return false
+}
+
 func stripHotwordIntentPrefix(raw string) (string, bool) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
@@ -706,6 +724,24 @@ func (a *App) evaluateLocalTurn(ctx context.Context, sessionID string, session s
 	now := time.Now().UTC()
 	if a != nil && a.calendarNow != nil {
 		now = a.calendarNow().UTC()
+	}
+	if a.llmCache != nil && looksLikeCacheClearRequest(intentText) {
+		if err := a.llmCache.InvalidateAll(); err == nil {
+			return localTurnEvaluation{
+				handled:               true,
+				text:                  "Cache cleared.",
+				localAnswerConfidence: "high",
+			}
+		}
+	}
+	if a.llmCache != nil && looksLikeCacheInvalidateLastRequest(intentText) {
+		if n, err := a.llmCache.InvalidateRecent(1); err == nil && n > 0 {
+			return localTurnEvaluation{
+				handled:               true,
+				text:                  "Last cached response invalidated.",
+				localAnswerConfidence: "high",
+			}
+		}
 	}
 	pendingAck := ""
 	if looksLikeWorkspaceBusyQuery(intentText) {

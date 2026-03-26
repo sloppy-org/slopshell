@@ -86,6 +86,7 @@ func New(dbPath string) (*Cache, error) {
 		hits: make(chan string, 256),
 		done: make(chan struct{}),
 	}
+	c.cleanup()
 	if err := c.loadAll(); err != nil {
 		db.Close()
 		return nil, err
@@ -123,6 +124,7 @@ func (c *Cache) Lookup(key string) (*Entry, bool) {
 }
 
 // Store persists a new cache entry to SQLite and the in-memory map.
+// Preserves hit_count if the key already exists.
 func (c *Cache) Store(key, content string, toolCalls []ToolCall, finishReason, model string) error {
 	if c == nil {
 		return nil
@@ -130,8 +132,11 @@ func (c *Cache) Store(key, content string, toolCalls []ToolCall, finishReason, m
 	tcJSON, _ := json.Marshal(toolCalls)
 	now := time.Now().Unix()
 	_, err := c.db.Exec(
-		`INSERT OR REPLACE INTO llm_cache (cache_key, content, tool_calls_json, finish_reason, model, hit_count, created_at, last_hit_at, invalidated)
-		 VALUES (?, ?, ?, ?, ?, 0, ?, 0, 0)`,
+		`INSERT INTO llm_cache (cache_key, content, tool_calls_json, finish_reason, model, hit_count, created_at, last_hit_at, invalidated)
+		 VALUES (?, ?, ?, ?, ?, 0, ?, 0, 0)
+		 ON CONFLICT(cache_key) DO UPDATE SET
+		   content=excluded.content, tool_calls_json=excluded.tool_calls_json,
+		   finish_reason=excluded.finish_reason, model=excluded.model, invalidated=0`,
 		key, content, string(tcJSON), finishReason, model, now,
 	)
 	if err != nil {
@@ -170,35 +175,27 @@ func (c *Cache) Invalidate(key string) error {
 	return err
 }
 
-// InvalidateRecent marks the N most recently created entries as invalidated.
+// InvalidateRecent marks the N most recently created entries as invalidated
+// in a single atomic UPDATE.
 func (c *Cache) InvalidateRecent(n int) (int, error) {
 	if c == nil || n <= 0 {
 		return 0, nil
 	}
-	rows, err := c.db.Query(
-		`SELECT cache_key FROM llm_cache WHERE invalidated=0 ORDER BY created_at DESC LIMIT ?`, n,
-	)
-	if err != nil {
-		return 0, err
-	}
-	defer rows.Close()
-	var keys []string
-	for rows.Next() {
-		var key string
-		if rows.Scan(&key) == nil {
-			keys = append(keys, key)
-		}
-	}
-	for _, key := range keys {
-		c.entries.Delete(key)
-	}
 	res, err := c.db.Exec(
-		`UPDATE llm_cache SET invalidated=1 WHERE cache_key IN (SELECT cache_key FROM llm_cache WHERE invalidated=0 ORDER BY created_at DESC LIMIT ?)`, n,
+		`UPDATE llm_cache SET invalidated=1 WHERE id IN (SELECT id FROM llm_cache WHERE invalidated=0 ORDER BY created_at DESC LIMIT ?)`, n,
 	)
 	if err != nil {
 		return 0, err
 	}
 	affected, _ := res.RowsAffected()
+	// Reload memory from DB to stay consistent.
+	if affected > 0 {
+		c.entries.Range(func(key, _ any) bool {
+			c.entries.Delete(key)
+			return true
+		})
+		c.loadAll()
+	}
 	return int(affected), nil
 }
 
@@ -243,6 +240,13 @@ func (c *Cache) loadAll() error {
 		c.entries.Store(e.CacheKey, &e)
 	}
 	return nil
+}
+
+const cleanupMaxAgeDays = 90
+
+func (c *Cache) cleanup() {
+	cutoff := time.Now().AddDate(0, 0, -cleanupMaxAgeDays).Unix()
+	c.db.Exec(`DELETE FROM llm_cache WHERE created_at < ? OR invalidated=1`, cutoff)
 }
 
 func (c *Cache) drainHits() {
