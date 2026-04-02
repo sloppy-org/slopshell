@@ -40,7 +40,7 @@ var modelToAlias = map[string]string{
 }
 
 var modelReasoningEfforts = map[string][]string{
-	AliasLocal: {ReasoningNone},
+	AliasLocal: {ReasoningNone, ReasoningLow, ReasoningMedium, ReasoningHigh},
 	AliasSpark: {ReasoningLow, ReasoningMedium, ReasoningHigh, ReasoningExtraHigh},
 	AliasGPT:   {ReasoningLow, ReasoningMedium, ReasoningHigh, ReasoningExtraHigh},
 	AliasMini:  {ReasoningLow, ReasoningMedium, ReasoningHigh, ReasoningExtraHigh},

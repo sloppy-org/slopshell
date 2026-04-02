@@ -449,7 +449,7 @@ func TestExecuteChatCommandStopWaitsForTurnShutdown(t *testing.T) {
 	}
 	select {
 	case <-done:
-	default:
+	case <-time.After(2 * time.Second):
 		t.Fatal("expected /stop to wait for turn shutdown")
 	}
 	if got := app.activeChatTurnCount(session.ID); got != 0 {
@@ -497,7 +497,7 @@ func TestHandleChatSessionCancelWaitsForTurnShutdown(t *testing.T) {
 	}
 	select {
 	case <-done:
-	default:
+	case <-time.After(2 * time.Second):
 		t.Fatal("expected /cancel to wait for turn shutdown")
 	}
 	if got := app.activeChatTurnCount(session.ID); got != 0 {

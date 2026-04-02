@@ -51,7 +51,7 @@ func TestAvailableReasoningEffortsByAlias(t *testing.T) {
 		t.Fatalf("expected efforts map")
 	}
 	for alias, expectation := range map[string][]string{
-		AliasLocal: {ReasoningNone},
+		AliasLocal: {ReasoningNone, ReasoningLow, ReasoningMedium, ReasoningHigh},
 		AliasSpark: {ReasoningLow, ReasoningMedium, ReasoningHigh, ReasoningExtraHigh},
 		AliasGPT:   {ReasoningLow, ReasoningMedium, ReasoningHigh, ReasoningExtraHigh},
 		AliasMini:  {ReasoningLow, ReasoningMedium, ReasoningHigh, ReasoningExtraHigh},
@@ -74,5 +74,24 @@ func TestAvailableReasoningEffortsByAlias(t *testing.T) {
 func TestNormalizeReasoningEffortLegacyExtraHigh(t *testing.T) {
 	if got := NormalizeReasoningEffort(AliasSpark, "extra_high"); got != ReasoningExtraHigh {
 		t.Fatalf("legacy effort normalize = %q, want %q", got, ReasoningExtraHigh)
+	}
+}
+
+func TestLocalReasoningEffortToggle(t *testing.T) {
+	if got := NormalizeReasoningEffort(AliasLocal, "none"); got != ReasoningNone {
+		t.Fatalf("local none = %q, want %q", got, ReasoningNone)
+	}
+	if got := NormalizeReasoningEffort(AliasLocal, "low"); got != ReasoningLow {
+		t.Fatalf("local low = %q, want %q", got, ReasoningLow)
+	}
+	if got := NormalizeReasoningEffort(AliasLocal, "medium"); got != ReasoningMedium {
+		t.Fatalf("local medium = %q, want %q", got, ReasoningMedium)
+	}
+	if got := NormalizeReasoningEffort(AliasLocal, "high"); got != ReasoningHigh {
+		t.Fatalf("local high = %q, want %q", got, ReasoningHigh)
+	}
+	// xhigh not supported for local, should fall back to default (none)
+	if got := NormalizeReasoningEffort(AliasLocal, "xhigh"); got != ReasoningNone {
+		t.Fatalf("local xhigh fallback = %q, want %q", got, ReasoningNone)
 	}
 }

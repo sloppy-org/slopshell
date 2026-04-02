@@ -40,8 +40,13 @@ func (p *fakeMailProvider) ListMessages(_ context.Context, opts email.SearchOpti
 	return append([]string(nil), p.listIDs...), nil
 }
 
-func (p *fakeMailProvider) ListMessagesPage(_ context.Context, _ email.SearchOptions, _ string) (email.MessagePage, error) {
-	return email.MessagePage{IDs: append([]string(nil), p.pageIDs...), NextPageToken: p.nextPage}, nil
+func (p *fakeMailProvider) ListMessagesPage(_ context.Context, opts email.SearchOptions, _ string) (email.MessagePage, error) {
+	p.lastOpts = opts
+	ids := p.pageIDs
+	if len(ids) == 0 {
+		ids = p.listIDs
+	}
+	return email.MessagePage{IDs: append([]string(nil), ids...), NextPageToken: p.nextPage}, nil
 }
 
 func (p *fakeMailProvider) GetMessage(_ context.Context, messageID, _ string) (*providerdata.EmailMessage, error) {

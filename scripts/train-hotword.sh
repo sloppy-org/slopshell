@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TRAINER_DIR="${TABURA_HOTWORD_TRAINER_DIR:-$ROOT_DIR/tools/openwakeword-trainer}"
 CONFIG_PATH="${TABURA_HOTWORD_CONFIG:-$ROOT_DIR/scripts/hotword-config.yaml}"
 OUTPUT_DIR="${TABURA_HOTWORD_OUTPUT_DIR:-$ROOT_DIR/models/hotword}"
-PYTHON_BIN="${PYTHON:-python3.12}"
+PYTHON_BIN="${PYTHON:-python3}"
 SKIP_PIP_INSTALL="${TABURA_HOTWORD_SKIP_PIP_INSTALL:-0}"
 
 read_config_scalar() {

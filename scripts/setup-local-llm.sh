@@ -164,7 +164,7 @@ case "$PROFILE_PRESET" in
     NGL="$(default_if_empty "$NGL" "99")"
     PARALLEL="$(default_if_empty "$PARALLEL" "1")"
     ALIAS="$(default_if_empty "$ALIAS" "qwen3.5-9b")"
-    REASONING_BUDGET="$(default_if_empty "$REASONING_BUDGET" "0")"
+    REASONING_BUDGET="$(default_if_empty "$REASONING_BUDGET" "-1")"
     ;;
   "codex-gpt-oss-120b")
     MODEL_PRESET="$(default_if_empty "$MODEL_PRESET" "gpt-oss-120b-default")"
