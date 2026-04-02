@@ -232,6 +232,21 @@ func (p *ExchangeEWSMailProvider) ListMessagesPage(ctx context.Context, opts Sea
 	if len(candidates) == 0 {
 		return MessagePage{}, nil
 	}
+	maxResults := int(opts.MaxResults)
+	if maxResults <= 0 {
+		maxResults = 100
+	}
+	needsFilter := exchangeEWSNeedsMessageFilter(opts)
+	singleFolder := len(candidates) == 1
+	// When filtering across multiple folders, use ListMessages which
+	// iterates all folders internally, then return results as a single page.
+	if needsFilter && !singleFolder {
+		ids, err := p.ListMessages(ctx, opts)
+		if err != nil {
+			return MessagePage{}, err
+		}
+		return MessagePage{IDs: ids}, nil
+	}
 	offset := 0
 	if strings.TrimSpace(pageToken) != "" {
 		value, err := strconv.Atoi(strings.TrimSpace(pageToken))
@@ -239,10 +254,6 @@ func (p *ExchangeEWSMailProvider) ListMessagesPage(ctx context.Context, opts Sea
 			return MessagePage{}, fmt.Errorf("exchange ews invalid page token %q", pageToken)
 		}
 		offset = value
-	}
-	maxResults := int(opts.MaxResults)
-	if maxResults <= 0 {
-		maxResults = 100
 	}
 	page, err := p.client.FindMessages(ctx, candidates[0], offset, maxResults)
 	if err != nil {
@@ -254,7 +265,7 @@ func (p *ExchangeEWSMailProvider) ListMessagesPage(ctx context.Context, opts Sea
 	if len(page.ItemIDs) == 0 {
 		return out, nil
 	}
-	if !exchangeEWSNeedsMessageFilter(opts) {
+	if !needsFilter {
 		for _, itemID := range page.ItemIDs {
 			if clean := strings.TrimSpace(itemID); clean != "" {
 				out.IDs = append(out.IDs, clean)
