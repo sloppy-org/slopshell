@@ -16,7 +16,6 @@ const (
 	localAssistantToolFamilyCalendar  localAssistantToolFamily = "calendar"
 	localAssistantToolFamilyItems     localAssistantToolFamily = "items"
 	localAssistantToolFamilyRuntime   localAssistantToolFamily = "runtime"
-	localAssistantToolFamilyWeb       localAssistantToolFamily = "web"
 )
 
 func normalizeLocalAssistantAddress(text string) string {
@@ -44,11 +43,6 @@ func selectLocalAssistantToolFamily(text string) localAssistantToolFamily {
 		return localAssistantToolFamilyNone
 	}
 	switch {
-	case containsAnyLocalAssistantKeyword(lower,
-		"website", "web search", "browse ", "latest ", "news", "search the web",
-		"webseite", "im web", "im internet", "neueste ", "nachrichten",
-	):
-		return localAssistantToolFamilyWeb
 	case containsAnyLocalAssistantKeyword(lower,
 		"go silent", "be silent", "stop talking", "dialogue mode", "meeting mode", "live dialogue", "cancel work", "show status", "show busy state",
 		"sei still", "schweig", "stumm", "dialogmodus", "meetingmodus", "arbeit abbrechen", "zeige status", "zeige beschäftigt",

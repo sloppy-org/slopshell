@@ -33,20 +33,6 @@ func TestLocalAssistantWebMCPToolsFiltersAndTagsURL(t *testing.T) {
 	}
 }
 
-func TestLocalAssistantCoreToolsWebFallbackStub(t *testing.T) {
-	got := localAssistantCoreTools(localAssistantTurnState{}, localAssistantToolFamilyWeb, false)
-	if len(got) != 1 || got[0].InternalName != "web_search_unavailable" {
-		t.Fatalf("without web MCP, core tools = %+v, want web_search_unavailable stub only", got)
-	}
-}
-
-func TestLocalAssistantCoreToolsWebSkipsStubWhenMCPAvailable(t *testing.T) {
-	got := localAssistantCoreTools(localAssistantTurnState{}, localAssistantToolFamilyWeb, true)
-	if len(got) != 0 {
-		t.Fatalf("with web MCP available, core tools = %+v, want none (real tools come from MCP)", got)
-	}
-}
-
 func TestLocalAssistantIsWebToolAcceptsCommonNames(t *testing.T) {
 	accept := []string{"web_search", "web_fetch", "searxng_search", "searxng_fetch", "mcp__web_search"}
 	for _, name := range accept {

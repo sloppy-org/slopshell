@@ -328,12 +328,9 @@ func (a *App) runLocalAssistantToolLoop(ctx context.Context, req *assistantTurnR
 		familyInput = toolText
 	}
 	family := selectLocalAssistantToolFamily(familyInput)
-	catalog := localAssistantToolCatalog{Family: family, ToolsByName: map[string]localAssistantExecutableTool{}}
-	if family != localAssistantToolFamilyNone {
-		catalog, err = a.buildLocalAssistantToolCatalog(state, family, familyInput)
-		if err != nil {
-			return "", err
-		}
+	catalog, err := a.buildLocalAssistantToolCatalog(state, family, familyInput)
+	if err != nil {
+		return "", err
 	}
 	if directPath := strings.TrimSpace(localAssistantDirectOpenFileHint(toolUserPrompt, family)); directPath != "" {
 		return a.runLocalAssistantDirectOpenFileCanvas(ctx, &state, catalog, directPath)
@@ -526,8 +523,6 @@ func (a *App) executeLocalAssistantToolCall(ctx context.Context, state *localAss
 		return executeLocalAssistantWorkspaceReadTool(state, executable, call, args), nil
 	case localAssistantToolKindMCP:
 		return a.executeLocalAssistantBoundMCPTool(ctx, state, executable, call, args)
-	case localAssistantToolKindWebSearchUnavailable:
-		return executeLocalAssistantWebSearchUnavailableTool(executable, call, args), nil
 	default:
 		return localAssistantToolResult{
 			ToolCallID: call.ID,
@@ -742,24 +737,6 @@ func (a *App) executeLocalAssistantBoundMCPTool(ctx context.Context, state *loca
 	}
 	result.StructuredContent = structuredContent
 	return result, nil
-}
-
-func executeLocalAssistantWebSearchUnavailableTool(tool localAssistantExecutableTool, call localAssistantToolCall, args map[string]any) localAssistantToolResult {
-	return localAssistantToolResult{
-		ToolCallID: call.ID,
-		ModelName:  tool.ModelName,
-		Name:       tool.InternalName,
-		Kind:       string(tool.Kind),
-		Arguments:  args,
-		IsError:    true,
-		Error:      "Local mode cannot browse websites or run web search yet. Explain that limitation and continue with local files, MCP tools, canvas, mail, calendar, or workspace actions when possible.",
-		StructuredContent: map[string]any{
-			"available":  false,
-			"capability": "web_search",
-			"message":    "Local mode cannot browse websites or run web search yet.",
-			"query":      strings.TrimSpace(fmt.Sprint(args["query"])),
-		},
-	}
 }
 
 func localAssistantToolPayloads(result localAssistantToolResult, workspaceID int64) []map[string]any {

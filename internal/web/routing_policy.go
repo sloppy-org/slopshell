@@ -11,7 +11,7 @@ type turnRoutingDirectives struct {
 	ModelAlias         string
 	ModelAliasExplicit bool
 	ReasoningEffort    string
-	SearchRequested    bool
+	DetailRequested    bool
 	PromptText         string
 	DirectiveApplied   bool
 }
@@ -20,14 +20,19 @@ type directivePattern struct {
 	regex  *regexp.Regexp
 	alias  string
 	effort string
-	search bool
 }
 
+var verbosityDetailPattern = regexp.MustCompile(`(?i)\b(?:` +
+	`in\s+detail|explain\s+(?:in\s+)?detail|long\s+answer|be\s+thorough|` +
+	`elaborate|full\s+explanation|verbose|go\s+deep|all\s+the\s+details|` +
+	`ausführlich|ausfuehrlich|im\s+detail|in\s+allen?\s+details|` +
+	`sag(?:\s+mir)?\s+(?:es\s+)?(?:im|in)\s+detail|` +
+	`erklär(?:\s+(?:es|mir))?\s+(?:im|in)\s+detail|` +
+	`erklaer(?:\s+(?:es|mir))?\s+(?:im|in)\s+detail|` +
+	`ganz\s+genau|in\s+aller\s+ausführlichkeit|in\s+aller\s+ausfuehrlichkeit` +
+	`)\b`)
+
 var turnDirectivePatterns = []directivePattern{
-	{
-		regex:  regexp.MustCompile(`(?i)\b(?:search(?:\s+the\s+web)?|web\s+search|look\s+up|browse|google|find\s+online|search\s+online|suche(?:\s+im\s+web)?|such(?:\s+im\s+web)?|websuche|recherchier(?:e)?|im\s+web\s+suchen|online\s+suchen)\b`),
-		search: true,
-	},
 	{
 		regex:  regexp.MustCompile(`(?i)\bthink\s+quick(?:ly)?\b|\bdenk\s+kurz\b|\bdenke\s+kurz\b|\büberleg\s+kurz\b|\bueberleg\s+kurz\b`),
 		effort: modelprofile.ReasoningLow,
@@ -54,8 +59,6 @@ var turnDirectivePatterns = []directivePattern{
 	},
 }
 
-var currentInfoCuePattern = regexp.MustCompile(`(?i)\b(?:latest|current|today(?:'s)?|tomorrow|yesterday|news|weather|forecast|price|prices|stock|stocks|score|scores|standings|schedule|schedules)\b`)
-
 func parseTurnRoutingDirectives(text string) turnRoutingDirectives {
 	original := strings.TrimSpace(text)
 	if original == "" {
@@ -72,9 +75,6 @@ func parseTurnRoutingDirectives(text string) turnRoutingDirectives {
 			continue
 		}
 		directives.DirectiveApplied = true
-		if pattern.search {
-			directives.SearchRequested = true
-		}
 		if pattern.alias != "" {
 			directives.ModelAlias = pattern.alias
 			directives.ModelAliasExplicit = true
@@ -84,8 +84,9 @@ func parseTurnRoutingDirectives(text string) turnRoutingDirectives {
 		}
 		working = pattern.regex.ReplaceAllString(working, " ")
 	}
-	if !directives.ModelAliasExplicit && currentInfoCuePattern.MatchString(original) {
-		directives.SearchRequested = true
+	if verbosityDetailPattern.MatchString(original) {
+		directives.DetailRequested = true
+		directives.DirectiveApplied = true
 	}
 	cleaned := strings.Join(strings.Fields(working), " ")
 	cleaned = strings.TrimSpace(strings.Trim(cleaned, ",:;-"))

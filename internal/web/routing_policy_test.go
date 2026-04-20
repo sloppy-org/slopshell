@@ -15,9 +15,6 @@ func TestParseTurnRoutingDirectivesDefaultsToLocal(t *testing.T) {
 	if directives.ReasoningEffort != "" {
 		t.Fatalf("ReasoningEffort = %q, want empty", directives.ReasoningEffort)
 	}
-	if directives.SearchRequested {
-		t.Fatal("SearchRequested = true, want false")
-	}
 	if directives.PromptText != "summarize this note" {
 		t.Fatalf("PromptText = %q, want original", directives.PromptText)
 	}
@@ -51,21 +48,21 @@ func TestParseTurnRoutingDirectivesSupportsSparkCodexGPTMiniAndReasoning(t *test
 	}
 }
 
-func TestParseTurnRoutingDirectivesFlagsSearchWithoutImplicitSparkAlias(t *testing.T) {
+func TestParseTurnRoutingDirectivesLeavesSearchPhrasingUntouched(t *testing.T) {
 	directives := parseTurnRoutingDirectives("Search the web for today's AMD news.")
-	if !directives.SearchRequested {
-		t.Fatal("SearchRequested = false, want true")
-	}
 	if directives.ModelAlias != "" {
 		t.Fatalf("ModelAlias = %q, want empty so routing stays local by default", directives.ModelAlias)
 	}
 	if directives.ModelAliasExplicit {
 		t.Fatal("ModelAliasExplicit = true, want false")
 	}
+	if directives.PromptText != "Search the web for today's AMD news." {
+		t.Fatalf("PromptText = %q, want original search phrasing preserved for the model", directives.PromptText)
+	}
 }
 
 func TestParseTurnRoutingDirectivesExplicitSparkMarksExplicit(t *testing.T) {
-	directives := parseTurnRoutingDirectives("Use Spark to look up the rollout plan.")
+	directives := parseTurnRoutingDirectives("Use Spark to review the rollout plan.")
 	if !directives.ModelAliasExplicit {
 		t.Fatal("ModelAliasExplicit = false, want true for explicit 'use spark'")
 	}
@@ -74,13 +71,52 @@ func TestParseTurnRoutingDirectivesExplicitSparkMarksExplicit(t *testing.T) {
 	}
 }
 
-func TestParseTurnRoutingDirectivesCurrentInfoCueFlagsSearchOnly(t *testing.T) {
+func TestParseTurnRoutingDirectivesCurrentInfoCueStaysLocal(t *testing.T) {
 	directives := parseTurnRoutingDirectives("What is the latest ITER timeline?")
-	if !directives.SearchRequested {
-		t.Fatal("SearchRequested = false, want true for 'latest' cue")
-	}
 	if directives.ModelAlias != "" {
 		t.Fatalf("ModelAlias = %q, want empty", directives.ModelAlias)
+	}
+	if directives.ModelAliasExplicit {
+		t.Fatal("ModelAliasExplicit = true, want false: 'latest' alone must not force remote routing")
+	}
+}
+
+func TestParseTurnRoutingDirectivesDetailEnglish(t *testing.T) {
+	for _, text := range []string{
+		"Explain in detail how quaternions work",
+		"Give a long answer about tokamaks please",
+		"Be thorough: walk me through the proof",
+		"Go deep into the pipeline",
+		"elaborate on this failure",
+	} {
+		directives := parseTurnRoutingDirectives(text)
+		if !directives.DetailRequested {
+			t.Fatalf("DetailRequested = false for %q", text)
+		}
+	}
+}
+
+func TestParseTurnRoutingDirectivesDetailGerman(t *testing.T) {
+	for _, text := range []string{
+		"sag mir im Detail wie ein Tokamak funktioniert",
+		"erklär mir im Detail den Build",
+		"erklaer es mir in detail",
+		"ausführlich bitte die Fusionsphysik",
+		"ausfuehrlich erklaeren",
+		"ganz genau wie der Algorithmus arbeitet",
+		"in aller Ausführlichkeit",
+	} {
+		directives := parseTurnRoutingDirectives(text)
+		if !directives.DetailRequested {
+			t.Fatalf("DetailRequested = false for %q", text)
+		}
+	}
+}
+
+func TestParseTurnRoutingDirectivesNoDetailByDefault(t *testing.T) {
+	directives := parseTurnRoutingDirectives("what time is it")
+	if directives.DetailRequested {
+		t.Fatal("DetailRequested = true, want false for plain short ask")
 	}
 }
 
