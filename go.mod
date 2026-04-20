@@ -5,6 +5,7 @@ go 1.24.0
 require (
 	github.com/Azure/go-ntlmssp v0.1.0
 	github.com/alecthomas/chroma/v2 v2.23.1
+	github.com/chzyer/readline v1.5.1
 	github.com/creack/pty v1.1.24
 	github.com/emersion/go-imap/v2 v2.0.0-beta.7
 	github.com/emersion/go-message v0.18.2
@@ -25,7 +26,6 @@ require (
 	cloud.google.com/go/auth v0.18.0 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.2.8 // indirect
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
-	github.com/BurntSushi/toml v1.4.0 // indirect
 	github.com/cenkalti/backoff v2.2.1+incompatible // indirect
 	github.com/dlclark/regexp2 v1.11.5 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect

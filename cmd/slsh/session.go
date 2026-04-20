@@ -33,6 +33,19 @@ func sessionStorePath() string {
 	return ""
 }
 
+func historyFilePath() string {
+	if override := strings.TrimSpace(os.Getenv("SLOPSHELL_CLI_HISTORY_FILE")); override != "" {
+		return override
+	}
+	if state := strings.TrimSpace(os.Getenv("XDG_STATE_HOME")); state != "" {
+		return filepath.Join(state, "slopshell", "slsh-history")
+	}
+	if home, err := os.UserHomeDir(); err == nil && strings.TrimSpace(home) != "" {
+		return filepath.Join(home, ".local", "state", "slopshell", "slsh-history")
+	}
+	return ""
+}
+
 func loadSessionStore() (*sessionStore, string, error) {
 	path := sessionStorePath()
 	if path == "" {

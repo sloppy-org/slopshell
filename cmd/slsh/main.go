@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"flag"
@@ -12,6 +11,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/chzyer/readline"
 )
 
 const (
@@ -296,21 +297,25 @@ func runREPL(ctx context.Context, client *chatClient, session *chatSessionInfo, 
 		}
 	}
 
-	scanner := bufio.NewScanner(stdin)
-	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
-	promptStr := renderer.colorize(colorCyan, "› ")
+	rl, err := newReadline(stdin, stdout, stderr, renderer.colorize(colorCyan, "› "), opts.verbose)
+	if err != nil {
+		fmt.Fprintf(stderr, "slsh: input: %v\n", err)
+		return 1
+	}
+	defer rl.Close()
+
 	activeOpts := opts
 	for {
-		fmt.Fprint(stdout, promptStr)
-		if !scanner.Scan() {
-			if err := scanner.Err(); err != nil && !errors.Is(err, io.EOF) {
-				fmt.Fprintf(stderr, "slsh: input: %v\n", err)
-				return 1
+		line, readErr := rl.Readline()
+		if readErr != nil {
+			if errors.Is(readErr, readline.ErrInterrupt) || errors.Is(readErr, io.EOF) {
+				fmt.Fprintln(stdout)
+				return 0
 			}
-			fmt.Fprintln(stdout)
-			return 0
+			fmt.Fprintf(stderr, "slsh: input: %v\n", readErr)
+			return 1
 		}
-		line := strings.TrimSpace(scanner.Text())
+		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
@@ -337,6 +342,55 @@ func runREPL(ctx context.Context, client *chatClient, session *chatSessionInfo, 
 			continue
 		}
 	}
+}
+
+// newReadline builds a readline.Instance with persistent history, arrow-key
+// recall, Ctrl+R reverse search, and tab completion for slash commands.
+// readline handles non-tty stdin internally (used in tests and piped input).
+func newReadline(stdin io.Reader, stdout, stderr io.Writer, prompt string, verbose bool) (*readline.Instance, error) {
+	historyPath := historyFilePath()
+	if historyPath != "" {
+		if err := os.MkdirAll(filepath.Dir(historyPath), 0o700); err != nil && verbose {
+			fmt.Fprintf(stderr, "slsh: history dir: %v\n", err)
+		}
+	}
+	cfg := &readline.Config{
+		Prompt:            prompt,
+		HistoryFile:       historyPath,
+		HistoryLimit:      10000,
+		HistorySearchFold: true,
+		InterruptPrompt:   "^C",
+		EOFPrompt:         "exit",
+		AutoComplete: readline.NewPrefixCompleter(
+			readline.PcItem("/help"),
+			readline.PcItem("/exit"),
+			readline.PcItem("/quit"),
+			readline.PcItem("/clear"),
+			readline.PcItem("/new"),
+			readline.PcItem("/compact"),
+			readline.PcItem("/resume"),
+			readline.PcItem("/sessions"),
+			readline.PcItem("/model",
+				readline.PcItem("local"),
+				readline.PcItem("spark"),
+				readline.PcItem("gpt"),
+				readline.PcItem("mini"),
+			),
+			readline.PcItem("/think",
+				readline.PcItem("low"),
+				readline.PcItem("medium"),
+				readline.PcItem("high"),
+				readline.PcItem("off"),
+			),
+			readline.PcItem("/stop"),
+		),
+		Stdout: stdout,
+		Stderr: stderr,
+	}
+	if f, ok := stdin.(*os.File); ok {
+		cfg.Stdin = f
+	}
+	return readline.NewEx(cfg)
 }
 
 func handleReplCommand(ctx context.Context, client *chatClient, sessionPtr **chatSessionInfo, optsPtr *cliOptions, renderer *renderer, line string, stdout, stderr io.Writer) (bool, *cliOptions, error) {
