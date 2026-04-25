@@ -50,14 +50,6 @@ func (a *App) runAssistantTurn(sessionID string, turn dequeuedTurn) {
 	}
 	baseProfile = a.appServerProfileForChatSession(session, baseProfile)
 	turnProfile = a.appServerProfileForChatSession(session, turnProfile)
-	if directives.SearchRequested {
-		turnProfile = a.appServerProfileForChatSession(session, routeProfileForRouting(
-			modelprofile.AliasSpark,
-			baseProfile,
-			a.appServerSparkReasoningEffort,
-			directives.ReasoningEffort,
-		))
-	}
 	req := &assistantTurnRequest{
 		sessionID:       sessionID,
 		session:         session,
@@ -74,8 +66,8 @@ func (a *App) runAssistantTurn(sessionID string, turn dequeuedTurn) {
 		fastMode:        turn.fastMode,
 		messageID:       turn.messageID,
 		turnModel:       directives.ModelAlias,
-		searchTurn:      directives.SearchRequested,
-		transientRemote: directives.SearchRequested || (directives.ModelAlias != "" && directives.ModelAlias != modelprofile.AliasLocal),
+		detailRequested: directives.DetailRequested,
+		transientRemote: directives.ModelAliasExplicit && directives.ModelAlias != "" && directives.ModelAlias != modelprofile.AliasLocal,
 		reasoningEffort: directives.ReasoningEffort,
 		baseProfile:     baseProfile,
 		turnProfile:     turnProfile,

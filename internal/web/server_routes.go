@@ -18,6 +18,7 @@ func (a *App) Router() http.Handler {
 	// auth/setup
 	r.Get("/api/setup", a.handleSetupCheck)
 	r.Post("/api/login", a.handleLogin)
+	r.Post("/api/cli/login", a.handleCLILogin)
 	r.Post("/api/logout", a.handleLogout)
 
 	// google oauth

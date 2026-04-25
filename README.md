@@ -88,6 +88,53 @@ slopshell server --project-dir . --data-dir ~/.slopshell-web --local-mcp-url htt
 slopshell server --project-dir . --data-dir ~/.slopshell-web --local-mcp-url http://127.0.0.1:9420/mcp --web-host 0.0.0.0 --web-port 8443 --web-cert-file ~/.config/slopshell/certs/slopshell.pem --web-key-file ~/.config/slopshell/certs/slopshell-key.pem --app-server-url ws://127.0.0.1:8787 --tts-url http://127.0.0.1:8424
 ```
 
+## Terminal client: `slsh`
+
+`slsh` is a minimal terminal chat client that talks to the running
+`slopshell server` over the same HTTP/WS API the browser uses. It reuses the
+existing tool surface (local LLM, shell tool, MCP mail/calendar/items) and the
+remote Codex app-server for GPT/Spark routing — no extra services required.
+
+Build and install to `$HOME/.local/bin/slsh` (or set `SLOPSHELL_BIN_DIR`):
+
+```bash
+./scripts/build-slsh.sh
+```
+
+`scripts/install-slopshell-user-units.sh` installs `slsh` automatically
+alongside the web server when you install the user units from source.
+
+Authentication is loopback-only: `web.New` writes a random 32-byte token to
+`$XDG_RUNTIME_DIR/slopshell/cli-token` (falling back to
+`~/.local/share/slopshell-web/cli-token`) with `0600` perms; `slsh` reads it
+and POSTs to `/api/cli/login`, which refuses non-loopback peers and ignores
+forwarded-for headers.
+
+Usage:
+
+```bash
+slsh -p "run echo hello from slsh"          # one-shot, local + shell tool
+slsh -p "list my email accounts briefly"    # routes through sloptools MCP
+slsh --gpt -p "solve this design question"  # routes to Codex app-server
+slsh --think high -p "explain this plan"    # raises reasoning effort
+slsh                                        # REPL; /clear, /resume, /exit, /model, /think
+slsh --resume <session-id>                  # reattach to a prior chat
+```
+
+Fresh sessions are the default: `slsh` creates the chat session for the
+current workspace and calls the existing `/compact` command so the next turn
+starts without old thread context. `/clear` inside the REPL wipes all chat
+state via the existing `clearAllAgentsAndContexts` handler. Session ids for
+each workspace are cached under `$XDG_STATE_HOME/slopshell/slsh-sessions.json`
+so `/sessions` can list them.
+
+Smoke the live stack with `scripts/slsh-smoke.sh`. Go e2e tests run against
+mock LLM and mock MCP (never real EWS/TUGonline) and are gated:
+
+```bash
+go test -tags=e2e ./cmd/slsh/...
+```
+
 ## Runtime Stack (Canonical)
 
 Slopshell runs with one web runtime plus a dedicated local MCP daemon:

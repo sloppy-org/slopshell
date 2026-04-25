@@ -20,8 +20,9 @@ const (
 	assistantLLMToolPlanMaxTokens    = 256
 	assistantLLMToolMaxTokens        = 1024
 	assistantLLMResponseLimit        = 256 * 1024
-	assistantLLMMaxToolRounds        = 6
+	assistantLLMMaxToolRounds        = 16
 	assistantLLMMalformedRetries     = 1
+	assistantLLMToolPlanRetries      = 2
 	localAssistantDialoguePromptBase = "You are Slopshell, the assistant inside the current workspace. If the user says Slopshell, Sloppy, or computer, they are addressing you, not asking about those words. Use the explicit tools in this request instead of inventing plans or wrapper calls. Answer directly when no tool is needed. Default to plain text, not markdown. Do not use headings, bullets, numbered lists, or tables unless the user explicitly asks for them. Give complete answers by default: for substantive questions, answer with a compact but satisfying explanation, usually one short paragraph or 3-6 sentences. For simple factual prompts, keep the answer short. If a single word or short phrase fully answers the request, reply with exactly that. No markdown fences. No <think> tags."
 )
 
@@ -98,14 +99,14 @@ func buildLocalAssistantDialoguePrompt(toolPolicy string, reasoningHint string) 
 	return strings.TrimSpace(strings.Join(parts, "\n"))
 }
 
-func (a *App) buildLocalAssistantPrompt(sessionID string, session store.ChatSession, messages []store.ChatMessage, cursorCtx *chatCursorContext, inkCtx []*chatCanvasInkEvent, positionCtx []*chatCanvasPositionEvent, outputMode string) (string, error) {
+func (a *App) buildLocalAssistantPrompt(sessionID string, session store.ChatSession, messages []store.ChatMessage, cursorCtx *chatCursorContext, inkCtx []*chatCanvasInkEvent, positionCtx []*chatCanvasPositionEvent, outputMode string, detailRequested bool) (string, error) {
 	var workspaceRef *store.Workspace
 	if workspace, err := a.effectiveWorkspaceForChatSession(session); err == nil {
 		workspaceRef = &workspace
 	}
 	canvasCtx := a.resolveCanvasContext(session.WorkspacePath)
 	companionCtx := a.loadCompanionPromptContextForTurn(sessionID, session.WorkspacePath)
-	prompt := buildLeanLocalAssistantPrompt(workspaceRef, messages, canvasCtx, companionCtx, outputMode)
+	prompt := buildLeanLocalAssistantPrompt(workspaceRef, messages, canvasCtx, companionCtx, outputMode, detailRequested)
 	prompt = appendChatCursorPrompt(prompt, cursorCtx)
 	prompt = appendCanvasInkPrompt(prompt, inkCtx)
 	prompt = appendCanvasPositionPrompt(prompt, positionCtx)
@@ -142,7 +143,7 @@ func (a *App) runLocalAssistantTurn(req *assistantTurnRequest) {
 	if !req.fastMode {
 		promptMessages := withQueuedUserMessage(req.messages, req.messageID, req.promptText)
 		var err error
-		prompt, err = a.buildLocalAssistantPrompt(req.sessionID, req.session, promptMessages, req.cursorCtx, req.inkCtx, req.positionCtx, req.outputMode)
+		prompt, err = a.buildLocalAssistantPrompt(req.sessionID, req.session, promptMessages, req.cursorCtx, req.inkCtx, req.positionCtx, req.outputMode, req.detailRequested)
 		if err != nil {
 			errText := err.Error()
 			_, _ = a.store.AddChatMessage(req.sessionID, "system", errText, errText, "text")

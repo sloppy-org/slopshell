@@ -346,9 +346,12 @@ func extractLocalAssistantJSONStringField(raw string, field string) (string, boo
 }
 
 func stripLocalAssistantThinkingPreamble(raw string) string {
-	if strings.TrimSpace(raw) == "" {
+	if raw == "" {
 		return ""
 	}
+	// Deliberately do not early-return on all-whitespace input: streaming
+	// deltas often emit a lone "\n" between paragraphs or bullets, and
+	// swallowing those chunks collapses the assistant's formatting.
 	clean := strings.TrimLeft(raw, " \t\r\n")
 	if strings.HasPrefix(clean, "<think>") {
 		if idx := strings.Index(clean, "</think>"); idx >= 0 {

@@ -141,6 +141,26 @@ systemctl --user restart sloptools.service slopshell-codex-app-server.service sl
 - Intent LLM base URL: `http://127.0.0.1:8081` (Slopshell calls `/v1/chat/completions`)
 - STT base URL: `http://127.0.0.1:8427` (`/v1/audio/transcriptions`)
 - Local canvas session: `local`
+- CLI login endpoint: `POST /api/cli/login` (loopback-only; consumes the token
+  written to `$XDG_RUNTIME_DIR/slopshell/cli-token` at server start)
+
+## Terminal client (`slsh`)
+
+Source in `cmd/slsh/`. Single binary, HTTP+WS client over the same API the
+browser uses. Build with `./scripts/build-slsh.sh` (or have the user-units
+installer place it in `$HOME/.local/bin/slsh`). One-shot with `-p`, interactive
+REPL otherwise. Routes to GPT by prefixing prompts that match the existing
+`parseTurnRoutingDirectives` in `internal/web/routing_policy.go`:
+
+- `slsh --gpt -p "…"` → "use gpt to …"
+- `slsh --think high -p "…"` → "think hard, …"
+
+E2E tests are gated with `//go:build e2e` in `cmd/slsh/e2e_test.go` and use
+mock LLM + mock MCP — never real EWS/TUGonline. Run with:
+
+```bash
+go test -tags=e2e ./cmd/slsh/...
+```
 
 Environment toggles:
 - `SLOPSHELL_TTS_URL` overrides the TTS base URL
@@ -149,6 +169,11 @@ Environment toggles:
 - `SLOPSHELL_INTENT_LLM_PROFILE` selects the active local routing profile (default `qwen3.5-9b`)
 - `SLOPSHELL_INTENT_LLM_PROFILE_OPTIONS` exposes selectable local routing profiles (default `qwen3.5-9b,qwen3.5-4b`)
 - `SLOPSHELL_STT_URL=off` disables STT sidecar usage
+- `SLOPSHELL_WEB_MCP_URL` points at a supplementary MCP endpoint that
+  exposes `web_search` / `web_fetch` (for example a local helpy server at
+  `http://127.0.0.1:8090/mcp`). When set, search-intent turns stay on the
+  local assistant and call those tools instead of routing to Codex/Spark.
+  Leave unset (or `off`) to keep the prior Codex fallback behavior.
 
 ## Local Dev Start
 

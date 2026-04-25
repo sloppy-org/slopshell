@@ -68,24 +68,34 @@ func TestLocalSystemActionTurnPublishesLocalProviderMetadata(t *testing.T) {
 func TestLocalAssistantTurnHandlesCanvasWriteTextTool(t *testing.T) {
 	var mcpCalls atomic.Int32
 	mcp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		mcpCalls.Add(1)
 		var payload map[string]any
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			t.Fatalf("decode mcp payload: %v", err)
 		}
-		params, _ := payload["params"].(map[string]any)
-		if got := strings.TrimSpace(strFromAny(params["name"])); got != "canvas_artifact_show" {
-			t.Fatalf("tool name = %q, want canvas_artifact_show", got)
+		switch strings.TrimSpace(strFromAny(payload["method"])) {
+		case "tools/list":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"result": map[string]any{"tools": []map[string]any{}},
+			})
+			return
+		case "tools/call":
+			mcpCalls.Add(1)
+			params, _ := payload["params"].(map[string]any)
+			if got := strings.TrimSpace(strFromAny(params["name"])); got != "canvas_artifact_show" {
+				t.Fatalf("tool name = %q, want canvas_artifact_show", got)
+			}
+			args, _ := params["arguments"].(map[string]any)
+			if got := strings.TrimSpace(strFromAny(args["markdown_or_text"])); got != "Orbit Canvas" {
+				t.Fatalf("canvas body = %q, want Orbit Canvas", got)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"result": map[string]any{
+					"structuredContent": map[string]any{"ok": true},
+				},
+			})
+		default:
+			t.Fatalf("unexpected MCP method %q", payload["method"])
 		}
-		args, _ := params["arguments"].(map[string]any)
-		if got := strings.TrimSpace(strFromAny(args["markdown_or_text"])); got != "Orbit Canvas" {
-			t.Fatalf("canvas body = %q, want Orbit Canvas", got)
-		}
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"result": map[string]any{
-				"structuredContent": map[string]any{"ok": true},
-			},
-		})
 	}))
 	defer mcp.Close()
 

@@ -21,16 +21,12 @@ require_literal() {
   }
 }
 
-require_literal "Use exactly one response shape:"
-require_literal "Spoken chat must be one paragraph max."
-require_literal "If your response needs more than one paragraph, write that long content to a temp file"
-require_literal "Canvas content must appear only inside :::file blocks"
-require_literal "For temporary canvas files, create/remove paths via temp_file_create and temp_file_remove tools."
+require_literal "Tools available this turn are described in the tools parameter"
+require_literal "emit a :::file{path=\"...\"} block"
 require_literal "Do not use :::canvas blocks."
-require_literal "If output needs more than one paragraph, put it in a temp file with temp_file_create"
-require_literal "PR review fast path:"
-require_literal "open PR view"
-require_literal "Publish exactly one file block at path .slopshell/artifacts/pr/pr-<number>.diff with the patch content."
-require_literal "Do not return metadata-only chat."
+require_literal "Chat-first"
+require_literal "canvas_artifact_show"
+require_literal "[[request_position:"
+require_literal "[lang:de]"
 
 echo "prompt-contract check passed"

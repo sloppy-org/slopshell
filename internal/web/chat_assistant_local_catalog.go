@@ -9,12 +9,11 @@ import (
 type localAssistantToolKind string
 
 const (
-	localAssistantToolKindShell                localAssistantToolKind = "shell"
-	localAssistantToolKindSystemAction         localAssistantToolKind = "system_action"
-	localAssistantToolKindMCP                  localAssistantToolKind = "mcp"
-	localAssistantToolKindWorkspaceRead        localAssistantToolKind = "workspace_read"
-	localAssistantToolKindCanvasWriteText      localAssistantToolKind = "canvas_write_text"
-	localAssistantToolKindWebSearchUnavailable localAssistantToolKind = "web_search_unavailable"
+	localAssistantToolKindShell           localAssistantToolKind = "shell"
+	localAssistantToolKindSystemAction    localAssistantToolKind = "system_action"
+	localAssistantToolKindMCP             localAssistantToolKind = "mcp"
+	localAssistantToolKindWorkspaceRead   localAssistantToolKind = "workspace_read"
+	localAssistantToolKindCanvasWriteText localAssistantToolKind = "canvas_write_text"
 )
 
 type localAssistantExecutableTool struct {
@@ -23,6 +22,10 @@ type localAssistantExecutableTool struct {
 	InternalName string
 	DefaultArgs  map[string]any
 	Definition   map[string]any
+	// MCPURL optionally pins this tool to a specific MCP endpoint instead
+	// of the workspace default. Used for supplementary MCP servers (e.g. a
+	// dedicated web-search MCP) that live outside the workspace MCP.
+	MCPURL string
 }
 
 type localAssistantToolCatalog struct {
@@ -42,7 +45,19 @@ func (a *App) buildLocalAssistantToolCatalog(state localAssistantTurnState, fami
 	for _, tool := range localAssistantCoreTools(state, family) {
 		out.add(tool)
 	}
-	if !localAssistantFamilyNeedsMCP(family) || strings.TrimSpace(state.mcpURL) == "" {
+	// Web tools are always available when a web MCP is configured, so the
+	// model can decide to search/fetch on any turn (same pattern as Claude
+	// Code, Codex CLI, and OpenCode: expose the tools, let the model pick).
+	if webMCPURL := a.webMCPURLForCatalog(); webMCPURL != "" {
+		mcpTools, err := mcpToolsListURL(webMCPURL)
+		if err != nil {
+			return localAssistantToolCatalog{}, err
+		}
+		for _, tool := range localAssistantWebMCPTools(mcpTools, webMCPURL) {
+			out.add(tool)
+		}
+	}
+	if family == localAssistantToolFamilyNone || strings.TrimSpace(state.mcpURL) == "" {
 		return out, nil
 	}
 	mcpTools, err := mcpToolsListURL(state.mcpURL)
@@ -53,6 +68,57 @@ func (a *App) buildLocalAssistantToolCatalog(state localAssistantTurnState, fami
 		out.add(tool)
 	}
 	return out, nil
+}
+
+func (a *App) webMCPURLForCatalog() string {
+	if a == nil {
+		return ""
+	}
+	return strings.TrimSpace(a.webMCPURL)
+}
+
+// localAssistantIsWebTool decides whether an MCP tool advertised by the web
+// MCP server should be surfaced to the local assistant under the web family.
+// Matches common web-search / web-fetch naming conventions so helpy, sloptools,
+// and similar servers can expose their search surface transparently.
+func localAssistantIsWebTool(name string) bool {
+	lower := strings.ToLower(strings.TrimSpace(name))
+	if lower == "" {
+		return false
+	}
+	switch {
+	case strings.Contains(lower, "web_search"),
+		strings.Contains(lower, "web_fetch"),
+		strings.Contains(lower, "searxng"),
+		strings.Contains(lower, "websearch"),
+		strings.Contains(lower, "webfetch"):
+		return true
+	}
+	return false
+}
+
+func localAssistantWebMCPTools(tools []mcpListedTool, mcpURL string) []localAssistantExecutableTool {
+	out := make([]localAssistantExecutableTool, 0, len(tools))
+	for _, tool := range tools {
+		if !localAssistantIsWebTool(tool.Name) {
+			continue
+		}
+		out = append(out, localAssistantExecutableTool{
+			ModelName:    localAssistantMCPModelName(tool.Name),
+			Kind:         localAssistantToolKindMCP,
+			InternalName: tool.Name,
+			MCPURL:       mcpURL,
+			Definition: map[string]any{
+				"type": "function",
+				"function": map[string]any{
+					"name":        localAssistantMCPModelName(tool.Name),
+					"description": strings.TrimSpace(tool.Description),
+					"parameters":  localAssistantVisibleSchema(tool.InputSchema, nil),
+				},
+			},
+		})
+	}
+	return out
 }
 
 func localAssistantCoreTools(state localAssistantTurnState, family localAssistantToolFamily) []localAssistantExecutableTool {
@@ -81,22 +147,16 @@ func localAssistantCoreTools(state localAssistantTurnState, family localAssistan
 			localAssistantSystemActionTool("show_busy_state"),
 			localAssistantSystemActionTool("cancel_work"),
 		}
-	case localAssistantToolFamilyWeb:
-		return []localAssistantExecutableTool{
-			localAssistantWebSearchUnavailableTool(),
-		}
 	default:
 		return nil
 	}
 }
 
+// Deprecated: kept only so legacy call sites still compile while we migrate
+// to the flat catalog model. Every non-None family now surfaces the full
+// MCP tool set.
 func localAssistantFamilyNeedsMCP(family localAssistantToolFamily) bool {
-	switch family {
-	case localAssistantToolFamilyMail, localAssistantToolFamilyCalendar, localAssistantToolFamilyItems:
-		return true
-	default:
-		return false
-	}
+	return family != localAssistantToolFamilyNone
 }
 
 func localAssistantWorkspaceReadTool() localAssistantExecutableTool {
@@ -200,30 +260,6 @@ func localAssistantShellTool() localAssistantExecutableTool {
 	}
 }
 
-func localAssistantWebSearchUnavailableTool() localAssistantExecutableTool {
-	return localAssistantExecutableTool{
-		ModelName:    "web_search_unavailable",
-		Kind:         localAssistantToolKindWebSearchUnavailable,
-		InternalName: "web_search_unavailable",
-		Definition: map[string]any{
-			"type": "function",
-			"function": map[string]any{
-				"name":        "web_search_unavailable",
-				"description": "Call this when the user asks for websites, latest news, or web search. Local mode cannot browse websites yet.",
-				"parameters": map[string]any{
-					"type": "object",
-					"properties": map[string]any{
-						"query": map[string]any{
-							"type":        "string",
-							"description": "The requested website lookup or web search query.",
-						},
-					},
-				},
-			},
-		},
-	}
-}
-
 func localAssistantSystemActionTool(action string) localAssistantExecutableTool {
 	action = strings.TrimSpace(action)
 	if action == "" {
@@ -317,17 +353,17 @@ func localAssistantMCPToolsForFamily(state localAssistantTurnState, tools []mcpL
 	return out
 }
 
+// localAssistantIncludeMCPToolForFamily decides whether an MCP tool should be
+// advertised to the local model on a turn with the given family hint.
+// We expose the full flat MCP surface for every real task family: the model
+// picks the right tool in the same way Codex CLI and opencode do. The family
+// hint still drives which internal core tools and policy hints we emit, but
+// no longer restricts which MCP tools the model can reach for.
 func localAssistantIncludeMCPToolForFamily(name string, family localAssistantToolFamily) bool {
-	switch family {
-	case localAssistantToolFamilyMail:
-		return strings.HasPrefix(name, "mail_") || strings.HasPrefix(name, "handoff_")
-	case localAssistantToolFamilyCalendar:
-		return strings.HasPrefix(name, "calendar_")
-	case localAssistantToolFamilyItems:
-		return strings.HasPrefix(name, "item_") || strings.HasPrefix(name, "actor_")
-	default:
+	if strings.TrimSpace(name) == "" {
 		return false
 	}
+	return family != localAssistantToolFamilyNone
 }
 
 func localAssistantMCPDefaultArgs(state localAssistantTurnState, name string) map[string]any {
@@ -476,14 +512,29 @@ func buildLocalAssistantToolPolicy(catalog localAssistantToolCatalog) string {
 	if catalog.Family == localAssistantToolFamilyCanvas {
 		lines = append(lines, localAssistantCanvasPolicyLines(catalog.RenderGeneratedText)...)
 	} else {
-		lines = append(lines, localAssistantFamilyPolicyLines(catalog.Family)...)
+		lines = append(lines, localAssistantFamilyPolicyLines(catalog)...)
+	}
+	if localAssistantCatalogHasWebTool(catalog) {
+		lines = append(lines,
+			"- For current events, live prices, weather, news, or any question that needs info beyond your training, call mcp__web_search or mcp__web_fetch instead of refusing.",
+			"- After web results arrive, answer in plain text with 1-3 brief source citations (URLs or site names).",
+		)
 	}
 	lines = append(lines, localAssistantToolCatalogLines(catalog)...)
 	return strings.TrimSpace(strings.Join(lines, "\n"))
 }
 
-func localAssistantFamilyPolicyLines(family localAssistantToolFamily) []string {
-	switch family {
+func localAssistantCatalogHasWebTool(catalog localAssistantToolCatalog) bool {
+	for name := range catalog.ToolsByName {
+		if localAssistantIsWebTool(name) {
+			return true
+		}
+	}
+	return false
+}
+
+func localAssistantFamilyPolicyLines(catalog localAssistantToolCatalog) []string {
+	switch catalog.Family {
 	case localAssistantToolFamilyCanvas:
 		return localAssistantCanvasPolicyLines(false)
 	case localAssistantToolFamilyWorkspace:
@@ -507,8 +558,6 @@ func localAssistantFamilyPolicyLines(family localAssistantToolFamily) []string {
 		return []string{"- This is an items or task request. Use only the listed item tools."}
 	case localAssistantToolFamilyRuntime:
 		return []string{"- This is a runtime control request. Use only the listed runtime action tools."}
-	case localAssistantToolFamilyWeb:
-		return []string{"- This is a web request. Call web_search_unavailable, then explain the limitation briefly."}
 	default:
 		return nil
 	}

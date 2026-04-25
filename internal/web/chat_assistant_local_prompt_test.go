@@ -7,6 +7,8 @@ import (
 	"github.com/sloppy-org/slopshell/internal/store"
 )
 
+const voiceBrevityGuidance = "Reply for speech. Default to 1-3 sentences; extend only if the question genuinely needs it. No markdown."
+
 func TestBuildLeanLocalAssistantPromptIsCompact(t *testing.T) {
 	workspace := &store.Workspace{Name: "Slopshell", DirPath: "/tmp/slopshell"}
 	messages := []store.ChatMessage{
@@ -20,6 +22,7 @@ func TestBuildLeanLocalAssistantPromptIsCompact(t *testing.T) {
 		&canvasContext{HasArtifact: true, ArtifactTitle: "notes.md", ArtifactKind: "markdown", ArtifactText: "line one\nline two"},
 		&companionPromptContext{SummaryText: "Planning next steps."},
 		turnOutputModeVoice,
+		false,
 	)
 	for _, snippet := range []string{
 		"Workspace: Slopshell (/tmp/slopshell)",
@@ -27,7 +30,7 @@ func TestBuildLeanLocalAssistantPromptIsCompact(t *testing.T) {
 		"Canvas content:\nline one\nline two",
 		"## Companion Context",
 		"- Summary: Planning next steps.",
-		"Reply clearly for speech. For substantive questions, give a satisfying spoken answer in 3-6 sentences; for simple questions, answer briefly. Do not use markdown unless the user explicitly asks for it.",
+		voiceBrevityGuidance,
 		"Recent messages:",
 		"USER: latest question",
 	} {
@@ -47,7 +50,7 @@ func TestBuildLeanLocalAssistantPromptIsCompact(t *testing.T) {
 	}
 }
 
-func TestBuildLeanLocalAssistantPrompt_DefaultsToPlainShortChat(t *testing.T) {
+func TestBuildLeanLocalAssistantPrompt_SilentHasNoBrevityInstruction(t *testing.T) {
 	workspace := &store.Workspace{Name: "Slopshell", DirPath: "/tmp/slopshell"}
 	prompt := buildLeanLocalAssistantPrompt(
 		workspace,
@@ -55,22 +58,41 @@ func TestBuildLeanLocalAssistantPrompt_DefaultsToPlainShortChat(t *testing.T) {
 		nil,
 		nil,
 		turnOutputModeSilent,
+		false,
 	)
-	if !strings.Contains(prompt, "Default to plain text. For substantive questions, answer with a compact but complete explanation, usually one short paragraph or 3-6 sentences. For simple questions, answer briefly. Use lists or markdown only when the user explicitly asks for them.") {
-		t.Fatalf("prompt missing plain short chat guidance:\n%s", prompt)
+	if strings.Contains(prompt, voiceBrevityGuidance) {
+		t.Fatalf("silent prompt should not carry voice brevity guidance:\n%s", prompt)
+	}
+	if strings.Contains(prompt, "sentences") {
+		t.Fatalf("silent prompt should not prescribe sentence counts:\n%s", prompt)
 	}
 }
 
-func TestBuildLeanLocalAssistantPrompt_VoiceKeepsPlainShortSpeech(t *testing.T) {
+func TestBuildLeanLocalAssistantPrompt_VoiceDefaultIsBrief(t *testing.T) {
 	prompt := buildLeanLocalAssistantPrompt(
 		nil,
 		[]store.ChatMessage{{Role: "user", ContentPlain: "hello"}},
 		nil,
 		nil,
 		turnOutputModeVoice,
+		false,
 	)
-	if !strings.Contains(prompt, "Reply clearly for speech. For substantive questions, give a satisfying spoken answer in 3-6 sentences; for simple questions, answer briefly. Do not use markdown unless the user explicitly asks for it.") {
-		t.Fatalf("prompt missing short speech guidance:\n%s", prompt)
+	if !strings.Contains(prompt, voiceBrevityGuidance) {
+		t.Fatalf("voice default prompt should include brevity guidance:\n%s", prompt)
+	}
+}
+
+func TestBuildLeanLocalAssistantPrompt_VoiceWithDetailIsNotBrief(t *testing.T) {
+	prompt := buildLeanLocalAssistantPrompt(
+		nil,
+		[]store.ChatMessage{{Role: "user", ContentPlain: "explain in detail how tokamaks work"}},
+		nil,
+		nil,
+		turnOutputModeVoice,
+		true,
+	)
+	if strings.Contains(prompt, voiceBrevityGuidance) {
+		t.Fatalf("voice + detail should drop brevity guidance:\n%s", prompt)
 	}
 }
 
@@ -121,6 +143,26 @@ func TestStripLocalAssistantThinkingPreamble(t *testing.T) {
 	raw := "</think>\n\nready"
 	if got := stripLocalAssistantThinkingPreamble(raw); got != "ready" {
 		t.Fatalf("stripLocalAssistantThinkingPreamble() = %q, want ready", got)
+	}
+}
+
+// TestStripLocalAssistantThinkingPreamblePreservesWhitespaceDelta guards
+// against a regression where whitespace-only streaming chunks (commonly a
+// lone "\n" emitted between bullets or paragraphs) were silently dropped,
+// collapsing the assistant's formatting downstream.
+func TestStripLocalAssistantThinkingPreamblePreservesWhitespaceDelta(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		in   string
+	}{
+		{"newline only", "\n"},
+		{"double newline", "\n\n"},
+		{"crlf", "\r\n"},
+		{"spaces", "   "},
+	} {
+		if got := stripLocalAssistantThinkingPreamble(tc.in); got != tc.in {
+			t.Fatalf("%s: stripLocalAssistantThinkingPreamble(%q) = %q, want %q", tc.name, tc.in, got, tc.in)
+		}
 	}
 }
 

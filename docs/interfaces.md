@@ -26,6 +26,7 @@ Public pages:
 Auth and setup:
 - `GET /api/setup`
 - `POST /api/login`
+- `POST /api/cli/login`
 - `POST /api/logout`
 - `GET /api/google/auth`
 - `GET /api/google/callback`

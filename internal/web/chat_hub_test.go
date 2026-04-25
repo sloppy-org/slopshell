@@ -542,6 +542,7 @@ func TestRunAssistantTurnKeepsPlainTextAssistantOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}
+	app.assistantMode = assistantModeAuto
 	t.Cleanup(func() {
 		_ = app.Shutdown(context.Background())
 	})

@@ -66,6 +66,20 @@ build_sloptools_binary() {
   SLOPTOOLS_BIN_PATH="$SLOPTOOLS_REPO_ROOT/sloptools"
 }
 
+install_slsh_binary() {
+  local slsh_bin_dir slsh_bin_path
+  slsh_bin_dir="${SLOPSHELL_BIN_DIR:-${HOME}/.local/bin}"
+  slsh_bin_path="${slsh_bin_dir}/slsh"
+  log "Building slsh terminal client -> ${slsh_bin_path}"
+  mkdir -p "$slsh_bin_dir"
+  if ! (cd "$REPO_ROOT" && go build -o "$slsh_bin_path" ./cmd/slsh); then
+    fail "go build failed for slsh"
+  fi
+  if ! printf ':%s:' "$PATH" | grep -Fq ":${slsh_bin_dir}:"; then
+    log "${slsh_bin_dir} is not in PATH; add it to your shell profile to use slsh"
+  fi
+}
+
 configure_codex_cli() {
   local fast_url agentic_url
   if [ -n "$REUSE_LLM_URL" ]; then
@@ -212,6 +226,7 @@ install_linux() {
   )
   local -a optional_units=()
 
+  install_slsh_binary
   build_sloptools_binary
   sloptools_unit_src="$SLOPTOOLS_REPO_ROOT/deploy/systemd/user/sloptools.service"
   mkdir -p "$unit_dst"
@@ -346,6 +361,7 @@ install_macos() {
   if ! (cd "$REPO_ROOT" && go build -o "$REPO_ROOT/slopshell" ./cmd/slopshell); then
     fail "go build failed"
   fi
+  install_slsh_binary
   build_sloptools_binary
 
   BIN_PATH="$REPO_ROOT/slopshell"

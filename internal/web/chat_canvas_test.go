@@ -154,6 +154,14 @@ func TestAssistantFinalChatContent_RegularChatResponse(t *testing.T) {
 	}
 }
 
+func TestAssistantFinalChatContent_PreservesBulletNewlines(t *testing.T) {
+	input := "- First bullet.\n- Second bullet.\n- Third bullet."
+	markdown, _, _ := assistantFinalChatContent(input, false, false)
+	if markdown != input {
+		t.Fatalf("markdown = %q, want unchanged %q", markdown, input)
+	}
+}
+
 func TestBuildPromptFromHistory_IncludesSystemPrompt(t *testing.T) {
 	prompt := buildPromptFromHistory("chat", nil, nil)
 	if prompt == "" {
@@ -162,26 +170,20 @@ func TestBuildPromptFromHistory_IncludesSystemPrompt(t *testing.T) {
 	if !strings.Contains(prompt, "You are Slopshell") {
 		t.Error("prompt should contain system identity")
 	}
-	if !strings.Contains(prompt, "Voice mode is chat-first") {
-		t.Error("prompt should define chat-first voice mode")
+	if !strings.Contains(prompt, "Chat-first") {
+		t.Error("prompt should define chat-first behavior")
 	}
-	if !strings.Contains(prompt, "Do not emit :::file blocks unless the user explicitly asks to show/open/render content on canvas.") {
-		t.Error("prompt should explicitly limit :::file blocks to explicit canvas requests")
+	if !strings.Contains(prompt, `emit a :::file{path="..."} block`) {
+		t.Error("prompt should describe the :::file canvas grammar")
 	}
-	if !strings.Contains(prompt, "Do not emit :::canvas blocks.") {
+	if !strings.Contains(prompt, "Do not use :::canvas blocks.") {
 		t.Error("prompt should explicitly disallow :::canvas blocks")
 	}
-	if !strings.Contains(prompt, "Do not mirror ordinary chat output on canvas.") {
-		t.Error("prompt should explicitly disallow mirroring ordinary chat output on canvas")
+	if !strings.Contains(prompt, "Do not mirror chat on canvas.") {
+		t.Error("prompt should explicitly disallow mirroring chat on canvas")
 	}
-	if !strings.Contains(prompt, "show/open an existing file") {
-		t.Error("prompt should define existing-file canvas behavior")
-	}
-	if !strings.Contains(prompt, "you may emit :::file blocks for that file-backed canvas output") {
-		t.Error("prompt should allow explicit canvas rendering in voice mode")
-	}
-	if !strings.Contains(prompt, "do NOT paste that file body into chat") {
-		t.Error("prompt should forbid inlining existing file bodies")
+	if !strings.Contains(prompt, "canvas_artifact_show") {
+		t.Error("prompt should reference canvas_artifact_show for existing files")
 	}
 	if !strings.Contains(prompt, "[lang:") {
 		t.Error("prompt should mention [lang:] markers")

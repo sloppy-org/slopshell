@@ -848,6 +848,7 @@ func TestCompanionResponseTriggerIncludesProjectScopedCompanionContext(t *testin
 func TestCompanionResponseTriggerUsesWorkspaceDirForAppSession(t *testing.T) {
 	t.Setenv("SLOPSHELL_INTENT_LLM_URL", "off")
 	app := newAuthedTestApp(t)
+	app.assistantMode = assistantModeAuto
 	client, _, cwdCh := newCompanionAppServerClientWithSessionCapture(t, "Companion reply.")
 	app.appServerClient = client
 

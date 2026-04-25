@@ -23,7 +23,7 @@ type assistantTurnRequest struct {
 	fastMode        bool
 	messageID       int64
 	turnModel       string
-	searchTurn      bool
+	detailRequested bool
 	transientRemote bool
 	reasoningEffort string
 	baseProfile     appServerModelProfile
@@ -78,22 +78,15 @@ func (a *App) assistantBackendForTurn(req *assistantTurnRequest) assistantTurnBa
 	if req.turnModel != "" && req.turnModel != modelprofile.AliasLocal {
 		return &codexAssistantBackend{app: a}
 	}
+	// Everything without an explicit remote alias stays local. Only fall
+	// through to Codex when the local assistant has no way to run at all
+	// (no local LLM URL configured AND an app-server client is available).
 	localConfigured := strings.TrimSpace(a.assistantLLMURL) != "" || a.appServerClient == nil || a.assistantRoutingMode() == assistantModeLocal
-	if modelprofile.ResolveAlias(req.baseProfile.Alias, modelprofile.AliasLocal) == modelprofile.AliasLocal && localConfigured {
+	if localConfigured {
 		return &localAssistantBackend{app: a}
 	}
-	if req.searchTurn {
+	if a.appServerClient != nil {
 		return &codexAssistantBackend{app: a}
 	}
-	switch a.assistantRoutingMode() {
-	case assistantModeLocal:
-		return &localAssistantBackend{app: a}
-	case assistantModeCodex:
-		return &codexAssistantBackend{app: a}
-	default:
-		if a.appServerClient != nil {
-			return &codexAssistantBackend{app: a}
-		}
-		return &localAssistantBackend{app: a}
-	}
+	return &localAssistantBackend{app: a}
 }

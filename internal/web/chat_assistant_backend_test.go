@@ -21,6 +21,7 @@ func TestAssistantBackendForTurnRoutesLocalByDefaultAndCodexOnlyForRemoteTurns(t
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}
+	app.assistantMode = assistantModeAuto
 	app.assistantLLMURL = "http://127.0.0.1:8081"
 	t.Cleanup(func() {
 		_ = app.Shutdown(context.Background())
@@ -45,11 +46,19 @@ func TestAssistantBackendForTurnRoutesLocalByDefaultAndCodexOnlyForRemoteTurns(t
 
 	searchReq := &assistantTurnRequest{
 		userText:    "search the web for today's news",
-		searchTurn:  true,
 		baseProfile: appServerModelProfile{Alias: "local"},
 	}
 	if got := app.assistantBackendForTurn(searchReq).mode(); got != assistantModeLocal {
 		t.Fatalf("backend for local search turn = %q, want %q", got, assistantModeLocal)
+	}
+
+	explicitSparkSearch := &assistantTurnRequest{
+		userText:    "use spark to search the web",
+		turnModel:   "spark",
+		baseProfile: appServerModelProfile{Alias: "local"},
+	}
+	if got := app.assistantBackendForTurn(explicitSparkSearch).mode(); got != assistantModeCodex {
+		t.Fatalf("backend for explicit spark search = %q, want %q", got, assistantModeCodex)
 	}
 
 	app.assistantLLMURL = ""
@@ -193,6 +202,10 @@ func TestRunAssistantTurnCanvasRequestRepairsPlainGermanAcknowledgement(t *testi
 			t.Fatalf("decode mcp payload: %v", err)
 		}
 		switch strings.TrimSpace(strFromAny(payload["method"])) {
+		case "tools/list":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"result": map[string]any{"tools": []map[string]any{}},
+			})
 		case "tools/call":
 			canvasCalls.Add(1)
 			params, _ := payload["params"].(map[string]any)
@@ -732,8 +745,8 @@ func TestRunAssistantTurnNonFastLocalUsesPrunedExplicitToolPromptForCanvasReques
 	if llmCalls.Load() != 1 {
 		t.Fatalf("llm call count = %d, want 1", llmCalls.Load())
 	}
-	if mcpListCalls.Load() != 0 {
-		t.Fatalf("mcp list call count = %d, want 0", mcpListCalls.Load())
+	if mcpListCalls.Load() != 1 {
+		t.Fatalf("mcp list call count = %d, want 1 (flat catalog always discovers MCP tools)", mcpListCalls.Load())
 	}
 	if mcpCalls.Load() != 1 {
 		t.Fatalf("mcp call count = %d, want 1", mcpCalls.Load())
@@ -753,6 +766,10 @@ func TestRunAssistantTurnNonFastLocalRepairsPlanningTextIntoCanvasOutput(t *test
 			t.Fatalf("decode mcp payload: %v", err)
 		}
 		switch strings.TrimSpace(strFromAny(payload["method"])) {
+		case "tools/list":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"result": map[string]any{"tools": []map[string]any{}},
+			})
 		case "tools/call":
 			mcpCalls.Add(1)
 			params, _ := payload["params"].(map[string]any)

@@ -18,15 +18,14 @@ func buildLeanLocalAssistantPrompt(
 	canvas *canvasContext,
 	companion *companionPromptContext,
 	outputMode string,
+	detailRequested bool,
 ) string {
 	var b strings.Builder
 	appendLeanLocalAssistantWorkspace(&b, workspace)
 	appendLeanLocalAssistantCanvas(&b, canvas)
 	appendLeanLocalAssistantCompanion(&b, companion)
-	if isVoiceOutputMode(outputMode) {
-		b.WriteString("Reply clearly for speech. For substantive questions, give a satisfying spoken answer in 3-6 sentences; for simple questions, answer briefly. Do not use markdown unless the user explicitly asks for it.\n")
-	} else {
-		b.WriteString("Default to plain text. For substantive questions, answer with a compact but complete explanation, usually one short paragraph or 3-6 sentences. For simple questions, answer briefly. Use lists or markdown only when the user explicitly asks for them.\n")
+	if isVoiceOutputMode(outputMode) && !detailRequested {
+		b.WriteString("Reply for speech. Default to 1-3 sentences; extend only if the question genuinely needs it. No markdown.\n")
 	}
 	appendLeanLocalAssistantHistory(&b, messages)
 	return strings.TrimSpace(b.String())
